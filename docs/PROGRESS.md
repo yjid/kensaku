@@ -8,7 +8,7 @@
 
 - **Branch:** `master`
 - **Last commit before v2 work:** `d690ada` (initial release v0.1)
-- **v2 work:** PR 1 and PR 2 implemented and committed (see below). Builds clean (`cargo build` passes). No tests exist.
+- **v2 work:** PR 1, PR 2, and PR 3 implemented and committed. Builds clean (`cargo build` and `npx tsc --noEmit` pass; `cargo clippy -- -D warnings` clean).
 - **Working tree:** clean after commits.
 
 ## What's done
@@ -34,32 +34,45 @@
 - **Single-watcher lifecycle:** `WatcherHandle` struct (stop flag + join handle, `Drop` stops). `IndexerManager` stores `watcher_handle: Arc<Mutex<Option<WatcherHandle>>>`. `start_indexing` stops/drops any existing watcher before crawling, then stores the new handle after crawl completes. `is_running` cleared only after handle is stored (no duplicate-watcher race).
 - **Post-crawl ordering:** crawl → stale metadata prune → Tantivy purge → start watcher → clear is_running.
 
+### PR 3 — Query layer + ranking + preview + actions
+**Files:** `src-tauri/src/query/` (new module: `ast.rs`, `lexer.rs`, `parser.rs`, `router.rs`, `scope_trie.rs`, `mod.rs`), `src-tauri/src/search/mod.rs`, `src-tauri/src/search/fuzzy.rs`, `src-tauri/src/indexer/content.rs`, `src-tauri/src/indexer/metadata.rs`, `src-tauri/src/indexer/metadata_db.rs`, `src-tauri/src/commands.rs`, `src-tauri/src/lib.rs`, `src/App.tsx`, `src/types.ts`, `src/components/FilterChips.tsx` (new), `src/components/PreviewPane.tsx` (new), `src/components/ActionPalette.tsx` (new)
+
+- **Lexer + AST (`query/ast.rs`, `query/lexer.rs`):** tokenizes query strings with quotes, `key:value` pairs, `-` negation, and parentheses into `Query { terms, filters, scopes, mode, raw, hints, active_filters_dto }`.
+- **Filter grammar (`query/parser.rs`):** parsed filters for `type:`, `ext:`, `in:`, `path:`, `modified:` (`<7d`, `>30d`, `7d..30d`), `size:` (`>2mb`, `<100kb`), `is:` (`image`, `dir`, `file`), `lang:` (`rust`, `python`, etc.), `-` negation (`-node_modules`, `-ext:log`), `"exact phrase"`, `re:"regex"`, `name:config`, `content:timeout`. Unknown `key:` treated as literal search terms (never 0 results); parse errors emit inline hints.
+- **Directory trie + DFS scope cache (`query/scope_trie.rs`):** builds a folded directory name trie from `MetadataStore`; resolves `in:` and leading directory tokens using exact > prefix > fuzzy precedence. Ambiguous matches retain search term and display "did you mean 📁 dir?" hints. Caches subtree descendant candidate lists per `(dir_id, generation)` with DFS over child lists ($O(\text{subtree})$ instead of $O(\text{corpus})$).
+- **Router (`query/router.rs`):** 0ms zero-model classifier for query shape: code identifiers, content phrases / regex, filtered scopes, NL stopwords / long queries, trailing `/` folder navigation.
+- **RRF fusion + ranking (`search/mod.rs`):** replaced magic constants with Reciprocal Rank Fusion ($k=60$) over fuzzy and BM25 tiers. Added bonuses: `+0.20` exact substring in name, `+0.15` prefix in name, `+0.10` smooth recency exponential decay ($\exp(-\text{age}/7)$), `+0.08` frecency ($\ln(1+\text{opens}) \cdot \exp(-\text{last\_open}/14)$), `-0.02` depth penalty. Deterministic tiebreak by score then path.
+- **Frecency usage tracking (`metadata_db.rs`, `metadata.rs`, `commands.rs`):** persistent SQLite `usage(path, opens, last_open)` table updated whenever a file is opened.
+- **Char-bloom prefilter & top-k heap (`search/fuzzy.rs`):** 64-bit character presence bitmask per filename, AND-checked against query chars before nucleo-matcher runs. Swapped full sorting with `select_nth_unstable_by` for $O(N)$ top-k selection.
+- **Post-rank snippet extraction (`indexer/content.rs`):** decoupled snippet extraction from Tantivy search; snippets are extracted only for the top-20 ranked results using an in-memory 200-file LRU content cache.
+- **Request sequence guard (`commands.rs`, `src/App.tsx`):** atomic monotonic sequence numbers on queries; client drops stale responses if a newer request finishes first.
+- **Tauri event indexing status:** replaced 1.5s interval polling loop with live `indexing-status` Tauri events emitted by the indexer.
+- **UI additions (`src/App.tsx`, `FilterChips.tsx`, `PreviewPane.tsx`, `ActionPalette.tsx`):**
+  - Interactive filter chips below input showing active filters with click-to-remove.
+  - Right-side preview pane with syntax text preview, match highlights, image thumbnails, PDF badge, folder contents, and quick action buttons.
+  - `>` command mode in input with suggestions and execution for `>reindex`, `>doctor`, `>model`, `>add folder`, `>settings`.
+  - `⌘K` / `Ctrl+K` action palette on selected results: Open, Reveal, Copy Path, Copy Content, Ask, Find similar.
+
 ## Known issues (not blocking, but should be addressed)
 
-1. **Pre-existing clippy warnings** (10 total) in `commands.rs`, `config.rs`, `lib.rs`, `content.rs` (snippet code), `mod.rs` (crawl nested ifs), `search/fuzzy.rs`. None introduced by PR 1/2. Clippy `-- -D warnings` fails repo-wide.
-2. **Watcher directory rename** only removes old descendants and upserts the new directory entry — it does NOT recursively rewrite child paths. Children appear after next crawl/restart.
-3. **Unmounted drive pruning:** if a watched directory is unavailable at startup, the stale-pruning pass deletes its metadata AND Tantivy docs. Consider guarding pruning for missing roots.
-4. **Non-UTF-8 path comparison in `purge_stale`:** compares `to_string_lossy()` forms. Could theoretically purge a valid non-UTF-8 path. Low risk in practice.
-5. **Content index for unchanged files:** if a Tantivy doc is missing for an unchanged file (size+mtime match), it won't be re-indexed. Needs a content-gen check.
-6. **DB migration leaves existing rows at dev=0, ino=0** until next crawl repopulates them.
-7. **No tests exist** anywhere in the codebase.
+1. **Watcher directory rename** only removes old descendants and upserts the new directory entry — it does NOT recursively rewrite child paths. Children appear after next crawl/restart.
+2. **Unmounted drive pruning:** if a watched directory is unavailable at startup, the stale-pruning pass deletes its metadata AND Tantivy docs. Consider guarding pruning for missing roots.
+3. **Non-UTF-8 path comparison in `purge_stale`:** compares `to_string_lossy()` forms. Could theoretically purge a valid non-UTF-8 path. Low risk in practice.
+4. **Content index for unchanged files:** if a Tantivy doc is missing for an unchanged file (size+mtime match), it won't be re-indexed. Needs a content-gen check.
+5. **DB migration leaves existing rows at dev=0, ino=0** until next crawl repopulates them.
+6. **No tests exist** anywhere in the codebase.
 
-## What's next: PR 3 — Query layer
+## What's next: PR 4 — Semantic (static embeddings)
 
-Per `docs/ARCHITECTURE.md` §13, Phase 1. Scope:
+Per `docs/ARCHITECTURE.md` §13, Phase 2. Scope:
 
-1. **Lexer + AST** (`src-tauri/src/query/` new module): parse query string into `Query { terms, filters, scopes, mode, raw }`.
-2. **Filter grammar:** `type:`, `ext:`, `in:`, `path:`, `modified:`, `size:`, `is:`, `lang:`, `-negation`, `"phrases"`, `re:regex`.
-3. **Directory trie + DFS scope cache:** resolve `in:` and leading directory tokens against a trie of indexed directories. Cache scope candidate lists per `(dir_id, generation)`.
-4. **Router:** zero-model intent classification (token count, camelCase/snake_case, NL stopwords, regex delimiters).
-5. **RRF fusion:** replace magic `×2`/`×15` constants with RRF (k=60) over fuzzy + BM25 + (later) semantic. Add exact-substring/prefix bonuses, smooth recency decay, frecency, depth penalty.
-6. **Deterministic tiebreak:** sort by score then path.
-7. **Top-k heap:** replace full sort in fuzzy matcher with `select_nth_unstable`.
-8. **Char-bloom prefilter:** 64-bit letter-bucket mask per name, AND against query char set before matcher runs.
-9. **Snippets post-rank:** move snippet extraction out of query path; fetch after ranking, top-20, blocking pool, LRU cache.
-10. **UI:** filter chips (click to remove), preview pane, `>` command mode, `⌘K` actions, events instead of 1.5s polling, request sequence guard.
+1. **Static embeddings bundled:** integrate `model2vec` (`potion-base-8M`, 256-dim, int8 table ~8MB bundled). Tokenize -> table lookup -> mean pooling -> normalize (~50µs/query).
+2. **Semantic unit chunking:** chunk files into 240-token windows (48 overlap), max 20 units/file, deduped by content hash.
+3. **Exact vector scan:** memory-mapped `Vec<i8>` scan parallelized over rayon (<2ms for <=400k units).
+4. **Third RRF tier:** integrate vector tier into RRF fusion alongside fuzzy and BM25 tiers.
+5. **Semantic badge:** subtle `≈` badge on results discovered primarily via semantic tier.
+6. **Embed queue:** background worker queue respecting battery, idle, and fullscreen policies.
 
-### Then PR 4 — Semantic (static embeddings)
 ### Then PR 5 — Documents (PDF, Office)
 ### Then PR 6 — Agent surface (MCP, CLI, daemon socket)
 ### Then PR 7 — Vision/OCR
@@ -106,6 +119,9 @@ cd .. && bun run tauri dev    # dev mode
 - `feat(indexer): file identity by (dev, ino) in metadata and DB`
 - `feat(content): purge stale Tantivy docs after crawl`
 - `feat(watcher): rename/remove-directory handling + single-watcher lifecycle`
+- `feat(query): lexer, AST, filter grammar, directory trie & router`
+- `feat(search): RRF fusion, frecency bonus, char-bloom prefilter & post-rank snippets`
+- `feat(ui): preview pane, filter chips, command mode, actions palette & live events`
 
 ## Notes for the next agent
 

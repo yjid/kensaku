@@ -9,6 +9,38 @@ export interface SearchResult {
   match_type: "FileName" | "Content" | "Both";
 }
 
+export interface ActiveFilter {
+  raw: string;
+  filter_type: string;
+  value: string;
+  negated: boolean;
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  seq: number;
+  active_filters: ActiveFilter[];
+  hints: string[];
+  search_time_ms: number;
+}
+
+export interface FilePreview {
+  path: string;
+  filename: string;
+  file_size: number;
+  modified: number;
+  is_dir: boolean;
+  preview_type: "text" | "image" | "pdf" | "dir" | "binary";
+  content?: string | null;
+  total_lines?: number | null;
+  child_count?: number | null;
+}
+
+export interface CommandOutput {
+  success: boolean;
+  message: string;
+}
+
 export interface IndexingStatus {
   is_indexing: boolean;
   files_indexed: number;
