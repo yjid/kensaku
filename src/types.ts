@@ -6,7 +6,8 @@ export interface SearchResult {
   file_size: number;
   modified: number;
   is_dir: boolean;
-  match_type: "FileName" | "Content" | "Both";
+  match_type: "FileName" | "Content" | "Semantic" | "Both";
+  best_range?: [number, number] | null;
 }
 
 export interface ActiveFilter {
@@ -46,6 +47,9 @@ export interface IndexingStatus {
   files_indexed: number;
   content_indexed: number;
   current_status: string;
+  is_embedding?: boolean;
+  units_indexed?: number;
+  semantic_ready?: boolean;
 }
 
 export interface KensakuConfig {
@@ -55,4 +59,6 @@ export interface KensakuConfig {
   shortcut: string;
   max_results: number;
   is_setup_complete: boolean;
+  semantic_enabled?: boolean;
+  semantic_model?: string;
 }
