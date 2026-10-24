@@ -133,7 +133,11 @@ fn is_path_excluded(path: &Path, cfg: &KensakuConfig) -> bool {
         component
             .as_os_str()
             .to_str()
-            .map(|name| cfg.is_dir_excluded(name))
+            .map(|name| {
+                // Hidden/dot entries are never indexed by default.
+                // TODO: honor `cfg.skip_hidden` once it is wired through.
+                cfg.skip_hidden && name.starts_with('.') || cfg.is_dir_excluded(name)
+            })
             .unwrap_or(false)
     })
 }

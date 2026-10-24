@@ -48,14 +48,20 @@ pub fn walk_directories<F>(
             continue;
         }
 
+        // TODO: make hidden-file skipping configurable via `KensakuConfig::skip_hidden`.
         let walker = jwalk::WalkDir::new(root)
-            .skip_hidden(false)
+            .skip_hidden(true)
             .process_read_dir({
                 let excluded_set = excluded_set.clone();
                 move |_depth, _path, _read_dir_state, children| {
                     children.retain(|dir_entry_result| {
                         if let Ok(entry) = dir_entry_result {
                             let name = entry.file_name.to_string_lossy().to_lowercase();
+                            // Belt-and-suspenders: never descend into hidden entries
+                            // even if `skip_hidden` is unsupported on this platform.
+                            if name.starts_with('.') {
+                                return false;
+                            }
                             if excluded_set.contains(&name) {
                                 return false;
                             }

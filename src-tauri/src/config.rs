@@ -10,6 +10,14 @@ pub struct KensakuConfig {
     pub shortcut: String,
     pub max_results: usize,
     pub is_setup_complete: bool,
+    /// Skip files and directories whose name starts with `.` (hidden entries).
+    /// Enabled by default; users can opt into indexing hidden files.
+    #[serde(default = "default_true")]
+    pub skip_hidden: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for KensakuConfig {
@@ -19,63 +27,57 @@ impl Default for KensakuConfig {
             watched.push(home);
         }
 
-        let default_excluded_dirs = vec![
-            "node_modules".to_string(),
-            ".git".to_string(),
-            "target".to_string(),
-            "__pycache__".to_string(),
-            ".cache".to_string(),
-            ".npm".to_string(),
-            ".cargo".to_string(),
-            ".rustup".to_string(),
-            "dist".to_string(),
-            "build".to_string(),
-            ".next".to_string(),
-            ".nuxt".to_string(),
-            ".output".to_string(),
-            ".venv".to_string(),
-            "venv".to_string(),
-            "env".to_string(),
-            ".gradle".to_string(),
-            ".m2".to_string(),
-            ".idea".to_string(),
-            ".vscode".to_string(),
-            "vendor".to_string(),
-            "bower_components".to_string(),
-            ".Trash".to_string(),
-            "Library".to_string(),
-        ];
+        let default_excluded_dirs: Vec<String> = vec![
+            // Version control
+            ".git", ".svn", ".hg", ".bzr",
+            // Package managers / dependencies
+            "node_modules", "vendor", "Pods", ".bundle",
+            // Build outputs
+            "target", "build", "dist", "out", ".output", ".next", ".nuxt", ".svelte-kit", ".turbo",
+            ".vercel", ".netlify",
+            // Caches
+            ".cache", ".npm", ".yarn", ".pnpm", ".cargo", ".rustup", ".gradle", ".m2", "__pycache__",
+            ".pytest_cache", ".mypy_cache", ".tox", ".nox",
+            // Virtual environments
+            "venv", ".venv", "env", ".env",
+            // IDE / editor
+            ".vscode", ".idea", ".vs", ".eclipse",
+            // OS junk
+            ".DS_Store", "Thumbs.db", "desktop.ini",
+            // Misc
+            ".Trash", ".Trash-*", "lost+found",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
 
-        let default_excluded_extensions = vec![
-            ".o".to_string(),
-            ".so".to_string(),
-            ".dll".to_string(),
-            ".exe".to_string(),
-            ".bin".to_string(),
-            ".dat".to_string(),
-            ".db".to_string(),
-            ".sqlite".to_string(),
-            ".class".to_string(),
-            ".pyc".to_string(),
-            ".wasm".to_string(),
-            ".jpg".to_string(),
-            ".jpeg".to_string(),
-            ".png".to_string(),
-            ".gif".to_string(),
-            ".bmp".to_string(),
-            ".mp3".to_string(),
-            ".mp4".to_string(),
-            ".avi".to_string(),
-            ".mov".to_string(),
-            ".zip".to_string(),
-            ".tar".to_string(),
-            ".gz".to_string(),
-            ".rar".to_string(),
-            ".7z".to_string(),
-            ".iso".to_string(),
-            ".dmg".to_string(),
-            ".pdf".to_string(),
-        ];
+        // NOTE: binary document formats (pdf, docx, xlsx, ...) are excluded for now
+        // because content extraction is not implemented yet. Revisit when PDF/Office
+        // text extraction lands in a later phase.
+        let default_excluded_extensions: Vec<String> = vec![
+            // Images
+            "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp", "tiff", "tif", "psd", "ai", "sketch",
+            "fig",
+            // Audio/Video
+            "mp3", "mp4", "wav", "avi", "mov", "mkv", "flac", "ogg", "webm",
+            // Archives
+            "zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz",
+            // Binaries
+            "exe", "dll", "so", "dylib", "bin", "o", "a", "lib", "class", "pyc", "pyo",
+            // Documents (binary formats, not text)
+            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+            // Database
+            "db", "sqlite", "sqlite3",
+            // Lock files
+            "lock", "lockb",
+            // Minified/generated
+            "min.js", "min.css", "map",
+            // Font
+            "ttf", "otf", "woff", "woff2", "eot",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
 
         Self {
             watched_dirs: watched,
@@ -84,6 +86,7 @@ impl Default for KensakuConfig {
             shortcut: "Alt+Space".to_string(),
             max_results: 50,
             is_setup_complete: false,
+            skip_hidden: true,
         }
     }
 }
@@ -137,8 +140,10 @@ impl KensakuConfig {
 
     pub fn is_extension_excluded(&self, path: &Path) -> bool {
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            let dot_ext = format!(".{}", ext.to_ascii_lowercase());
-            return self.excluded_extensions.iter().any(|e| e.to_ascii_lowercase() == dot_ext);
+            let ext = ext.trim_start_matches('.').to_ascii_lowercase();
+            return self.excluded_extensions.iter().any(|e| {
+                e.trim_start_matches('.').eq_ignore_ascii_case(&ext)
+            });
         }
         false
     }
