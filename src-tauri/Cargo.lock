@@ -2283,6 +2283,7 @@ dependencies = [
  "nucleo-matcher",
  "open",
  "parking_lot",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",
