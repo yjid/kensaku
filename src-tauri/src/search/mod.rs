@@ -1,5 +1,6 @@
 pub mod fuzzy;
 
+use crate::embed::{ExactScanner, ModelRegistry, UnitStore};
 use crate::indexer::content::ContentIndex;
 use crate::indexer::metadata::MetadataStore;
 use crate::indexer::walker::FileEntry;
@@ -15,6 +16,7 @@ use std::time::SystemTime;
 pub enum MatchType {
     FileName,
     Content,
+    Semantic,
     Both,
 }
 
@@ -28,6 +30,7 @@ pub struct SearchResult {
     pub modified: u64,
     pub is_dir: bool,
     pub match_type: MatchType,
+    pub best_range: Option<(usize, usize)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,9 +49,11 @@ impl SearchDispatcher {
         query: &str,
         metadata: &MetadataStore,
         content_index: &Option<ContentIndex>,
+        unit_store: Option<&UnitStore>,
+        semantic_enabled: bool,
         limit: usize,
     ) -> Vec<SearchResult> {
-        let resp = Self::search_response(query, metadata, content_index, limit, 0);
+        let resp = Self::search_response(query, metadata, content_index, unit_store, semantic_enabled, limit, 0);
         resp.results
     }
 
@@ -56,6 +61,8 @@ impl SearchDispatcher {
         raw_query: &str,
         metadata: &MetadataStore,
         content_index: &Option<ContentIndex>,
+        unit_store: Option<&UnitStore>,
+        semantic_enabled: bool,
         limit: usize,
         seq: u64,
     ) -> SearchResponse {
@@ -83,6 +90,7 @@ impl SearchDispatcher {
 
         // 1. Parse AST from query
         let parsed = parse_query(raw_query, entries, path_index, Some(&trie), generation);
+        let route = crate::query::router::route_query(&parsed);
 
         // 2. Resolve scopes and filter candidates
         let candidate_indices: Vec<usize> = if !parsed.scopes.is_empty() {
@@ -168,49 +176,155 @@ impl SearchDispatcher {
                 }
             }
 
-        // 5. RRF Fusion (k = 60.0) + Ranking bonuses
-        let mut all_matched_paths: HashMap<PathBuf, (usize, MatchType, f64)> = HashMap::new();
+        // 5. Tier 3: Static semantic vector scan (< 5ms)
+        let mut semantic_ranks: HashMap<PathBuf, (usize, (usize, usize))> = HashMap::new();
+        if semantic_enabled
+            && !search_text.is_empty()
+            && let Some(store) = unit_store
+            && !store.is_empty()
+        {
+            let model = ModelRegistry::default();
+            let query_vec = model.embed_to_i8(&search_text);
+            let hits = ExactScanner::scan(&query_vec, store, limit * 3);
+            for (rank, hit) in hits.into_iter().enumerate() {
+                if let Some(entry) = metadata.get_by_node_id(hit.node_id)
+                    && let Some(&orig_idx) = path_index.get(&entry.path)
+                    && candidate_indices.contains(&orig_idx)
+                {
+                    semantic_ranks.insert(
+                        entry.path.clone(),
+                        (rank + 1, (hit.best_unit.byte_start, hit.best_unit.byte_end)),
+                    );
+                }
+            }
+        }
+
+        // 6. 3-tier RRF Fusion (k = 60.0) with dynamic route weights
+        struct MatchCandidate {
+            entry_idx: usize,
+            in_fuzzy: bool,
+            in_bm25: bool,
+            in_semantic: bool,
+            rrf_score: f64,
+            best_range: Option<(usize, usize)>,
+        }
+
+        let mut candidates: HashMap<PathBuf, MatchCandidate> = HashMap::new();
 
         if search_text.is_empty() {
             // Filter-only / folder navigation browsing mode
             for &idx in &candidate_indices {
                 if let Some(entry) = entries.get(idx) {
-                    all_matched_paths.insert(entry.path.clone(), (idx, MatchType::FileName, 0.1));
+                    candidates.insert(
+                        entry.path.clone(),
+                        MatchCandidate {
+                            entry_idx: idx,
+                            in_fuzzy: true,
+                            in_bm25: false,
+                            in_semantic: false,
+                            rrf_score: 0.1,
+                            best_range: None,
+                        },
+                    );
                 }
             }
         } else {
+            let (w_fuzzy, w_bm25, w_semantic) = match route {
+                crate::query::router::QueryRoute::NameCode => (1.3, 0.8, 0.8),
+                crate::query::router::QueryRoute::ContentPhrase => (0.8, 1.3, 1.0),
+                crate::query::router::QueryRoute::SemanticSearch => (0.8, 1.0, 1.5),
+                _ => (1.0, 1.0, 1.0),
+            };
+
             // Merge fuzzy matches
             for (&idx, &rank) in &fuzzy_ranks {
                 if let Some(entry) = entries.get(idx) {
-                    let rrf = 1.0 / (60.0 + (rank as f64));
-                    all_matched_paths.insert(entry.path.clone(), (idx, MatchType::FileName, rrf));
+                    let rrf = w_fuzzy * (1.0 / (60.0 + (rank as f64)));
+                    candidates.insert(
+                        entry.path.clone(),
+                        MatchCandidate {
+                            entry_idx: idx,
+                            in_fuzzy: true,
+                            in_bm25: false,
+                            in_semantic: false,
+                            rrf_score: rrf,
+                            best_range: None,
+                        },
+                    );
                 }
             }
 
             // Merge BM25 matches
             for (path, &rank) in &bm25_ranks {
                 if let Some(&orig_idx) = path_index.get(path) {
-                    // Respect scope / filter candidates
                     if !candidate_indices.contains(&orig_idx) {
                         continue;
                     }
-                    let rrf = 1.0 / (60.0 + (rank as f64));
-                    if let Some(existing) = all_matched_paths.get_mut(path) {
-                        existing.1 = MatchType::Both;
-                        existing.2 += rrf;
+                    let rrf = w_bm25 * (1.0 / (60.0 + (rank as f64)));
+                    if let Some(cand) = candidates.get_mut(path) {
+                        cand.in_bm25 = true;
+                        cand.rrf_score += rrf;
                     } else {
-                        all_matched_paths.insert(path.clone(), (orig_idx, MatchType::Content, rrf));
+                        candidates.insert(
+                            path.clone(),
+                            MatchCandidate {
+                                entry_idx: orig_idx,
+                                in_fuzzy: false,
+                                in_bm25: true,
+                                in_semantic: false,
+                                rrf_score: rrf,
+                                best_range: None,
+                            },
+                        );
+                    }
+                }
+            }
+
+            // Merge Semantic matches
+            for (path, &(rank, range)) in &semantic_ranks {
+                if let Some(&orig_idx) = path_index.get(path) {
+                    if !candidate_indices.contains(&orig_idx) {
+                        continue;
+                    }
+                    let rrf = w_semantic * (1.0 / (60.0 + (rank as f64)));
+                    if let Some(cand) = candidates.get_mut(path) {
+                        cand.in_semantic = true;
+                        cand.rrf_score += rrf;
+                        cand.best_range = Some(range);
+                    } else {
+                        candidates.insert(
+                            path.clone(),
+                            MatchCandidate {
+                                entry_idx: orig_idx,
+                                in_fuzzy: false,
+                                in_bm25: false,
+                                in_semantic: true,
+                                rrf_score: rrf,
+                                best_range: Some(range),
+                            },
+                        );
                     }
                 }
             }
         }
 
-        // 6. Apply ranking bonuses
-        let mut results: Vec<SearchResult> = all_matched_paths
+        // 7. Apply ranking bonuses & build SearchResults
+        let mut results: Vec<SearchResult> = candidates
             .into_iter()
-            .filter_map(|(path, (idx, match_type, base_rrf))| {
-                let entry = entries.get(idx)?;
-                let mut score = base_rrf;
+            .filter_map(|(path, cand)| {
+                let entry = entries.get(cand.entry_idx)?;
+                let mut score = cand.rrf_score;
+
+                // MatchType resolution: Semantic badge if only found by semantic tier
+                let match_type = if cand.in_semantic && !cand.in_fuzzy && !cand.in_bm25 {
+                    MatchType::Semantic
+                } else if cand.in_fuzzy && (cand.in_bm25 || cand.in_semantic) {
+                    MatchType::Both
+                } else if cand.in_bm25 {
+                    MatchType::Content
+                } else {
+                    MatchType::FileName
+                };
 
                 // Exact substring in name: +0.20
                 let name_lower = entry.name.to_lowercase();
@@ -247,11 +361,12 @@ impl SearchDispatcher {
                     modified: entry.modified,
                     is_dir: entry.is_dir,
                     match_type,
+                    best_range: cand.best_range,
                 })
             })
             .collect();
 
-        // 7. Deterministic tiebreak: sort by score descending, then path ascending
+        // 8. Deterministic tiebreak: sort by score descending, then path ascending
         results.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
@@ -263,15 +378,41 @@ impl SearchDispatcher {
             results.truncate(limit);
         }
 
-        // 8. Post-rank snippet extraction for top 20 files
-        if !search_text.is_empty()
-            && let Some(ci) = content_index.as_ref() {
-                for item in results.iter_mut().take(20) {
-                    if !item.is_dir && item.snippet.is_none() {
-                        item.snippet = ci.get_snippet(Path::new(&item.path), &search_text);
+        // 9. Post-rank snippet extraction for top 20 files
+        if !search_text.is_empty() {
+            for item in results.iter_mut().take(20) {
+                if item.is_dir {
+                    continue;
+                }
+                if let Some(ci) = content_index.as_ref() {
+                    item.snippet = ci.get_snippet(Path::new(&item.path), &search_text);
+                }
+                if item.snippet.is_none()
+                    && let Some((b_start, b_end)) = item.best_range
+                    && let Some(content) = crate::indexer::content::read_text_content(
+                        Path::new(&item.path),
+                        ((b_end + 1000).max(10_000)) as u64,
+                    )
+                {
+                    let snippet_start = b_start.saturating_sub(60);
+                    let snippet_end = (b_end + 60).min(content.len());
+                    let safe_start = content
+                        .char_indices()
+                        .map(|(i, _)| i)
+                        .rfind(|&i| i <= snippet_start)
+                        .unwrap_or(0);
+                    let safe_end = content
+                        .char_indices()
+                        .map(|(i, _)| i)
+                        .find(|&i| i >= snippet_end)
+                        .unwrap_or(content.len());
+                    if safe_end > safe_start {
+                        let slice = &content[safe_start..safe_end];
+                        item.snippet = Some(slice.replace('\n', " ").trim().to_string());
                     }
                 }
             }
+        }
 
         let elapsed = start_time.elapsed().map(|d| d.as_millis() as u64).unwrap_or(0);
 

@@ -19,11 +19,26 @@ pub async fn search(
     CURRENT_SEARCH_SEQ.store(req_seq, Ordering::SeqCst);
 
     let indexer = &state.indexer;
+    indexer.query_in_flight.store(true, Ordering::SeqCst);
+
     let metadata = indexer.metadata.read();
     let content_index = indexer.content_index.read();
-    let max_results = indexer.config.read().max_results;
+    let unit_store = indexer.unit_store.read();
+    let cfg = indexer.config.read();
+    let max_results = cfg.max_results;
+    let semantic_enabled = cfg.semantic_enabled;
 
-    let resp = SearchDispatcher::search_response(&query, &metadata, &content_index, max_results, req_seq);
+    let resp = SearchDispatcher::search_response(
+        &query,
+        &metadata,
+        &content_index,
+        Some(&unit_store),
+        semantic_enabled,
+        max_results,
+        req_seq,
+    );
+
+    indexer.query_in_flight.store(false, Ordering::SeqCst);
     Ok(resp)
 }
 
@@ -33,11 +48,25 @@ pub async fn legacy_search(
     state: State<'_, AppState>,
 ) -> Result<Vec<SearchResult>, String> {
     let indexer = &state.indexer;
+    indexer.query_in_flight.store(true, Ordering::SeqCst);
+
     let metadata = indexer.metadata.read();
     let content_index = indexer.content_index.read();
-    let max_results = indexer.config.read().max_results;
+    let unit_store = indexer.unit_store.read();
+    let cfg = indexer.config.read();
+    let max_results = cfg.max_results;
+    let semantic_enabled = cfg.semantic_enabled;
 
-    let results = SearchDispatcher::search(&query, &metadata, &content_index, max_results);
+    let results = SearchDispatcher::search(
+        &query,
+        &metadata,
+        &content_index,
+        Some(&unit_store),
+        semantic_enabled,
+        max_results,
+    );
+
+    indexer.query_in_flight.store(false, Ordering::SeqCst);
     Ok(results)
 }
 
@@ -206,10 +235,12 @@ pub async fn execute_command(
             let config = state.indexer.config.read().clone();
             let roots = config.watched_dirs.len();
             let status = state.indexer.get_status();
+            let units_count = state.indexer.unit_store.read().len();
             let msg = format!(
-                "Kensaku Doctor Report:\n• Metadata entries: {}\n• Full-text indexed docs: {}\n• Configured roots: {}\n• Status: {}\n• Metadata DB: WAL enabled (healthy)",
+                "Kensaku Doctor Report:\n• Metadata entries: {}\n• Full-text indexed docs: {}\n• Semantic units: {}\n• Configured roots: {}\n• Status: {}\n• Metadata DB: WAL enabled (healthy)",
                 meta_count,
                 status.content_indexed,
+                units_count,
                 roots,
                 status.current_status
             );
@@ -218,11 +249,21 @@ pub async fn execute_command(
                 message: msg,
             })
         }
-        "model" => Ok(CommandOutput {
-            success: true,
-            message: "Active Model: potion-base-8M (model2vec, static int8 table, 256-dim, ~50µs/query, bundled offline)"
-                .to_string(),
-        }),
+        "model" => {
+            let units_count = state.indexer.unit_store.read().len();
+            let cfg = state.indexer.config.read().clone();
+            let status = if cfg.semantic_enabled { "enabled" } else { "disabled" };
+            let msg = format!(
+                "Active Model: {} (static int8 table, 256-dim, ~5µs/query, offline)\nStatus: {}\nLoaded Units: {}",
+                cfg.semantic_model,
+                status,
+                units_count
+            );
+            Ok(CommandOutput {
+                success: true,
+                message: msg,
+            })
+        }
         "add" if parts.get(1).copied() == Some("folder") => Ok(CommandOutput {
             success: true,
             message: "Use the Settings dialog to add new folders to watch, or trigger >settings."
