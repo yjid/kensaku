@@ -10,6 +10,28 @@ pub struct FileEntry {
     pub size: u64,
     pub modified: u64,
     pub is_dir: bool,
+    /// Filesystem device id (`st_dev`). `0` means unknown.
+    pub dev: u64,
+    /// Filesystem inode number (`st_ino`). `0` means unknown.
+    pub ino: u64,
+}
+
+/// Returns `(device_id, inode)` for a filesystem metadata entry.
+///
+/// These values form the stable identity of a file across path-based renames
+/// and replacements. On non-Unix platforms they are unavailable and default
+/// to `0`, which callers treat as "unknown".
+pub fn file_identity(meta: &std::fs::Metadata) -> (u64, u64) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        (meta.dev(), meta.ino())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = meta;
+        (0, 0)
+    }
 }
 
 pub fn walk_directories<F>(
@@ -61,7 +83,7 @@ pub fn walk_directories<F>(
                     .map(|s| s.to_lowercase())
             };
 
-            let (size, modified) = match entry.metadata() {
+            let (size, modified, dev, ino) = match entry.metadata() {
                 Ok(meta) => {
                     let sz = meta.len();
                     let mod_time = meta
@@ -70,9 +92,10 @@ pub fn walk_directories<F>(
                         .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
                         .map(|d| d.as_secs())
                         .unwrap_or(0);
-                    (sz, mod_time)
+                    let (dev, ino) = file_identity(&meta);
+                    (sz, mod_time, dev, ino)
                 }
-                Err(_) => (0, 0),
+                Err(_) => (0, 0, 0, 0),
             };
 
             let file_entry = FileEntry {
@@ -82,6 +105,8 @@ pub fn walk_directories<F>(
                 size,
                 modified,
                 is_dir,
+                dev,
+                ino,
             };
 
             if !on_entry(file_entry) {
