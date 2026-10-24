@@ -482,7 +482,25 @@ function App() {
               </span>
             </div>
 
-            <div className="flex items-center gap-2 text-slate-400">
+            <div className="flex items-center gap-2.5 text-slate-400">
+              {/* Semantic Status Indicator */}
+              {indexingStatus?.is_embedding ? (
+                <span
+                  className="flex items-center gap-1 text-cyan-400 text-[11px] font-medium"
+                  title="Computing static embeddings in background..."
+                >
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>semantic (embedding...)</span>
+                </span>
+              ) : indexingStatus?.semantic_ready ? (
+                <span
+                  className="flex items-center gap-1 text-emerald-400/90 text-[11px] font-medium"
+                  title={`${indexingStatus.units_indexed ?? 0} semantic units active in RRF fusion`}
+                >
+                  <span>semantic ✓</span>
+                </span>
+              ) : null}
+
               {searchTimeMs !== null && (
                 <span>
                   {results.length} result{results.length === 1 ? "" : "s"} ({searchTimeMs}ms)

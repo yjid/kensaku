@@ -121,14 +121,33 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
       .map((t) => t.trim().toLowerCase())
       .filter((t) => t.length > 1 && !t.includes(":"));
 
+    const [rangeStart, rangeEnd] = result?.best_range ?? [null, null];
+    let currentByteOffset = 0;
+
     const lines = text.split("\n");
     return lines.map((line, lineIdx) => {
+      const lineByteLength = new TextEncoder().encode(line).length + 1;
+      const lineStart = currentByteOffset;
+      const lineEnd = currentByteOffset + lineByteLength;
+      currentByteOffset = lineEnd;
+
       let highlighted = false;
-      const lowerLine = line.toLowerCase();
-      for (const t of terms) {
-        if (lowerLine.includes(t)) {
+      let isSemanticRange = false;
+
+      if (rangeStart !== null && rangeEnd !== null && rangeEnd > rangeStart) {
+        if (lineEnd > rangeStart && lineStart < rangeEnd) {
+          isSemanticRange = true;
           highlighted = true;
-          break;
+        }
+      }
+
+      if (!highlighted) {
+        const lowerLine = line.toLowerCase();
+        for (const t of terms) {
+          if (lowerLine.includes(t)) {
+            highlighted = true;
+            break;
+          }
         }
       }
 
@@ -136,7 +155,11 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
         <div
           key={lineIdx}
           className={`flex text-[11px] font-mono leading-relaxed px-2 py-0.5 rounded transition-colors ${
-            highlighted ? "bg-blue-500/15 text-blue-200" : "text-slate-300"
+            isSemanticRange
+              ? "bg-cyan-500/20 text-cyan-200 border-l-2 border-cyan-400 pl-1.5"
+              : highlighted
+              ? "bg-blue-500/15 text-blue-200"
+              : "text-slate-300"
           }`}
         >
           <span className="w-8 select-none text-slate-600 flex-shrink-0 text-right pr-3 font-mono">

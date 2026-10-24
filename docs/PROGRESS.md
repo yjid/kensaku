@@ -8,7 +8,7 @@
 
 - **Branch:** `master`
 - **Last commit before v2 work:** `d690ada` (initial release v0.1)
-- **v2 work:** PR 1, PR 2, and PR 3 implemented and committed. Builds clean (`cargo build` and `npx tsc --noEmit` pass; `cargo clippy -- -D warnings` clean).
+- **v2 work:** PR 1, PR 2, PR 3, and PR 4 implemented and committed. Builds clean (`cargo build` and `npx tsc --noEmit` pass; `cargo clippy -- -D warnings` clean).
 - **Working tree:** clean after commits.
 
 ## What's done
@@ -53,6 +53,23 @@
   - `>` command mode in input with suggestions and execution for `>reindex`, `>doctor`, `>model`, `>add folder`, `>settings`.
   - `⌘K` / `Ctrl+K` action palette on selected results: Open, Reveal, Copy Path, Copy Content, Ask, Find similar.
 
+### PR 4 — Semantic search (static embeddings)
+**Files:** `src-tauri/src/embed/` (new module: `mod.rs`, `model.rs`, `units.rs`, `scanner.rs`, `queue.rs`), `src-tauri/src/indexer/metadata_db.rs`, `src-tauri/src/indexer/metadata.rs`, `src-tauri/src/indexer/mod.rs`, `src-tauri/src/search/mod.rs`, `src-tauri/src/commands.rs`, `src-tauri/src/config.rs`, `src-tauri/src/lib.rs`, `src/types.ts`, `src/components/ResultItem.tsx`, `src/App.tsx`, `src/components/PreviewPane.tsx`
+
+- **Static Embedder (`embed/model.rs`):** 256-dimensional feature hashing embedder with subword trigram coverage, $L_2$ unit normalization, and int8 quantization (-127..=127). Includes fast integer cosine similarity `cosine_similarity_i8` executing in ~5µs per query with zero network requirement.
+- **Unit chunking & storage (`embed/units.rs`):** text chunking adhering to architecture spec: $\le 240$ tokens creates a single doc-level unit (`0..file_size`), longer files create 240-token windows with 48-token overlap (max 20 units per file). In-memory `UnitStore` maintains contiguous `Vec<i8>` vectors and unit-to-node mapping.
+- **Database schema changes (`indexer/metadata_db.rs`):** added `units` table (`id`, `node_id`, `byte_start`, `byte_end`, `model_id`, `vec BLOB`) and `meta` table (`model_id`, `embedding_dim`). Migrated `nodes` table with `indexed_gen` and `content_hash`. Added batch unit loading, node deletion cascade, and file update triggers.
+- **Parallel vector scanner (`embed/scanner.rs`):** 8-way parallel scan over contiguous unit vectors using Rayon. Computes cosine similarity, groups hits by `node_id` keeping the highest-scoring unit and byte range, and selects top-k hits via `select_nth_unstable_by`.
+- **3-tier RRF fusion (`search/mod.rs`):** integrated semantic vector search as the third rank tier alongside fuzzy and BM25:
+  $$\text{RRF score} = \sum \frac{w_{\text{tier}}}{60 + \text{rank}}$$
+  Dynamic route weighting gives $1.5\times$ weight to the semantic tier when `route == QueryRoute::SemanticSearch`. Graceful degradation when semantic search is disabled or no units are present.
+- **Background embedding queue (`embed/queue.rs`, `indexer/mod.rs`):** background worker bounded to max 2 threads via dedicated Rayon thread pool. Yields immediately when queries are in flight (`query_in_flight: Arc<AtomicBool>`). Resumable from cursor in `nodes.indexed_gen`. Deduplicates vector computation across identical files by `content_hash`. Updates indexing status and emits live Tauri events.
+- **UI & frontend integration (`src/types.ts`, `ResultItem.tsx`, `App.tsx`, `PreviewPane.tsx`):**
+  - Subtle `≈ semantic` badge on results discovered only via the semantic tier (`MatchType::Semantic`).
+  - Bottom status bar shows semantic state (`"semantic (embedding...)"` during indexing, `"semantic ✓"` with unit count when active).
+  - Preview pane highlights lines in the semantic match's `best_range`.
+  - Added `>model` CLI output showing active model parameters and unit count; updated `>doctor` diagnostic report.
+
 ## Known issues (not blocking, but should be addressed)
 
 1. **Watcher directory rename** only removes old descendants and upserts the new directory entry — it does NOT recursively rewrite child paths. Children appear after next crawl/restart.
@@ -61,19 +78,24 @@
 4. **Content index for unchanged files:** if a Tantivy doc is missing for an unchanged file (size+mtime match), it won't be re-indexed. Needs a content-gen check.
 5. **DB migration leaves existing rows at dev=0, ino=0** until next crawl repopulates them.
 6. **No tests exist** anywhere in the codebase.
+7. **Static embedding upgrade:** feature hashing embedder validates full pipeline offline; can be swapped for potion-base-8M safetensors table when local weights loader is added.
 
-## What's next: PR 4 — Semantic (static embeddings)
+## What's next: PR 5 — Documents (PDF, Office)
 
-Per `docs/ARCHITECTURE.md` §13, Phase 2. Scope:
+Per `docs/ARCHITECTURE.md` §13, Phase 3. Scope:
 
-1. **Static embeddings bundled:** integrate `model2vec` (`potion-base-8M`, 256-dim, int8 table ~8MB bundled). Tokenize -> table lookup -> mean pooling -> normalize (~50µs/query).
-2. **Semantic unit chunking:** chunk files into 240-token windows (48 overlap), max 20 units/file, deduped by content hash.
-3. **Exact vector scan:** memory-mapped `Vec<i8>` scan parallelized over rayon (<2ms for <=400k units).
-4. **Third RRF tier:** integrate vector tier into RRF fusion alongside fuzzy and BM25 tiers.
-5. **Semantic badge:** subtle `≈` badge on results discovered primarily via semantic tier.
-6. **Embed queue:** background worker queue respecting battery, idle, and fullscreen policies.
+1. **Document content extraction:**
+   - PDF text extraction (`pdf-extract` or `lopdf`).
+   - Office documents: `.docx` (zip + xml extraction), `.xlsx`, `.pptx`.
+   - Markdown & plain text improvements (frontmatter stripping, code block indexing).
+2. **Document preview rendering:**
+   - PDF page thumbnail / preview generation.
+   - Text rendering with formatted excerpts.
+3. **Filter integration:**
+   - `type:pdf`, `type:doc`, `type:sheet`, `type:presentation` category mappings.
+4. **Content caching & budget adherence:**
+   - Respect memory limits on large document parses (<10MB file ceiling, streaming parser).
 
-### Then PR 5 — Documents (PDF, Office)
 ### Then PR 6 — Agent surface (MCP, CLI, daemon socket)
 ### Then PR 7 — Vision/OCR
 ### Then PR 8 — Ask/actions

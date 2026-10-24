@@ -132,6 +132,15 @@ export const ResultItem: React.FC<ResultItemProps> = ({
                   name & text
                 </span>
               )}
+              {result.match_type === "Semantic" && (
+                <span
+                  title="Semantic similarity match"
+                  className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/25 flex items-center gap-0.5"
+                >
+                  <span className="text-xs leading-none">≈</span>
+                  <span>semantic</span>
+                </span>
+              )}
             </div>
 
             <div className="text-[11px] text-slate-400 truncate opacity-80 mt-0.5">
