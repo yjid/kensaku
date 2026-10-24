@@ -1,13 +1,26 @@
 use crate::indexer::metadata_db::MetadataDb;
 use crate::indexer::walker::FileEntry;
+use crate::query::scope_trie::DirectoryTrie;
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::SystemTime;
 
-#[derive(Default)]
 pub struct MetadataStore {
     entries: Vec<FileEntry>,
     path_index: HashMap<PathBuf, usize>,
     db: Option<MetadataDb>,
+    generation: AtomicU64,
+    usage: RwLock<HashMap<PathBuf, (u32, u64)>>,
+    cached_trie: RwLock<Option<(u64, Arc<DirectoryTrie>)>>,
+}
+
+impl Default for MetadataStore {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MetadataStore {
@@ -24,6 +37,9 @@ impl MetadataStore {
             entries: Vec::new(),
             path_index: HashMap::new(),
             db,
+            generation: AtomicU64::new(1),
+            usage: RwLock::new(HashMap::new()),
+            cached_trie: RwLock::new(None),
         };
 
         if store.db.is_some() {
@@ -34,6 +50,10 @@ impl MetadataStore {
         }
 
         store
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::SeqCst)
     }
 
     /// Reload the in-memory index from the database, replacing any current state.
@@ -52,6 +72,11 @@ impl MetadataStore {
             }
         };
 
+        // Also load usage
+        if let Ok(loaded_usage) = db.load_usage() {
+            *self.usage.write() = loaded_usage;
+        }
+
         self.entries.clear();
         self.path_index.clear();
 
@@ -62,12 +87,17 @@ impl MetadataStore {
             self.entries.push(entry);
         }
 
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        *self.cached_trie.write() = None;
+
         count
     }
 
     pub fn clear(&mut self) {
         self.entries.clear();
         self.path_index.clear();
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        *self.cached_trie.write() = None;
 
         if let Some(db) = self.db.as_ref()
             && let Err(e) = db.clear()
@@ -86,6 +116,9 @@ impl MetadataStore {
             self.entries.push(entry);
             idx
         };
+
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        *self.cached_trie.write() = None;
 
         if let Some(db) = self.db.as_ref()
             && let Err(e) = db.upsert(&self.entries[idx])
@@ -107,6 +140,8 @@ impl MetadataStore {
                 self.path_index.insert(swapped_path, idx);
             }
             self.entries.pop();
+            self.generation.fetch_add(1, Ordering::SeqCst);
+            *self.cached_trie.write() = None;
         }
 
         if let Some(db) = self.db.as_ref()
@@ -120,12 +155,61 @@ impl MetadataStore {
         }
     }
 
+    pub fn record_open(&self, path: &Path) {
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        {
+            let mut usage = self.usage.write();
+            let entry = usage.entry(path.to_path_buf()).or_insert((0, 0));
+            entry.0 += 1;
+            entry.1 = now;
+        }
+
+        if let Some(db) = self.db.as_ref()
+            && let Err(e) = db.record_open(path)
+        {
+            eprintln!("[Kensaku] Failed to persist open in database: {}", e);
+        }
+    }
+
+    pub fn get_usage(&self, path: &Path) -> (u32, u64) {
+        self.usage.read().get(path).copied().unwrap_or((0, 0))
+    }
+
+    pub fn get_directory_trie(&self) -> Arc<DirectoryTrie> {
+        let current_gen = self.generation();
+        {
+            let cache = self.cached_trie.read();
+            if let Some((cached_gen, ref trie)) = *cache
+                && cached_gen == current_gen
+            {
+                return Arc::clone(trie);
+            }
+        }
+
+        let new_trie = Arc::new(DirectoryTrie::build(
+            &self.entries,
+            &self.path_index,
+            current_gen,
+        ));
+        let mut cache = self.cached_trie.write();
+        *cache = Some((current_gen, Arc::clone(&new_trie)));
+        new_trie
+    }
+
     pub fn get(&self, path: &Path) -> Option<&FileEntry> {
         self.path_index.get(path).map(|&idx| &self.entries[idx])
     }
 
     pub fn get_entries(&self) -> &[FileEntry] {
         &self.entries
+    }
+
+    pub fn get_path_index(&self) -> &HashMap<PathBuf, usize> {
+        &self.path_index
     }
 
     pub fn len(&self) -> usize {

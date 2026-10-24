@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod config;
 pub mod indexer;
+pub mod query;
 pub mod search;
 
 use config::KensakuConfig;
@@ -40,14 +41,14 @@ pub fn run() {
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
+                    if event.state() == ShortcutState::Pressed
+                        && let Some(window) = app.get_webview_window("main")
+                    {
+                        if window.is_visible().unwrap_or(false) {
+                            let _ = window.hide();
+                        } else {
+                            let _ = window.show();
+                            let _ = window.set_focus();
                         }
                     }
                 })
@@ -56,9 +57,13 @@ pub fn run() {
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             commands::search,
+            commands::legacy_search,
             commands::get_indexing_status,
             commands::open_file,
             commands::open_folder,
+            commands::get_file_preview,
+            commands::execute_command,
+            commands::read_file_content,
             commands::get_config,
             commands::save_config,
             commands::is_setup_complete,
@@ -67,6 +72,8 @@ pub fn run() {
             commands::hide_window,
         ])
         .setup(move |app| {
+            app.state::<AppState>().indexer.set_app_handle(app.handle().clone());
+
             // 1. Register global shortcut (e.g. Alt+Space)
             if let Ok(shortcut) = Shortcut::from_str(&shortcut_str) {
                 let _ = app.global_shortcut().register(shortcut);

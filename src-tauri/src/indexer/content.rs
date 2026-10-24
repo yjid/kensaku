@@ -1,5 +1,5 @@
-use parking_lot::RwLock;
-use std::collections::HashSet;
+use parking_lot::{Mutex, RwLock};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -9,6 +9,42 @@ use tantivy::query::{AllQuery, QueryParser};
 use tantivy::schema::*;
 use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term};
 
+pub struct SnippetCache {
+    capacity: usize,
+    map: HashMap<PathBuf, String>,
+    order: VecDeque<PathBuf>,
+}
+
+impl SnippetCache {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            capacity,
+            map: HashMap::new(),
+            order: VecDeque::new(),
+        }
+    }
+
+    pub fn get_or_read(&mut self, path: &Path) -> Option<&str> {
+        if self.map.contains_key(path) {
+            if let Some(pos) = self.order.iter().position(|p| p == path) {
+                self.order.remove(pos);
+            }
+            self.order.push_back(path.to_path_buf());
+            return self.map.get(path).map(|s| s.as_str());
+        }
+
+        let content = read_text_content(path, 64_000)?;
+        if self.map.len() >= self.capacity
+            && let Some(oldest) = self.order.pop_front()
+        {
+            self.map.remove(&oldest);
+        }
+        self.order.push_back(path.to_path_buf());
+        self.map.insert(path.to_path_buf(), content);
+        self.map.get(path).map(|s| s.as_str())
+    }
+}
+
 pub struct ContentIndex {
     index: Index,
     reader: IndexReader,
@@ -17,6 +53,7 @@ pub struct ContentIndex {
     pub filename_field: Field,
     pub content_field: Field,
     pub modified_field: Field,
+    snippet_cache: Mutex<SnippetCache>,
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +101,7 @@ impl ContentIndex {
             filename_field,
             content_field,
             modified_field,
+            snippet_cache: Mutex::new(SnippetCache::new(200)),
         })
     }
 
@@ -197,12 +235,10 @@ impl ContentIndex {
 
                 if !path_str.is_empty() {
                     let path = PathBuf::from(&path_str);
-                    let snippet = Self::extract_snippet_from_file(&path, query_str);
-
                     results.push(ContentMatch {
                         path,
                         filename,
-                        snippet,
+                        snippet: None,
                         score,
                         modified,
                     });
@@ -213,8 +249,13 @@ impl ContentIndex {
         results
     }
 
-    fn extract_snippet_from_file(path: &Path, query: &str) -> Option<String> {
-        let content = read_text_content(path, 50_000)?;
+    pub fn get_snippet(&self, path: &Path, query: &str) -> Option<String> {
+        let mut cache = self.snippet_cache.lock();
+        let content = cache.get_or_read(path)?;
+        Self::extract_snippet_from_text(content, query)
+    }
+
+    pub fn extract_snippet_from_text(content: &str, query: &str) -> Option<String> {
         let query_lower = query.to_lowercase();
         let terms: Vec<&str> = query_lower.split_whitespace().collect();
         if terms.is_empty() {
@@ -248,7 +289,7 @@ impl ContentIndex {
         }
 
         let slice = &content[safe_start..safe_end];
-        let cleaned = slice.replace('\n', " ").replace('\r', " ").trim().to_string();
+        let cleaned = slice.replace(['\n', '\r'], " ").trim().to_string();
 
         let prefix = if safe_start > 0 { "..." } else { "" };
         let suffix = if safe_end < content.len() { "..." } else { "" };
