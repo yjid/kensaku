@@ -1,7 +1,9 @@
 use crate::indexer::walker::FileEntry;
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 /// Durable metadata store backed by SQLite.
 ///
@@ -40,7 +42,12 @@ impl MetadataDb {
                dev INTEGER NOT NULL DEFAULT 0,
                ino INTEGER NOT NULL DEFAULT 0
              );
-             CREATE INDEX IF NOT EXISTS nodes_path ON nodes(path);",
+             CREATE INDEX IF NOT EXISTS nodes_path ON nodes(path);
+             CREATE TABLE IF NOT EXISTS usage (
+               path TEXT PRIMARY KEY,
+               opens INTEGER NOT NULL DEFAULT 0,
+               last_open INTEGER NOT NULL DEFAULT 0
+             );",
         )
         .map_err(|e| format!("Failed to initialize metadata database: {}", e))?;
 
@@ -91,6 +98,7 @@ impl MetadataDb {
                 let dev: i64 = row.get(6)?;
                 let ino: i64 = row.get(7)?;
 
+                let char_bloom = crate::search::fuzzy::compute_char_mask(&name);
                 Ok(FileEntry {
                     path: PathBuf::from(path),
                     name,
@@ -100,6 +108,7 @@ impl MetadataDb {
                     is_dir: is_dir != 0,
                     dev: u64::try_from(dev).unwrap_or(0),
                     ino: u64::try_from(ino).unwrap_or(0),
+                    char_bloom,
                 })
             })
             .map_err(|e| format!("Failed to read metadata rows: {}", e))?;
@@ -167,5 +176,45 @@ impl MetadataDb {
             .map_err(|e| format!("Failed to count metadata entries: {}", e))?;
 
         Ok(usize::try_from(count).unwrap_or(0))
+    }
+
+    pub fn record_open(&self, path: &Path) -> Result<(), String> {
+        let conn = self.conn.lock();
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        conn.execute(
+            "INSERT INTO usage (path, opens, last_open) VALUES (?1, 1, ?2)
+             ON CONFLICT(path) DO UPDATE SET opens = opens + 1, last_open = excluded.last_open",
+            params![path.to_string_lossy().to_string(), now as i64],
+        )
+        .map_err(|e| format!("Failed to record file open: {}", e))?;
+        Ok(())
+    }
+
+    pub fn load_usage(&self) -> Result<HashMap<PathBuf, (u32, u64)>, String> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare("SELECT path, opens, last_open FROM usage")
+            .map_err(|e| format!("Failed to prepare usage query: {}", e))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let path: String = row.get(0)?;
+                let opens: i64 = row.get(1)?;
+                let last_open: i64 = row.get(2)?;
+                Ok((
+                    PathBuf::from(path),
+                    (opens.max(0) as u32, last_open.max(0) as u64),
+                ))
+            })
+            .map_err(|e| format!("Failed to load usage rows: {}", e))?;
+
+        let mut usage = HashMap::new();
+        for (p, u) in rows.flatten() {
+            usage.insert(p, u);
+        }
+        Ok(usage)
     }
 }

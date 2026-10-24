@@ -32,6 +32,7 @@ pub struct IndexerManager {
     pub status: Arc<RwLock<IndexingStatus>>,
     is_running: Arc<AtomicBool>,
     watcher_handle: Arc<Mutex<Option<WatcherHandle>>>,
+    app_handle: Arc<RwLock<Option<tauri::AppHandle>>>,
 }
 
 impl IndexerManager {
@@ -57,6 +58,18 @@ impl IndexerManager {
             })),
             is_running: Arc::new(AtomicBool::new(false)),
             watcher_handle: Arc::new(Mutex::new(None)),
+            app_handle: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    pub fn set_app_handle(&self, handle: tauri::AppHandle) {
+        *self.app_handle.write() = Some(handle);
+    }
+
+    fn emit_status(app_handle: &Arc<RwLock<Option<tauri::AppHandle>>>, status: &IndexingStatus) {
+        if let Some(handle) = app_handle.read().as_ref() {
+            use tauri::Emitter;
+            let _ = handle.emit("indexing-status", status);
         }
     }
 
@@ -79,6 +92,7 @@ impl IndexerManager {
         let status = Arc::clone(&self.status);
         let is_running = Arc::clone(&self.is_running);
         let watcher_handle = Arc::clone(&self.watcher_handle);
+        let app_handle = Arc::clone(&self.app_handle);
 
         thread::spawn(move || {
             let (watched_dirs, excluded_dirs) = {
@@ -90,6 +104,7 @@ impl IndexerManager {
                 let mut st = status.write();
                 st.is_indexing = true;
                 st.current_status = "Scanning files...".to_string();
+                Self::emit_status(&app_handle, &st);
             }
 
             println!("[Kensaku Indexer] Starting directory scan across {:?}", watched_dirs);
@@ -120,14 +135,14 @@ impl IndexerManager {
                 metadata.write().add(entry.clone());
 
                 // Content indexing for text files
-                if !entry.is_dir && (is_indexable_extension(entry.extension.as_deref()) || is_indexable_file_name(&entry.name)) {
-                    if let Some(content) = read_text_content(&entry.path, 100_000) {
-                        if let Some(c_index) = content_index.read().as_ref() {
-                            let _ = c_index.add_or_update(&entry.path, &entry.name, &content, entry.modified);
-                            content_count += 1;
-                            pending_commits += 1;
-                        }
-                    }
+                if !entry.is_dir
+                    && (is_indexable_extension(entry.extension.as_deref()) || is_indexable_file_name(&entry.name))
+                    && let Some(content) = read_text_content(&entry.path, 100_000)
+                    && let Some(c_index) = content_index.read().as_ref()
+                {
+                    let _ = c_index.add_or_update(&entry.path, &entry.name, &content, entry.modified);
+                    content_count += 1;
+                    pending_commits += 1;
                 }
 
                 // Batch commits every 1000 content items
@@ -143,6 +158,7 @@ impl IndexerManager {
                     st.files_indexed = files_count;
                     st.content_indexed = content_count;
                     st.current_status = format!("Indexed {} items", files_count);
+                    Self::emit_status(&app_handle, &st);
                 }
 
                 true
@@ -208,6 +224,7 @@ impl IndexerManager {
                 st.files_indexed = files_count;
                 st.content_indexed = content_count;
                 st.current_status = format!("Ready ({} files indexed)", files_count);
+                Self::emit_status(&app_handle, &st);
             }
 
             println!("[Kensaku Indexer] Finished initial index: {} files ({} with full text)", files_count, content_count);

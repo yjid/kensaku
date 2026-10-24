@@ -1,3 +1,4 @@
+use crate::search::fuzzy::compute_char_mask;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -14,6 +15,8 @@ pub struct FileEntry {
     pub dev: u64,
     /// Filesystem inode number (`st_ino`). `0` means unknown.
     pub ino: u64,
+    /// 64-bit character presence bitmask for fast prefiltering.
+    pub char_bloom: u64,
 }
 
 /// Returns `(device_id, inode)` for a filesystem metadata entry.
@@ -104,6 +107,7 @@ pub fn walk_directories<F>(
                 Err(_) => (0, 0, 0, 0),
             };
 
+            let char_bloom = compute_char_mask(&name);
             let file_entry = FileEntry {
                 path,
                 name,
@@ -113,6 +117,7 @@ pub fn walk_directories<F>(
                 is_dir,
                 dev,
                 ino,
+                char_bloom,
             };
 
             if !on_entry(file_entry) {

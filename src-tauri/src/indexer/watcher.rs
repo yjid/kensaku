@@ -260,6 +260,7 @@ fn handle_file_upsert(
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let (dev, ino) = file_identity(&meta);
+    let char_bloom = crate::search::fuzzy::compute_char_mask(&name);
 
     let entry = FileEntry {
         path: path.to_path_buf(),
@@ -270,6 +271,7 @@ fn handle_file_upsert(
         is_dir,
         dev,
         ino,
+        char_bloom,
     };
 
     metadata.write().add(entry);

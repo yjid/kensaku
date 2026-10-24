@@ -110,12 +110,11 @@ impl KensakuConfig {
 
     pub fn load() -> Self {
         let path = Self::config_path();
-        if path.exists() {
-            if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(cfg) = serde_json::from_str::<Self>(&content) {
-                    return cfg;
-                }
-            }
+        if path.exists()
+            && let Ok(content) = fs::read_to_string(&path)
+            && let Ok(cfg) = serde_json::from_str::<Self>(&content)
+        {
+            return cfg;
         }
         Self::default()
     }
