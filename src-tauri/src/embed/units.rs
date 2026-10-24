@@ -1,0 +1,152 @@
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Unit {
+    pub id: u64,
+    pub node_id: u64,
+    pub byte_start: usize,
+    pub byte_end: usize,
+    pub model_id: u32,
+}
+
+/// Splits text into units per architecture spec:
+/// - Files <= 240 tokens: one doc-level unit (byte_start=0, byte_end=file_size).
+/// - Longer files: 240-token windows with 48 overlap, max 20 units per file.
+pub fn chunk_text(text: &str, file_size: usize) -> Vec<(usize, usize, String)> {
+    if text.trim().is_empty() {
+        return Vec::new();
+    }
+
+    // Split words with their byte offsets in text
+    let mut word_offsets: Vec<(usize, usize)> = Vec::new();
+    let mut in_word = false;
+    let mut word_start = 0;
+
+    for (byte_idx, ch) in text.char_indices() {
+        if ch.is_whitespace() {
+            if in_word {
+                word_offsets.push((word_start, byte_idx));
+                in_word = false;
+            }
+        } else if !in_word {
+            word_start = byte_idx;
+            in_word = true;
+        }
+    }
+    if in_word {
+        word_offsets.push((word_start, text.len()));
+    }
+
+    // If <= 240 tokens: doc-level unit
+    if word_offsets.len() <= 240 {
+        return vec![(0, file_size, text.to_string())];
+    }
+
+    let mut chunks = Vec::new();
+    let window_size = 240;
+    let step = 240 - 48; // 192 tokens step with 48 tokens overlap
+    let max_units = 20;
+
+    let mut start_idx = 0;
+    while start_idx < word_offsets.len() && chunks.len() < max_units {
+        let end_idx = (start_idx + window_size).min(word_offsets.len());
+        let byte_start = word_offsets[start_idx].0;
+        let byte_end = word_offsets[end_idx - 1].1;
+        let chunk_slice = &text[byte_start..byte_end];
+
+        chunks.push((byte_start, byte_end, chunk_slice.to_string()));
+
+        if end_idx >= word_offsets.len() {
+            break;
+        }
+        start_idx += step;
+    }
+
+    chunks
+}
+
+/// In-memory storage for semantic units and contiguous i8 vectors.
+#[derive(Default)]
+pub struct UnitStore {
+    pub units: Vec<Unit>,
+    pub vectors: Vec<i8>,
+    pub node_to_units: HashMap<u64, Vec<usize>>,
+    pub dim: usize,
+}
+
+impl UnitStore {
+    pub fn new(dim: usize) -> Self {
+        Self {
+            units: Vec::new(),
+            vectors: Vec::new(),
+            node_to_units: HashMap::new(),
+            dim,
+        }
+    }
+
+    pub fn add_unit(&mut self, unit: Unit, vector: &[i8]) {
+        if vector.len() != self.dim {
+            return;
+        }
+        let unit_idx = self.units.len();
+        self.node_to_units
+            .entry(unit.node_id)
+            .or_default()
+            .push(unit_idx);
+        self.units.push(unit);
+        self.vectors.extend_from_slice(vector);
+    }
+
+    pub fn remove_units_for_node(&mut self, node_id: u64) {
+        if let Some(indices) = self.node_to_units.remove(&node_id) {
+            let remove_set: std::collections::HashSet<usize> = indices.into_iter().collect();
+            let mut new_units = Vec::with_capacity(self.units.len().saturating_sub(remove_set.len()));
+            let mut new_vectors = Vec::with_capacity(self.vectors.len().saturating_sub(remove_set.len() * self.dim));
+            let mut new_node_map: HashMap<u64, Vec<usize>> = HashMap::new();
+
+            for (old_idx, unit) in self.units.drain(..).enumerate() {
+                if !remove_set.contains(&old_idx) {
+                    let new_idx = new_units.len();
+                    new_node_map.entry(unit.node_id).or_default().push(new_idx);
+                    new_units.push(unit);
+                    let v_start = old_idx * self.dim;
+                    let v_end = v_start + self.dim;
+                    new_vectors.extend_from_slice(&self.vectors[v_start..v_end]);
+                }
+            }
+
+            self.units = new_units;
+            self.vectors = new_vectors;
+            self.node_to_units = new_node_map;
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.units.clear();
+        self.vectors.clear();
+        self.node_to_units.clear();
+    }
+
+    pub fn len(&self) -> usize {
+        self.units.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.units.is_empty()
+    }
+
+    pub fn get_unit(&self, idx: usize) -> Option<&Unit> {
+        self.units.get(idx)
+    }
+
+    pub fn get_vector(&self, idx: usize) -> Option<&[i8]> {
+        let start = idx * self.dim;
+        let end = start + self.dim;
+        if end <= self.vectors.len() {
+            Some(&self.vectors[start..end])
+        } else {
+            None
+        }
+    }
+}

@@ -5,6 +5,7 @@ pub mod walker;
 pub mod watcher;
 
 use crate::config::KensakuConfig;
+use crate::embed::{EmbeddingQueue, ModelRegistry, UnitStore, EMBEDDING_DIM};
 use crate::indexer::content::{is_indexable_extension, is_indexable_file_name, read_text_content, ContentIndex};
 use crate::indexer::metadata::MetadataStore;
 use crate::indexer::walker::walk_directories;
@@ -23,11 +24,20 @@ pub struct IndexingStatus {
     pub files_indexed: usize,
     pub content_indexed: usize,
     pub current_status: String,
+    #[serde(default)]
+    pub is_embedding: bool,
+    #[serde(default)]
+    pub units_indexed: usize,
+    #[serde(default)]
+    pub semantic_ready: bool,
 }
 
 pub struct IndexerManager {
     pub metadata: Arc<RwLock<MetadataStore>>,
     pub content_index: Arc<RwLock<Option<ContentIndex>>>,
+    pub unit_store: Arc<RwLock<UnitStore>>,
+    pub embedding_queue: Arc<Mutex<Option<EmbeddingQueue>>>,
+    pub query_in_flight: Arc<AtomicBool>,
     pub config: Arc<RwLock<KensakuConfig>>,
     pub status: Arc<RwLock<IndexingStatus>>,
     is_running: Arc<AtomicBool>,
@@ -46,15 +56,45 @@ impl IndexerManager {
             }
         };
 
+        let metadata_store = Arc::new(RwLock::new(MetadataStore::new()));
+        let unit_store = Arc::new(RwLock::new(UnitStore::new(EMBEDDING_DIM)));
+        let query_in_flight = Arc::new(AtomicBool::new(false));
+
+        // Load persisted units from database
+        let mut units_count = 0;
+        if let Some(db) = metadata_store.read().db() {
+            match db.load_all_units() {
+                Ok(units_with_vecs) => {
+                    units_count = units_with_vecs.len();
+                    let mut store = unit_store.write();
+                    for (unit, vec) in units_with_vecs {
+                        store.add_unit(unit, &vec);
+                    }
+                    if units_count > 0 {
+                        println!("[Kensaku] Loaded {} semantic units from database", units_count);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[Kensaku] Failed to load semantic units: {}", e);
+                }
+            }
+        }
+
         Self {
-            metadata: Arc::new(RwLock::new(MetadataStore::new())),
+            metadata: metadata_store,
             content_index: Arc::new(RwLock::new(content_index)),
+            unit_store,
+            embedding_queue: Arc::new(Mutex::new(None)),
+            query_in_flight,
             config: Arc::new(RwLock::new(config)),
             status: Arc::new(RwLock::new(IndexingStatus {
                 is_indexing: false,
                 files_indexed: 0,
                 content_indexed: 0,
                 current_status: "Idle".to_string(),
+                is_embedding: false,
+                units_indexed: units_count,
+                semantic_ready: units_count > 0,
             })),
             is_running: Arc::new(AtomicBool::new(false)),
             watcher_handle: Arc::new(Mutex::new(None)),
@@ -88,6 +128,9 @@ impl IndexerManager {
 
         let metadata = Arc::clone(&self.metadata);
         let content_index = Arc::clone(&self.content_index);
+        let unit_store = Arc::clone(&self.unit_store);
+        let embedding_queue = Arc::clone(&self.embedding_queue);
+        let query_in_flight = Arc::clone(&self.query_in_flight);
         let config_arc = Arc::clone(&self.config);
         let status = Arc::clone(&self.status);
         let is_running = Arc::clone(&self.is_running);
@@ -230,8 +273,31 @@ impl IndexerManager {
             println!("[Kensaku Indexer] Finished initial index: {} files ({} with full text)", files_count, content_count);
 
             // Start file watcher for live changes, replacing any previous one.
-            let handle = start_file_watcher(watched_dirs, metadata, content_index, config_arc);
+            let handle = start_file_watcher(watched_dirs, metadata.clone(), content_index, config_arc.clone());
             *watcher_handle.lock() = Some(handle);
+
+            // Start background embedding worker if semantic search is enabled
+            if config_arc.read().semantic_enabled {
+                let mut eq_guard = embedding_queue.lock();
+                if eq_guard.is_none() {
+                    let model = ModelRegistry::default();
+                    let mut q = EmbeddingQueue::new(
+                        model,
+                        Arc::clone(&unit_store),
+                        Some(Arc::clone(&status)),
+                        Some(Arc::clone(&app_handle)),
+                    );
+                    q.query_in_flight = Arc::clone(&query_in_flight);
+                    if let Some(db) = metadata.read().db() {
+                        q.start(db);
+                    }
+                    *eq_guard = Some(q);
+                } else if let Some(ref mut q) = *eq_guard
+                    && let Some(db) = metadata.read().db()
+                {
+                    q.start(db);
+                }
+            }
 
             is_running.store(false, Ordering::SeqCst);
         });

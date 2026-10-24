@@ -5,6 +5,7 @@ use std::time::SystemTime;
 
 #[derive(Debug, Clone)]
 pub struct FileEntry {
+    pub id: u64,
     pub path: PathBuf,
     pub name: String,
     pub extension: Option<String>,
@@ -109,6 +110,7 @@ pub fn walk_directories<F>(
 
             let char_bloom = compute_char_mask(&name);
             let file_entry = FileEntry {
+                id: 0,
                 path,
                 name,
                 extension,

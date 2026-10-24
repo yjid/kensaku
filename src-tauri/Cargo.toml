@@ -31,6 +31,7 @@ parking_lot = "0.12"
 open = "5"
 rusqlite = { version = "0.32", features = ["bundled"] }
 regex = "1"
+rayon = "1.10"
 
 [profile.release]
 codegen-units = 1

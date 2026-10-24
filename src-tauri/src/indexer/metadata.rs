@@ -11,7 +11,8 @@ use std::time::SystemTime;
 pub struct MetadataStore {
     entries: Vec<FileEntry>,
     path_index: HashMap<PathBuf, usize>,
-    db: Option<MetadataDb>,
+    node_id_to_idx: HashMap<u64, usize>,
+    db: Option<Arc<MetadataDb>>,
     generation: AtomicU64,
     usage: RwLock<HashMap<PathBuf, (u32, u64)>>,
     cached_trie: RwLock<Option<(u64, Arc<DirectoryTrie>)>>,
@@ -26,7 +27,7 @@ impl Default for MetadataStore {
 impl MetadataStore {
     pub fn new() -> Self {
         let db = match MetadataDb::open() {
-            Ok(db) => Some(db),
+            Ok(db) => Some(Arc::new(db)),
             Err(e) => {
                 eprintln!("[Kensaku] Failed to open metadata database: {}", e);
                 None
@@ -36,6 +37,7 @@ impl MetadataStore {
         let mut store = Self {
             entries: Vec::new(),
             path_index: HashMap::new(),
+            node_id_to_idx: HashMap::new(),
             db,
             generation: AtomicU64::new(1),
             usage: RwLock::new(HashMap::new()),
@@ -79,10 +81,14 @@ impl MetadataStore {
 
         self.entries.clear();
         self.path_index.clear();
+        self.node_id_to_idx.clear();
 
         let count = entries.len();
         for entry in entries {
             let idx = self.entries.len();
+            if entry.id > 0 {
+                self.node_id_to_idx.insert(entry.id, idx);
+            }
             self.path_index.insert(entry.path.clone(), idx);
             self.entries.push(entry);
         }
@@ -96,6 +102,7 @@ impl MetadataStore {
     pub fn clear(&mut self) {
         self.entries.clear();
         self.path_index.clear();
+        self.node_id_to_idx.clear();
         self.generation.fetch_add(1, Ordering::SeqCst);
         *self.cached_trie.write() = None;
 
@@ -107,6 +114,7 @@ impl MetadataStore {
     }
 
     pub fn add(&mut self, entry: FileEntry) {
+        let entry_id = entry.id;
         let idx = if let Some(&idx) = self.path_index.get(&entry.path) {
             self.entries[idx] = entry;
             idx
@@ -116,6 +124,10 @@ impl MetadataStore {
             self.entries.push(entry);
             idx
         };
+
+        if entry_id > 0 {
+            self.node_id_to_idx.insert(entry_id, idx);
+        }
 
         self.generation.fetch_add(1, Ordering::SeqCst);
         *self.cached_trie.write() = None;
@@ -133,11 +145,19 @@ impl MetadataStore {
 
     pub fn remove(&mut self, path: &Path) {
         if let Some(idx) = self.path_index.remove(path) {
+            let removed_id = self.entries[idx].id;
+            if removed_id > 0 {
+                self.node_id_to_idx.remove(&removed_id);
+            }
             let last_idx = self.entries.len().saturating_sub(1);
             if idx < last_idx {
                 self.entries.swap(idx, last_idx);
                 let swapped_path = self.entries[idx].path.clone();
+                let swapped_id = self.entries[idx].id;
                 self.path_index.insert(swapped_path, idx);
+                if swapped_id > 0 {
+                    self.node_id_to_idx.insert(swapped_id, idx);
+                }
             }
             self.entries.pop();
             self.generation.fetch_add(1, Ordering::SeqCst);
@@ -210,6 +230,14 @@ impl MetadataStore {
 
     pub fn get_path_index(&self) -> &HashMap<PathBuf, usize> {
         &self.path_index
+    }
+
+    pub fn get_by_node_id(&self, node_id: u64) -> Option<&FileEntry> {
+        self.node_id_to_idx.get(&node_id).and_then(|&idx| self.entries.get(idx))
+    }
+
+    pub fn db(&self) -> Option<Arc<MetadataDb>> {
+        self.db.as_ref().map(Arc::clone)
     }
 
     pub fn len(&self) -> usize {

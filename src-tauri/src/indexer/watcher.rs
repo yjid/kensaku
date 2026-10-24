@@ -263,6 +263,7 @@ fn handle_file_upsert(
     let char_bloom = crate::search::fuzzy::compute_char_mask(&name);
 
     let entry = FileEntry {
+        id: 0,
         path: path.to_path_buf(),
         name: name.clone(),
         extension: extension.clone(),
