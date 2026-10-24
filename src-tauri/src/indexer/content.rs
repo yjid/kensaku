@@ -1,10 +1,11 @@
 use parking_lot::RwLock;
+use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tantivy::collector::TopDocs;
-use tantivy::query::QueryParser;
+use tantivy::collector::{DocSetCollector, TopDocs};
+use tantivy::query::{AllQuery, QueryParser};
 use tantivy::schema::*;
 use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term};
 
@@ -89,6 +90,55 @@ impl ContentIndex {
         let writer = self.writer.write();
         writer.delete_term(term);
         Ok(())
+    }
+
+    /// Deletes every indexed document whose path is not present in
+    /// `valid_paths`.
+    ///
+    /// This is used after a full crawl to remove documents that belong to
+    /// files deleted while the application was not running (or to watched
+    /// directories removed from the configuration). Returns the number of
+    /// documents purged.
+    pub fn purge_stale(&self, valid_paths: &HashSet<PathBuf>) -> Result<usize, String> {
+        // Documents store `to_string_lossy()` paths, so compare in the same
+        // representation to avoid purging valid non-UTF-8 paths.
+        let valid_lossy: HashSet<String> = valid_paths
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
+
+        let searcher = self.reader.searcher();
+        let doc_addresses = searcher
+            .search(&AllQuery, &DocSetCollector)
+            .map_err(|e| format!("Failed to scan content index: {}", e))?;
+
+        let mut stale_paths: Vec<String> = Vec::new();
+        for doc_address in doc_addresses {
+            let Ok(doc) = searcher.doc::<TantivyDocument>(doc_address) else {
+                continue;
+            };
+            let Some(path_str) = doc.get_first(self.path_field).and_then(|f| f.as_str()) else {
+                continue;
+            };
+            if !valid_lossy.contains(path_str) {
+                stale_paths.push(path_str.to_string());
+            }
+        }
+
+        if stale_paths.is_empty() {
+            return Ok(0);
+        }
+
+        {
+            let writer = self.writer.write();
+            for path_str in &stale_paths {
+                let term = Term::from_field_text(self.path_field, path_str);
+                writer.delete_term(term);
+            }
+        }
+
+        self.commit()?;
+        Ok(stale_paths.len())
     }
 
     pub fn commit(&self) -> Result<(), String> {

@@ -1,5 +1,6 @@
 pub mod content;
 pub mod metadata;
+pub mod metadata_db;
 pub mod walker;
 pub mod watcher;
 
@@ -7,9 +8,11 @@ use crate::config::KensakuConfig;
 use crate::indexer::content::{is_indexable_extension, is_indexable_file_name, read_text_content, ContentIndex};
 use crate::indexer::metadata::MetadataStore;
 use crate::indexer::walker::walk_directories;
-use crate::indexer::watcher::start_file_watcher;
-use parking_lot::RwLock;
+use crate::indexer::watcher::{start_file_watcher, WatcherHandle};
+use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -28,6 +31,7 @@ pub struct IndexerManager {
     pub config: Arc<RwLock<KensakuConfig>>,
     pub status: Arc<RwLock<IndexingStatus>>,
     is_running: Arc<AtomicBool>,
+    watcher_handle: Arc<Mutex<Option<WatcherHandle>>>,
 }
 
 impl IndexerManager {
@@ -52,6 +56,7 @@ impl IndexerManager {
                 current_status: "Idle".to_string(),
             })),
             is_running: Arc::new(AtomicBool::new(false)),
+            watcher_handle: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -61,11 +66,19 @@ impl IndexerManager {
             return;
         }
 
+        // Stop any watcher left over from a previous indexing run so we never
+        // end up with duplicate watchers on the same directories.
+        let previous_watcher = self.watcher_handle.lock().take();
+        if let Some(mut handle) = previous_watcher {
+            handle.stop();
+        }
+
         let metadata = Arc::clone(&self.metadata);
         let content_index = Arc::clone(&self.content_index);
         let config_arc = Arc::clone(&self.config);
         let status = Arc::clone(&self.status);
         let is_running = Arc::clone(&self.is_running);
+        let watcher_handle = Arc::clone(&self.watcher_handle);
 
         thread::spawn(move || {
             let (watched_dirs, excluded_dirs) = {
@@ -84,9 +97,24 @@ impl IndexerManager {
             let mut files_count = 0;
             let mut content_count = 0;
             let mut pending_commits = 0;
+            let mut crawled_paths: HashSet<PathBuf> = HashSet::new();
 
             walk_directories(&watched_dirs, &excluded_dirs, |entry| {
                 files_count += 1;
+                crawled_paths.insert(entry.path.clone());
+
+                // Incremental crawl: skip entries whose size and mtime are unchanged.
+                let unchanged = metadata
+                    .read()
+                    .get(&entry.path)
+                    .map(|existing| {
+                        existing.modified == entry.modified && existing.size == entry.size
+                    })
+                    .unwrap_or(false);
+
+                if unchanged {
+                    return true;
+                }
 
                 // Add to metadata
                 metadata.write().add(entry.clone());
@@ -120,6 +148,55 @@ impl IndexerManager {
                 true
             });
 
+            // Drop metadata entries for files that no longer exist on disk.
+            let stale_paths: Vec<PathBuf> = {
+                let store = metadata.read();
+                store
+                    .get_entries()
+                    .iter()
+                    .filter(|entry| !crawled_paths.contains(&entry.path))
+                    .map(|entry| entry.path.clone())
+                    .collect()
+            };
+
+            if !stale_paths.is_empty() {
+                let mut store = metadata.write();
+                for path in &stale_paths {
+                    store.remove(path);
+                }
+                println!(
+                    "[Kensaku Indexer] Removed {} stale metadata entries",
+                    stale_paths.len()
+                );
+            }
+
+            // Purge content-index documents that no longer have a metadata
+            // entry: files deleted while the app was closed, or trees that
+            // belong to watched directories removed from the configuration.
+            let valid_paths: HashSet<PathBuf> = {
+                let store = metadata.read();
+                store
+                    .get_entries()
+                    .iter()
+                    .map(|entry| entry.path.clone())
+                    .collect()
+            };
+
+            if let Some(c_index) = content_index.read().as_ref() {
+                match c_index.purge_stale(&valid_paths) {
+                    Ok(0) => {}
+                    Ok(purged) => {
+                        println!("[Kensaku Indexer] Purged {} stale content documents", purged);
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[Kensaku Indexer] Failed to purge stale content documents: {}",
+                            e
+                        );
+                    }
+                }
+            }
+
             // Final commit
             if let Some(c_index) = content_index.read().as_ref() {
                 let _ = c_index.commit();
@@ -135,10 +212,11 @@ impl IndexerManager {
 
             println!("[Kensaku Indexer] Finished initial index: {} files ({} with full text)", files_count, content_count);
 
-            is_running.store(false, Ordering::SeqCst);
+            // Start file watcher for live changes, replacing any previous one.
+            let handle = start_file_watcher(watched_dirs, metadata, content_index, config_arc);
+            *watcher_handle.lock() = Some(handle);
 
-            // Start file watcher for live changes
-            start_file_watcher(watched_dirs, metadata, content_index, config_arc);
+            is_running.store(false, Ordering::SeqCst);
         });
     }
 
