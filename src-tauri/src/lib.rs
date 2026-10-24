@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod config;
+pub mod embed;
 pub mod indexer;
 pub mod query;
 pub mod search;

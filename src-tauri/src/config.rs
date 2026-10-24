@@ -14,10 +14,18 @@ pub struct KensakuConfig {
     /// Enabled by default; users can opt into indexing hidden files.
     #[serde(default = "default_true")]
     pub skip_hidden: bool,
+    #[serde(default = "default_true")]
+    pub semantic_enabled: bool,
+    #[serde(default = "default_semantic_model")]
+    pub semantic_model: String,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_semantic_model() -> String {
+    "static".to_string()
 }
 
 impl Default for KensakuConfig {
@@ -87,6 +95,8 @@ impl Default for KensakuConfig {
             max_results: 50,
             is_setup_complete: false,
             skip_hidden: true,
+            semantic_enabled: true,
+            semantic_model: "static".to_string(),
         }
     }
 }
