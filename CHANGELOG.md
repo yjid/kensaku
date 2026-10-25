@@ -3,6 +3,30 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [0.3.3] — 2026-10-26
+
+### Fixed
+- **Images and PDFs were not indexed for existing installs.** Early UI configs
+  stored exclusions with a leading dot (`.jpg`, `.pdf`), which the v1 migration
+  did not normalize, so those files were skipped forever. A v2 migration strips
+  dotted document/image extensions and bumps the config version. Restart after
+  upgrading; the startup crawl picks the files up.
+- **Thumbnails were blank.** The Tauri asset scope used `$APPCONFIG`, which is
+  `<config>/<identifier>`, while thumbs live at `<config>/kensaku/thumbs`. The
+  scope now starts with `$CONFIG/kensaku/thumbs/**`.
+- **Search took 5–9 s.** Snippets called the full extractor (PDF/OCR) inside the
+  query. They now read plain text directly or a cached extraction only; a second
+  batched request fills them after the results paint. Measured: 3.86 s → 0.14 s.
+- **The metadata DB was 310 MB for 382 rows.** Startup now vacuums when free
+  pages exceed 20%, caps the WAL at 64 MB, and checkpoints after crawls
+  (310 MB → 604 KB).
+- Image previews no longer run OCR; previews are debounced and sequenced.
+- `content_docs` reports the real Tantivy document count.
+
+### Changed
+- Release pipeline builds bundles and CLI binaries as workflow artifacts;
+  publishing is done with `gh` (see `docs/RELEASING.md`).
+
 ## [0.3.1] — 2026-10-26
 
 ### Fixed
