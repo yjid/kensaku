@@ -23,13 +23,14 @@ interface ResultItemProps {
   onOpenFolder: () => void;
 }
 
-export const ResultItem: React.FC<ResultItemProps> = ({
-  result,
-  isSelected,
-  onSelect,
-  onOpen,
-  onOpenFolder,
-}) => {
+export const ResultItem = React.memo(
+  ({
+    result,
+    isSelected,
+    onSelect,
+    onOpen,
+    onOpenFolder,
+  }: ResultItemProps) => {
   const [copied, setCopied] = React.useState(false);
 
   const getIcon = () => {
@@ -216,4 +217,10 @@ export const ResultItem: React.FC<ResultItemProps> = ({
       )}
     </div>
   );
-};
+},
+(prevProps, nextProps) =>
+  prevProps.result.path === nextProps.result.path &&
+  prevProps.result.snippet === nextProps.result.snippet &&
+  prevProps.result.score === nextProps.result.score &&
+  prevProps.isSelected === nextProps.isSelected
+);
