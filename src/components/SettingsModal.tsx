@@ -1,10 +1,29 @@
 import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { X, Plus, RefreshCw, Save, Check, Copy, Sun, Moon } from "lucide-react";
+import {
+  Activity,
+  Bot,
+  Check,
+  Copy,
+  Filter,
+  FolderTree,
+  Info,
+  Plus,
+  RefreshCw,
+  Save,
+  Search,
+  Sparkles,
+  SlidersHorizontal,
+  Stethoscope,
+  Sun,
+  Moon,
+  X,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { KensakuConfig } from "../types";
 import { useTheme } from "../hooks/useTheme";
 import { useStats } from "../hooks/useStats";
-import { Card, Field, Switch, Stepper, reasonFrom } from "./settings/kit";
+import { Card, Field, Switch, Stepper, SectionHeader, reasonFrom } from "./settings/kit";
 import { OcrField } from "./settings/ocr";
 import { StatsForNerds } from "./settings/stats";
 import { DoctorSection } from "./settings/doctor";
@@ -28,17 +47,29 @@ type SectionId =
   | "doctor"
   | "about";
 
-const SECTIONS: { id: SectionId; label: string }[] = [
-  { id: "general", label: "General" },
-  { id: "folders", label: "Folders" },
-  { id: "exclusions", label: "Exclusions" },
-  { id: "search", label: "Search" },
-  { id: "ai", label: "AI & Semantic" },
-  { id: "agents", label: "Agents" },
-  { id: "stats", label: "Stats for Nerds" },
-  { id: "doctor", label: "Doctor" },
-  { id: "about", label: "About" },
+const SECTIONS: { id: SectionId; label: string; icon: LucideIcon }[] = [
+  { id: "general", label: "General", icon: SlidersHorizontal },
+  { id: "folders", label: "Folders", icon: FolderTree },
+  { id: "exclusions", label: "Exclusions", icon: Filter },
+  { id: "search", label: "Search", icon: Search },
+  { id: "ai", label: "AI & Semantic", icon: Sparkles },
+  { id: "agents", label: "Agents", icon: Bot },
+  { id: "stats", label: "Stats for Nerds", icon: Activity },
+  { id: "doctor", label: "Doctor", icon: Stethoscope },
+  { id: "about", label: "About", icon: Info },
 ];
+
+const SECTION_META: Record<SectionId, { title: string; description: string }> = {
+  general: { title: "General", description: "Appearance, invocation and startup behaviour." },
+  folders: { title: "Folders", description: "Directories watched and indexed on this machine." },
+  exclusions: { title: "Exclusions", description: "Names and extensions kept out of the index." },
+  search: { title: "Search", description: "Ranking, OCR and the query language." },
+  ai: { title: "AI & Semantic", description: "Embedding model, vector tier and model files." },
+  agents: { title: "Agents", description: "Read-only access for MCP clients and the CLI." },
+  stats: { title: "Stats for Nerds", description: "Live telemetry from the running index." },
+  doctor: { title: "Doctor", description: "Health checks across index, watcher and models." },
+  about: { title: "About", description: "Version, thesis and the reset control." },
+};
 
 const EXCLUSION_PRESETS: Record<string, string[]> = {
   Developer: [
@@ -65,12 +96,18 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
     (SECTIONS.find((s) => s.id === initialSection)?.id ?? "general") as SectionId,
   );
   const [config, setConfig] = useState<KensakuConfig | null>(null);
+  /* Loaded snapshot — serialized once. A JSON compare marks the save bar. */
+  const [snapshot, setSnapshot] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const dirty = config !== null && snapshot !== null && JSON.stringify(config) !== snapshot;
 
   useEffect(() => {
     invoke<KensakuConfig>("get_config")
-      .then(setConfig)
+      .then((cfg) => {
+        setConfig(cfg);
+        setSnapshot(JSON.stringify(cfg));
+      })
       .catch((err) => console.error("Failed to load config:", err));
   }, []);
 
@@ -90,6 +127,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
     setSaving(true);
     try {
       await invoke("save_config", { config });
+      setSnapshot(JSON.stringify(config));
       if (reindex) {
         await invoke("complete_setup", {
           watchedDirs: config.watched_dirs,
@@ -127,46 +165,85 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <nav className="w-[200px] shrink-0 overflow-y-auto border-r border-line bg-sunken/50 p-2">
-          {SECTIONS.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => setSection(s.id)}
-              className={`flex h-8 w-full items-center rounded-[10px] px-2.5 text-left text-[12px] transition-colors duration-150 ${
-                section === s.id
-                  ? "bg-fg font-medium text-bg"
-                  : "text-muted hover:bg-elevated hover:text-fg"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
+        {/* Rail: 200px, 32px icon rows, accent-soft active with 2px left bar. */}
+        <nav className="flex w-[200px] shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-line bg-sunken/50 p-3">
+          {SECTIONS.map((s) => {
+            const active = section === s.id;
+            const Icon = s.icon;
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setSection(s.id)}
+                aria-current={active ? "page" : undefined}
+                className={`relative flex h-8 w-full items-center gap-2 rounded-[10px] px-2.5 text-[13px] transition-colors duration-150 ${
+                  active
+                    ? "bg-accent-soft font-medium text-fg"
+                    : "text-muted hover:bg-elevated hover:text-fg"
+                }`}
+              >
+                {active && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-accent"
+                  />
+                )}
+                <Icon
+                  className={`h-[15px] w-[15px] shrink-0 transition-colors duration-150 ${
+                    active ? "text-fg" : "text-muted"
+                  }`}
+                />
+                {s.label}
+              </button>
+            );
+          })}
         </nav>
 
-        <main className="min-w-0 flex-1 overflow-y-auto bg-sunken/30 p-5">
-          {config ? renderSection(section, config, setConfig) : <ConfigSkeleton />}
-
-          <div className="mt-4 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => handleSave(true)}
-              disabled={saving || !config}
-              className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-elevated px-3 text-[12px] text-fg transition-colors duration-150 hover:border-line-strong disabled:opacity-50"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Save &amp; Reindex
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSave(false)}
-              disabled={saving || !config}
-              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-accent px-3.5 text-[12px] font-medium text-accent-fg transition-opacity duration-150 hover:opacity-90 disabled:opacity-50"
-            >
-              {saved ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
-              {saved ? "Saved" : saving ? "Saving…" : "Save"}
-            </button>
+        {/* Content column: scroll area + sticky save bar that never
+            overlaps the last row (scroll area gets bottom padding). */}
+        <main className="relative min-w-0 flex-1">
+          <div className="absolute inset-0 overflow-y-auto bg-sunken/30 p-5 pb-[72px]">
+            {config ? (
+              <SectionShell section={section}>
+                {renderSection(section, config, setConfig)}
+              </SectionShell>
+            ) : (
+              <ConfigSkeleton />
+            )}
           </div>
+
+          <footer className="absolute inset-x-0 bottom-0 z-10 border-t border-line bg-elevated/80 px-5 py-3 backdrop-blur">
+            <div className="flex items-center justify-between gap-3">
+              {dirty ? (
+                <span className="flex items-center gap-1.5 text-[11px] text-muted">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
+                  Unsaved changes
+                </span>
+              ) : (
+                <span />
+              )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSave(true)}
+                  disabled={saving || !config}
+                  className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-elevated px-3 text-[12px] text-fg transition-colors duration-150 hover:border-line-strong disabled:opacity-50"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Save &amp; Reindex
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSave(false)}
+                  disabled={saving || !config || !dirty}
+                  className="flex h-8 items-center gap-1.5 rounded-[10px] bg-accent px-3.5 text-[12px] font-medium text-accent-fg transition-opacity duration-150 hover:opacity-90 disabled:opacity-50"
+                >
+                  {saved ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
+                  {saved ? "Saved" : saving ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </div>
+          </footer>
         </main>
       </div>
     </div>
@@ -206,6 +283,17 @@ function ConfigSkeleton() {
       {[0, 1, 2].map((i) => (
         <div key={i} className="h-16 animate-pulse rounded-[14px] border border-line bg-elevated opacity-60" />
       ))}
+    </div>
+  );
+}
+
+/** Wraps every section: header block first, then the cards. */
+function SectionShell({ section, children }: { section: SectionId; children: React.ReactNode }) {
+  const meta = SECTION_META[section];
+  return (
+    <div>
+      <SectionHeader title={meta.title} description={meta.description} />
+      {children}
     </div>
   );
 }
@@ -435,7 +523,7 @@ function FoldersSection({
             if (paths.length === 0 && input.trim()) paths.push(input.trim());
             addDropped(paths);
           }}
-          className="m-2 flex h-16 items-center justify-center rounded-[10px] border border-dashed border-line text-[11px] text-subtle transition-colors duration-150"
+          className="mx-4 my-2.5 flex h-16 items-center justify-center rounded-[10px] border border-dashed border-line text-[11px] text-subtle transition-colors duration-150"
         >
           Drop folders here to add them for watching
         </div>
@@ -489,7 +577,7 @@ function ExclusionsSection({
   return (
     <>
       <Card title="Presets">
-        <div className="flex flex-wrap gap-1.5 p-3">
+        <div className="flex flex-wrap gap-1.5 px-4 py-3">
           {Object.keys(EXCLUSION_PRESETS).map((p) => (
             <button
               key={p}
@@ -505,7 +593,7 @@ function ExclusionsSection({
       </Card>
 
       <Card title="Excluded directory names">
-        <div className="flex flex-wrap gap-1.5 p-3">
+        <div className="flex flex-wrap gap-1.5 px-4 py-3">
           {config.excluded_dirs.map((d) => (
             <button
               key={d}
@@ -540,7 +628,7 @@ function ExclusionsSection({
       </Card>
 
       <Card title="Excluded extensions">
-        <div className="flex flex-wrap gap-1.5 p-3">
+        <div className="flex flex-wrap gap-1.5 px-4 py-3">
           {config.excluded_extensions.map((x) => (
             <button
               key={x}
@@ -623,7 +711,7 @@ function SearchSection({
       </Card>
 
       <Card title="Query language">
-        <div className="grid grid-cols-2 gap-x-8 p-3">
+        <div className="grid grid-cols-2 gap-x-8 px-4 py-2.5">
           {CHEATSHEET.map(([token, desc], idx) => (
             <div
               key={token}
@@ -782,7 +870,7 @@ function AgentsSection() {
 
   return (
     <>
-      <p className="pb-1 text-[12px] leading-relaxed text-muted">
+      <p className="pb-3 text-[12px] leading-relaxed text-muted">
         Let your AI agents search this index. Read-only, local, no network.
       </p>
 
@@ -840,7 +928,7 @@ function AgentsSection() {
 
       {/* Tools */}
       <Card title="MCP tools">
-        <div className="px-3 py-1">
+        <div className="px-4 py-1.5">
           {MCP_TOOLS.map(([name, args]) => (
             <div
               key={name}
@@ -1077,7 +1165,7 @@ function AboutSection() {
       </Card>
 
       <Card title="Design thesis">
-        <div className="p-4 pt-1 text-center">
+        <div className="p-4 text-center">
           <p className="font-serif text-[15px] italic leading-relaxed text-muted">
             “A warm, local, read-only index of your machine that answers in under 15 ms —
             for you, and for every agent you use.”
@@ -1085,16 +1173,16 @@ function AboutSection() {
         </div>
       </Card>
 
-      {/* Danger zone — visually separated, outline-destructive by default. */}
-      <div className="mb-3">
+      {/* Danger zone — visually distinct but calm: danger hairline, no fills. */}
+      <div>
         <p className="pb-2 text-[10px] font-medium uppercase tracking-[0.08em] text-danger">
           Danger zone
         </p>
         <div className="overflow-hidden rounded-[14px] border border-danger/30 bg-elevated">
           <div className="flex items-center justify-between gap-4 p-4">
             <div className="min-w-0">
-              <p className="text-[12px] font-medium text-fg">Reset Kensaku</p>
-              <p className="pt-0.5 text-[11px] leading-relaxed text-muted">
+              <p className="text-[13px] font-medium text-fg">Reset Kensaku</p>
+              <p className="line-clamp-2 pt-0.5 text-[11px] leading-relaxed text-muted">
                 Deletes the index, metadata database, downloaded models, and settings. This cannot
                 be undone.
               </p>

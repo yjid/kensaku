@@ -123,14 +123,15 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ variant, caption, childr
   </div>
 );
 
-/** Subtle match highlight inside a filename, per interaction spec. */
+/** Subtle match highlight inside a filename, per interaction spec.
+    No truncation here — the wrapping parent owns ellipsis/clamping. */
 export const HighlightedName: React.FC<{ text: string; query: string }> = ({
   text,
   query,
 }) => {
   const segs = highlightSegments(text, queryTerms(query));
   return (
-    <span className="truncate">
+    <span>
       {segs.map((s, i) =>
         s.match ? (
           <mark key={i} className="rounded-sm bg-accent-soft text-fg px-0.5 -mx-0.5">
