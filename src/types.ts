@@ -65,6 +65,7 @@ export interface KensakuConfig {
   skip_hidden?: boolean;
   ocr_enabled?: boolean;
   theme?: "paper" | "void";
+  config_version?: number;
 }
 
 /* ---- SystemStats (get_stats). The backend may not expose this yet; ---- */
