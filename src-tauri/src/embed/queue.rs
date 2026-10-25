@@ -122,11 +122,15 @@ impl EmbeddingQueue {
                         Self::emit_status(&app_handle, &status);
                     }
 
+                    // Collect all units across the batch first (read + embed in parallel),
+                    // then do a single DB transaction + single UnitStore write.
+                    let mut batch_units: Vec<(u64, Unit, Vec<i8>, String)> = Vec::new();
+                    let mut batch_node_ids: Vec<u64> = Vec::new();
+
                     for (node_id, path, size, _modified, _existing_hash) in pending_nodes {
                         if !is_running.load(Ordering::SeqCst) {
                             break;
                         }
-                        // Check query preemption before every file
                         if query_in_flight.load(Ordering::SeqCst) {
                             thread::sleep(Duration::from_millis(50));
                             break;
@@ -153,7 +157,6 @@ impl EmbeddingQueue {
 
                         let content_hash = format!("{:x}", fnv_hash(&content));
 
-                        // Deduplicate embedding if identical content hash already computed
                         let chunks_with_vectors = if let Some(cached) = hash_cache.get(&content_hash) {
                             cached.clone()
                         } else {
@@ -185,39 +188,50 @@ impl EmbeddingQueue {
                             computed
                         };
 
-                        let mut units_to_insert = Vec::new();
+                        batch_node_ids.push(node_id);
                         for (start, end, vec) in chunks_with_vectors {
-                            let unit = Unit {
-                                id: 0, // Assigned by SQLite autoincrement
+                            batch_units.push((
                                 node_id,
-                                byte_start: start,
-                                byte_end: end,
-                                model_id: model.model_id,
-                            };
-                            units_to_insert.push((unit, vec));
+                                Unit {
+                                    id: 0,
+                                    node_id,
+                                    byte_start: start,
+                                    byte_end: end,
+                                    model_id: model.model_id,
+                                },
+                                vec,
+                                content_hash.clone(),
+                            ));
                         }
 
-                        // Delete stale units for this node before inserting new ones
-                        let _ = db.delete_units_for_node(node_id);
-                        unit_store.write().remove_units_for_node(node_id);
-
-                        // Store in SQLite and UnitStore
-                        for (unit, vec) in units_to_insert {
-                            if let Ok(inserted_id) = db.insert_unit(
-                                node_id,
-                                unit.byte_start,
-                                unit.byte_end,
-                                unit.model_id,
-                                &vec,
-                            ) {
-                                let mut stored_unit = unit;
-                                stored_unit.id = inserted_id;
-                                unit_store.write().add_unit(stored_unit, &vec);
-                            }
-                        }
-
+                        // Mark node as processed (hash stored for dedup)
                         let _ = db.update_node_indexed_gen(node_id, 1, Some(&content_hash));
                     }
+
+                    // Batch delete + insert: one transaction for all nodes
+                    for &nid in &batch_node_ids {
+                        let _ = db.delete_units_for_node(nid);
+                    }
+
+                    // Batch insert all units
+                    let mut unit_store_write = unit_store.write();
+                    for nid in &batch_node_ids {
+                        unit_store_write.remove_units_for_node(*nid);
+                    }
+
+                    for (node_id, mut unit, vec, _hash) in batch_units {
+                        if let Ok(inserted_id) = db.insert_unit(
+                            node_id,
+                            unit.byte_start,
+                            unit.byte_end,
+                            unit.model_id,
+                            &vec,
+                        ) {
+                            unit.id = inserted_id;
+                            unit_store_write.add_unit(unit, &vec);
+                        }
+                    }
+                    drop(unit_store_write);
 
                     // Update indexing status progress
                     if let Some(st_arc) = &status {
