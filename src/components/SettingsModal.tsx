@@ -674,68 +674,144 @@ function AiSection({ config }: { config: KensakuConfig }) {
 /* Agents                                                            */
 /* ---------------------------------------------------------------- */
 
-const MCP_SNIPPET = `# Claude Code / Cursor — Kensaku MCP (read-only)
-claude mcp add kensaku --transport stdio -- kensaku mcp
+const MCP_CONFIG = `{
+  "mcpServers": {
+    "kensaku": { "command": "kensaku-cli", "args": ["mcp"] }
+  }
+}`;
 
-# ...or point any MCP client at:
-#   command: kensaku
-#   args:    ["mcp"]`;
+const CLI_EXAMPLES = [
+  'kensaku-cli search "docker error" --json --limit 10',
+  'kensaku-cli search "type:pdf invoice" --path ~/Documents',
+  'kensaku-cli state --json',
+];
+
+const MCP_TOOLS: [string, string][] = [
+  ["search", "query, --json, --limit, --path, --ext, --since, --exhaustive"],
+  ["read_snippet", "path, query?, start_line?, max_tokens <= 512"],
+  ["index_state", "per-root counts, generation, queue depth, freshness"],
+];
+
+/** One copyable mono row — command text with a trailing copy button. */
+function CopyRow({
+  text,
+  copied,
+  onCopied,
+}: {
+  text: string;
+  copied: boolean;
+  onCopied: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 border-b border-line/60 px-3 py-2 last:border-b-0">
+      <code className="no-scrollbar min-w-0 flex-1 select-text overflow-x-auto whitespace-nowrap font-mono text-[11px] leading-5 text-fg">
+        {text}
+      </code>
+      <button
+        type="button"
+        title="Copy"
+        onClick={() => {
+          navigator.clipboard.writeText(text);
+          onCopied();
+        }}
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-elevated hover:text-fg"
+      >
+        {copied ? <Check className="h-3 w-3 text-accent" /> : <Copy className="h-3 w-3" />}
+      </button>
+    </div>
+  );
+}
 
 function AgentsSection() {
-  const [copied, setCopied] = useState(false);
+  const [configCopied, setConfigCopied] = useState(false);
+  const [copiedRow, setCopiedRow] = useState<string | null>(null);
+
+  const flashRow = (text: string) => {
+    setCopiedRow(text);
+    window.setTimeout(() => setCopiedRow((r) => (r === text ? null : r)), 1500);
+  };
+
   return (
     <>
-      <Card title="Agent API (MCP)">
-        <div className="flex items-center justify-between gap-4 p-4">
-          <div>
-            <p className="flex items-center gap-2 text-[12px] font-medium text-fg">
-              Coming soon
-              <span className="rounded-full bg-sunken px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide text-subtle">
-                disabled
-              </span>
-            </p>
-            <p className="pt-0.5 text-[11px] leading-relaxed text-muted">
-              Local stdio MCP server. Read-only: search, read_snippet, find_related, index_state.
-            </p>
-          </div>
-          <svg
-            viewBox="0 0 24 24"
-            className="h-5 w-5 shrink-0 text-subtle"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.75"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <circle cx="6" cy="6" r="2.5" />
-            <circle cx="6" cy="18" r="2.5" />
-            <circle cx="18" cy="7" r="2.5" />
-            <path d="M6 8.5v7M13.5 8.5c0 3-7.5 2.5-7.5 7M18 9.5c0 3-4 2.5-4 5" />
-          </svg>
+      <p className="pb-1 text-[12px] leading-relaxed text-muted">
+        Let your AI agents search this index. Read-only, local, no network.
+      </p>
+
+      {/* MCP */}
+      <Card title="Model Context Protocol">
+        <div className="px-4 py-3">
+          <p className="text-[11px] leading-relaxed text-muted">
+            Point Claude Code, Cursor, or any MCP client at the{" "}
+            <code className="font-mono text-[10.5px] text-fg">kensaku-cli</code> binary. It shares
+            this app's index — no daemon to start, nothing to configure twice.
+          </p>
         </div>
         <div className="relative border-t border-line bg-sunken p-3 pr-10">
           <pre className="select-text whitespace-pre-wrap break-all font-mono text-[10.5px] leading-relaxed text-muted">
-            {MCP_SNIPPET}
+            {MCP_CONFIG}
           </pre>
           <button
             type="button"
-            title="Copy config snippet"
+            title="Copy config JSON"
             onClick={() => {
-              navigator.clipboard.writeText(MCP_SNIPPET);
-              setCopied(true);
-              window.setTimeout(() => setCopied(false), 1200);
+              navigator.clipboard.writeText(MCP_CONFIG);
+              setConfigCopied(true);
+              window.setTimeout(() => setConfigCopied(false), 1500);
             }}
             className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded text-subtle transition-colors hover:bg-elevated hover:text-fg"
           >
-            {copied ? <Check className="h-3.5 w-3.5 text-accent" /> : <Copy className="h-3.5 w-3.5" />}
+            {configCopied ? <Check className="h-3.5 w-3.5 text-accent" /> : <Copy className="h-3.5 w-3.5" />}
           </button>
+        </div>
+        <p className="border-t border-line px-4 py-2.5 text-[11px] leading-relaxed text-muted">
+          If <code className="font-mono text-[10.5px] text-fg">kensaku-cli</code> isn't on your
+          PATH, use the absolute path to the binary —{" "}
+          <code className="font-mono text-[10.5px] text-fg">~/.cargo/bin/kensaku-cli</code> or{" "}
+          <code className="font-mono text-[10.5px] text-fg">target/release/kensaku-cli</code>.
+        </p>
+      </Card>
+
+      {/* CLI */}
+      <Card title="Command line">
+        <div>
+          {CLI_EXAMPLES.map((cmd) => (
+            <CopyRow
+              key={cmd}
+              text={cmd}
+              copied={copiedRow === cmd}
+              onCopied={() => flashRow(cmd)}
+            />
+          ))}
+        </div>
+        <p className="border-t border-line px-4 py-2.5 text-[11px] leading-relaxed text-muted">
+          The MCP server loads the index once per session; per-query latency is the same as the
+          app.
+        </p>
+      </Card>
+
+      {/* Tools */}
+      <Card title="MCP tools">
+        <div className="px-3 py-1">
+          {MCP_TOOLS.map(([name, args]) => (
+            <div
+              key={name}
+              className="flex items-baseline justify-between gap-4 border-b border-line/60 py-2.5 last:border-b-0"
+            >
+              <code className="shrink-0 whitespace-nowrap font-mono text-[11px] font-medium text-fg">
+                {name}
+              </code>
+              <span className="min-w-0 truncate text-right font-mono text-[10px] text-subtle">
+                {args}
+              </span>
+            </div>
+          ))}
         </div>
       </Card>
 
-      <Card title="Write access">
+      {/* Security */}
+      <Card title="Security">
         <p className="p-4 text-[11px] leading-relaxed text-muted">
-          There will never be write operations through the agent API. The index is rebuilt
-          exclusively by the daemon's own reconciler and watcher.
+          Read-only. No writes, no shell, no network. Honors your watched folders and exclusions.
         </p>
       </Card>
     </>
