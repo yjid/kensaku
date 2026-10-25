@@ -113,33 +113,36 @@ See `docs/OPTIMIZATION.md` for the full plan (Phases A-E). Completed items:
 - **A3:** Remove panic=abort from release profile (catch_unwind now works) ✅
 - **A4:** (deferred) name:/content:/path: term scoping — parsed but not yet wired
 
-### Phase B (latency) — MOSTLY DONE
-- **B1:** Eliminate per-query FileEntry clones (fuzzy search takes indices, no clone) ✅
-- **B2:** Replace Vec::contains with HashSet bitmap membership ✅
-- **B5:** Separate dir_generation — trie only rebuilds on directory changes ✅
-- **B7:** Partial index on indexed_gen for embedding queue ✅
-- **B8:** Snippet cache stores pre-lowercased content (no re-lowercase per query) ✅
-- **B3, B4, B6:** (not yet done) Precompiled filters, push filters into engines, batch embed worker
-
-### Phase C (indexing) — PARTIALLY DONE
-- **C2:** Avoid double lock acquisition in crawl (single write lock) ✅
-- **C3:** Coalesce watcher events into batches, read config once per batch ✅
-- **C1:** (not yet done) Parallelize crawl callback
-
-### Phase D (extraction/UI) — PARTIALLY DONE
-- **D3:** Raise 100KB cap to 1MB, preview cap to 128KB, embed cap to 1MB ✅
-- **D4:** Frontend memoization (React.memo for ResultItem and PreviewPane) ✅
-- **D1, D2:** (not yet done) Stream zip XML, cache extraction results
-
-### Phase E (filtering) — PARTIALLY DONE
-- **E1:** Wire excluded_extensions into crawl callback (was dead code) ✅
-- **E2, E3:** (not yet done) Extension interning, scope-aware candidate pruning
-
 ### Phase A (correctness) — DONE
 - **A1:** Delete stale semantic units before re-embedding ✅
 - **A2:** Enable PRAGMA foreign_keys=ON; db.clear() cascades ✅
 - **A3:** Remove panic=abort (catch_unwind works) ✅
 - **A4:** (deferred) name:/content:/path: term scoping
+
+### Phase B (latency) — DONE
+- **B1:** Eliminate per-query FileEntry clones (fuzzy search takes indices, no clone) ✅
+- **B2:** Replace Vec::contains with HashSet bitmap membership ✅
+- **B5:** Separate dir_generation — trie only rebuilds on directory changes ✅
+- **B7:** Partial index on indexed_gen for embedding queue ✅
+- **B8:** Snippet cache stores pre-lowercased content (no re-lowercase per query) ✅
+- **B3:** (not yet done) Precompiled filters at parse time (LRU cache)
+- **B4:** (not yet done) Push filters into Tantivy BooleanQuery + semantic scanner
+- **B6:** Batch embed worker (one transaction + one UnitStore write per batch) ✅
+
+### Phase C (indexing) — MOSTLY DONE
+- **C2:** Avoid double lock acquisition in crawl (single write lock) ✅
+- **C3:** Coalesce watcher events into batches, read config once per batch ✅
+- **C1:** (not yet done) Parallelize crawl callback
+
+### Phase D (extraction/UI) — MOSTLY DONE
+- **D2:** LRU cache for extraction results keyed by (path, size, mtime) ✅
+- **D3:** Raise 100KB cap to 1MB, preview cap to 128KB, embed cap to 1MB ✅
+- **D4:** Frontend memoization (React.memo for ResultItem and PreviewPane) ✅
+- **D1:** (not yet done) Stream zip XML
+
+### Phase E (filtering) — PARTIALLY DONE
+- **E1:** Wire excluded_extensions into crawl callback (was dead code) ✅
+- **E2, E3:** (not yet done) Extension interning, scope-aware candidate pruning
 
 ## What's next: Continue optimization (remaining items) OR PR 7 — Vision/OCR
 
