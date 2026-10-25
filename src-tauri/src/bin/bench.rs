@@ -1,4 +1,3 @@
-use kensaku_lib::indexer::metadata::MetadataStore;
 use kensaku_lib::indexer::walker;
 use kensaku_lib::search::fuzzy::FuzzySearcher;
 use std::path::PathBuf;
@@ -23,10 +22,7 @@ fn main() {
     println!("Walk time: {:.1} ms", walk_ms);
     println!("Files/sec: {:.0}", entries.len() as f64 / (walk_ms / 1000.0));
 
-    // Phase 2: Build metadata store (skip DB for benchmark speed)
-    let t1 = Instant::now();
-    // Use entries directly (skip SQLite for benchmark)
-    let store_ms = t1.elapsed().as_secs_f64() * 1000.0;
+    // Phase 2: Use entries directly (skip SQLite for benchmark speed)
     println!("Metadata store build: skipped (using entries directly)");
 
     // Phase 3: Fuzzy search benchmarks

@@ -106,6 +106,12 @@ impl EmbeddingQueue {
                                 st.is_embedding = false;
                                 st.units_indexed = unit_store.read().len();
                                 st.semantic_ready = st.units_indexed > 0;
+                                let next_phase = if st.is_indexing {
+                                    st.phase.clone()
+                                } else {
+                                    "idle".to_string()
+                                };
+                                st.phase = next_phase;
                             }
                             Self::emit_status(&app_handle, &status);
                         }
@@ -118,6 +124,7 @@ impl EmbeddingQueue {
                         if let Some(st_arc) = &status {
                             let mut st = st_arc.write();
                             st.is_embedding = true;
+                            st.phase = "embedding".to_string();
                         }
                         Self::emit_status(&app_handle, &status);
                     }

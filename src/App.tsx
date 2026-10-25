@@ -1,23 +1,51 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { SearchResult, SearchResponse, ActiveFilter, IndexingStatus, CommandOutput } from "./types";
+import {
+  SearchResult,
+  SearchResponse,
+  ActiveFilter,
+  IndexingStatus,
+  CommandOutput,
+  SystemStats,
+  emptyStats,
+} from "./types";
 import { SetupModal } from "./components/SetupModal";
-import { ResultItem } from "./components/ResultItem";
-import { SettingsModal } from "./components/SettingsModal";
+import { ResultItem, ResultView } from "./components/ResultItem";
+import { Settings } from "./components/SettingsModal";
 import { FilterChips } from "./components/FilterChips";
 import { PreviewPane } from "./components/PreviewPane";
-import { ActionPalette } from "./components/ActionPalette";
+import { SearchBar } from "./components/SearchBar";
+import { CategoryChips } from "./components/CategoryChips";
+import { StatusBar } from "./components/StatusBar";
+import { HomeGrid } from "./components/HomeGrid";
+import { Palette, PaletteGroup, PaletteItem } from "./components/Palette";
+import { EmptyState } from "./components/EmptyState";
+import { useTheme } from "./hooks/useTheme";
+import { useStatsSlow } from "./hooks/useStats";
+import { CATEGORY_CHIPS, CategoryChip } from "./lib/categories";
 import {
-  Search,
-  X,
-  Settings,
-  Loader2,
-  Sparkles,
-  FolderSearch,
+  Eye,
+  EyeOff,
+  LayoutGrid,
+  List,
+  Settings as SettingsIcon,
+  RefreshCw,
+  ExternalLink,
+  FolderOpen,
+  Copy,
+  FileText,
+  Sun,
+  Moon,
+  Image as ImageIcon,
+  Folder as FolderIcon,
+  FileCode,
+  File as FileIcon,
+  Film,
+  Clock,
   Terminal,
-  ArrowRight,
-  Info,
+  ClipboardCopy,
+  X,
 } from "lucide-react";
 import "./App.css";
 
@@ -29,6 +57,9 @@ const COMMAND_SUGGESTIONS = [
   { cmd: ">settings", desc: "Open the application settings dialog" },
 ];
 
+const VIEW_KEY = "kensaku.view";
+const PREVIEW_KEY = "kensaku.preview";
+
 function App() {
   const [isSetupComplete, setIsSetupComplete] = useState<boolean | null>(null);
   const [query, setQuery] = useState("");
@@ -39,19 +70,30 @@ function App() {
   const [indexingStatus, setIndexingStatus] = useState<IndexingStatus | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showActions, setShowActions] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<string | undefined>(undefined);
+  const [showPalette, setShowPalette] = useState(false);
   const [commandOutput, setCommandOutput] = useState<string | null>(null);
   const [searchTimeMs, setSearchTimeMs] = useState<number | null>(null);
+  const [view, setView] = useState<ResultView>(
+    () => (localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "list") as ResultView,
+  );
+  const [previewOpen, setPreviewOpen] = useState<boolean>(
+    () => localStorage.getItem(PREVIEW_KEY) !== "off",
+  );
+
+  const { theme, toggle: toggleTheme } = useTheme();
+  const { stats: slowStats, live: slowStatsLive } = useStatsSlow();
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
   const currentSeqRef = useRef(0);
 
-  // 1. Check if setup is already complete
+  /* ---------------- setup gating ---------------- */
+
   const checkSetup = useCallback(async () => {
     try {
-      const isDone = await invoke<boolean>("is_setup_complete");
-      setIsSetupComplete(isDone);
+      const done = await invoke<boolean>("is_setup_complete");
+      setIsSetupComplete(done);
     } catch (err) {
       console.error("Failed to check setup:", err);
       setIsSetupComplete(false);
@@ -62,31 +104,30 @@ function App() {
     checkSetup();
   }, [checkSetup]);
 
-  // 2. Tauri event listener for indexing status (replaces polling)
+  /* ---------------- indexing status (events, not polling) ---------------- */
+
   useEffect(() => {
     if (!isSetupComplete) return;
-
-    // Initial fetch once
     invoke<IndexingStatus>("get_indexing_status")
       .then(setIndexingStatus)
       .catch((err) => console.error("Initial status error:", err));
 
-    // Listen to live events emitted by backend
-    let unlistenFn: (() => void) | undefined;
-    listen<IndexingStatus>("indexing-status", (event) => {
-      setIndexingStatus(event.payload);
-    })
-      .then((unlisten) => {
-        unlistenFn = unlisten;
+    let unlisten: (() => void) | undefined;
+    listen<IndexingStatus>("indexing-status", (event) => setIndexingStatus(event.payload))
+      .then((off) => {
+        unlisten = off;
       })
       .catch((err) => console.error("Event listen error:", err));
 
     return () => {
-      if (unlistenFn) unlistenFn();
+      if (unlisten) unlisten();
     };
   }, [isSetupComplete]);
 
-  // 3. Search query execution with sequence guard & debounce
+  /* Search only. Ingestion uses the periodic slow stats poll above. */
+
+  /* ---------------- search (stale-while-revalidate) ---------------- */
+
   useEffect(() => {
     if (!isSetupComplete) return;
 
@@ -113,8 +154,8 @@ function App() {
     const timer = setTimeout(async () => {
       const seq = ++currentSeqRef.current;
       try {
-        const res = await invoke<SearchResponse>("search", { query, seq });
-        if (res.seq >= currentSeqRef.current) {
+        const res = await invoke<SearchResponse>("search", { query });
+        if (seq >= currentSeqRef.current) {
           setResults(res.results);
           setActiveFilters(res.active_filters);
           setHints(res.hints);
@@ -131,45 +172,61 @@ function App() {
     return () => clearTimeout(timer);
   }, [query, isSetupComplete]);
 
-  // 4. Focus input on load
+  // Results never reorder while typing — sort is backend-provided and stable;
+  // nothing needed here beyond identity-stable render keys.
+
+  /* ---------------- recent files for the home bento ---------------- */
+
+  const [recent, setRecent] = useState<SearchResult[]>([]);
   useEffect(() => {
-    if (isSetupComplete) {
-      inputRef.current?.focus();
-    }
+    if (!isSetupComplete) return;
+    invoke<SearchResponse>("search", { query: "modified:<7d" })
+      .then((res) => setRecent(res.results))
+      .catch(() => setRecent([]));
   }, [isSetupComplete]);
 
-  // 5. Scroll selected item into view
+  /* ---------------- focus + persistence ---------------- */
+
+  useEffect(() => {
+    if (isSetupComplete) inputRef.current?.focus();
+  }, [isSetupComplete]);
+
+  useEffect(() => {
+    localStorage.setItem(VIEW_KEY, view);
+  }, [view]);
+  useEffect(() => {
+    localStorage.setItem(PREVIEW_KEY, previewOpen ? "on" : "off");
+  }, [previewOpen]);
+
   useEffect(() => {
     if (!resultsContainerRef.current) return;
-    const items = resultsContainerRef.current.children;
-    if (items[selectedIndex]) {
-      (items[selectedIndex] as HTMLElement).scrollIntoView({
-        block: "nearest",
-        behavior: "smooth",
-      });
-    }
-  }, [selectedIndex]);
+    const el = resultsContainerRef.current.querySelector<HTMLElement>(
+      `[data-index="${selectedIndex}"]`,
+    );
+    el?.scrollIntoView({ block: "nearest" });
+  }, [selectedIndex, view]);
 
-  // 6. Action handlers
-  const handleOpenFile = async (path: string) => {
+  /* ---------------- actions ---------------- */
+
+  const handleOpenFile = useCallback(async (path: string) => {
     try {
       await invoke("open_file", { path });
       await invoke("hide_window");
     } catch (err) {
       console.error("Open file error:", err);
     }
-  };
+  }, []);
 
-  const handleOpenFolder = async (path: string) => {
+  const handleOpenFolder = useCallback(async (path: string) => {
     try {
       await invoke("open_folder", { path });
       await invoke("hide_window");
     } catch (err) {
       console.error("Open folder error:", err);
     }
-  };
+  }, []);
 
-  const handleRunCommand = async (cmdStr: string) => {
+  const handleRunCommand = useCallback(async (cmdStr: string) => {
     try {
       const out = await invoke<CommandOutput>("execute_command", { command: cmdStr });
       if (out.message === "SETTINGS") {
@@ -180,384 +237,539 @@ function App() {
     } catch (err) {
       setCommandOutput(String(err));
     }
-  };
+  }, []);
 
-  const handleRemoveFilter = (filter: ActiveFilter) => {
-    const newQuery = query
-      .replace(filter.raw, "")
-      .replace(/\s+/g, " ")
-      .trim();
-    setQuery(newQuery);
+  const handleRemoveFilter = useCallback((filter: ActiveFilter) => {
+    setQuery((prev) =>
+      prev
+        .replace(filter.raw, "")
+        .replace(/\s+/g, " ")
+        .trim(),
+    );
     inputRef.current?.focus();
-  };
+  }, []);
 
-  const handleApplyHint = (hint: string) => {
+  const handleApplyHint = useCallback((hint: string) => {
     const match = hint.match(/📁\s*([^\?]+)/);
-    if (match && match[1]) {
-      const folder = match[1].trim();
-      setQuery((prev) => `${prev.trim()} in:"${folder}" `);
-    } else {
-      setQuery((prev) => `${prev.trim()} ${hint} `);
-    }
+    setQuery((prev) =>
+      match && match[1]
+        ? `${prev.trim()} in:"${match[1].trim()}"`
+        : `${prev.trim()} ${hint}`.trim(),
+    );
     inputRef.current?.focus();
-  };
+  }, []);
 
-  const handleKeyDown = async (e: React.KeyboardEvent) => {
-    if (showSettings) {
-      if (e.key === "Escape") {
-        setShowSettings(false);
+  /* Category chip → query token. */
+  const handleChip = useCallback((chip: CategoryChip) => {
+    setQuery((prev) => {
+      let next = prev
+        .replace(/\btype:[^\s]+/gi, "")
+        .replace(/\bmodified:<[^\s]+/gi, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (chip.id === "all") return next;
+      next = next ? `${next} ${chip.token}` : chip.token!;
+      return next;
+    });
+    inputRef.current?.focus();
+  }, []);
+
+  const openSettings = useCallback((section?: string) => {
+    setSettingsSection(section);
+    setShowPalette(false);
+    setShowSettings(true);
+  }, []);
+
+  const handleCopyPath = useCallback((path: string) => {
+    navigator.clipboard.writeText(path);
+  }, []);
+
+  const selected: SearchResult | null = results[selectedIndex] ?? null;
+
+  /* ---------------- global palette ---------------- */
+
+  const paletteGroups = useMemo((): PaletteGroup[] => {
+    const groups: PaletteGroup[] = [];
+
+    if (selected) {
+      const fileActions: PaletteItem[] = [
+        { id: "open", label: `Open ${selected.filename}`, shortcut: ["↵"], icon: ExternalLink, run: () => handleOpenFile(selected.path) },
+        { id: "reveal", label: "Reveal in file manager", hint: "Shift+↵", icon: FolderOpen, run: () => handleOpenFolder(selected.path) },
+        { id: "copypath", label: "Copy absolute path", icon: Copy, run: () => handleCopyPath(selected.path) },
+      ];
+      if (!selected.is_dir) {
+        fileActions.push({
+          id: "copycontent",
+          label: "Copy file text content",
+          icon: FileText,
+          run: async () => {
+            try {
+              const content = await invoke<string>("read_file_content", { path: selected.path });
+              navigator.clipboard.writeText(content);
+            } catch (e) {
+              console.error(e);
+            }
+          },
+        });
+        fileActions.push({
+          id: "similar",
+          label: "Find similar files",
+          icon: ImageIcon,
+          run: () => {
+            const ext = selected.filename.split(".").pop();
+            setQuery(ext && ext !== selected.filename ? `ext:${ext}` : selected.filename.slice(0, 4));
+            inputRef.current?.focus();
+          },
+        });
       }
-      return;
+      groups.push({ label: selected.filename, items: fileActions });
     }
 
-    if (showActions) {
-      return; // Handled in ActionPalette
-    }
+    groups.push({
+      label: "Actions",
+      items: [
+        {
+          id: "toggle-preview",
+          label: previewOpen ? "Hide preview pane" : "Show preview pane",
+          hint: "Tab",
+          icon: previewOpen ? EyeOff : Eye,
+          run: () => setPreviewOpen((p) => !p),
+        },
+        {
+          id: "toggle-view",
+          label: view === "list" ? "Switch to grid cards" : "Switch to list rows",
+          icon: view === "list" ? LayoutGrid : List,
+          run: () => setView((v) => (v === "list" ? "grid" : "list")),
+        },
+        {
+          id: "reindex",
+          label: "Reindex all folders",
+          icon: RefreshCw,
+          run: () => handleRunCommand(">reindex"),
+        },
+      ],
+    });
 
-    // Ctrl+K / Cmd+K triggers Action Palette on selected result
-    if (e.key.toLowerCase() === "k" && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      if (results[selectedIndex]) {
-        setShowActions(true);
-      }
-      return;
-    }
+    groups.push({
+      label: "Filters",
+      items: CATEGORY_CHIPS.filter((c) => c.token).map((c) => ({
+        id: `chip-${c.id}`,
+        label: `Filter: ${c.label}`,
+        hint: c.token,
+        icon: categoryIcon(c.id),
+        run: () => handleChip(c),
+      })),
+    });
 
-    // Command mode execution on Enter
-    if (query.startsWith(">")) {
-      if (e.key === "Enter") {
+    groups.push({
+      label: "Settings",
+      items: [
+        { id: "open-settings", label: "Open settings", hint: "⌘,", icon: SettingsIcon, run: () => openSettings() },
+        {
+          id: "theme",
+          label: theme === "paper" ? "Switch to void theme" : "Switch to paper theme",
+          icon: theme === "paper" ? Moon : Sun,
+          run: toggleTheme,
+        },
+        {
+          id: "copy-stats",
+          label: "Copy system stats JSON",
+          icon: ClipboardCopy,
+          run: async () => {
+            let s: SystemStats = emptyStats();
+            try {
+              s = await invoke<SystemStats>("get_stats");
+            } catch {
+              /* keeps zeroed fallback */
+            }
+            navigator.clipboard.writeText(JSON.stringify(s, null, 2));
+          },
+        },
+      ],
+    });
+
+    return groups;
+  }, [selected, previewOpen, view, theme, handleOpenFile, handleOpenFolder, handleCopyPath, handleRunCommand, handleChip, openSettings, toggleTheme]);
+
+  /* ---------------- keyboard ---------------- */
+
+  const handleKeyDown = useCallback(
+    async (e: React.KeyboardEvent) => {
+      // Overlays capture their own Esc; everything else pauses the main list.
+      if (showPalette) return;
+      if (showSettings) return;
+
+      if (e.key === "Tab") {
         e.preventDefault();
-        handleRunCommand(query);
+        setPreviewOpen((p) => !p);
+        return;
+      }
+
+      // "/" focuses search when the focus is elsewhere.
+      if (e.key === "/" && document.activeElement !== inputRef.current) {
+        e.preventDefault();
+        inputRef.current?.focus();
+        return;
+      }
+
+      if (e.key.toLowerCase() === "k" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setShowPalette(true);
+        return;
+      }
+
+      if (e.key === "," && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        openSettings();
+        return;
+      }
+
+      // Command mode execution
+      if (query.startsWith(">")) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          handleRunCommand(query.trim());
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          setQuery("");
+        }
+        return;
+      }
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedIndex((prev) => (results.length > 0 ? (prev + 1) % results.length : 0));
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedIndex((prev) =>
+          results.length > 0 ? (prev - 1 + results.length) % results.length : 0,
+        );
+      } else if (e.key === "Enter" && results[selectedIndex]) {
+        e.preventDefault();
+        const target = results[selectedIndex];
+        if (e.metaKey || e.ctrlKey) {
+          // "Open at line" — backend currently opens at default; reveal path is a safe stand-in.
+          handleOpenFile(target.path);
+        } else if (e.shiftKey) {
+          handleOpenFolder(target.path);
+        } else {
+          handleOpenFile(target.path);
+        }
       } else if (e.key === "Escape") {
         e.preventDefault();
-        setQuery("");
-      }
-      return;
-    }
-
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setSelectedIndex((prev) => (results.length > 0 ? (prev + 1) % results.length : 0));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setSelectedIndex((prev) =>
-        results.length > 0 ? (prev - 1 + results.length) % results.length : 0
-      );
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      if (results[selectedIndex]) {
-        if (e.shiftKey) {
-          handleOpenFolder(results[selectedIndex].path);
+        if (commandOutput) {
+          setCommandOutput(null);
+        } else if (query) {
+          setQuery("");
+          inputRef.current?.focus();
         } else {
-          handleOpenFile(results[selectedIndex].path);
+          await invoke("hide_window");
         }
       }
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      if (commandOutput) {
-        setCommandOutput(null);
-      } else if (query) {
-        setQuery("");
-      } else {
-        await invoke("hide_window");
-      }
-    }
-  };
+    },
+    [showPalette, showSettings, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings],
+  );
+
+  /* ---------------- render ---------------- */
 
   if (isSetupComplete === null) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#0d0f14] text-slate-400">
-        <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+      <div className="flex h-screen items-center justify-center bg-bg">
+        <span className="h-4 w-4 animate-pulse rounded-full bg-accent" />
       </div>
     );
   }
 
   const isCommandMode = query.startsWith(">");
   const filteredCommands = COMMAND_SUGGESTIONS.filter((s) =>
-    s.cmd.toLowerCase().includes(query.toLowerCase())
+    s.cmd.toLowerCase().includes(query.toLowerCase()),
   );
+
+  const hasQuery = query.trim() !== "";
+  const noResults = hasQuery && !isCommandMode && results.length === 0;
+  const isIndexing = indexingStatus?.is_indexing ?? false;
+  // Home bento owns the full width; the preview pane would just be empty chrome.
+  const showPreview = !isCommandMode && previewOpen && hasQuery;
 
   return (
     <div
       onKeyDown={handleKeyDown}
-      className="flex flex-col h-screen w-screen bg-[#0e1118]/90 text-slate-100 overflow-hidden font-sans border border-white/10 rounded-2xl shadow-2xl backdrop-blur-2xl select-none"
+      className="flex h-screen w-screen select-none flex-col overflow-hidden bg-bg text-fg"
     >
-      {/* Onboarding Setup if not complete */}
-      {!isSetupComplete && (
+      {isSetupComplete === false && (
         <SetupModal
           onSetupCompleted={() => {
             setIsSetupComplete(true);
-            setTimeout(() => inputRef.current?.focus(), 100);
+            window.setTimeout(() => inputRef.current?.focus(), 120);
           }}
         />
       )}
 
-      {/* Main Search Experience */}
-      {isSetupComplete && (
+      {isSetupComplete === true && (
         <>
-          {/* Top Search Input Bar */}
-          <div className="relative flex items-center px-4 py-3.5 border-b border-white/10 bg-white/[0.03]">
-            {isCommandMode ? (
-              <Terminal className="w-5 h-5 text-amber-400 mr-3 flex-shrink-0" />
-            ) : (
-              <Search className="w-5 h-5 text-blue-400 mr-3 flex-shrink-0" />
-            )}
+          {/* Search bar */}
+          {showSettings && (
+            <div className="absolute inset-0 z-40">
+              <Settings
+                onClose={() => setShowSettings(false)}
+                initialSection={settingsSection}
+                onConfigSaved={() => {
+                  invoke<IndexingStatus>("get_indexing_status").then(setIndexingStatus);
+                }}
+              />
+            </div>
+          )}
 
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search files, contents, filters (type:pdf in:~/Projects) or > for commands..."
-              className="flex-1 bg-transparent text-sm sm:text-base text-white placeholder-slate-500 focus:outline-none"
-              autoFocus
-            />
+          {!showSettings && (
+            <>
+              <SearchBar
+                query={query}
+                setQuery={setQuery}
+                inputRef={inputRef}
+                isSearching={isSearching}
+                onOpenPalette={() => setShowPalette(true)}
+                onFocusInput={() => {}}
+                resultCount={results.length}
+              />
 
-            {/* Clear / Spinner / Settings */}
-            <div className="flex items-center gap-2 flex-shrink-0">
-              {isSearching && (
-                <Loader2 className="w-4 h-4 animate-spin text-blue-400 mr-1" />
+              {/* Global indexing progress: 2px accent line under the bar.
+                  Stale results stay visible — never a spinner over the list. */}
+              {isIndexing && (
+                <div className="progress-track shrink-0 px-0">
+                  <div className="progress-bar" />
+                </div>
               )}
 
-              {query && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuery("");
-                    setCommandOutput(null);
-                    inputRef.current?.focus();
-                  }}
-                  className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+              {/* Category chips */}
+              {!isCommandMode && (
+                <CategoryChips query={query} results={results} onPick={handleChip} />
+              )}
+
+              {/* Active backend filters + hints */}
+              {!isCommandMode && (
+                <FilterChips
+                  filters={activeFilters}
+                  hints={hints}
+                  onRemoveFilter={handleRemoveFilter}
+                  onApplyHint={handleApplyHint}
+                />
+              )}
+
+              {/* Command output banner */}
+              {commandOutput && (
+                <div className="flex shrink-0 items-start justify-between gap-3 border-b border-line bg-elevated px-4 py-2">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+                    <pre className="select-text whitespace-pre-wrap break-all font-mono text-[10.5px] leading-relaxed text-muted">
+                      {commandOutput}
+                    </pre>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCommandOutput(null)}
+                    className="shrink-0 text-subtle transition-colors hover:text-fg"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {/* Content: list/grid + preview */}
+              <div className="flex min-h-0 flex-1 overflow-hidden">
+                <div
+                  ref={resultsContainerRef}
+                  className={`min-w-0 flex-1 overflow-y-auto ${
+                    view === "grid"
+                      ? "grid grid-cols-[repeat(auto-fill,160px)] justify-start gap-2 p-3"
+                      : "px-2 py-1"
+                  }`}
                 >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-
-              <button
-                type="button"
-                title="Settings"
-                onClick={() => setShowSettings(!showSettings)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Active Filter Chips & Hints */}
-          {!isCommandMode && (
-            <FilterChips
-              filters={activeFilters}
-              hints={hints}
-              onRemoveFilter={handleRemoveFilter}
-              onApplyHint={handleApplyHint}
-            />
-          )}
-
-          {/* Command Output Banner if any */}
-          {commandOutput && (
-            <div className="flex items-start justify-between gap-3 px-4 py-2.5 bg-blue-600/15 border-b border-blue-500/20 text-xs text-blue-200">
-              <div className="flex items-start gap-2 min-w-0">
-                <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
-                <pre className="font-mono text-[11px] whitespace-pre-wrap break-all">
-                  {commandOutput}
-                </pre>
-              </div>
-              <button
-                type="button"
-                onClick={() => setCommandOutput(null)}
-                className="text-slate-400 hover:text-white flex-shrink-0"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
-
-          {/* Split Content Area: Results List + Right-Side Preview Pane */}
-          <div className="flex-1 flex min-h-0 overflow-hidden">
-            {/* Left: Result List or Command Suggestions */}
-            <div
-              ref={resultsContainerRef}
-              className="flex-1 overflow-y-auto p-2 space-y-1"
-            >
-              {isCommandMode ? (
-                <div className="p-2 space-y-1.5">
-                  <div className="px-2 py-1 text-[11px] font-medium text-amber-400/90 uppercase tracking-wider">
-                    Command Mode (Press Enter to execute)
-                  </div>
-                  {filteredCommands.map((c) => (
-                    <div
-                      key={c.cmd}
-                      onClick={() => {
-                        setQuery(c.cmd);
-                        handleRunCommand(c.cmd);
-                      }}
-                      className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 cursor-pointer transition-colors"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <Terminal className="w-4 h-4 text-amber-400" />
-                        <span className="font-mono text-xs text-white font-medium">
-                          {c.cmd}
-                        </span>
-                        <span className="text-xs text-slate-400">{c.desc}</span>
-                      </div>
-                      <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
-                    </div>
-                  ))}
-                </div>
-              ) : results.length > 0 ? (
-                results.map((res, idx) => (
-                  <ResultItem
-                    key={res.path + idx}
-                    result={res}
-                    isSelected={idx === selectedIndex}
-                    onSelect={() => setSelectedIndex(idx)}
-                    onOpen={() => handleOpenFile(res.path)}
-                    onOpenFolder={() => handleOpenFolder(res.path)}
-                  />
-                ))
-              ) : query.trim() !== "" ? (
-                <div className="flex flex-col items-center justify-center h-full text-center py-12 text-slate-400">
-                  <FolderSearch className="w-10 h-10 text-slate-600 mb-2" />
-                  <p className="text-xs text-slate-400">No matching files found</p>
-                  <p className="text-[11px] text-slate-600 mt-1">
-                    Try another keyword, remove filters, or check excluded folders
-                  </p>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full text-center py-10 text-slate-500">
-                  <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-center text-blue-400 mb-3 shadow-inner">
-                    <Sparkles className="w-6 h-6" />
-                  </div>
-                  <h3 className="text-sm font-medium text-slate-300">Kensaku Ready</h3>
-                  <p className="text-xs text-slate-500 mt-1 max-w-sm">
-                    Search files, text inside files, or use filters like <code className="text-slate-300">type:pdf</code>, <code className="text-slate-300">in:~/Projects</code>, <code className="text-slate-300">size:&gt;2mb</code>.
-                  </p>
-                  {indexingStatus && (
-                    <div className="mt-4 px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/5 text-[11px] text-slate-400 flex items-center gap-2">
-                      {indexingStatus.is_indexing && (
-                        <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                  {isCommandMode ? (
+                    <div className="p-1.5">
+                      <p className="eyebrow pb-2 pt-1">commands — Enter executes</p>
+                      {filteredCommands.length === 0 ? (
+                        <p className="px-2 py-4 text-[12px] text-subtle">Unknown command</p>
+                      ) : (
+                        filteredCommands.map((c) => (
+                          <button
+                            key={c.cmd}
+                            type="button"
+                            onClick={() => {
+                              setQuery(c.cmd);
+                              handleRunCommand(c.cmd);
+                            }}
+                            className="flex h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 text-left transition-colors duration-150 hover:bg-sunken"
+                          >
+                            <Terminal className="h-4 w-4 shrink-0 text-warning" />
+                            <span className="font-mono text-[12px] font-medium text-fg">{c.cmd}</span>
+                            <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{c.desc}</span>
+                            <kbd className="kbd">↵</kbd>
+                          </button>
+                        ))
                       )}
-                      <span>{indexingStatus.current_status}</span>
                     </div>
+                  ) : results.length > 0 ? (
+                    view === "list" ? (
+                      results.map((res, idx) => (
+                        <div key={res.path + idx} data-index={idx}>
+                          <ResultItem
+                            result={res}
+                            query={query}
+                            index={idx}
+                            isSelected={idx === selectedIndex}
+                            view="list"
+                            onSelect={() => setSelectedIndex(idx)}
+                            onOpen={() => handleOpenFile(res.path)}
+                            onReveal={() => handleOpenFolder(res.path)}
+                            onCopyPath={() => handleCopyPath(res.path)}
+                          />
+                        </div>
+                      ))
+                    ) : (
+                      results.map((res, idx) => (
+                        <div key={res.path + idx} data-index={idx}>
+                        <ResultItem
+                          result={res}
+                          query={query}
+                          index={idx}
+                          isSelected={idx === selectedIndex}
+                          view="grid"
+                          onSelect={() => setSelectedIndex(idx)}
+                          onOpen={() => handleOpenFile(res.path)}
+                          onReveal={() => handleOpenFolder(res.path)}
+                          onCopyPath={() => handleCopyPath(res.path)}
+                        />
+                        </div>
+                      ))
+                    )
+                  ) : noResults ? (
+                    <EmptyState variant="noresults" caption={`Nothing matches ${query.trim()}`}>
+                      <div className="flex flex-wrap items-center justify-center gap-1.5">
+                        {hasActiveFilters(query) && (
+                          <SuggestChip label="Remove filters" onClick={() => setQuery("")} />
+                        )}
+                        <SuggestChip
+                          label="Try type:pdf"
+                          onClick={() => {
+                            setQuery("type:pdf");
+                            inputRef.current?.focus();
+                          }}
+                        />
+                        <SuggestChip
+                          label="Nothing but folders"
+                          onClick={() => {
+                            setQuery("type:dir");
+                            inputRef.current?.focus();
+                          }}
+                        />
+                      </div>
+                    </EmptyState>
+                  ) : (
+                    /* Home — empty query bento */
+                    <HomeGrid
+                      recent={recent}
+                      stats={slowStats}
+                      statsLive={slowStatsLive}
+                      onOpenFile={handleOpenFile}
+                      onSelectResult={(r) => {
+                        setQuery(r.filename);
+                        inputRef.current?.focus();
+                      }}
+                      onAddFolder={() => openSettings("folders")}
+                      onReindex={() => handleRunCommand(">reindex")}
+                      onOpenSettings={() => openSettings()}
+                      onToggleView={() => setView((v) => (v === "list" ? "grid" : "list"))}
+                      view={view}
+                      onTogglePreview={() => setPreviewOpen((p) => !p)}
+                      previewOpen={previewOpen}
+                      onRunQuery={(q) => {
+                        setQuery(q);
+                        inputRef.current?.focus();
+                      }}
+                    />
                   )}
                 </div>
-              )}
-            </div>
 
-            {/* Right: Preview Pane */}
-            {!isCommandMode && (
-              <PreviewPane
-                result={results[selectedIndex] || null}
-                searchQuery={query}
-                onOpen={() => handleOpenFile(results[selectedIndex].path)}
-                onOpenFolder={() => handleOpenFolder(results[selectedIndex].path)}
-                onOpenActions={() => setShowActions(true)}
-              />
-            )}
-          </div>
+                {/* Preview pane, hidden < 900px */}
+                {showPreview && (
+                  <PreviewPane
+                    result={selected}
+                    searchQuery={query}
+                    onOpen={() => selected && handleOpenFile(selected.path)}
+                    onOpenFolder={() => selected && handleOpenFolder(selected.path)}
+                    onOpenActions={() => setShowPalette(true)}
+                  />
+                )}
+              </div>
 
-          {/* Bottom Bar: Shortcuts + Meta */}
-          <div className="flex items-center justify-between px-4 py-2 border-t border-white/10 bg-black/40 text-[11px] text-slate-400">
-            <div className="flex items-center gap-3">
-              <span className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-slate-300 font-mono text-[10px]">↑↓</kbd>
-                <span>Navigate</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-slate-300 font-mono text-[10px]">↵</kbd>
-                <span>Open</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-slate-300 font-mono text-[10px]">⇧↵</kbd>
-                <span>Folder</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-slate-300 font-mono text-[10px]">⌘K</kbd>
-                <span>Actions</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-slate-300 font-mono text-[10px]">&gt;</kbd>
-                <span>Commands</span>
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2.5 text-slate-400">
-              {/* Semantic Status Indicator */}
-              {indexingStatus?.is_embedding ? (
-                <span
-                  className="flex items-center gap-1 text-cyan-400 text-[11px] font-medium"
-                  title="Computing static embeddings in background..."
-                >
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  <span>semantic (embedding...)</span>
-                </span>
-              ) : indexingStatus?.semantic_ready ? (
-                <span
-                  className="flex items-center gap-1 text-emerald-400/90 text-[11px] font-medium"
-                  title={`${indexingStatus.units_indexed ?? 0} semantic units active in RRF fusion`}
-                >
-                  <span>semantic ✓</span>
-                </span>
-              ) : null}
-
-              {searchTimeMs !== null && (
-                <span>
-                  {results.length} result{results.length === 1 ? "" : "s"} ({searchTimeMs}ms)
-                </span>
-              )}
-              {indexingStatus?.is_indexing && (
-                <span className="flex items-center gap-1 text-blue-400">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  <span>Indexing...</span>
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Action Palette Modal (⌘K / Ctrl+K) */}
-          {showActions && results[selectedIndex] && (
-            <ActionPalette
-              result={results[selectedIndex]}
-              onClose={() => setShowActions(false)}
-              onOpen={() => handleOpenFile(results[selectedIndex].path)}
-              onOpenFolder={() => handleOpenFolder(results[selectedIndex].path)}
-              onCopyPath={() => {
-                navigator.clipboard.writeText(results[selectedIndex].path);
-              }}
-              onCopyContent={async () => {
-                try {
-                  const content = await invoke<string>("read_file_content", {
-                    path: results[selectedIndex].path,
-                  });
-                  navigator.clipboard.writeText(content);
-                } catch (e) {
-                  console.error(e);
+              {/* Status bar */}
+              <StatusBar
+                searchTimeMs={searchTimeMs}
+                resultCount={results.length}
+                indexingStatus={indexingStatus}
+                stats={
+                  slowStats
+                    ? {
+                        files: slowStats.index.files,
+                        lastReconcileSecsAgo: slowStats.index.last_reconcile_secs_ago,
+                        watcherOk: slowStats.runtime.watcher_ok || !slowStatsLive,
+                      }
+                    : null
                 }
-              }}
-              onFindSimilar={(simQuery) => {
-                setQuery(simQuery);
-                inputRef.current?.focus();
-              }}
-              onAsk={() => {
-                setCommandOutput(`Ask about "${results[selectedIndex].filename}": Ollama integration configured for Phase 6.`);
-              }}
-            />
-          )}
+                theme={theme}
+                onToggleTheme={toggleTheme}
+                onOpenSettings={openSettings}
+              />
 
-          {/* Settings Drawer/Modal */}
-          {showSettings && (
-            <SettingsModal
-              onClose={() => setShowSettings(false)}
-              onConfigSaved={() => {
-                invoke<IndexingStatus>("get_indexing_status").then(setIndexingStatus);
-              }}
-            />
+              {/* Palette */}
+              {showPalette && (
+                <Palette
+                  title={selected ? "Kensaku · file actions" : "Kensaku · command palette"}
+                  placeholder={selected ? "Type a command…" : "Type a command or filter…"}
+                  groups={paletteGroups}
+                  onClose={() => setShowPalette(false)}
+                />
+              )}
+            </>
           )}
         </>
       )}
     </div>
   );
+}
+
+/* Chips rendered under a no-results illustration. */
+function SuggestChip({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex h-6 items-center rounded-full border border-line px-2.5 font-mono text-[10.5px] text-muted transition-colors duration-150 hover:border-line-strong hover:text-fg"
+    >
+      {label}
+    </button>
+  );
+}
+
+function hasActiveFilters(q: string): boolean {
+  return /\b(type|ext|in|modified|size):/i.test(q);
+}
+
+function categoryIcon(id: string): React.ComponentType<{ className?: string }> {
+  switch (id) {
+    case "image":
+      return ImageIcon;
+    case "folder":
+      return FolderIcon;
+    case "code":
+      return FileCode;
+    case "media":
+      return Film;
+    case "file":
+      return FileIcon;
+    default:
+      return Clock;
+  }
 }
 
 export default App;

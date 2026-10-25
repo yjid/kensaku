@@ -1,6 +1,10 @@
 import React from "react";
 import { ActiveFilter } from "../types";
-import { X, Filter as FilterIcon, Folder, AlertCircle } from "lucide-react";
+import { X, Folder } from "lucide-react";
+import { hintToken } from "../lib/hints";
+
+/* Visible chips for every active backend filter — click to remove. Plus
+   suggestion hints from the backend (click to apply to the query). */
 
 interface FilterChipsProps {
   filters: ActiveFilter[];
@@ -15,58 +19,40 @@ export const FilterChips: React.FC<FilterChipsProps> = ({
   onRemoveFilter,
   onApplyHint,
 }) => {
-  if (filters.length === 0 && hints.length === 0) {
-    return null;
-  }
+  if (filters.length === 0 && hints.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 border-b border-white/5 bg-black/20 text-xs">
-      {filters.length > 0 && (
-        <div className="flex items-center gap-1 text-slate-500 mr-1 text-[11px]">
-          <FilterIcon className="w-3 h-3" />
-          <span>Filters:</span>
-        </div>
-      )}
-
-      {filters.map((filter, idx) => (
-        <span
-          key={filter.raw + idx}
-          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] font-mono transition-colors ${
-            filter.negated
-              ? "bg-rose-500/10 text-rose-300 border-rose-500/20"
-              : filter.filter_type === "in"
-              ? "bg-amber-500/10 text-amber-300 border-amber-500/20"
-              : filter.filter_type === "type" || filter.filter_type === "ext"
-              ? "bg-blue-500/10 text-blue-300 border-blue-500/20"
-              : "bg-purple-500/10 text-purple-300 border-purple-500/20"
-          }`}
+    <div className="no-scrollbar flex shrink-0 items-center gap-1.5 overflow-x-auto px-4 pb-2">
+      {filters.map((f, i) => (
+        <button
+          key={f.raw + i}
+          type="button"
+          title={`Remove filter ${f.raw}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemoveFilter(f);
+          }}
+          className="group flex h-6 shrink-0 items-center gap-1 rounded-full bg-sunken pl-2.5 pr-1.5 text-[11px] font-mono text-muted transition-colors duration-150 hover:text-fg"
         >
-          <span>{filter.raw}</span>
-          <button
-            type="button"
-            title={`Remove ${filter.raw}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemoveFilter(filter);
-            }}
-            className="hover:text-white rounded transition-colors"
-          >
-            <X className="w-3 h-3" />
-          </button>
-        </span>
+          <span className={f.negated ? "line-through decoration-danger" : ""}>{f.raw}</span>
+          <X className="h-3 w-3 opacity-50 transition-opacity group-hover:opacity-100" />
+        </button>
       ))}
 
-      {hints.map((hint, idx) => {
-        const isDir = hint.includes("📁");
+      {hints.map((h, i) => {
+        const { label, isDir } = hintToken(h);
         return (
           <button
-            key={hint + idx}
+            key={h + i}
             type="button"
-            onClick={() => onApplyHint(hint)}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-[11px] transition-colors cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              onApplyHint(h);
+            }}
+            className="flex h-6 shrink-0 items-center gap-1.5 rounded-full border border-line px-2.5 text-[11px] text-muted transition-colors duration-150 hover:bg-sunken hover:text-fg"
           >
-            {isDir ? <Folder className="w-3 h-3 text-amber-400" /> : <AlertCircle className="w-3 h-3 text-sky-400" />}
-            <span>{hint}</span>
+            {isDir && <Folder className="h-3 w-3 text-accent" />}
+            <span className="font-medium">{label}</span>
           </button>
         );
       })}

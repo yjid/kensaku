@@ -1,5 +1,86 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------ */
+/* Design tokens — single source of truth. Components must reference   */
+/* these via Tailwind utilities (bg-bg, text-muted, border-line …) or  */
+/* var(--token). No raw colors in components.                          */
+/* ------------------------------------------------------------------ */
+
+:root {
+  /* paper (light) */
+  --bg: #fafaf8;
+  --bg-elevated: #ffffff;
+  --bg-sunken: #f2f2ee;
+  --fg: #111110;
+  --fg-muted: #6b6b66;
+  --fg-subtle: #9a9a94;
+  --border: #e4e4de;
+  --border-strong: #d0d0c8;
+  --accent: #2f7d6d;
+  --accent-fg: #ffffff;
+  --accent-soft: #e3f0ec;
+  --blue: #3d5af1;
+  --pink: #d98b8b;
+  --olive: #8f8f5a;
+  --danger: #c2452d;
+  --warning: #b5761f;
+  --success: #2f7d6d;
+  --scrim: rgba(17, 17, 16, 0.32);
+  --icon-tint-opacity: 0.12;
+}
+
+[data-theme="void"] {
+  --bg: #0a0a0b;
+  --bg-elevated: #121214;
+  --bg-sunken: #060607;
+  --fg: #f2f2ef;
+  --fg-muted: #9a9a96;
+  --fg-subtle: #6a6a66;
+  --border: #232326;
+  --border-strong: #33333a;
+  --accent: #4fb39d;
+  --accent-fg: #06231d;
+  --accent-soft: #13251f;
+  --blue: #6b86ff;
+  --pink: #e0a0a0;
+  --olive: #b0b07a;
+  --danger: #e5644a;
+  --warning: #e0a44a;
+  --success: #4fb39d;
+  --scrim: rgba(0, 0, 0, 0.55);
+  --icon-tint-opacity: 0.1;
+}
+
+/* Map tokens into Tailwind's theme so utilities like `bg-elevated`,
+   `text-muted`, `border-line` resolve to the runtime-switchable vars. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-elevated: var(--bg-elevated);
+  --color-sunken: var(--bg-sunken);
+  --color-fg: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-subtle: var(--fg-subtle);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-blue: var(--blue);
+  --color-pink: var(--pink);
+  --color-olive: var(--olive);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
+}
+
+/* ------------------------------------------------------------------ */
+/* Base                                                                */
+/* ------------------------------------------------------------------ */
+
 @layer base {
   * {
     box-sizing: border-box;
@@ -8,27 +89,222 @@
     user-select: none;
   }
 
-  input, textarea {
-    user-select: text;
+  html,
+  body,
+  #root {
+    height: 100%;
   }
 
   body {
-    background: transparent;
+    background: var(--bg);
+    color: var(--fg);
     overflow: hidden;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 1.45;
+    letter-spacing: -0.01em;
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  input,
+  textarea {
+    user-select: text;
+  }
+
+  h1,
+  h2,
+  h3 {
+    line-height: 1.2;
+  }
+
+  /* Keyboard focus: 2px accent ring, 2px offset, everywhere. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--fg);
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Reusable primitives                                                 */
+/* ------------------------------------------------------------------ */
+
+/* Section eyebrow — tiny uppercase label used on bento cards & rails. */
+.eyebrow {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-subtle);
+}
+
+/* kbd chip */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  color: var(--fg-muted);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Scrollbars — hairline, theme-aware, nearly invisible. */
 ::-webkit-scrollbar {
-  width: 5px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--border-strong);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--fg-subtle);
+}
+
+/* Hide scrollbar for horizontally-scrolling chip rows. */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+/* Hairline helper: the elevation ladder is border + bg shift only. */
+.hairline {
+  border: 1px solid var(--border);
+}
+
+/* ------------------------------------------------------------------ */
+/* Motion                                                              */
+/* ------------------------------------------------------------------ */
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.row-enter {
+  opacity: 1;
+}
+
+/* Applied via inline style `--stagger-delay` on the first 8 rows. */
+@keyframes row-in-delayed {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.row-stagger {
+  animation: row-in-delayed 160ms ease-out both;
+  animation-delay: var(--stagger-delay, 0ms);
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.overlay-in {
+  animation: overlay-in 180ms ease-out both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fade-in {
+  animation: fade-in 150ms ease-out both;
+}
+
+/* Indeterminate 2px progress line under the search bar. */
+@keyframes progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+.progress-track {
+  height: 2px;
+  width: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+.progress-bar {
+  height: 100%;
+  width: 40%;
+  border-radius: 9999px;
+  background: var(--accent);
+  animation: progress-slide 1.2s ease-in-out infinite;
+}
+
+/* Pulse for status dots */
+@keyframes dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.dot-pulse {
+  animation: dot-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .row-stagger {
+    animation: none;
+  }
 }
