@@ -113,6 +113,17 @@ impl HeadlessIndex {
         ))
     }
 
+    /// Computes snippets for `paths` in parallel on the extraction-free fast
+    /// path (plain text is read directly, documents only hit the extraction
+    /// cache). The result is aligned with `paths`.
+    pub fn snippets(&self, paths: &[String], query: &str) -> Vec<Option<String>> {
+        use rayon::prelude::*;
+        paths
+            .par_iter()
+            .map(|path| crate::indexer::content::snippet_for_path(Path::new(path), query))
+            .collect()
+    }
+
     /// Compact index status shared by `kensaku-cli state` and the MCP
     /// `index_state` tool.
     pub fn state(&self) -> Result<Value, String> {

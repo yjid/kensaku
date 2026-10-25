@@ -73,6 +73,10 @@ impl SearchDispatcher {
         resp.results
     }
 
+    /// Runs a query and attaches snippets for the top results.
+    ///
+    /// Snippets come from the extraction-free fast path, so this stays cheap
+    /// even for PDFs and images.
     pub fn search_response(
         raw_query: &str,
         metadata: &MetadataStore,
@@ -81,6 +85,55 @@ impl SearchDispatcher {
         semantic_enabled: bool,
         limit: usize,
         seq: u64,
+    ) -> SearchResponse {
+        Self::search_response_with_snippets(
+            raw_query,
+            metadata,
+            content_index,
+            unit_store,
+            semantic_enabled,
+            limit,
+            seq,
+            true,
+        )
+    }
+
+    /// Runs a query without touching file contents at all.
+    ///
+    /// Used by the Tauri `search` command: the UI renders results immediately
+    /// and requests snippets separately through `get_snippets`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn search_response_fast(
+        raw_query: &str,
+        metadata: &MetadataStore,
+        content_index: &Option<ContentIndex>,
+        unit_store: Option<&UnitStore>,
+        semantic_enabled: bool,
+        limit: usize,
+        seq: u64,
+    ) -> SearchResponse {
+        Self::search_response_with_snippets(
+            raw_query,
+            metadata,
+            content_index,
+            unit_store,
+            semantic_enabled,
+            limit,
+            seq,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn search_response_with_snippets(
+        raw_query: &str,
+        metadata: &MetadataStore,
+        content_index: &Option<ContentIndex>,
+        unit_store: Option<&UnitStore>,
+        semantic_enabled: bool,
+        limit: usize,
+        seq: u64,
+        with_snippets: bool,
     ) -> SearchResponse {
         let start_time = SystemTime::now();
         let trimmed = raw_query.trim();
@@ -511,38 +564,20 @@ impl SearchDispatcher {
             results.truncate(limit);
         }
 
-        // 9. Post-rank snippet extraction for top 20 files
-        if !search_text.is_empty() {
+        // 9. Post-rank snippet extraction for top 20 files.
+        //
+        // `get_snippet_fast` reads plain text directly and otherwise only
+        // consults the extraction cache, so the query path never runs a PDF,
+        // Office or OCR extractor (the previous `read_text_content` fallback
+        // did, which is what made queries take seconds on document-heavy
+        // indexes).
+        if with_snippets && !search_text.is_empty() {
             for item in results.iter_mut().take(20) {
                 if item.is_dir {
                     continue;
                 }
                 if let Some(ci) = content_index.as_ref() {
-                    item.snippet = ci.get_snippet(Path::new(&item.path), search_text);
-                }
-                if item.snippet.is_none()
-                    && let Some((b_start, b_end)) = item.best_range
-                    && let Some(content) = crate::indexer::content::read_text_content(
-                        Path::new(&item.path),
-                        ((b_end + 1000).max(10_000)) as u64,
-                    )
-                {
-                    let snippet_start = b_start.saturating_sub(60);
-                    let snippet_end = (b_end + 60).min(content.len());
-                    let safe_start = content
-                        .char_indices()
-                        .map(|(i, _)| i)
-                        .rfind(|&i| i <= snippet_start)
-                        .unwrap_or(0);
-                    let safe_end = content
-                        .char_indices()
-                        .map(|(i, _)| i)
-                        .find(|&i| i >= snippet_end)
-                        .unwrap_or(content.len());
-                    if safe_end > safe_start {
-                        let slice = &content[safe_start..safe_end];
-                        item.snippet = Some(slice.replace('\n', " ").trim().to_string());
-                    }
+                    item.snippet = ci.get_snippet_fast(Path::new(&item.path), search_text);
                 }
             }
         }
