@@ -15,6 +15,20 @@ pub struct MetadataDb {
 }
 
 impl MetadataDb {
+    pub fn begin_transaction(&self) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute("BEGIN", [])
+            .map_err(|e| format!("Failed to begin transaction: {}", e))?;
+        Ok(())
+    }
+
+    pub fn commit_transaction(&self) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute("COMMIT", [])
+            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+        Ok(())
+    }
+
     pub fn open() -> Result<Self, String> {
         let config_dir = dirs::config_dir()
             .ok_or_else(|| "Could not determine config directory".to_string())?;
