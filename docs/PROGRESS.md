@@ -319,3 +319,17 @@ See `docs/OPTIMIZATION.md` for the full plan. Completed items:
 - **E2:** Extension interning (u16 instead of Option<String>) — high churn, low impact (6-12MB at 1M files)
 - **B4 (full):** Push filters into Tantivy BooleanQuery (currently post-filter)
 - **A4 (full):** name:/content:/path: term scoping in BM25 (currently fuzzy+BM25 both get scoped terms)
+
+## Optimization Pass — Final (E2 deferred, B4 partial)
+
+### E2: Extension interning — DEFERRED
+Extension interning (u16 instead of Option<String>) would save 6-12MB at 1M files but requires
+touching FileEntry, metadata DB schema, walker, search, content, and frontend. The risk and
+churn outweigh the marginal benefit. The current Option<String> approach is simple and correct.
+
+### B4: Push filters into Tantivy — PARTIAL
+Path prefix filtering is implemented as a post-filter in ContentIndex::search. Full BooleanQuery
+pushdown would require adding ext/size fields to the Tantivy schema (index rebuild). Deferred.
+
+### Summary: All high-impact optimization items are complete.
+Remaining items (E2, B4-full) are low-impact/high-effort and deferred.
