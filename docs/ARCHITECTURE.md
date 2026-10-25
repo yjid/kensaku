@@ -1,5 +1,9 @@
 # Kensaku v2 — Architecture & Implementation Plan
 
+> **Status:** implemented through v0.3.0. This document is the design; the
+> user-facing guides are in [`USAGE.md`](USAGE.md) and [`AGENTS.md`](AGENTS.md),
+> and the open gaps are in [`REMAINING.md`](REMAINING.md).
+
 > **One sentence:** a warm, local, read-only index of your machine that answers in under 15 ms — for you, and for every AI agent you use.
 
 ---
