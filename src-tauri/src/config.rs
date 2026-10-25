@@ -130,6 +130,41 @@ impl KensakuConfig {
         Self::config_dir().join("index")
     }
 
+    /// Parses `content` and applies one-time migrations.
+    ///
+    /// Returns the config plus whether anything changed, so callers that loaded
+    /// from disk can persist the migrated form while [`Self::load_from_str`]
+    /// stays side-effect free.
+    fn parse_and_migrate(content: &str) -> Result<(Self, bool), serde_json::Error> {
+        let mut cfg: Self = serde_json::from_str(content)?;
+        let mut migrated = false;
+
+        if cfg.config_version < 1 {
+            // v1: document/image formats became indexable (text extraction + OCR).
+            // Strip the legacy defaults so existing installs start indexing them.
+            const LEGACY_EXCLUDED: &[&str] = &[
+                "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+                "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp", "tiff", "tif",
+            ];
+            cfg.excluded_extensions.retain(|ext| {
+                !LEGACY_EXCLUDED.iter().any(|legacy| legacy.eq_ignore_ascii_case(ext))
+            });
+            cfg.config_version = 1;
+            migrated = true;
+        }
+
+        Ok((cfg, migrated))
+    }
+
+    /// Disk-free equivalent of [`Self::load`], used by tests to exercise the
+    /// migration path without touching the user's config directory.
+    pub fn load_from_str(content: &str) -> Self {
+        match Self::parse_and_migrate(content) {
+            Ok((cfg, _migrated)) => cfg,
+            Err(_) => Self::default(),
+        }
+    }
+
     pub fn load() -> Self {
         let path = Self::config_path();
         if !path.exists() {
@@ -148,19 +183,9 @@ impl KensakuConfig {
             }
         };
 
-        match serde_json::from_str::<Self>(&content) {
-            Ok(mut cfg) => {
-                if cfg.config_version < 1 {
-                    // v1: document/image formats became indexable (text extraction + OCR).
-                    // Strip the legacy defaults so existing installs start indexing them.
-                    const LEGACY_EXCLUDED: &[&str] = &[
-                        "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
-                        "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp", "tiff", "tif",
-                    ];
-                    cfg.excluded_extensions.retain(|ext| {
-                        !LEGACY_EXCLUDED.iter().any(|legacy| legacy.eq_ignore_ascii_case(ext))
-                    });
-                    cfg.config_version = 1;
+        match Self::parse_and_migrate(&content) {
+            Ok((cfg, migrated)) => {
+                if migrated {
                     let _ = cfg.save();
                 }
                 cfg
@@ -195,9 +220,14 @@ impl KensakuConfig {
     /// over the real config, then (best effort on unix) fsync the directory so
     /// the rename itself is durable.
     pub fn save(&self) -> Result<(), String> {
-        let dir = Self::config_dir();
-        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let path = Self::config_path();
+        self.save_to(&Self::config_dir())
+    }
+
+    /// Writes `<dir>/config.json` atomically. Extracted from [`Self::save`] so
+    /// tests can target a temporary directory instead of the real one.
+    pub fn save_to(&self, dir: &Path) -> Result<(), String> {
+        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        let path = dir.join("config.json");
         let tmp_path = dir.join("config.json.tmp");
         let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
 
@@ -213,7 +243,7 @@ impl KensakuConfig {
         {
             // `File::sync_all` on the directory flushes the rename entry. Some
             // filesystems reject fsync on directories, hence best effort.
-            if let Ok(dir_file) = fs::File::open(&dir) {
+            if let Ok(dir_file) = fs::File::open(dir) {
                 let _ = dir_file.sync_all();
             }
         }
@@ -238,5 +268,118 @@ impl KensakuConfig {
             });
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "kensaku-config-{}-{}-{}",
+            tag,
+            std::process::id(),
+            nanos
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn default_config_is_v1_and_paper() {
+        let cfg = KensakuConfig::default();
+        assert_eq!(cfg.config_version, 1);
+        assert!(cfg.skip_hidden);
+        assert!(cfg.ocr_enabled);
+        assert_eq!(cfg.theme, "paper");
+    }
+
+    #[test]
+    fn legacy_config_is_migrated() {
+        let legacy = r#"{
+            "watched_dirs": [],
+            "excluded_dirs": [],
+            "excluded_extensions": ["pdf", "PNG", "doc", "rs", "png", "zip"],
+            "shortcut": "Alt+Space",
+            "max_results": 50,
+            "is_setup_complete": false
+        }"#;
+
+        let cfg = KensakuConfig::load_from_str(legacy);
+
+        assert_eq!(cfg.config_version, 1);
+        // Legacy document/image extensions are stripped (case-insensitively)...
+        assert!(!cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case("pdf")));
+        assert!(!cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case("png")));
+        assert!(!cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case("doc")));
+        // ...while user-defined exclusions survive.
+        assert!(cfg.excluded_extensions.iter().any(|e| e == "rs"));
+        assert!(cfg.excluded_extensions.iter().any(|e| e == "zip"));
+        // Missing defaults are filled in by serde.
+        assert!(cfg.skip_hidden);
+        assert!(cfg.ocr_enabled);
+        assert_eq!(cfg.theme, "paper");
+    }
+
+    #[test]
+    fn already_migrated_config_is_unchanged() {
+        let current = r#"{
+            "watched_dirs": [],
+            "excluded_dirs": [],
+            "excluded_extensions": ["pdf"],
+            "shortcut": "Alt+Space",
+            "max_results": 50,
+            "is_setup_complete": false,
+            "config_version": 1
+        }"#;
+
+        let cfg = KensakuConfig::load_from_str(current);
+        assert_eq!(cfg.config_version, 1);
+        assert_eq!(cfg.excluded_extensions, vec!["pdf".to_string()]);
+    }
+
+    #[test]
+    fn corrupt_config_falls_back_to_defaults() {
+        let cfg = KensakuConfig::load_from_str("{ not json");
+        assert_eq!(cfg.config_version, 1);
+        assert_eq!(cfg.theme, "paper");
+    }
+
+    #[test]
+    fn save_to_writes_atomically() {
+        let dir = temp_dir("save");
+
+        let cfg = KensakuConfig::default();
+        cfg.save_to(&dir).expect("save should succeed");
+
+        let path = dir.join("config.json");
+        assert!(path.is_file(), "config.json should exist");
+        assert!(
+            !dir.join("config.json.tmp").exists(),
+            "temp file should be renamed away"
+        );
+
+        let saved: KensakuConfig =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved.config_version, 1);
+        assert_eq!(saved.theme, "paper");
+
+        // A second save replaces the existing file atomically.
+        let updated = KensakuConfig {
+            max_results: 7,
+            ..cfg
+        };
+        updated.save_to(&dir).expect("second save should succeed");
+        let saved: KensakuConfig =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved.max_results, 7);
+        assert!(!dir.join("config.json.tmp").exists());
+
+        fs::remove_dir_all(&dir).ok();
     }
 }
