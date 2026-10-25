@@ -204,7 +204,7 @@ impl EmbeddingQueue {
                                     node_id,
                                     byte_start: start,
                                     byte_end: end,
-                                    model_id: model.model_id,
+                                    model_id: ModelRegistry::global().model_id,
                                 },
                                 vec,
                                 content_hash.clone(),
@@ -231,7 +231,7 @@ impl EmbeddingQueue {
                             node_id,
                             unit.byte_start,
                             unit.byte_end,
-                            unit.model_id,
+                            ModelRegistry::global().model_id,
                             &vec,
                         ) {
                             unit.id = inserted_id;

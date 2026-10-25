@@ -349,6 +349,48 @@ impl MetadataDb {
         Ok(())
     }
 
+    /// Model id stored on the first semantic unit, if any units exist.
+    pub fn units_model_id(&self) -> Result<Option<u32>, String> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT model_id FROM units LIMIT 1")
+            .map_err(|e| format!("Failed to prepare units model query: {}", e))?;
+        let mut rows = stmt
+            .query([])
+            .map_err(|e| format!("Failed to query units model id: {}", e))?;
+        match rows
+            .next()
+            .map_err(|e| format!("Failed to read units model id: {}", e))?
+        {
+            Some(row) => {
+                let model_id: i64 = row
+                    .get(0)
+                    .map_err(|e| format!("Failed to decode units model id: {}", e))?;
+                Ok(Some(model_id as u32))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Drops every semantic unit and re-queues all file nodes for embedding.
+    ///
+    /// Used when the semantic model changed, because vectors from different
+    /// models are not comparable. The in-memory [`crate::embed::UnitStore`] is
+    /// cleared separately by the caller.
+    pub fn reset_semantic_index(&self) -> Result<(), String> {
+        let conn = self.conn.lock();
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Failed to start semantic reset: {}", e))?;
+        tx.execute("DELETE FROM units", [])
+            .map_err(|e| format!("Failed to clear semantic units: {}", e))?;
+        tx.execute("UPDATE nodes SET indexed_gen = 0 WHERE is_dir = 0", [])
+            .map_err(|e| format!("Failed to re-queue nodes for embedding: {}", e))?;
+        tx.commit()
+            .map_err(|e| format!("Failed to commit semantic reset: {}", e))?;
+        Ok(())
+    }
+
     #[allow(clippy::type_complexity)]
     pub fn get_nodes_for_embedding(
         &self,
