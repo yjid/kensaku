@@ -136,6 +136,30 @@ artifact from the Actions run.
 
 ---
 
+## OCR (optional)
+
+OCR needs the `tesseract` binary **and** language data. Kensaku can download
+`eng.traineddata` (~4 MB) into its own directory from **Settings → Search**, so
+you don't need root. If you prefer a system install:
+
+```bash
+# Linux (Debian/Ubuntu)
+sudo apt install tesseract-ocr tesseract-ocr-eng
+
+# macOS
+brew install tesseract
+
+# Windows
+winget install UB-Mannheim.TesseractOCR
+```
+
+Settings → Search shows one of four states: ready (with languages), engine found
+but no language data (download button), engine missing (platform install command),
+or unknown. The OCR switch is disabled until OCR can actually work. Doctor repeats
+the same check.
+
+---
+
 ## First run
 
 1. Pick folders (Home, Projects, Documents, Downloads).

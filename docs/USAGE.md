@@ -101,8 +101,11 @@ Results are deterministic: score, then path.
 - **Unavailable roots** (unplugged drive, unmounted share) are preserved, not pruned.
 - **Documents** — PDF, DOCX/PPTX/XLSX, EPUB/ODT, RTF; malformed files are skipped
   after an 8-second timeout.
-- **Images** — OCR via `tesseract` when installed; thumbnails and dimensions are
-  cached; near-duplicates use a perceptual hash.
+- **Images** — OCR via `tesseract` when the engine and language data are present
+  (Settings → Search shows the status and can download `eng.traineddata`); the
+  toggle controls whether image text is indexed, and saving re-scans existing
+  images. Thumbnails and dimensions are cached; near-duplicates use a perceptual
+  hash.
 - **Cloud placeholders** (Windows OneDrive/iCloud) are indexed by name only, so
   reading doesn't hydrate the file.
 
