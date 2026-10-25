@@ -93,6 +93,14 @@ impl MetadataDb {
             eprintln!("[Kensaku] Failed to create dev/ino index: {}", e);
         }
 
+        // Partial index for embedding queue: fast lookup of unembedded nodes
+        if let Err(e) = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_nodes_unembedded ON nodes(indexed_gen) WHERE indexed_gen = 0",
+            [],
+        ) {
+            eprintln!("[Kensaku] Failed to create unembedded index: {}", e);
+        }
+
         Ok(Self {
             conn: Mutex::new(conn),
         })
