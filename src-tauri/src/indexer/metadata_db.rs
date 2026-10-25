@@ -109,6 +109,7 @@ impl MetadataDb {
             "ALTER TABLE nodes ADD COLUMN width INTEGER",
             "ALTER TABLE nodes ADD COLUMN height INTEGER",
             "ALTER TABLE nodes ADD COLUMN phash INTEGER",
+            "ALTER TABLE nodes ADD COLUMN content_pending INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE units ADD COLUMN vec BLOB",
         ] {
             if let Err(e) = conn.execute(ddl, []) {
@@ -144,7 +145,7 @@ impl MetadataDb {
         let conn = self.conn.lock();
         let mut stmt = conn
             .prepare(
-                "SELECT id, path, name, extension, size, modified, is_dir, dev, ino FROM nodes",
+                "SELECT id, path, name, extension, size, modified, is_dir, dev, ino, content_pending FROM nodes",
             )
             .map_err(|e| format!("Failed to prepare metadata query: {}", e))?;
 
@@ -159,6 +160,7 @@ impl MetadataDb {
                 let is_dir: i64 = row.get(6)?;
                 let dev: i64 = row.get(7)?;
                 let ino: i64 = row.get(8)?;
+                let content_pending: i64 = row.get(9)?;
 
                 let char_bloom = crate::search::fuzzy::compute_char_mask(&name);
                 Ok(FileEntry {
@@ -172,6 +174,7 @@ impl MetadataDb {
                     dev: u64::try_from(dev).unwrap_or(0),
                     ino: u64::try_from(ino).unwrap_or(0),
                     char_bloom,
+                    content_pending: content_pending != 0,
                 })
             })
             .map_err(|e| format!("Failed to read metadata rows: {}", e))?;
@@ -187,8 +190,8 @@ impl MetadataDb {
     pub fn upsert(&self, entry: &FileEntry) -> Result<(), String> {
         let conn = self.conn.lock();
         conn.execute(
-            "INSERT INTO nodes (path, name, extension, size, modified, is_dir, dev, ino)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            "INSERT INTO nodes (path, name, extension, size, modified, is_dir, dev, ino, content_pending)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              ON CONFLICT(path) DO UPDATE SET
                name = excluded.name,
                extension = excluded.extension,
@@ -210,6 +213,7 @@ impl MetadataDb {
                 entry.is_dir as i64,
                 entry.dev as i64,
                 entry.ino as i64,
+                entry.content_pending as i64,
             ],
         )
         .map_err(|e| format!("Failed to upsert metadata entry: {}", e))?;
@@ -591,6 +595,33 @@ impl MetadataDb {
         Ok(())
     }
 
+    /// Marks every still-present raster image as needing its content re-read.
+    ///
+    /// Used when the OCR setting changes: a cursor over the image rows is
+    /// cheaper than a full crawl and leaves every non-image entry untouched.
+    /// Returns the number of rows updated.
+    pub fn mark_images_pending(&self) -> Result<usize, String> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE nodes SET content_pending = 1
+             WHERE is_dir = 0
+               AND lower(extension) IN ('png','jpg','jpeg','gif','webp','bmp','tiff','tif')",
+            [],
+        )
+        .map_err(|e| format!("Failed to mark images pending: {}", e))
+    }
+
+    /// Clears the pending flag for a single path.
+    pub fn clear_content_pending(&self, path: &Path) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE nodes SET content_pending = 0 WHERE path = ?1",
+            params![path.to_string_lossy().to_string()],
+        )
+        .map_err(|e| format!("Failed to clear pending content for '{}': {}", path.display(), e))?;
+        Ok(())
+    }
+
     /// Groups nodes whose `content_hash` is identical.
     ///
     /// Returns `(hash, paths)` for groups with at least two members, largest
@@ -806,6 +837,7 @@ mod tests {
             dev: 0,
             ino: 0,
             char_bloom: 0,
+            content_pending: false,
         }
     }
 
@@ -898,6 +930,92 @@ mod tests {
                 .expect("exact phash groups")
                 .is_empty(),
             "distance 0 must not group distinct hashes"
+        );
+    }
+
+    #[test]
+    fn content_pending_round_trips_and_survives_upsert() {
+        let temp = TempDb::new("content-pending");
+        let db = temp.db();
+        let image = temp.dir.join("photo.png");
+        let doc = temp.dir.join("notes.txt");
+
+        let mut pending = entry(&image, false);
+        pending.content_pending = true;
+        db.upsert(&pending).expect("insert pending image");
+        db.upsert(&entry(&doc, false)).expect("insert document");
+
+        let loaded = db.load_all().expect("load nodes");
+        let loaded_image = loaded
+            .iter()
+            .find(|entry| entry.path == image)
+            .expect("image row");
+        assert!(loaded_image.content_pending);
+        let loaded_doc = loaded
+            .iter()
+            .find(|entry| entry.path == doc)
+            .expect("document row");
+        assert!(!loaded_doc.content_pending);
+
+        // A later upsert (e.g. from a crawl) must not reset the flag before
+        // the image has been re-read.
+        let mut cleared = entry(&image, false);
+        cleared.content_pending = false;
+        db.upsert(&cleared).expect("upsert same image");
+        let reloaded = db
+            .load_all()
+            .expect("reload nodes")
+            .into_iter()
+            .find(|entry| entry.path == image)
+            .expect("image row");
+        assert!(
+            reloaded.content_pending,
+            "upsert must not reset a pending flag"
+        );
+    }
+
+    #[test]
+    fn mark_images_pending_targets_only_image_rows() {
+        let temp = TempDb::new("mark-images");
+        let db = temp.db();
+        let image = temp.dir.join("photo.JPG");
+        let other_image = temp.dir.join("scan.tiff");
+        let doc = temp.dir.join("notes.txt");
+        let dir = temp.dir.join("folder.png");
+
+        for path in [&image, &other_image, &doc, &dir] {
+            db.upsert(&entry(path, path == &dir)).expect("insert row");
+        }
+
+        assert_eq!(db.mark_images_pending().expect("mark images"), 2);
+
+        let loaded = db.load_all().expect("load nodes");
+        let pending: Vec<&str> = loaded
+            .iter()
+            .filter(|entry| entry.content_pending)
+            .map(|entry| entry.path.to_str().expect("utf-8 path"))
+            .collect();
+        assert_eq!(pending.len(), 2);
+        assert!(loaded.iter().find(|e| e.path == image).unwrap().content_pending);
+        assert!(
+            loaded
+                .iter()
+                .find(|e| e.path == other_image)
+                .unwrap()
+                .content_pending
+        );
+        assert!(!loaded.iter().find(|e| e.path == doc).unwrap().content_pending);
+        assert!(!loaded.iter().find(|e| e.path == dir).unwrap().content_pending);
+
+        db.clear_content_pending(&image).expect("clear pending");
+        let reloaded = db.load_all().expect("reload nodes");
+        assert!(!reloaded.iter().find(|e| e.path == image).unwrap().content_pending);
+        assert!(
+            reloaded
+                .iter()
+                .find(|e| e.path == other_image)
+                .unwrap()
+                .content_pending
         );
     }
 

@@ -18,6 +18,9 @@ pub struct FileEntry {
     pub ino: u64,
     /// 64-bit character presence bitmask for fast prefiltering.
     pub char_bloom: u64,
+    /// True when the entry's content must be re-read even if its mtime/size did
+    /// not change (used to re-run image OCR after the setting is toggled).
+    pub content_pending: bool,
 }
 
 /// Returns `(device_id, inode)` for a filesystem metadata entry.
@@ -159,6 +162,7 @@ pub fn walk_directories(
                 dev,
                 ino,
                 char_bloom,
+                content_pending: false,
             };
 
             result.push(file_entry);

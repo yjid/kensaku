@@ -122,6 +122,7 @@ mod tests {
             is_dir: false,
             dev: 0,
             ino: 0,
+            content_pending: false,
         }
     }
 

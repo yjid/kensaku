@@ -907,6 +907,7 @@ mod tests {
             dev: 0,
             ino: 0,
             char_bloom: 0,
+            content_pending: false,
         }
     }
 

@@ -1,6 +1,7 @@
 use crate::AppState;
 use crate::config::KensakuConfig;
 use crate::indexer::IndexingStatus;
+use crate::indexer::extract::image::{self, OcrStatus};
 use crate::search::{SearchDispatcher, SearchResponse, SearchResult};
 use auto_launch::AutoLaunch;
 use serde::{Deserialize, Serialize};
@@ -537,6 +538,28 @@ pub async fn get_thumbnail(path: String) -> Result<String, String> {
         .map_err(|e| format!("Thumbnail task failed: {}", e))?
 }
 
+/// Reports whether tesseract and its language data are usable.
+///
+/// The engine is probed by spawning `tesseract --version`, so the work runs on
+/// a blocking thread to keep the async runtime responsive.
+#[tauri::command]
+pub async fn get_ocr_status() -> Result<OcrStatus, String> {
+    tauri::async_runtime::spawn_blocking(image::ocr_status)
+        .await
+        .map_err(|e| format!("OCR status task failed: {}", e))
+}
+
+/// Downloads the English tessdata file, then returns the refreshed status.
+#[tauri::command]
+pub async fn download_ocr_language() -> Result<OcrStatus, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        image::download_eng_tessdata()?;
+        Ok::<OcrStatus, String>(image::ocr_status())
+    })
+    .await
+    .map_err(|e| format!("OCR download task failed: {}", e))?
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DuplicateGroup {
     /// `"content"` for exact extracted-content matches, `"image"` for
@@ -670,8 +693,30 @@ pub async fn get_config(state: State<'_, AppState>) -> Result<KensakuConfig, Str
 
 #[tauri::command]
 pub async fn save_config(config: KensakuConfig, state: State<'_, AppState>) -> Result<(), String> {
+    let previous = state.indexer.config.read().clone();
+    let ocr_changed = previous.ocr_enabled != config.ocr_enabled;
+
     config.save()?;
-    *state.indexer.config.write() = config;
+    *state.indexer.config.write() = config.clone();
+
+    if ocr_changed {
+        // Apply the setting immediately, then flag only the image rows for a
+        // re-read. `start_indexing` spawns its own thread, so the IPC call
+        // returns without waiting for the crawl.
+        crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
+        let marked = state.indexer.metadata.write().mark_images_pending();
+        eprintln!(
+            "[Kensaku] OCR {}: {} image(s) queued for re-scan",
+            if config.ocr_enabled {
+                "enabled"
+            } else {
+                "disabled"
+            },
+            marked
+        );
+        state.indexer.start_indexing();
+    }
+
     Ok(())
 }
 
@@ -698,6 +743,7 @@ pub async fn complete_setup(
     config.is_setup_complete = true;
     config.save()?;
 
+    crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
     *state.indexer.config.write() = config;
     state.indexer.start_indexing();
 
