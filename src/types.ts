@@ -23,6 +23,10 @@ export interface SearchResponse {
   active_filters: ActiveFilter[];
   hints: string[];
   search_time_ms: number;
+  /** Matches before the display limit (collected count for exhaustive mode). */
+  total?: number;
+  /** "ranked" or "exhaustive". */
+  mode?: string;
 }
 
 export interface FilePreview {
