@@ -411,13 +411,14 @@ pub fn run(state: &AppState) -> DoctorReport {
     let nodes = state.indexer.metadata.read().len();
     let units = state.indexer.unit_store.read().len();
 
-    let mut checks = Vec::new();
-    checks.push(check_config_dir_writable());
-    checks.push(check_metadata_db(&config_dir));
-    checks.push(check_full_text_index(nodes));
-    checks.push(check_semantic_index(units));
-    checks.push(check_watched_folders(state));
-    checks.push(check_watcher(state));
+    let mut checks = vec![
+        check_config_dir_writable(),
+        check_metadata_db(&config_dir),
+        check_full_text_index(nodes),
+        check_semantic_index(units),
+        check_watched_folders(state),
+        check_watcher(state),
+    ];
     #[cfg(target_os = "linux")]
     checks.push(check_inotify_limit());
     checks.push(check_models());
