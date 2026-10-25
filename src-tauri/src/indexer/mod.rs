@@ -85,6 +85,33 @@ impl IndexerManager {
         let unit_store = Arc::new(RwLock::new(UnitStore::new(EMBEDDING_DIM)));
         let query_in_flight = Arc::new(AtomicBool::new(false));
 
+        // Discard semantic units produced by a different embedding model; the
+        // embedding worker re-queues every node once it starts.
+        if let Some(db) = metadata_store.read().db() {
+            let expected_model_id = ModelRegistry::global().model_id;
+            match db.units_model_id() {
+                Ok(Some(existing_model_id)) if existing_model_id != expected_model_id => {
+                    match db.reset_semantic_index() {
+                        Ok(()) => {
+                            unit_store.write().clear();
+                            log::info!(
+                                "[Kensaku] Semantic model changed (units id {} -> {}); reset semantic index",
+                                existing_model_id,
+                                expected_model_id
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("[Kensaku] Failed to reset semantic index: {}", e);
+                        }
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("[Kensaku] Failed to read semantic model id: {}", e);
+                }
+            }
+        }
+
         // Load persisted units from database
         let mut units_count = 0;
         if let Some(db) = metadata_store.read().db() {
@@ -383,7 +410,7 @@ impl IndexerManager {
             if config_arc.read().semantic_enabled {
                 let mut eq_guard = embedding_queue.lock();
                 if eq_guard.is_none() {
-                    let model = ModelRegistry::default();
+                    let model = ModelRegistry::global().clone();
                     let mut q = EmbeddingQueue::new(
                         model,
                         Arc::clone(&unit_store),
