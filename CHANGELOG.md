@@ -3,6 +3,21 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [0.3.1] — 2026-10-26
+
+### Fixed
+- **OCR could not be turned on.** The Settings switch was a disabled placeholder
+  and `ocr_enabled` was never read by the backend. The switch now persists to
+  config, extraction is gated on it, and changing it re-scans only images.
+- **OCR silently produced nothing when tesseract had no language data.** Settings
+  now reports engine/language status, can download `eng.traineddata` (~4 MB) into
+  Kensaku's own directory, and shows platform install commands when the engine is
+  missing. Doctor gained an OCR check.
+
+### Changed
+- `content_pending` column lets a settings change re-process only the affected
+  files; pending images with no extractable text have stale documents removed.
+
 ## [0.3.0] — 2026-10-26
 
 The open-source launch. Seven focused changesets on top of v0.2.0.
