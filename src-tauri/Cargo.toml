@@ -27,6 +27,7 @@ tantivy = "0.26"
 nucleo-matcher = "0.3"
 jwalk = "0.9"
 notify = "8"
+fs4 = "0.13"
 tokio = { version = "1", features = ["full"] }
 dirs = "6"
 log = "0.4"

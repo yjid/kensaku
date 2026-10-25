@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,34 +132,92 @@ impl KensakuConfig {
 
     pub fn load() -> Self {
         let path = Self::config_path();
-        if path.exists()
-            && let Ok(content) = fs::read_to_string(&path)
-            && let Ok(mut cfg) = serde_json::from_str::<Self>(&content)
-        {
-            if cfg.config_version < 1 {
-                // v1: document/image formats became indexable (text extraction + OCR).
-                // Strip the legacy defaults so existing installs start indexing them.
-                const LEGACY_EXCLUDED: &[&str] = &[
-                    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
-                    "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp", "tiff", "tif",
-                ];
-                cfg.excluded_extensions.retain(|ext| {
-                    !LEGACY_EXCLUDED.iter().any(|legacy| legacy.eq_ignore_ascii_case(ext))
-                });
-                cfg.config_version = 1;
-                let _ = cfg.save();
-            }
-            return cfg;
+        if !path.exists() {
+            return Self::default();
         }
-        Self::default()
+
+        let content = match fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(e) => {
+                eprintln!(
+                    "[Kensaku] Could not read config {}: {}; using defaults",
+                    path.display(),
+                    e
+                );
+                return Self::default();
+            }
+        };
+
+        match serde_json::from_str::<Self>(&content) {
+            Ok(mut cfg) => {
+                if cfg.config_version < 1 {
+                    // v1: document/image formats became indexable (text extraction + OCR).
+                    // Strip the legacy defaults so existing installs start indexing them.
+                    const LEGACY_EXCLUDED: &[&str] = &[
+                        "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+                        "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp", "tiff", "tif",
+                    ];
+                    cfg.excluded_extensions.retain(|ext| {
+                        !LEGACY_EXCLUDED.iter().any(|legacy| legacy.eq_ignore_ascii_case(ext))
+                    });
+                    cfg.config_version = 1;
+                    let _ = cfg.save();
+                }
+                cfg
+            }
+            Err(e) => {
+                // Preserve the unreadable file instead of silently discarding
+                // the user's settings: the next `save()` will overwrite it.
+                let stamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let backup = Self::config_dir().join(format!("config.json.corrupt-{}", stamp));
+                match fs::copy(&path, &backup) {
+                    Ok(_) => eprintln!(
+                        "[Kensaku] Config is corrupt ({}); backup saved to {}; using defaults",
+                        e,
+                        backup.display()
+                    ),
+                    Err(copy_err) => eprintln!(
+                        "[Kensaku] Config is corrupt ({}); failed to back up {}: {}; using defaults",
+                        e,
+                        path.display(),
+                        copy_err
+                    ),
+                }
+                Self::default()
+            }
+        }
     }
 
+    /// Atomically persists the config: write a temp file, fsync it, rename it
+    /// over the real config, then (best effort on unix) fsync the directory so
+    /// the rename itself is durable.
     pub fn save(&self) -> Result<(), String> {
         let dir = Self::config_dir();
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let path = Self::config_path();
+        let tmp_path = dir.join("config.json.tmp");
         let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-        fs::write(path, json).map_err(|e| e.to_string())?;
+
+        {
+            let mut file = fs::File::create(&tmp_path).map_err(|e| e.to_string())?;
+            file.write_all(json.as_bytes()).map_err(|e| e.to_string())?;
+            file.sync_all().map_err(|e| e.to_string())?;
+        }
+
+        fs::rename(&tmp_path, &path).map_err(|e| e.to_string())?;
+
+        #[cfg(unix)]
+        {
+            // `File::sync_all` on the directory flushes the rename entry. Some
+            // filesystems reject fsync on directories, hence best effort.
+            if let Ok(dir_file) = fs::File::open(&dir) {
+                let _ = dir_file.sync_all();
+            }
+        }
+
         Ok(())
     }
 

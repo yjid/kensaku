@@ -162,13 +162,19 @@ impl ContentIndex {
     }
 
     /// Deletes every indexed document whose path is not present in
-    /// `valid_paths`.
+    /// `valid_paths`, except documents under `preserved_roots`.
     ///
     /// This is used after a full crawl to remove documents that belong to
     /// files deleted while the application was not running (or to watched
-    /// directories removed from the configuration). Returns the number of
-    /// documents purged.
-    pub fn purge_stale(&self, valid_paths: &HashSet<PathBuf>) -> Result<usize, String> {
+    /// directories removed from the configuration). `preserved_roots` are
+    /// configured roots that were unavailable during the crawl (unplugged
+    /// drive, unmounted share); their documents are kept so a transient outage
+    /// cannot wipe the index. Returns the number of documents purged.
+    pub fn purge_stale(
+        &self,
+        valid_paths: &HashSet<PathBuf>,
+        preserved_roots: &[PathBuf],
+    ) -> Result<usize, String> {
         // Documents store `to_string_lossy()` paths, so compare in the same
         // representation to avoid purging valid non-UTF-8 paths.
         let valid_lossy: HashSet<String> = valid_paths
@@ -189,9 +195,14 @@ impl ContentIndex {
             let Some(path_str) = doc.get_first(self.path_field).and_then(|f| f.as_str()) else {
                 continue;
             };
-            if !valid_lossy.contains(path_str) {
-                stale_paths.push(path_str.to_string());
+            if valid_lossy.contains(path_str) {
+                continue;
             }
+            let path = Path::new(path_str);
+            if preserved_roots.iter().any(|root| path.starts_with(root)) {
+                continue;
+            }
+            stale_paths.push(path_str.to_string());
         }
 
         if stale_paths.is_empty() {
