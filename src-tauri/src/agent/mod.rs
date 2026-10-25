@@ -62,6 +62,9 @@ impl HeadlessIndex {
             KensakuConfig::default()
         };
 
+        // The headless surface must honor the same OCR setting as the GUI.
+        crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
+
         // Read-write is fine: WAL lets the GUI writer and this connection
         // coexist. Nothing on the headless path writes.
         let db = MetadataDb::open_in_dir(dir)?;

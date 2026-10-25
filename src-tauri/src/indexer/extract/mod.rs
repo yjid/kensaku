@@ -7,8 +7,26 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::Duration;
+
+/// Process-wide OCR setting, mirroring [`crate::config::KensakuConfig::ocr_enabled`].
+///
+/// Image extraction reads this flag instead of taking a config lock, which
+/// keeps the parallel extraction phase independent of the config `RwLock`.
+static OCR_ENABLED: AtomicBool = AtomicBool::new(true);
+
+/// Updates the process-wide OCR setting. Called whenever the config is loaded or
+/// saved so image indexing follows the user's choice immediately.
+pub fn set_ocr_enabled(enabled: bool) {
+    OCR_ENABLED.store(enabled, Ordering::SeqCst);
+}
+
+/// True when image OCR is allowed.
+pub fn ocr_enabled() -> bool {
+    OCR_ENABLED.load(Ordering::SeqCst)
+}
 
 #[derive(Debug, Clone)]
 pub struct DocumentExtract {
@@ -208,6 +226,19 @@ pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> 
     let file_size = meta.len();
     let mtime = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
 
+    // Content policy: metadata-only above 20 MB
+    if file_size > 20_000_000 {
+        return None;
+    }
+
+    // OCR is a user setting: when it is off, images must never produce text.
+    // This runs before the cache lookup so a previously cached OCR result is
+    // not reused after the setting is turned off. The sniff is only needed on
+    // this path; the normal flow below still checks the cache first.
+    if !ocr_enabled() && sniff_format(path) == DocumentFormat::Image {
+        return None;
+    }
+
     // Check cache first
     let cache_key = (path.to_path_buf(), file_size, mtime);
     {
@@ -215,11 +246,6 @@ pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> 
         if let Some(cached) = cache.get(&cache_key) {
             return Some(cached);
         }
-    }
-
-    // Content policy: metadata-only above 20 MB
-    if file_size > 20_000_000 {
-        return None;
     }
 
     let capped_bytes = (max_bytes as usize).min(1_000_000);
@@ -351,7 +377,12 @@ fn extract_document_inner(path: &Path, capped_bytes: usize, format: DocumentForm
             })
         }
         DocumentFormat::Image => {
-            // OCR via tesseract (Linux) or platform APIs
+            // OCR via tesseract (Linux) or platform APIs. Check the flag here
+            // as well: the inline fallback path and any direct caller must not
+            // shell out to tesseract when OCR is disabled.
+            if !ocr_enabled() {
+                return None;
+            }
             let text = image::extract_image_ocr(path)?;
             Some(DocumentExtract {
                 text,
@@ -504,5 +535,27 @@ mod tests {
 
         assert!(result.is_none(), "empty file should not extract: {result:?}");
         assert!(elapsed < Duration::from_secs(2), "took {elapsed:?}");
+    }
+
+    #[test]
+    fn image_extraction_is_disabled_when_ocr_is_off() {
+        // A real, decodable PNG: the result must be `None` because of the
+        // setting, not because the file is invalid. Tesseract may or may not
+        // be installed, so this never asserts on extracted text.
+        let path = TempFile::path_for("png");
+        ::image::RgbImage::from_pixel(20, 20, ::image::Rgb([12, 34, 56]))
+            .save_with_format(&path, ::image::ImageFormat::Png)
+            .expect("write test png");
+        let _cleanup = TempFile { path: path.clone() };
+
+        let previous = ocr_enabled();
+        set_ocr_enabled(false);
+        let result = extract_document(&path, 1_000_000);
+        set_ocr_enabled(previous);
+
+        assert!(
+            result.is_none(),
+            "an image must not produce content while OCR is disabled: {result:?}"
+        );
     }
 }

@@ -158,6 +158,8 @@ pub fn run() {
     }
 
     let config = KensakuConfig::load();
+    // OCR is enforced through the extraction layer's process-wide flag.
+    indexer::extract::set_ocr_enabled(config.ocr_enabled);
     let is_setup = config.is_setup_complete;
     let indexer_manager = Arc::new(IndexerManager::new(config.clone()));
 

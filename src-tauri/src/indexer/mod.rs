@@ -11,7 +11,7 @@ use crate::indexer::content::{
     ContentIndex, is_indexable_extension, is_indexable_file_name, read_text_content,
 };
 use crate::indexer::metadata::MetadataStore;
-use crate::indexer::walker::{is_cloud_placeholder_path, walk_directories};
+use crate::indexer::walker::{FileEntry, is_cloud_placeholder_path, walk_directories};
 use crate::indexer::watcher::{WatcherHandle, start_file_watcher};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
@@ -51,6 +51,14 @@ fn now_unix_ms() -> u64 {
 
 fn now_unix_secs() -> u64 {
     now_unix_ms() / 1000
+}
+
+/// True when an existing entry is unchanged and has no content re-read pending.
+///
+/// A pending entry (set by an OCR toggle) is always re-processed even when its
+/// mtime and size still match, which is how the image re-scan stays targeted.
+fn is_unchanged(existing: &FileEntry, entry: &FileEntry) -> bool {
+    existing.modified == entry.modified && existing.size == entry.size && !existing.content_pending
 }
 
 pub struct IndexerManager {
@@ -232,6 +240,9 @@ impl IndexerManager {
             let mut content_count = 0;
             let mut pending_commits = 0;
             let mut crawled_paths: HashSet<PathBuf> = HashSet::new();
+            // Images flagged by an OCR-toggle re-scan that were processed by
+            // this crawl. Their pending flag is cleared once extraction ran.
+            let mut pending_images: HashSet<PathBuf> = HashSet::new();
 
             // Begin SQLite transaction for batched writes (100x faster than per-file commits)
             if let Some(db) = metadata.read().db() {
@@ -257,19 +268,24 @@ impl IndexerManager {
                     continue;
                 }
 
-                // Incremental crawl: check + add under a single write lock.
+                // Incremental crawl: check + add under a single write lock. A
+                // pending entry is re-processed even when mtime/size match so
+                // an OCR toggle only re-scans images.
                 {
                     let mut store = metadata.write();
-                    let unchanged = store
-                        .get(&entry.path)
-                        .map(|existing| {
-                            existing.modified == entry.modified && existing.size == entry.size
-                        })
-                        .unwrap_or(false);
+                    let (unchanged, was_pending) = match store.get(&entry.path) {
+                        Some(existing) => {
+                            (is_unchanged(existing, &entry), existing.content_pending)
+                        }
+                        None => (false, false),
+                    };
                     if unchanged {
                         continue;
                     }
                     store.add(entry.clone());
+                    if was_pending {
+                        pending_images.insert(entry.path.clone());
+                    }
                 }
 
                 // Queue indexable files for parallel content extraction.
@@ -343,11 +359,16 @@ impl IndexerManager {
                 Self::emit_status(&app_handle, &st);
             }
 
+            let mut extracted_paths: HashSet<PathBuf> = HashSet::new();
             for (path, name, content, modified) in extracted {
                 if let Some(c_index) = content_index.read().as_ref() {
                     let _ = c_index.add_or_update(&path, &name, &content, modified);
                     content_count += 1;
                     pending_commits += 1;
+                }
+
+                if pending_images.contains(&path) {
+                    extracted_paths.insert(path);
                 }
 
                 if pending_commits >= 1000 {
@@ -356,6 +377,19 @@ impl IndexerManager {
                     }
                     pending_commits = 0;
                 }
+            }
+
+            // A pending image re-scanned by this crawl is done. When extraction
+            // produced nothing (OCR disabled, unreadable, or no text), drop any
+            // stale OCR document so search stops returning it. Paths skipped by
+            // exclusions never enter `pending_images`, so their flag is kept.
+            for path in &pending_images {
+                if !extracted_paths.contains(path)
+                    && let Some(c_index) = content_index.read().as_ref()
+                {
+                    let _ = c_index.remove(path);
+                }
+                metadata.write().clear_content_pending(path);
             }
 
             // Commit the SQLite transaction (batched writes)
@@ -508,5 +542,40 @@ impl IndexerManager {
     /// True while a live filesystem watcher is running.
     pub fn watcher_ok(&self) -> bool {
         self.watcher_ok.load(Ordering::Relaxed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(modified: u64, size: u64, content_pending: bool) -> FileEntry {
+        FileEntry {
+            id: 0,
+            path: PathBuf::from("/tmp/kensaku/example.bin"),
+            name: "example.bin".to_string(),
+            extension: Some("bin".to_string()),
+            size,
+            modified,
+            is_dir: false,
+            dev: 0,
+            ino: 0,
+            char_bloom: 0,
+            content_pending,
+        }
+    }
+
+    #[test]
+    fn change_detection_honors_pending_content() {
+        let existing = entry(100, 10, false);
+        assert!(is_unchanged(&existing, &entry(100, 10, false)));
+        assert!(!is_unchanged(&existing, &entry(101, 10, false)));
+        assert!(!is_unchanged(&existing, &entry(100, 11, false)));
+
+        let pending = entry(100, 10, true);
+        assert!(
+            !is_unchanged(&pending, &entry(100, 10, false)),
+            "a pending entry must be re-processed even when mtime/size match"
+        );
     }
 }

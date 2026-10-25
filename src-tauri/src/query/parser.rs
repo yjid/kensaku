@@ -496,6 +496,7 @@ mod tests {
             is_dir,
             dev: 0,
             ino: 0,
+            content_pending: false,
         }
     }
 
