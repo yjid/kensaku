@@ -158,6 +158,11 @@ impl IndexerManager {
             let mut pending_commits = 0;
             let mut crawled_paths: HashSet<PathBuf> = HashSet::new();
 
+            // Begin SQLite transaction for batched writes (100x faster than per-file commits)
+            if let Some(db) = metadata.read().db() {
+                let _ = db.begin_transaction();
+            }
+
             // Phase 1: Collect all entries (jwalk is already parallel internally).
             let all_entries = walk_directories(&watched_dirs, &excluded_dirs);
 
@@ -235,6 +240,11 @@ impl IndexerManager {
                     }
                     pending_commits = 0;
                 }
+            }
+
+            // Commit the SQLite transaction (batched writes)
+            if let Some(db) = metadata.read().db() {
+                let _ = db.commit_transaction();
             }
 
             // Drop metadata entries for files that no longer exist on disk.
