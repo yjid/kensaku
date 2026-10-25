@@ -281,3 +281,25 @@ See `docs/OPTIMIZATION.md` for the full plan. Completed items:
 - E2: Extension interning (u16 instead of Option<String>)
 - E3: Scope-aware candidate pruning (partially done)
 - A4: name:/content:/path: term scoping
+
+## Optimization Pass — Round 2 (completed this session)
+
+### Phase C (indexing) — DONE
+- **C1:** Parallelize content extraction with rayon ✅
+- **C2:** Avoid double lock acquisition in crawl ✅
+- **C3:** Coalesce watcher events into batches ✅
+
+### Phase D (extraction/UI) — DONE
+- **D1:** Stream zip XML with BufReader instead of read_to_string ✅
+- **D2:** LRU cache for extraction results ✅
+- **D3:** Raise caps to 1MB/128KB ✅
+- **D4:** Frontend memoization ✅
+
+### Phase B (latency) — DONE
+- **B4:** Path prefix filter infrastructure in Tantivy search ✅
+
+### Remaining (low priority / high effort)
+- **B3:** Precompiled filters (done in previous round)
+- **E2:** Extension interning (u16 instead of Option<String>) — high churn, low impact
+- **E3:** Scope-aware candidate pruning — already done (fuzzy takes candidate_indices)
+- **A4:** name:/content:/path: term scoping — needs search pipeline split
