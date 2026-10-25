@@ -9,8 +9,9 @@ pub mod search;
 
 use config::KensakuConfig;
 use indexer::IndexerManager;
+use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
@@ -20,6 +21,61 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 pub struct AppState {
     pub indexer: Arc<IndexerManager>,
+}
+
+/// Owns the single-instance lock for the whole process lifetime: the OS releases
+/// the advisory lock when the process exits, and dropping the `File` earlier
+/// would let a second instance start.
+static INSTANCE_LOCK: OnceLock<std::fs::File> = OnceLock::new();
+
+fn instance_lock_path() -> PathBuf {
+    KensakuConfig::config_dir().join("kensaku.lock")
+}
+
+/// Tries to take the process-wide exclusive lock on `<config_dir>/kensaku.lock`.
+///
+/// * `Ok(Some(file))` — acquired; the caller must keep `file` alive.
+/// * `Ok(None)` — another instance already holds the lock.
+/// * `Err(_)` — the lock file could not be created or opened. Startup continues
+///   without the guard rather than bricking the app on a read-only config dir.
+fn acquire_instance_lock() -> Result<Option<std::fs::File>, String> {
+    use fs4::fs_std::FileExt;
+
+    let dir = KensakuConfig::config_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
+
+    let path = instance_lock_path();
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(|e| format!("{}: {}", path.display(), e))?;
+
+    match file.try_lock_exclusive() {
+        Ok(true) => Ok(Some(file)),
+        Ok(false) => Ok(None),
+        Err(e) => Err(format!("{}: {}", path.display(), e)),
+    }
+}
+
+/// Acquires the lock, exiting quietly when another instance is running.
+fn acquire_instance_lock_or_exit() -> Option<std::fs::File> {
+    match acquire_instance_lock() {
+        Ok(Some(file)) => Some(file),
+        Ok(None) => {
+            eprintln!("[Kensaku] Another Kensaku instance is already running; exiting.");
+            std::process::exit(0);
+        }
+        Err(e) => {
+            eprintln!(
+                "[Kensaku] Could not acquire single-instance lock ({}); continuing without it",
+                e
+            );
+            None
+        }
+    }
 }
 
 /// Marker consumed on the next launch to wipe all Kensaku state.
@@ -72,7 +128,24 @@ fn maybe_apply_pending_reset() {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     commands::init_process_start();
+
+    // Single-instance guard. Acquire it before touching any state so a second
+    // launch can never race the first one on the database, index or config.
+    let mut instance_lock = acquire_instance_lock_or_exit();
+
     maybe_apply_pending_reset();
+
+    // A pending reset deletes the config directory, which removes the lock
+    // file. Re-acquire so the recreated directory is protected as well.
+    if instance_lock.is_some() && !instance_lock_path().exists() {
+        instance_lock = acquire_instance_lock_or_exit();
+    }
+
+    if let Some(file) = instance_lock {
+        // Deliberately kept alive until the process exits.
+        let _ = INSTANCE_LOCK.set(file);
+    }
+
     let config = KensakuConfig::load();
     let is_setup = config.is_setup_complete;
     let indexer_manager = Arc::new(IndexerManager::new(config.clone()));
