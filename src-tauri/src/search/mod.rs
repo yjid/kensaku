@@ -1,16 +1,19 @@
 pub mod fuzzy;
 
 use crate::embed::{ExactScanner, ModelRegistry, UnitStore};
-use crate::indexer::content::ContentIndex;
+use crate::indexer::content::{ContentIndex, FieldKind};
 use crate::indexer::metadata::MetadataStore;
 use crate::indexer::walker::FileEntry;
-use crate::query::ast::{ActiveFilterDto, Filter};
+use crate::query::ast::{ActiveFilterDto, Filter, Mode, TermField};
 use crate::query::parse_query;
 use crate::search::fuzzy::FuzzySearcher;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+
+/// Hard cap for `mode:exhaustive` result enumeration.
+const EXHAUSTIVE_LIMIT: usize = 10_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum MatchType {
@@ -40,6 +43,11 @@ pub struct SearchResponse {
     pub active_filters: Vec<ActiveFilterDto>,
     pub hints: Vec<String>,
     pub search_time_ms: u64,
+    /// Count of matches before the display limit (collected count for
+    /// `mode:exhaustive`).
+    pub total: usize,
+    /// `"ranked"` or `"exhaustive"`.
+    pub mode: &'static str,
 }
 
 pub struct SearchDispatcher;
@@ -53,7 +61,15 @@ impl SearchDispatcher {
         semantic_enabled: bool,
         limit: usize,
     ) -> Vec<SearchResult> {
-        let resp = Self::search_response(query, metadata, content_index, unit_store, semantic_enabled, limit, 0);
+        let resp = Self::search_response(
+            query,
+            metadata,
+            content_index,
+            unit_store,
+            semantic_enabled,
+            limit,
+            0,
+        );
         resp.results
     }
 
@@ -75,6 +91,8 @@ impl SearchDispatcher {
                 active_filters: Vec::new(),
                 hints: Vec::new(),
                 search_time_ms: 0,
+                total: 0,
+                mode: "ranked",
             };
         }
 
@@ -89,11 +107,12 @@ impl SearchDispatcher {
         let generation = metadata.generation();
 
         // 1. Parse AST from query
-        let parsed = parse_query(raw_query, entries, path_index, Some(&trie), generation);
+        let mut parsed = parse_query(raw_query, entries, path_index, Some(&trie), generation);
         let route = crate::query::router::route_query(&parsed);
 
         // Pre-compile filters once per query (lowercase strings, intern extensions)
-        let compiled_filters: Vec<CompiledFilter> = parsed.filters.iter().map(CompiledFilter::from).collect();
+        let compiled_filters: Vec<CompiledFilter> =
+            parsed.filters.iter().map(CompiledFilter::from).collect();
 
         // 2. Resolve scopes and filter candidates
         let candidate_indices: Vec<usize> = if !parsed.scopes.is_empty() {
@@ -103,7 +122,8 @@ impl SearchDispatcher {
             for scope in &parsed.scopes {
                 if scope.include {
                     has_include_scope = true;
-                    let scope_candidates = trie.get_scope_candidates(scope.dir_id as usize, generation);
+                    let scope_candidates =
+                        trie.get_scope_candidates(scope.dir_id as usize, generation);
                     for &idx in scope_candidates.iter() {
                         included.insert(idx);
                     }
@@ -120,7 +140,8 @@ impl SearchDispatcher {
             let mut excluded = HashSet::new();
             for scope in &parsed.scopes {
                 if !scope.include {
-                    let scope_candidates = trie.get_scope_candidates(scope.dir_id as usize, generation);
+                    let scope_candidates =
+                        trie.get_scope_candidates(scope.dir_id as usize, generation);
                     for &idx in scope_candidates.iter() {
                         excluded.insert(idx);
                     }
@@ -147,41 +168,109 @@ impl SearchDispatcher {
         };
 
         // Extract positive terms text, split by field scoping (name:/content:/path:)
-        // so that field-scoped terms only search their target field.
-        let mut fuzzy_terms: Vec<&str> = Vec::new();  // Any, Name, Path → fuzzy (filename + path)
-        let mut bm25_terms: Vec<&str> = Vec::new();   // Any, Content, Name → BM25 (content + filename)
+        // so that field-scoped terms only search their target field. Regex terms
+        // (`re:`) never enter the fuzzy/BM25 text tiers.
+        let mut fuzzy_terms: Vec<&str> = Vec::new(); // Any, Name, Path → fuzzy (filename + path)
+        let mut bm25_groups: Vec<(FieldKind, &str)> = Vec::new();
+        let mut regex_patterns: Vec<&str> = Vec::new();
         for t in &parsed.terms {
+            if t.is_regex {
+                regex_patterns.push(&t.text);
+                continue;
+            }
             match t.field {
-                crate::query::ast::TermField::Any => {
+                TermField::Any => {
                     fuzzy_terms.push(&t.text);
-                    bm25_terms.push(&t.text);
+                    bm25_groups.push((FieldKind::Any, &t.text));
                 }
-                crate::query::ast::TermField::Name => {
+                TermField::Name => {
                     fuzzy_terms.push(&t.text);
-                    bm25_terms.push(&t.text); // also search filename in BM25
+                    bm25_groups.push((FieldKind::Name, &t.text));
                 }
-                crate::query::ast::TermField::Content => {
-                    bm25_terms.push(&t.text);
+                TermField::Content => {
+                    bm25_groups.push((FieldKind::Content, &t.text));
                 }
-                crate::query::ast::TermField::Path => {
+                TermField::Path => {
                     fuzzy_terms.push(&t.text);
                 }
             }
         }
         let fuzzy_text = fuzzy_terms.join(" ");
-        let bm25_text = bm25_terms.join(" ");
-        let search_text = if fuzzy_text.is_empty() { &bm25_text } else { &fuzzy_text };
+        let bm25_text: String = bm25_groups
+            .iter()
+            .map(|(_, text)| *text)
+            .collect::<Vec<_>>()
+            .join(" ");
+        let search_text = if fuzzy_text.is_empty() {
+            bm25_text.as_str()
+        } else {
+            fuzzy_text.as_str()
+        };
         let search_text_lower = search_text.to_lowercase();
 
         // Build a membership bitmap for O(1) candidate checks (replaces O(n) Vec::contains)
-        let candidate_set: std::collections::HashSet<usize> = candidate_indices.iter().copied().collect();
+        let candidate_set: std::collections::HashSet<usize> =
+            candidate_indices.iter().copied().collect();
+
+        // Node-id map for the semantic tier: built once for the candidate set so
+        // the scanner can prefilter units and hits need no per-hit metadata lookup.
+        let mut node_to_idx: HashMap<u64, usize> = HashMap::new();
+        for &idx in &candidate_indices {
+            if let Some(entry) = entries.get(idx)
+                && entry.id > 0
+            {
+                node_to_idx.insert(entry.id, idx);
+            }
+        }
+        let allowed_node_ids: Option<HashSet<u64>> = if node_to_idx.is_empty() {
+            None
+        } else {
+            Some(node_to_idx.keys().copied().collect())
+        };
+
+        // 2b. Exhaustive mode: no fuzzy/semantic tiers, enumerate by path.
+        if parsed.mode == Mode::Exhaustive {
+            let mut hints = parsed.hints;
+            let mut results = exhaustive_results(
+                content_index,
+                entries,
+                path_index,
+                &candidate_set,
+                &candidate_indices,
+                &bm25_groups,
+                &regex_patterns,
+                EXHAUSTIVE_LIMIT,
+                &mut hints,
+            );
+            let total = results.len();
+            if results.len() > EXHAUSTIVE_LIMIT {
+                results.truncate(EXHAUSTIVE_LIMIT);
+            }
+            if results.is_empty() && !parsed.active_filters_dto.is_empty() {
+                hints.push("No results match the active filters; try removing one.".to_string());
+            }
+            let elapsed = start_time
+                .elapsed()
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            return SearchResponse {
+                results,
+                seq,
+                active_filters: parsed.active_filters_dto,
+                hints,
+                search_time_ms: elapsed,
+                total,
+                mode: "exhaustive",
+            };
+        }
 
         // 3. Tier 1: Fuzzy filename search (< 5ms)
         let mut fuzzy_ranks: HashMap<usize, usize> = HashMap::new();
         if !fuzzy_text.is_empty() {
             let mut fuzzy_searcher = FuzzySearcher::new();
             // Search across candidate entries by index (no clone needed)
-            let fuzzy_matches = fuzzy_searcher.search(&fuzzy_text, entries, &candidate_indices, limit * 3);
+            let fuzzy_matches =
+                fuzzy_searcher.search(&fuzzy_text, entries, &candidate_indices, limit * 3);
             for (rank, (orig_idx, _score)) in fuzzy_matches.into_iter().enumerate() {
                 fuzzy_ranks.insert(orig_idx, rank + 1);
             }
@@ -189,16 +278,19 @@ impl SearchDispatcher {
 
         // 4. Tier 2: Tantivy BM25 content search (< 50ms)
         let mut bm25_ranks: HashMap<PathBuf, usize> = HashMap::new();
-        if !bm25_text.is_empty()
-            && let Some(c_index) = content_index {
-                let content_matches = c_index.search(&bm25_text, limit * 3, None);
-                for (rank, cm) in content_matches.into_iter().enumerate() {
-                    bm25_ranks.insert(cm.path, rank + 1);
-                }
+        if (!bm25_groups.is_empty() || !regex_patterns.is_empty())
+            && let Some(c_index) = content_index
+        {
+            let outcome =
+                c_index.search_groups_with_regex(&bm25_groups, &regex_patterns, limit * 3, None);
+            parsed.hints.extend(outcome.hints);
+            for (rank, cm) in outcome.matches.into_iter().enumerate() {
+                bm25_ranks.insert(cm.path, rank + 1);
             }
+        }
 
         // 5. Tier 3: Static semantic vector scan (< 5ms)
-        let mut semantic_ranks: HashMap<PathBuf, (usize, (usize, usize))> = HashMap::new();
+        let mut semantic_ranks: HashMap<usize, (usize, (usize, usize))> = HashMap::new();
         if semantic_enabled
             && !search_text.is_empty()
             && let Some(store) = unit_store
@@ -206,14 +298,20 @@ impl SearchDispatcher {
         {
             let model = ModelRegistry::global();
             let query_vec = model.embed_to_i8(search_text);
-            let hits = ExactScanner::scan(&query_vec, store, limit * 3);
+            let hits = ExactScanner::scan(&query_vec, store, allowed_node_ids.as_ref(), limit * 3);
             for (rank, hit) in hits.into_iter().enumerate() {
-                if let Some(entry) = metadata.get_by_node_id(hit.node_id)
-                    && let Some(&orig_idx) = path_index.get(&entry.path)
-                    && candidate_set.contains(&orig_idx)
-                {
+                let orig_idx = match node_to_idx.get(&hit.node_id).copied() {
+                    Some(idx) => idx,
+                    // Fallback for stores whose entries carry no node ids.
+                    None if node_to_idx.is_empty() => metadata
+                        .get_by_node_id(hit.node_id)
+                        .and_then(|entry| path_index.get(&entry.path).copied())
+                        .unwrap_or(usize::MAX),
+                    None => continue,
+                };
+                if orig_idx != usize::MAX && candidate_set.contains(&orig_idx) {
                     semantic_ranks.insert(
-                        entry.path.clone(),
+                        orig_idx,
                         (rank + 1, (hit.best_unit.byte_start, hit.best_unit.byte_end)),
                     );
                 }
@@ -232,7 +330,7 @@ impl SearchDispatcher {
 
         let mut candidates: HashMap<PathBuf, MatchCandidate> = HashMap::new();
 
-        if fuzzy_text.is_empty() && bm25_text.is_empty() {
+        if fuzzy_text.is_empty() && bm25_groups.is_empty() && regex_patterns.is_empty() {
             // Filter-only / folder navigation browsing mode
             for &idx in &candidate_indices {
                 if let Some(entry) = entries.get(idx) {
@@ -302,29 +400,30 @@ impl SearchDispatcher {
             }
 
             // Merge Semantic matches
-            for (path, &(rank, range)) in &semantic_ranks {
-                if let Some(&orig_idx) = path_index.get(path) {
-                    if !candidate_set.contains(&orig_idx) {
-                        continue;
-                    }
-                    let rrf = w_semantic * (1.0 / (60.0 + (rank as f64)));
-                    if let Some(cand) = candidates.get_mut(path) {
-                        cand.in_semantic = true;
-                        cand.rrf_score += rrf;
-                        cand.best_range = Some(range);
-                    } else {
-                        candidates.insert(
-                            path.clone(),
-                            MatchCandidate {
-                                entry_idx: orig_idx,
-                                in_fuzzy: false,
-                                in_bm25: false,
-                                in_semantic: true,
-                                rrf_score: rrf,
-                                best_range: Some(range),
-                            },
-                        );
-                    }
+            for (&orig_idx, &(rank, range)) in &semantic_ranks {
+                let Some(entry) = entries.get(orig_idx) else {
+                    continue;
+                };
+                if !candidate_set.contains(&orig_idx) {
+                    continue;
+                }
+                let rrf = w_semantic * (1.0 / (60.0 + (rank as f64)));
+                if let Some(cand) = candidates.get_mut(&entry.path) {
+                    cand.in_semantic = true;
+                    cand.rrf_score += rrf;
+                    cand.best_range = Some(range);
+                } else {
+                    candidates.insert(
+                        entry.path.clone(),
+                        MatchCandidate {
+                            entry_idx: orig_idx,
+                            in_fuzzy: false,
+                            in_bm25: false,
+                            in_semantic: true,
+                            rrf_score: rrf,
+                            best_range: Some(range),
+                        },
+                    );
                 }
             }
         }
@@ -395,6 +494,8 @@ impl SearchDispatcher {
                 .then_with(|| a.path.cmp(&b.path))
         });
 
+        let total = results.len();
+
         if results.len() > limit {
             results.truncate(limit);
         }
@@ -435,7 +536,16 @@ impl SearchDispatcher {
             }
         }
 
-        let elapsed = start_time.elapsed().map(|d| d.as_millis() as u64).unwrap_or(0);
+        if results.is_empty() && !parsed.active_filters_dto.is_empty() {
+            parsed
+                .hints
+                .push("No results match the active filters; try removing one.".to_string());
+        }
+
+        let elapsed = start_time
+            .elapsed()
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
 
         SearchResponse {
             results,
@@ -443,8 +553,83 @@ impl SearchDispatcher {
             active_filters: parsed.active_filters_dto,
             hints: parsed.hints,
             search_time_ms: elapsed,
+            total,
+            mode: "ranked",
         }
     }
+}
+
+/// Enumerates matches for `mode:exhaustive`, ordered by path.
+///
+/// Fuzzy and semantic tiers are deliberately skipped: they rank, they do not
+/// enumerate. The returned vector is capped only by the caller.
+#[allow(clippy::too_many_arguments)]
+fn exhaustive_results(
+    content_index: &Option<ContentIndex>,
+    entries: &[FileEntry],
+    path_index: &HashMap<PathBuf, usize>,
+    candidate_set: &HashSet<usize>,
+    candidate_indices: &[usize],
+    groups: &[(FieldKind, &str)],
+    regex_patterns: &[&str],
+    cap: usize,
+    hints: &mut Vec<String>,
+) -> Vec<SearchResult> {
+    let mut results = Vec::new();
+
+    if groups.is_empty() && regex_patterns.is_empty() {
+        for &idx in candidate_indices {
+            if let Some(entry) = entries.get(idx) {
+                results.push(SearchResult {
+                    path: entry.path.to_string_lossy().to_string(),
+                    filename: entry.name.clone(),
+                    snippet: None,
+                    score: 0.0,
+                    file_size: entry.size,
+                    modified: entry.modified,
+                    is_dir: entry.is_dir,
+                    match_type: MatchType::FileName,
+                    best_range: None,
+                });
+            }
+        }
+    } else if let Some(c_index) = content_index {
+        let outcome = c_index.search_groups_with_regex(groups, regex_patterns, cap, None);
+        hints.extend(outcome.hints);
+        for cm in outcome.matches {
+            let Some(&idx) = path_index.get(&cm.path) else {
+                continue;
+            };
+            if !candidate_set.contains(&idx) {
+                continue;
+            }
+            let Some(entry) = entries.get(idx) else {
+                continue;
+            };
+            results.push(SearchResult {
+                path: cm.path.to_string_lossy().to_string(),
+                filename: entry.name.clone(),
+                snippet: None,
+                score: cm.score as f64,
+                file_size: entry.size,
+                modified: entry.modified,
+                is_dir: entry.is_dir,
+                match_type: MatchType::Content,
+                best_range: None,
+            });
+        }
+    }
+
+    results.sort_by(|a, b| a.path.cmp(&b.path));
+
+    if results.len() >= cap {
+        hints.push(format!(
+            "Exhaustive mode capped at {} results; refine the query to narrow it.",
+            cap
+        ));
+    }
+
+    results
 }
 
 fn matches_all_compiled_filters(filters: &[CompiledFilter], entry: &FileEntry) -> bool {
@@ -492,7 +677,9 @@ impl CompiledFilter {
                 .as_deref()
                 .map(|e| e.eq_ignore_ascii_case(ext))
                 .unwrap_or(false),
-            CompiledFilter::Type(typ) => matches_type_category(typ, entry.extension.as_deref(), entry.is_dir),
+            CompiledFilter::Type(typ) => {
+                matches_type_category(typ, entry.extension.as_deref(), entry.is_dir)
+            }
             CompiledFilter::Modified(range) => range.matches(entry.modified),
             CompiledFilter::Size(range) => range.matches(entry.size),
             CompiledFilter::Kind(crate::query::ast::FileKind::Dir) => entry.is_dir,
@@ -503,13 +690,11 @@ impl CompiledFilter {
                 // (name is already lowercase in CompiledFilter)
                 entry.name.to_lowercase().contains(name)
             }
-            CompiledFilter::Path(path_substr) => {
-                entry
-                    .path
-                    .to_string_lossy()
-                    .to_lowercase()
-                    .contains(path_substr)
-            }
+            CompiledFilter::Path(path_substr) => entry
+                .path
+                .to_string_lossy()
+                .to_lowercase()
+                .contains(path_substr),
             CompiledFilter::Not(inner) => !inner.matches(entry),
         }
     }
@@ -543,18 +728,13 @@ fn matches_type_category(typ: &str, ext_opt: Option<&str>, is_dir: bool) -> bool
             ext.as_str(),
             "xlsx" | "xls" | "ods" | "csv" | "tsv" | "numbers"
         ),
-        "presentation" | "slide" | "slides" => matches!(
-            ext.as_str(),
-            "pptx" | "ppt" | "odp" | "key"
-        ),
-        "ebook" | "book" => matches!(
-            ext.as_str(),
-            "epub" | "mobi" | "azw3" | "pdf"
-        ),
+        "presentation" | "slide" | "slides" => {
+            matches!(ext.as_str(), "pptx" | "ppt" | "odp" | "key")
+        }
+        "ebook" | "book" => matches!(ext.as_str(), "epub" | "mobi" | "azw3" | "pdf"),
         "code" => matches!(
             ext.as_str(),
-            "rs"
-                | "ts"
+            "rs" | "ts"
                 | "tsx"
                 | "js"
                 | "jsx"
@@ -615,5 +795,107 @@ fn matches_language(lang: &str, ext_opt: Option<&str>) -> bool {
         "markdown" | "md" => ext == "md" || ext == "markdown",
         "sql" => ext == "sql",
         other => ext == other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TempIndex {
+        index: Option<ContentIndex>,
+        dir: PathBuf,
+    }
+
+    impl Drop for TempIndex {
+        fn drop(&mut self) {
+            self.index.take();
+            let _ = fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    fn temp_index(tag: &str) -> TempIndex {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "kensaku-search-test-{}-{}-{}",
+            tag,
+            std::process::id(),
+            nanos
+        ));
+        let index = ContentIndex::new(&dir).expect("create content index");
+        TempIndex {
+            index: Some(index),
+            dir,
+        }
+    }
+
+    fn entry(id: u64, path: &str, name: &str) -> FileEntry {
+        FileEntry {
+            id,
+            path: PathBuf::from(path),
+            name: name.to_string(),
+            extension: Some("rs".to_string()),
+            size: 10,
+            modified: 0,
+            is_dir: false,
+            dev: 0,
+            ino: 0,
+            char_bloom: 0,
+        }
+    }
+
+    #[test]
+    fn exhaustive_results_ignore_display_limit() {
+        let temp = temp_index("exhaustive");
+        let index = temp.index.as_ref().unwrap();
+        let mut entries = Vec::new();
+        let mut path_index = HashMap::new();
+        let mut candidate_indices = Vec::new();
+
+        for i in 0..12 {
+            let path = format!("/tmp/kensaku/e/file-{:02}.rs", i);
+            let name = format!("file-{:02}.rs", i);
+            index
+                .add_or_update(Path::new(&path), &name, "shared needle", 0)
+                .expect("add document");
+            let idx = entries.len();
+            entries.push(entry(i as u64 + 1, &path, &name));
+            path_index.insert(PathBuf::from(&path), idx);
+            candidate_indices.push(idx);
+        }
+        index.commit().unwrap();
+
+        let candidate_set: HashSet<usize> = candidate_indices.iter().copied().collect();
+        let mut hints = Vec::new();
+        let results = exhaustive_results(
+            &temp.index,
+            &entries,
+            &path_index,
+            &candidate_set,
+            &candidate_indices,
+            &[(FieldKind::Content, "needle")],
+            &[],
+            EXHAUSTIVE_LIMIT,
+            &mut hints,
+        );
+
+        // A normal display limit (e.g. 5) must not apply here.
+        assert_eq!(results.len(), 12);
+        assert!(results.len() > 5);
+        let sorted = {
+            let mut paths = results.iter().map(|r| r.path.clone()).collect::<Vec<_>>();
+            paths.sort();
+            paths
+        };
+        assert_eq!(
+            results.iter().map(|r| r.path.clone()).collect::<Vec<_>>(),
+            sorted
+        );
+        assert!(!hints.iter().any(|h| h.contains("capped")));
     }
 }
