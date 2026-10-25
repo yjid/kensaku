@@ -241,3 +241,43 @@ cd .. && bun run tauri dev    # dev mode
 - `chrono`, `log`, `env_logger` deps are unused. `tokio` is used via Tauri's runtime but not directly.
 - The frontend polls `get_indexing_status` every 1.5s forever. PR 3 should replace with events.
 - `src-tauri/target/` is ~5GB. `cargo clean` if disk is tight.
+
+---
+
+## Optimization Pass — Summary (completed this session)
+
+See `docs/OPTIMIZATION.md` for the full plan. Completed items:
+
+### Phase A (correctness) — DONE
+- A1: Delete stale semantic units before re-embedding ✅
+- A2: Enable PRAGMA foreign_keys=ON; db.clear() cascades ✅
+- A3: Remove panic=abort (catch_unwind works) ✅
+
+### Phase B (latency) — MOSTLY DONE
+- B1: Eliminate per-query FileEntry clones ✅
+- B2: Replace Vec::contains with HashSet bitmap ✅
+- B3: Precompile filters at parse time (lowercase once per query) ✅
+- B5: Separate dir_generation — trie only rebuilds on directory changes ✅
+- B6: Batch embed worker (one transaction + one UnitStore write per batch) ✅
+- B7: Partial index on indexed_gen ✅
+- B8: Snippet cache stores pre-lowercased content ✅
+
+### Phase C (indexing) — MOSTLY DONE
+- C2: Single write lock in crawl (eliminated double lock + clone) ✅
+- C3: Coalesce watcher events into batches, read config once per batch ✅
+
+### Phase D (extraction/UI) — MOSTLY DONE
+- D2: LRU cache for extraction results keyed by (path, size, mtime) ✅
+- D3: Raise 100KB cap to 1MB, preview cap to 128KB, embed cap to 1MB ✅
+- D4: Frontend memoization (React.memo for ResultItem and PreviewPane) ✅
+
+### Phase E (filtering) — PARTIALLY DONE
+- E1: Wire excluded_extensions into crawl callback (was dead code) ✅
+
+### Remaining items (for next session)
+- B4: Push filters into Tantivy BooleanQuery + semantic scanner
+- C1: Parallelize crawl callback
+- D1: Stream zip XML
+- E2: Extension interning (u16 instead of Option<String>)
+- E3: Scope-aware candidate pruning (partially done)
+- A4: name:/content:/path: term scoping
