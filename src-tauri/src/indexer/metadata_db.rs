@@ -1,6 +1,6 @@
 use crate::indexer::walker::FileEntry;
 use parking_lot::Mutex;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -30,8 +30,8 @@ impl MetadataDb {
     }
 
     pub fn open() -> Result<Self, String> {
-        let config_dir = dirs::config_dir()
-            .ok_or_else(|| "Could not determine config directory".to_string())?;
+        let config_dir =
+            dirs::config_dir().ok_or_else(|| "Could not determine config directory".to_string())?;
         let db_dir = config_dir.join("kensaku");
         std::fs::create_dir_all(&db_dir)
             .map_err(|e| format!("Failed to create metadata directory: {}", e))?;
@@ -106,6 +106,9 @@ impl MetadataDb {
             "ALTER TABLE nodes ADD COLUMN ino INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE nodes ADD COLUMN indexed_gen INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE nodes ADD COLUMN content_hash TEXT",
+            "ALTER TABLE nodes ADD COLUMN width INTEGER",
+            "ALTER TABLE nodes ADD COLUMN height INTEGER",
+            "ALTER TABLE nodes ADD COLUMN phash INTEGER",
             "ALTER TABLE units ADD COLUMN vec BLOB",
         ] {
             if let Err(e) = conn.execute(ddl, []) {
@@ -194,6 +197,9 @@ impl MetadataDb {
                is_dir = excluded.is_dir,
                dev = excluded.dev,
                ino = excluded.ino,
+               width = CASE WHEN nodes.modified != excluded.modified OR nodes.size != excluded.size THEN NULL ELSE nodes.width END,
+               height = CASE WHEN nodes.modified != excluded.modified OR nodes.size != excluded.size THEN NULL ELSE nodes.height END,
+               phash = CASE WHEN nodes.modified != excluded.modified OR nodes.size != excluded.size THEN NULL ELSE nodes.phash END,
                indexed_gen = CASE WHEN nodes.modified != excluded.modified OR nodes.size != excluded.size THEN 0 ELSE nodes.indexed_gen END",
             params![
                 entry.path.to_string_lossy().to_string(),
@@ -218,11 +224,8 @@ impl MetadataDb {
             "DELETE FROM units WHERE node_id IN (SELECT id FROM nodes WHERE path = ?1)",
             params![path_str],
         );
-        conn.execute(
-            "DELETE FROM nodes WHERE path = ?1",
-            params![path_str],
-        )
-        .map_err(|e| format!("Failed to delete metadata entry: {}", e))?;
+        conn.execute("DELETE FROM nodes WHERE path = ?1", params![path_str])
+            .map_err(|e| format!("Failed to delete metadata entry: {}", e))?;
 
         Ok(())
     }
@@ -439,8 +442,11 @@ impl MetadataDb {
 
     pub fn delete_units_for_node(&self, node_id: u64) -> Result<(), String> {
         let conn = self.conn.lock();
-        conn.execute("DELETE FROM units WHERE node_id = ?1", params![node_id as i64])
-            .map_err(|e| format!("Failed to delete units for node: {}", e))?;
+        conn.execute(
+            "DELETE FROM units WHERE node_id = ?1",
+            params![node_id as i64],
+        )
+        .map_err(|e| format!("Failed to delete units for node: {}", e))?;
         Ok(())
     }
 
@@ -557,6 +563,187 @@ impl MetadataDb {
             Ok(None)
         }
     }
+
+    /// Stores the decoded image dimensions and perceptual hash for a node.
+    ///
+    /// Width, height and `phash` live only in the database (not on
+    /// [`FileEntry`]): they are large-index metadata used by thumbnails and
+    /// duplicate detection, not by search. `phash` is a full 64-bit value, so
+    /// it is stored as the bit-compatible `i64` SQLite integer.
+    pub fn set_image_meta(
+        &self,
+        path: &Path,
+        width: u32,
+        height: u32,
+        phash: u64,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE nodes SET width = ?1, height = ?2, phash = ?3 WHERE path = ?4",
+            params![
+                i64::from(width),
+                i64::from(height),
+                phash as i64,
+                path.to_string_lossy().to_string(),
+            ],
+        )
+        .map_err(|e| format!("Failed to store image metadata: {}", e))?;
+        Ok(())
+    }
+
+    /// Groups nodes whose `content_hash` is identical.
+    ///
+    /// Returns `(hash, paths)` for groups with at least two members, largest
+    /// group first, capped at `limit` groups. Hashless rows (documents that
+    /// were never embedded, or files without extractable text) are ignored.
+    pub fn exact_duplicate_groups(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<(String, Vec<String>)>, String> {
+        const MAX_ROWS: usize = 200_000;
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT content_hash, path FROM nodes
+                 WHERE is_dir = 0 AND content_hash IS NOT NULL AND content_hash <> ''
+                 ORDER BY content_hash, path
+                 LIMIT ?1",
+            )
+            .map_err(|e| format!("Failed to prepare duplicate query: {}", e))?;
+
+        let rows = stmt
+            .query_map(params![MAX_ROWS as i64], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| format!("Failed to query duplicate rows: {}", e))?;
+
+        let mut groups: HashMap<String, Vec<String>> = HashMap::new();
+        for row in rows {
+            let (hash, path) = row.map_err(|e| format!("Failed to decode duplicate row: {}", e))?;
+            groups.entry(hash).or_default().push(path);
+        }
+
+        Ok(finish_groups(groups, limit))
+    }
+
+    /// Groups image nodes whose perceptual hashes are within `max_distance`
+    /// bits of each other (Hamming distance).
+    ///
+    /// Rows that already sit within the distance of a group's representative
+    /// join that group; a row far from every representative starts a new one.
+    /// Banded candidate lookup keeps the comparison count close to linear for
+    /// the common small-distance case (pigeonhole principle over `d + 1`
+    /// bands). At most 50k image rows are considered per call.
+    pub fn near_duplicate_groups(
+        &self,
+        max_distance: u32,
+        limit: usize,
+    ) -> Result<Vec<(u64, Vec<String>)>, String> {
+        const MAX_IMAGE_ROWS: usize = 50_000;
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let max_distance = max_distance.min(64);
+
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT path, phash FROM nodes
+                 WHERE is_dir = 0 AND phash IS NOT NULL
+                 ORDER BY path
+                 LIMIT ?1",
+            )
+            .map_err(|e| format!("Failed to prepare near-duplicate query: {}", e))?;
+
+        let rows = stmt
+            .query_map(params![MAX_IMAGE_ROWS as i64], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(|e| format!("Failed to query near-duplicate rows: {}", e))?;
+
+        // One bucket map per bit band. A pair within `max_distance` shares at
+        // least one band when there are `max_distance + 1` bands, so candidate
+        // retrieval never misses a true neighbour.
+        let bands = usize::try_from(max_distance + 1).unwrap_or(64).clamp(1, 64);
+        let mut band_index: Vec<HashMap<u64, Vec<usize>>> = vec![HashMap::new(); bands];
+        let mut representatives: Vec<u64> = Vec::new();
+        let mut groups: Vec<Vec<String>> = Vec::new();
+
+        for row in rows {
+            let (path, raw_hash) =
+                row.map_err(|e| format!("Failed to decode near-duplicate row: {}", e))?;
+            let phash = raw_hash as u64;
+
+            let mut candidates: Vec<usize> = Vec::new();
+            for (band, index) in band_index.iter().enumerate() {
+                let key = band_key(phash, band, bands);
+                if let Some(matches) = index.get(&key) {
+                    candidates.extend(matches.iter().copied());
+                }
+            }
+            candidates.sort_unstable();
+            candidates.dedup();
+
+            let existing = candidates
+                .into_iter()
+                .find(|&idx| (representatives[idx] ^ phash).count_ones() <= max_distance);
+
+            let group_idx = match existing {
+                Some(idx) => idx,
+                None => {
+                    let idx = representatives.len();
+                    representatives.push(phash);
+                    groups.push(Vec::new());
+                    for (band, index) in band_index.iter_mut().enumerate() {
+                        index
+                            .entry(band_key(phash, band, bands))
+                            .or_default()
+                            .push(idx);
+                    }
+                    idx
+                }
+            };
+            groups[group_idx].push(path);
+        }
+
+        let mut out: Vec<(u64, Vec<String>)> = groups
+            .into_iter()
+            .zip(representatives)
+            .filter(|(paths, _)| paths.len() >= 2)
+            .map(|(paths, hash)| (hash, paths))
+            .collect();
+        out.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0)));
+        out.truncate(limit);
+        Ok(out)
+    }
+}
+
+/// Extracts the bits covered by band `band` of a `bands`-way split of 64 bits.
+fn band_key(phash: u64, band: usize, bands: usize) -> u64 {
+    let start = (band * 64 / bands) as u32;
+    let end = ((band + 1) * 64 / bands) as u32;
+    let width = end - start;
+    let mask = if width >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << width) - 1
+    };
+    (phash >> start) & mask
+}
+
+/// Sorts, trims and caps exact-duplicate groups.
+fn finish_groups(groups: HashMap<String, Vec<String>>, limit: usize) -> Vec<(String, Vec<String>)> {
+    let mut out: Vec<(String, Vec<String>)> = groups
+        .into_iter()
+        .filter(|(_, paths)| paths.len() >= 2)
+        .collect();
+    out.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0)));
+    out.truncate(limit);
+    out
 }
 
 #[cfg(test)]
@@ -582,10 +769,7 @@ mod tests {
             ));
             std::fs::create_dir_all(&dir).expect("create temp db dir");
             let db = MetadataDb::open_at(&dir.join("metadata.db")).expect("open temp db");
-            Self {
-                db: Some(db),
-                dir,
-            }
+            Self { db: Some(db), dir }
         }
 
         fn db(&self) -> &MetadataDb {
@@ -613,7 +797,8 @@ mod tests {
             extension: if is_dir {
                 None
             } else {
-                path.extension().map(|ext| ext.to_string_lossy().to_lowercase())
+                path.extension()
+                    .map(|ext| ext.to_string_lossy().to_lowercase())
             },
             size: 1,
             modified: 1,
@@ -669,5 +854,83 @@ mod tests {
             .expect("renamed root row");
         assert_eq!(renamed_root.name, "new");
         assert!(renamed_root.is_dir);
+    }
+
+    #[test]
+    fn near_duplicate_groups_cluster_similar_phashes() {
+        let temp = TempDb::new("near-duplicates");
+        let db = temp.db();
+
+        // High bit set keeps the value above i64::MAX, exercising the
+        // bit-compatible signed storage.
+        let base = 0xF000_0000_0000_0000u64;
+        let similar_one = base ^ 0b1;
+        let similar_two = base ^ 0b111;
+        let unrelated = 0x0F00_0000_0000_0000u64;
+
+        for (name, phash) in [
+            ("a.png", base),
+            ("b.png", similar_one),
+            ("c.png", similar_two),
+            ("d.png", unrelated),
+        ] {
+            let path = temp.dir.join(name);
+            db.upsert(&entry(&path, false)).expect("insert image row");
+            db.set_image_meta(&path, 64, 48, phash)
+                .expect("store image metadata");
+        }
+
+        let groups = db.near_duplicate_groups(4, 10).expect("group images");
+        assert_eq!(groups.len(), 1, "unrelated hash must not join: {groups:?}");
+        let (representative, paths) = &groups[0];
+        assert_eq!(*representative, base);
+        assert_eq!(
+            paths,
+            &vec![
+                temp.dir.join("a.png").to_string_lossy().to_string(),
+                temp.dir.join("b.png").to_string_lossy().to_string(),
+                temp.dir.join("c.png").to_string_lossy().to_string(),
+            ]
+        );
+
+        assert!(
+            db.near_duplicate_groups(0, 10)
+                .expect("exact phash groups")
+                .is_empty(),
+            "distance 0 must not group distinct hashes"
+        );
+    }
+
+    #[test]
+    fn set_image_meta_is_scoped_to_the_node_path() {
+        let temp = TempDb::new("image-meta");
+        let db = temp.db();
+        let image = temp.dir.join("photo.jpg");
+        let other = temp.dir.join("other.jpg");
+        db.upsert(&entry(&image, false)).expect("insert image row");
+        db.upsert(&entry(&other, false)).expect("insert other row");
+
+        db.set_image_meta(&image, 10, 7, 0xDEAD_BEEF)
+            .expect("store image metadata");
+
+        let conn = db.conn.lock();
+        let (width, height, phash): (i64, i64, i64) = conn
+            .query_row(
+                "SELECT width, height, phash FROM nodes WHERE path = ?1",
+                params![image.to_string_lossy().to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read image metadata");
+        assert_eq!((width, height), (10, 7));
+        assert_eq!(phash as u64, 0xDEAD_BEEF);
+
+        let other_phash: Option<i64> = conn
+            .query_row(
+                "SELECT phash FROM nodes WHERE path = ?1",
+                params![other.to_string_lossy().to_string()],
+                |row| row.get(0),
+            )
+            .expect("read other metadata");
+        assert_eq!(other_phash, None);
     }
 }
