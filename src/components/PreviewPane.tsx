@@ -22,7 +22,7 @@ interface PreviewPaneProps {
   onOpenActions: () => void;
 }
 
-export const PreviewPane: React.FC<PreviewPaneProps> = ({
+export const PreviewPane = React.memo<PreviewPaneProps>(({
   result,
   searchQuery,
   onOpen,
@@ -343,4 +343,4 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
       </div>
     </div>
   );
-};
+}, (prev, next) => prev.result?.path === next.result?.path && prev.searchQuery === next.searchQuery);
