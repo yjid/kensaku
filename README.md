@@ -190,6 +190,7 @@ network. Full contract: [docs/AGENTS.md](docs/AGENTS.md).
 | [FAQ](docs/FAQ.md) | the questions people actually ask |
 | [Security](SECURITY.md) | threat model and reporting |
 | [Contributing](docs/CONTRIBUTING.md) | setup, checks, PR expectations |
+| [Releasing](docs/RELEASING.md) | build artifacts and publish a version |
 
 ---
 
