@@ -190,6 +190,79 @@ impl MetadataStore {
         }
     }
 
+    /// Rewrites every in-memory entry that is `old` or lives under `old` to
+    /// live under `new`, and persists the same rewrite in one database
+    /// transaction.
+    ///
+    /// Bumps the generation counters and invalidates the cached directory trie
+    /// so searches see the new layout. Returns the previous paths, which callers
+    /// use to remove stale content-index documents.
+    pub fn rename_prefix(&mut self, old: &Path, new: &Path) -> Vec<PathBuf> {
+        if old.as_os_str().is_empty() || old == new {
+            return Vec::new();
+        }
+
+        // Entries already sitting at the destination are stale (the rename
+        // replaced them); drop them so renames cannot create duplicate paths.
+        let conflicts: Vec<PathBuf> = self
+            .entries
+            .iter()
+            .filter(|entry| !entry.path.starts_with(old) && entry.path.starts_with(new))
+            .map(|entry| entry.path.clone())
+            .collect();
+        for path in conflicts {
+            self.remove(&path);
+        }
+
+        let mut old_paths = Vec::new();
+        for entry in &mut self.entries {
+            let Ok(suffix) = entry.path.strip_prefix(old) else {
+                continue;
+            };
+            old_paths.push(entry.path.clone());
+
+            entry.path = if suffix.as_os_str().is_empty() {
+                new.to_path_buf()
+            } else {
+                new.join(suffix)
+            };
+            entry.name = entry
+                .path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            entry.char_bloom = crate::search::fuzzy::compute_char_mask(&entry.name);
+        }
+
+        if old_paths.is_empty() {
+            return old_paths;
+        }
+
+        // Paths changed but indices did not, so the lookup tables can be
+        // rebuilt in place.
+        self.path_index.clear();
+        for (idx, entry) in self.entries.iter().enumerate() {
+            self.path_index.insert(entry.path.clone(), idx);
+        }
+
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        self.dir_generation.fetch_add(1, Ordering::SeqCst);
+        *self.cached_trie.write() = None;
+
+        if let Some(db) = self.db.as_ref()
+            && let Err(e) = db.rename_prefix(old, new)
+        {
+            eprintln!(
+                "[Kensaku] Failed to persist directory rename '{}' -> '{}': {}",
+                old.display(),
+                new.display(),
+                e
+            );
+        }
+
+        old_paths
+    }
+
     pub fn record_open(&self, path: &Path) {
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)

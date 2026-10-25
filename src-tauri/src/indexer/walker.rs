@@ -38,6 +38,47 @@ pub fn file_identity(meta: &std::fs::Metadata) -> (u64, u64) {
     }
 }
 
+/// True when the file is a cloud-backed placeholder that would be hydrated
+/// (downloaded) if its contents were read.
+///
+/// Only Windows exposes this state through metadata attributes. On Linux and
+/// macOS, cloud providers (iCloud Drive, OneDrive FUSE mounts, …) present
+/// regular files whose stat does not trigger a download, so there is nothing
+/// portable to detect; returning `false` keeps indexing unchanged there.
+#[cfg(windows)]
+pub fn is_cloud_placeholder(meta: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+
+    // https://learn.microsoft.com/windows/win32/fileio/file-attribute-constants
+    const FILE_ATTRIBUTE_OFFLINE: u32 = 0x0000_1000;
+    const FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS: u32 = 0x0040_0000;
+
+    let attributes = meta.file_attributes();
+    attributes & (FILE_ATTRIBUTE_OFFLINE | FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS) != 0
+}
+
+#[cfg(not(windows))]
+pub fn is_cloud_placeholder(_meta: &std::fs::Metadata) -> bool {
+    false
+}
+
+/// Convenience wrapper for callers that only have a path.
+///
+/// On non-Windows platforms this never touches the filesystem.
+pub fn is_cloud_placeholder_path(path: &std::path::Path) -> bool {
+    #[cfg(windows)]
+    {
+        std::fs::metadata(path)
+            .map(|meta| is_cloud_placeholder(&meta))
+            .unwrap_or(false)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        false
+    }
+}
+
 pub fn walk_directories(
     dirs: &[PathBuf],
     excluded_dirs: &[String],
