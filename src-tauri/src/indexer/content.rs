@@ -4,9 +4,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tantivy::collector::{DocSetCollector, TopDocs};
-use tantivy::query::{AllQuery, QueryParser};
+use tantivy::query::{AllQuery, BooleanQuery, Occur, Query, QueryParser, RegexQuery};
 use tantivy::schema::*;
-use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term};
+use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term, doc};
 
 pub struct SnippetCache {
     capacity: usize,
@@ -29,7 +29,10 @@ impl SnippetCache {
                 self.order.remove(pos);
             }
             self.order.push_back(path.to_path_buf());
-            return self.map.get(path).map(|(orig, lower)| (orig.as_str(), lower.as_str()));
+            return self
+                .map
+                .get(path)
+                .map(|(orig, lower)| (orig.as_str(), lower.as_str()));
         }
 
         let content = read_text_content(path, 64_000)?;
@@ -41,7 +44,9 @@ impl SnippetCache {
         }
         self.order.push_back(path.to_path_buf());
         self.map.insert(path.to_path_buf(), (content, lower));
-        self.map.get(path).map(|(orig, lower)| (orig.as_str(), lower.as_str()))
+        self.map
+            .get(path)
+            .map(|(orig, lower)| (orig.as_str(), lower.as_str()))
     }
 }
 
@@ -65,6 +70,28 @@ pub struct ContentMatch {
     pub modified: u64,
 }
 
+/// Which text field a BM25 group should be scoped to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldKind {
+    /// Search both `filename` and `content`.
+    Any,
+    /// Search only `filename`.
+    Name,
+    /// Search only `content`.
+    Content,
+}
+
+/// Result of a grouped BM25 search that may also include regex clauses.
+#[derive(Debug, Clone, Default)]
+pub struct ContentSearchOutcome {
+    pub matches: Vec<ContentMatch>,
+    /// Actionable messages for ignored/invalid regex patterns.
+    pub hints: Vec<String>,
+}
+
+/// Upper bound on user-supplied regex patterns to avoid pathological cases.
+pub const MAX_REGEX_PATTERN_LEN: usize = 1024;
+
 impl ContentIndex {
     pub fn new(index_dir: &Path) -> Result<Self, String> {
         fs::create_dir_all(index_dir).map_err(|e| e.to_string())?;
@@ -83,9 +110,7 @@ impl ContentIndex {
         };
 
         // 50MB writer buffer
-        let writer = index
-            .writer(50_000_000)
-            .map_err(|e| e.to_string())?;
+        let writer = index.writer(50_000_000).map_err(|e| e.to_string())?;
 
         let reader = index
             .reader_builder()
@@ -105,10 +130,16 @@ impl ContentIndex {
         })
     }
 
-    pub fn add_or_update(&self, path: &Path, filename: &str, content: &str, modified: u64) -> Result<(), String> {
+    pub fn add_or_update(
+        &self,
+        path: &Path,
+        filename: &str,
+        content: &str,
+        modified: u64,
+    ) -> Result<(), String> {
         let path_str = path.to_string_lossy().to_string();
         let term = Term::from_field_text(self.path_field, &path_str);
-        
+
         let writer = self.writer.write();
         writer.delete_term(term);
 
@@ -186,28 +217,136 @@ impl ContentIndex {
         Ok(())
     }
 
-    pub fn search(&self, query_str: &str, limit: usize, path_prefix: Option<&str>) -> Vec<ContentMatch> {
-        if query_str.trim().is_empty() {
+    pub fn search(
+        &self,
+        query_str: &str,
+        limit: usize,
+        path_prefix: Option<&str>,
+    ) -> Vec<ContentMatch> {
+        self.search_groups(&[(FieldKind::Any, query_str)], limit, path_prefix)
+    }
+
+    /// Field-aware BM25 search. Each group is ANDed with the others; within a
+    /// group multi-word input narrows (conjunction by default).
+    pub fn search_groups(
+        &self,
+        groups: &[(FieldKind, &str)],
+        limit: usize,
+        path_prefix: Option<&str>,
+    ) -> Vec<ContentMatch> {
+        self.search_groups_with_regex(groups, &[], limit, path_prefix)
+            .matches
+    }
+
+    /// Like [`Self::search_groups`], plus optional `re:` patterns.
+    ///
+    /// Regex clauses are `Should` clauses and are only added when a pattern was
+    /// explicitly supplied by the caller (the query parser only sets the regex
+    /// flag for `re:` tokens). Plain term groups and regex clauses are combined
+    /// so that at least one of them must match.
+    pub fn search_groups_with_regex(
+        &self,
+        groups: &[(FieldKind, &str)],
+        regex_patterns: &[&str],
+        limit: usize,
+        path_prefix: Option<&str>,
+    ) -> ContentSearchOutcome {
+        let mut hints = Vec::new();
+
+        let mut plain_clauses: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+        for &(kind, text) in groups {
+            let sanitized = sanitize_query_text(text);
+            if sanitized.trim().is_empty() {
+                continue;
+            }
+            let fields = match kind {
+                FieldKind::Any => vec![self.filename_field, self.content_field],
+                FieldKind::Name => vec![self.filename_field],
+                FieldKind::Content => vec![self.content_field],
+            };
+            let mut parser = QueryParser::for_index(&self.index, fields);
+            parser.set_conjunction_by_default();
+            // `sanitize_query_text` removes every parser metacharacter, so this
+            // should always succeed; skip the group if it somehow does not.
+            if let Ok(parsed) = parser.parse_query(&sanitized) {
+                plain_clauses.push((Occur::Must, parsed));
+            }
+        }
+
+        let mut regex_clauses: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+        for &pattern in regex_patterns {
+            if pattern.is_empty() {
+                continue;
+            }
+            if pattern.chars().count() > MAX_REGEX_PATTERN_LEN {
+                hints.push(format!(
+                    "Regex pattern too long (max {} characters); ignored",
+                    MAX_REGEX_PATTERN_LEN
+                ));
+                continue;
+            }
+
+            let mut field_queries: Vec<RegexQuery> = Vec::new();
+            let mut failed = false;
+            for field in [self.content_field, self.filename_field] {
+                match RegexQuery::from_pattern(pattern, field) {
+                    Ok(query) => field_queries.push(query),
+                    Err(err) => {
+                        hints.push(format!("Invalid regex '{}': {}", pattern, err));
+                        failed = true;
+                        break;
+                    }
+                }
+            }
+            if !failed {
+                for query in field_queries {
+                    regex_clauses.push((Occur::Should, Box::new(query)));
+                }
+            }
+        }
+
+        let plain_query: Option<Box<dyn Query>> = if plain_clauses.is_empty() {
+            None
+        } else {
+            Some(Box::new(BooleanQuery::new(plain_clauses)))
+        };
+        let regex_query: Option<Box<dyn Query>> = if regex_clauses.is_empty() {
+            None
+        } else {
+            Some(Box::new(BooleanQuery::new(regex_clauses)))
+        };
+
+        let query: Option<Box<dyn Query>> = match (plain_query, regex_query) {
+            (None, None) => None,
+            (Some(plain), None) => Some(plain),
+            (None, Some(regex)) => Some(regex),
+            (Some(plain), Some(regex)) => Some(Box::new(BooleanQuery::new(vec![
+                (Occur::Should, plain),
+                (Occur::Should, regex),
+            ]))),
+        };
+
+        let matches = match query {
+            Some(q) => self.run_query(q.as_ref(), limit, path_prefix),
+            None => Vec::new(),
+        };
+
+        ContentSearchOutcome { matches, hints }
+    }
+
+    fn run_query(
+        &self,
+        query: &dyn Query,
+        limit: usize,
+        path_prefix: Option<&str>,
+    ) -> Vec<ContentMatch> {
+        if limit == 0 {
             return Vec::new();
         }
 
         let searcher = self.reader.searcher();
-        let query_parser = QueryParser::for_index(&self.index, vec![self.content_field, self.filename_field]);
-        
-        // Escape query if syntax error
-        let parsed_query = match query_parser.parse_query(query_str) {
-            Ok(q) => q,
-            Err(_) => {
-                let sanitized = query_str.replace([':', '^', '[', ']', '{', '}', '~', '*', '?', '\\', '(', ')', '"', '-', '+', '!'], " ");
-                match query_parser.parse_query(&sanitized) {
-                    Ok(q) => q,
-                    Err(_) => return Vec::new(),
-                }
-            }
-        };
-
         let collector = TopDocs::with_limit(limit).order_by_score();
-        let top_docs = match searcher.search(&*parsed_query, &collector) {
+        let top_docs = match searcher.search(query, &collector) {
             Ok(docs) => docs,
             Err(_) => return Vec::new(),
         };
@@ -262,7 +401,11 @@ impl ContentIndex {
         Self::extract_snippet_from_text_cached(content, content_lower, query)
     }
 
-    pub fn extract_snippet_from_text_cached(content: &str, content_lower: &str, query: &str) -> Option<String> {
+    pub fn extract_snippet_from_text_cached(
+        content: &str,
+        content_lower: &str,
+        query: &str,
+    ) -> Option<String> {
         let query_lower = query.to_lowercase();
         let terms: Vec<&str> = query_lower.split_whitespace().collect();
         if terms.is_empty() {
@@ -316,16 +459,83 @@ pub fn is_indexable_extension(ext_opt: Option<&str>) -> bool {
 
     static TEXT_EXTENSIONS: &[&str] = &[
         // Plain text and code
-        "txt", "md", "markdown", "rs", "ts", "tsx", "js", "jsx", "py", "go",
-        "json", "toml", "yaml", "yml", "xml", "html", "htm", "css", "scss",
-        "c", "cpp", "cc", "cxx", "h", "hpp", "java", "kt", "sh", "bash",
-        "zsh", "fish", "env", "cfg", "ini", "conf", "log", "csv", "sql",
-        "rb", "php", "swift", "r", "lua", "vim", "vue", "svelte", "astro",
-        "dockerfile", "diff", "patch", "tex", "graphql", "proto",
+        "txt",
+        "md",
+        "markdown",
+        "rs",
+        "ts",
+        "tsx",
+        "js",
+        "jsx",
+        "py",
+        "go",
+        "json",
+        "toml",
+        "yaml",
+        "yml",
+        "xml",
+        "html",
+        "htm",
+        "css",
+        "scss",
+        "c",
+        "cpp",
+        "cc",
+        "cxx",
+        "h",
+        "hpp",
+        "java",
+        "kt",
+        "sh",
+        "bash",
+        "zsh",
+        "fish",
+        "env",
+        "cfg",
+        "ini",
+        "conf",
+        "log",
+        "csv",
+        "sql",
+        "rb",
+        "php",
+        "swift",
+        "r",
+        "lua",
+        "vim",
+        "vue",
+        "svelte",
+        "astro",
+        "dockerfile",
+        "diff",
+        "patch",
+        "tex",
+        "graphql",
+        "proto",
         // Documents & Office (PR 5)
-        "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "epub", "odt",
-        "ods", "odp", "rtf", "pages", "key", "numbers",
-        "png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "tif",
+        "pdf",
+        "doc",
+        "docx",
+        "ppt",
+        "pptx",
+        "xls",
+        "xlsx",
+        "epub",
+        "odt",
+        "ods",
+        "odp",
+        "rtf",
+        "pages",
+        "key",
+        "numbers",
+        "png",
+        "jpg",
+        "jpeg",
+        "gif",
+        "bmp",
+        "webp",
+        "tiff",
+        "tif",
     ];
     TEXT_EXTENSIONS.contains(&ext.as_str())
 }
@@ -334,10 +544,136 @@ pub fn is_indexable_file_name(name: &str) -> bool {
     let lower = name.to_lowercase();
     matches!(
         lower.as_str(),
-        "dockerfile" | "makefile" | "justfile" | "cargo.toml" | "package.json" | ".gitignore" | ".env" | ".editorconfig"
+        "dockerfile"
+            | "makefile"
+            | "justfile"
+            | "cargo.toml"
+            | "package.json"
+            | ".gitignore"
+            | ".env"
+            | ".editorconfig"
     )
 }
 
 pub fn read_text_content(path: &Path, max_bytes: u64) -> Option<String> {
     crate::indexer::extract::extract_document(path, max_bytes).map(|doc| doc.text)
+}
+
+/// Defuses QueryParser metacharacters in user-supplied text.
+///
+/// Replacing them with spaces preserves the surrounding words while ensuring
+/// raw `:`, quotes, `-`, boolean operators, etc. can never abort parsing.
+fn sanitize_query_text(text: &str) -> String {
+    text.replace(
+        [
+            ':', '^', '[', ']', '{', '}', '~', '*', '?', '\\', '(', ')', '"', '-', '+', '!', '&',
+            '|', '/',
+        ],
+        " ",
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TempIndex {
+        index: Option<ContentIndex>,
+        dir: PathBuf,
+    }
+
+    impl Drop for TempIndex {
+        fn drop(&mut self) {
+            self.index.take();
+            let _ = fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    fn temp_index(tag: &str) -> TempIndex {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "kensaku-content-test-{}-{}-{}",
+            tag,
+            std::process::id(),
+            nanos
+        ));
+        let index = ContentIndex::new(&dir).expect("create content index");
+        TempIndex {
+            index: Some(index),
+            dir,
+        }
+    }
+
+    fn add(index: &ContentIndex, path: &str, filename: &str, content: &str) {
+        index
+            .add_or_update(Path::new(path), filename, content, 0)
+            .expect("add document");
+    }
+
+    #[test]
+    fn field_scoped_groups_only_hit_their_field() {
+        let temp = temp_index("groups");
+        let index = temp.index.as_ref().unwrap();
+        add(
+            index,
+            "/tmp/kensaku/a/alpha.rs",
+            "alpha.rs",
+            "unique content zebra",
+        );
+        add(
+            index,
+            "/tmp/kensaku/a/beta.rs",
+            "beta.rs",
+            "unique content alpha",
+        );
+        index.commit().unwrap();
+
+        let by_name = index.search_groups(&[(FieldKind::Name, "alpha")], 10, None);
+        assert_eq!(by_name.len(), 1);
+        assert_eq!(by_name[0].filename, "alpha.rs");
+
+        let by_content = index.search_groups(&[(FieldKind::Content, "alpha")], 10, None);
+        assert_eq!(by_content.len(), 1);
+        assert_eq!(by_content[0].filename, "beta.rs");
+
+        let any = index.search_groups(&[(FieldKind::Any, "alpha")], 10, None);
+        assert_eq!(any.len(), 2);
+    }
+
+    #[test]
+    fn regex_clauses_match_both_fields_and_invalid_patterns_hint() {
+        let temp = temp_index("regex");
+        let index = temp.index.as_ref().unwrap();
+        add(
+            index,
+            "/tmp/kensaku/r/one.rs",
+            "one.rs",
+            "the zebra lives here",
+        );
+        add(index, "/tmp/kensaku/r/two.rs", "two.rs", "nothing to see");
+        index.commit().unwrap();
+
+        let by_content = index.search_groups_with_regex(&[], &[".*zebra.*"], 10, None);
+        assert!(by_content.hints.is_empty());
+        assert_eq!(by_content.matches.len(), 1);
+        assert_eq!(by_content.matches[0].filename, "one.rs");
+
+        let by_filename = index.search_groups_with_regex(&[], &[".*two.*"], 10, None);
+        assert_eq!(by_filename.matches.len(), 1);
+        assert_eq!(by_filename.matches[0].filename, "two.rs");
+
+        let invalid = index.search_groups_with_regex(&[], &["[unterminated"], 10, None);
+        assert!(invalid.matches.is_empty());
+        assert_eq!(invalid.hints.len(), 1);
+        assert!(invalid.hints[0].contains("Invalid regex"));
+
+        let too_long = "a".repeat(MAX_REGEX_PATTERN_LEN + 1);
+        let capped = index.search_groups_with_regex(&[], &[too_long.as_str()], 10, None);
+        assert!(capped.matches.is_empty());
+        assert!(capped.hints.iter().any(|h| h.contains("too long")));
+    }
 }
