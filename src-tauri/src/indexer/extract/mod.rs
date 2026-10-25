@@ -5,9 +5,10 @@ pub mod text;
 
 use std::fs::File;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct DocumentExtract {
@@ -151,6 +152,56 @@ fn get_extraction_cache() -> &'static Mutex<ExtractionCache> {
     EXTRACTION_CACHE.get_or_init(|| Mutex::new(ExtractionCache::new(64)))
 }
 
+/// Upper bound for a single document extraction. A malformed PDF (or a stalled
+/// network/FUSE filesystem) must not block indexing forever.
+const EXTRACTION_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// Dedicated pool for extraction work.
+///
+/// A hung extraction permanently loses one worker, but the pool can never grow
+/// past four threads, so a pile of pathological documents cannot spawn an
+/// unbounded number of detached threads.
+static EXTRACTION_POOL: std::sync::OnceLock<Option<rayon::ThreadPool>> = std::sync::OnceLock::new();
+
+fn extraction_pool() -> Option<&'static rayon::ThreadPool> {
+    EXTRACTION_POOL
+        .get_or_init(|| match rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .thread_name(|index| format!("kensaku-extract-{}", index))
+            .build()
+        {
+            Ok(pool) => Some(pool),
+            Err(e) => {
+                eprintln!(
+                    "[Kensaku] Could not create extraction thread pool ({}); extraction runs inline without a timeout",
+                    e
+                );
+                None
+            }
+        })
+        .as_ref()
+}
+
+/// Paths that already produced a timeout warning, so a permanently stuck
+/// document is reported once instead of on every crawl.
+static TIMEOUT_WARNED: std::sync::OnceLock<Mutex<HashSet<PathBuf>>> = std::sync::OnceLock::new();
+
+fn warn_extraction_timeout(path: &Path) {
+    let warned = TIMEOUT_WARNED.get_or_init(|| Mutex::new(HashSet::new()));
+    let mut warned = warned.lock().unwrap();
+    // Keep the bookkeeping bounded on systems with many broken documents.
+    if warned.len() >= 4096 {
+        warned.clear();
+    }
+    if warned.insert(path.to_path_buf()) {
+        eprintln!(
+            "[Kensaku] Text extraction timed out after {}s; leaving pending: {}",
+            EXTRACTION_TIMEOUT.as_secs(),
+            path.display()
+        );
+    }
+}
+
 pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> {
     let meta = std::fs::metadata(path).ok()?;
     let file_size = meta.len();
@@ -173,8 +224,49 @@ pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> 
     let capped_bytes = (max_bytes as usize).min(1_000_000);
     let format = sniff_format(path);
 
-    // Call inner extraction (all the match arms below)
-    let result = extract_document_inner(path, capped_bytes, format, file_size);
+    // Run the extraction on the dedicated pool and time it out. On timeout the
+    // file stays pending (or skipped) and is retried on a later crawl; nothing
+    // is cached, so a transient stall is not sticky.
+    let result = match extraction_pool() {
+        Some(pool) => {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let worker_path = path.to_path_buf();
+            pool.spawn(move || {
+                // Catch panics here: a panic escaping a `rayon::spawn` task
+                // reaches rayon's panic handler (which aborts by default), and
+                // a malformed document must never take the app down.
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    extract_document_inner(&worker_path, capped_bytes, format, file_size)
+                }))
+                .unwrap_or_else(|_| {
+                    eprintln!(
+                        "[Kensaku] Text extraction panicked; leaving pending: {}",
+                        worker_path.display()
+                    );
+                    None
+                });
+                // Ignore send errors: the caller may have timed out already.
+                let _ = tx.send(result);
+            });
+
+            match rx.recv_timeout(EXTRACTION_TIMEOUT) {
+                Ok(result) => result,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    warn_extraction_timeout(path);
+                    None
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    eprintln!(
+                        "[Kensaku] Text extraction worker exited without a result; leaving pending: {}",
+                        path.display()
+                    );
+                    None
+                }
+            }
+        }
+        // Pool creation failed (rare); fall back to inline extraction.
+        None => extract_document_inner(path, capped_bytes, format, file_size),
+    };
 
     // Cache the result
     if let Some(ref res) = result {
