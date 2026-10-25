@@ -301,17 +301,29 @@ fn tool_search(index: Option<&HeadlessIndex>, args: &Value) -> Result<Value, Too
         .search(&composed, limit)
         .map_err(ToolFailure::Execution)?;
 
+    // `search_response` already uses the extraction-free snippet path, but
+    // filling any gaps here keeps agents receiving snippets even if a result
+    // was produced by a tier that does not attach one.
+    let paths: Vec<String> = response
+        .results
+        .iter()
+        .map(|result| result.path.clone())
+        .collect();
+    let snippets = index.snippets(&paths, query);
+
     let results: Vec<Value> = response
         .results
         .iter()
-        .map(|result| {
+        .enumerate()
+        .map(|(idx, result)| {
+            let snippet = result
+                .snippet
+                .as_deref()
+                .or_else(|| snippets.get(idx).and_then(|snippet| snippet.as_deref()));
             json!({
                 "path": result.path,
                 "score": result.score,
-                "snippet": result
-                    .snippet
-                    .as_deref()
-                    .map(|snippet| truncate_chars(snippet, 400)),
+                "snippet": snippet.map(|snippet| truncate_chars(snippet, 400)),
                 "match_type": result.match_type,
                 "size": result.file_size,
                 "modified": result.modified,
