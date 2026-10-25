@@ -155,17 +155,10 @@ impl SearchDispatcher {
         let mut fuzzy_ranks: HashMap<usize, usize> = HashMap::new();
         if !search_text.is_empty() {
             let mut fuzzy_searcher = FuzzySearcher::new();
-            // Search across candidate entries
-            let candidate_entries: Vec<FileEntry> = candidate_indices
-                .iter()
-                .filter_map(|&idx| entries.get(idx).cloned())
-                .collect();
-
-            let fuzzy_matches = fuzzy_searcher.search(&search_text, &candidate_entries, limit * 3);
-            for (rank, (cand_rel_idx, _score)) in fuzzy_matches.into_iter().enumerate() {
-                if let Some(&original_idx) = candidate_indices.get(cand_rel_idx) {
-                    fuzzy_ranks.insert(original_idx, rank + 1);
-                }
+            // Search across candidate entries by index (no clone needed)
+            let fuzzy_matches = fuzzy_searcher.search(&search_text, entries, &candidate_indices, limit * 3);
+            for (rank, (orig_idx, _score)) in fuzzy_matches.into_iter().enumerate() {
+                fuzzy_ranks.insert(orig_idx, rank + 1);
             }
         }
 
