@@ -165,7 +165,7 @@ pub async fn get_file_preview(path: String) -> Result<FilePreview, String> {
         });
     }
 
-    if let Some(doc) = crate::indexer::extract::extract_document(p, 48_000) {
+    if let Some(doc) = crate::indexer::extract::extract_document(p, 128_000) {
         let preview_type = match crate::indexer::extract::sniff_format(p) {
             crate::indexer::extract::DocumentFormat::Pdf => "pdf",
             crate::indexer::extract::DocumentFormat::Docx => "doc",

@@ -143,7 +143,7 @@ impl EmbeddingQueue {
                             continue;
                         }
 
-                        let content = match read_text_content(&path, 500_000) {
+                        let content = match read_text_content(&path, 1_048_576) {
                             Some(c) => c,
                             None => {
                                 let _ = db.update_node_indexed_gen(node_id, 1, None);

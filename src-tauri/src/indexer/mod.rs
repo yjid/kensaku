@@ -170,26 +170,26 @@ impl IndexerManager {
                     return true;
                 }
 
-                // Incremental crawl: skip entries whose size and mtime are unchanged.
-                let unchanged = metadata
-                    .read()
-                    .get(&entry.path)
-                    .map(|existing| {
-                        existing.modified == entry.modified && existing.size == entry.size
-                    })
-                    .unwrap_or(false);
-
-                if unchanged {
-                    return true;
+                // Incremental crawl: check + add under a single write lock
+                // (avoids read-then-write lock upgrade and entry.clone).
+                {
+                    let mut store = metadata.write();
+                    let unchanged = store
+                        .get(&entry.path)
+                        .map(|existing| {
+                            existing.modified == entry.modified && existing.size == entry.size
+                        })
+                        .unwrap_or(false);
+                    if unchanged {
+                        return true;
+                    }
+                    store.add(entry.clone());
                 }
-
-                // Add to metadata
-                metadata.write().add(entry.clone());
 
                 // Content indexing for text files
                 if !entry.is_dir
                     && (is_indexable_extension(entry.extension.as_deref()) || is_indexable_file_name(&entry.name))
-                    && let Some(content) = read_text_content(&entry.path, 100_000)
+                    && let Some(content) = read_text_content(&entry.path, 1_048_576)
                     && let Some(c_index) = content_index.read().as_ref()
                 {
                     let _ = c_index.add_or_update(&entry.path, &entry.name, &content, entry.modified);
