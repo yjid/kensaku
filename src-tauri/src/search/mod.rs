@@ -204,8 +204,8 @@ impl SearchDispatcher {
             && let Some(store) = unit_store
             && !store.is_empty()
         {
-            let model = ModelRegistry::default();
-            let query_vec = model.embed_to_i8(&search_text);
+            let model = ModelRegistry::global();
+            let query_vec = model.embed_to_i8(search_text);
             let hits = ExactScanner::scan(&query_vec, store, limit * 3);
             for (rank, hit) in hits.into_iter().enumerate() {
                 if let Some(entry) = metadata.get_by_node_id(hit.node_id)
@@ -406,7 +406,7 @@ impl SearchDispatcher {
                     continue;
                 }
                 if let Some(ci) = content_index.as_ref() {
-                    item.snippet = ci.get_snippet(Path::new(&item.path), &search_text);
+                    item.snippet = ci.get_snippet(Path::new(&item.path), search_text);
                 }
                 if item.snippet.is_none()
                     && let Some((b_start, b_end)) = item.best_range
@@ -475,9 +475,9 @@ impl CompiledFilter {
         match f {
             Filter::Ext(e) => CompiledFilter::Ext(e.to_lowercase()),
             Filter::Type(t) => CompiledFilter::Type(t.to_lowercase()),
-            Filter::Modified(r) => CompiledFilter::Modified(r.clone()),
-            Filter::Size(r) => CompiledFilter::Size(r.clone()),
-            Filter::Kind(k) => CompiledFilter::Kind(k.clone()),
+            Filter::Modified(r) => CompiledFilter::Modified(*r),
+            Filter::Size(r) => CompiledFilter::Size(*r),
+            Filter::Kind(k) => CompiledFilter::Kind(*k),
             Filter::Lang(l) => CompiledFilter::Lang(l.to_lowercase()),
             Filter::Name(n) => CompiledFilter::Name(n.to_lowercase()),
             Filter::Path(p) => CompiledFilter::Path(p.to_lowercase()),
