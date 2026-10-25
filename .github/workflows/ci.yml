@@ -38,6 +38,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      # `generate_context!` embeds `frontendDist`, so the web build must exist
+      # before any cargo command compiles the lib.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run build
       - name: Cache Cargo target directory
         uses: actions/cache@v4
         with:
