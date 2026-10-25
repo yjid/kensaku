@@ -83,7 +83,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: src-tauri/target/release/bundle/**
+          path: |
+            src-tauri/target/release/bundle/**
+            src-tauri/target/*/release/bundle/**
           if-no-files-found: warn
 
   cli:
@@ -138,6 +140,16 @@ jobs:
 
       - name: Build CLI
         run: cargo build --release --manifest-path cli/Cargo.toml
+
+      - name: Build universal macOS CLI
+        if: matrix.platform == 'macos-latest'
+        run: |
+          cargo build --release --manifest-path cli/Cargo.toml --target x86_64-apple-darwin
+          mkdir -p dist
+          lipo -create \
+            cli/target/aarch64-apple-darwin/release/kensaku-cli \
+            cli/target/x86_64-apple-darwin/release/kensaku-cli \
+            -output dist/kensaku-cli-macos-universal
 
       - name: Stage CLI (Unix)
         if: runner.os != 'Windows'
