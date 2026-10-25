@@ -31,9 +31,13 @@ export function Field({
   return (
     <div className="flex items-center justify-between gap-6 border-b border-line px-4 py-3 last:border-b-0">
       <div className="min-w-0 space-y-0.5">
-        <p className="text-[12px] font-medium text-fg">{label}</p>
-        {description && <p className="text-[11px] leading-relaxed text-muted">{description}</p>}
-        {hint && <p className="text-[11px] leading-relaxed text-muted">{hint}</p>}
+        <p className="text-[13px] font-medium text-fg">{label}</p>
+        {description && (
+          <p className="line-clamp-2 text-[11px] leading-relaxed text-muted">{description}</p>
+        )}
+        {hint && (
+          <p className="line-clamp-2 text-[11px] leading-relaxed text-muted">{hint}</p>
+        )}
       </div>
       {children}
     </div>
@@ -45,6 +49,16 @@ export function Card({ title, children }: { title?: string; children: React.Reac
     <div className="mb-3">
       {title && <p className="eyebrow pb-2">{title}</p>}
       <div className="overflow-hidden rounded-[14px] border border-line bg-elevated">{children}</div>
+    </div>
+  );
+}
+
+/** Section intro block: 15px semibold title + one-line 11px muted description. */
+export function SectionHeader({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="pb-4">
+      <h2 className="text-[15px] font-semibold leading-snug text-fg">{title}</h2>
+      <p className="line-clamp-1 pt-0.5 text-[11px] text-muted">{description}</p>
     </div>
   );
 }
@@ -73,13 +87,13 @@ export function Switch({
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative h-[22px] w-[38px] shrink-0 rounded-full border transition-colors duration-150 ${
+      className={`relative h-5 w-9 shrink-0 rounded-full border transition-colors duration-150 ${
         checked ? "border-accent bg-accent" : "border-line bg-sunken"
-      } ${disabled ? "cursor-not-allowed opacity-50" : "hover:border-line-strong"}`}
+      } ${disabled ? "cursor-not-allowed opacity-40" : "hover:border-line-strong"}`}
     >
       <span
-        className={`absolute top-[2px] h-[16px] w-[16px] rounded-full shadow-sm transition-all duration-150 ${
-          checked ? "left-[19px] bg-bg" : "left-[2px] bg-subtle"
+        className={`absolute top-[1px] h-4 w-4 rounded-full shadow-sm transition-all duration-150 ${
+          checked ? "left-[18px] bg-bg" : "left-[2px] bg-subtle"
         }`}
       />
     </button>
@@ -110,7 +124,7 @@ export function Stepper({
       >
         −
       </button>
-      <span className="w-12 text-center font-mono text-[12px] text-fg">{value}</span>
+      <span className="w-12 text-right font-mono text-[12px] text-fg">{value}</span>
       <button
         type="button"
         onClick={() => onChange(clamp(value + step))}
