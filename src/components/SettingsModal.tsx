@@ -631,8 +631,17 @@ function SearchSection({
             onChange={(v) => setConfig((c) => (c ? { ...c, semantic_enabled: v } : c))}
           />
         </Field>
-        <Field label="OCR (images)" description="Lands with backend phase 6.">
-          <Switch checked={false} disabled onChange={() => {}} />
+        <Field
+          label="OCR (images)"
+          description="Read text from screenshots, scans and photos. Existing images are re-scanned after saving."
+          hint={
+            (config.ocr_enabled ?? true) ? "Uses the system OCR engine (tesseract on Linux)." : undefined
+          }
+        >
+          <Switch
+            checked={config.ocr_enabled ?? true}
+            onChange={(v) => setConfig((c) => (c ? { ...c, ocr_enabled: v } : c))}
+          />
         </Field>
       </Card>
 
