@@ -99,29 +99,38 @@
 6. **No tests exist** anywhere in the codebase.
 7. **Static embedding upgrade:** feature hashing embedder validates full pipeline offline; can be swapped for potion-base-8M safetensors table when local weights loader is added.
 
-## What's next: PR 6 — Agent surface (MCP, CLI, daemon socket)
+## ~~PR 6 — Agent surface (MCP, CLI, daemon socket)~~ — SKIPPED (for now)
 
-Per `docs/ARCHITECTURE.md` §9 and §13, Phase 4. Scope:
+> **Status: Skipped.** The user has decided to defer the agent/MCP/CLI surface. It may be revisited later. The architecture for it is fully documented in `docs/ARCHITECTURE.md` §9 and §13 Phase 4. The query AST, filters, and search pipeline are already designed to serve as the MCP tool contract (see PROGRESS.md item 6 in the "What's done" section).
 
-1. **Daemon socket & protocol:**
-   - IPC listener (`127.0.0.1` HTTP/SSE or Unix domain socket `~/.local/state/kensaku/daemon.sock`).
-   - Authentication token at `~/.local/state/kensaku/token` (0600 permissions).
-2. **CLI commands:**
-   - `kensaku search <query> [--type <t>] [--since <d>] [--json]`
-   - `kensaku find --name <pat> [--in <dir>] [--exhaustive]`
-   - `kensaku state [--json]`
-   - `kensaku index add <path>`
-   - `kensaku doctor`
-   - `kensaku mcp` (stdio MCP proxy)
-3. **Model Context Protocol (MCP) server:**
-   - Stdio transport for IDEs (Cursor, Claude Code, Windsurf, VS Code).
-   - Tools: `search`, `read_snippet`, `find_related`, `index_state`.
-   - Ranked vs exhaustive mode distinction.
-   - Ready-to-paste configurations for Cursor and Claude Code in settings and docs.
+## What's next: PR 7 — Vision/OCR
 
-### Then PR 7 — Vision/OCR
-### Then PR 8 — Ask/actions
-### Then PR 9 — Launch/packaging
+Per `docs/ARCHITECTURE.md` §13, Phase 5. Scope:
+
+1. **OCR pipeline (platform-native):**
+   - macOS: Vision framework (`VNRecognizeTextRequest`) via `objc2-vision` crate.
+   - Windows: Windows.Media.Ocr via `windows` crate.
+   - Linux: optional `tesseract` binary (shell out, parse output).
+   - OCR results stored as text units in the same embedding/index pipeline.
+   - Priority: screenshots (the #1 searched image type).
+
+2. **Image embedding (optional, gated behind "smart" pack):**
+   - Use SigLIP or CLIP ViT-B/32 int8 (NOT MobileCLIP on x86 — community benchmarks show it's slower).
+   - EXIF orientation handling before embedding.
+   - Megapixel/size caps (reject >50MP, >20MB).
+   - Perceptual hash dedup before embedding (collapse near-duplicates).
+
+3. **Frontend:**
+   - Image thumbnails in result cards.
+   - OCR text shown in preview pane.
+   - "screenshot of docker error" → returns matching image in top 5.
+
+4. **Config:**
+   - `ocr_enabled: bool` (default true on macOS/Windows, false on Linux unless tesseract found).
+   - `vision_embedding_enabled: bool` (default false, opt-in).
+
+### Then PR 8 — Ask/actions (Ollama integration, summarize, find similar, duplicates)
+### Then PR 9 — Launch/packaging (CI, benchmarks, demo, docs)
 
 ## Key architecture reference
 
