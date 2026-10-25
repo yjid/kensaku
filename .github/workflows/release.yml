@@ -1,8 +1,10 @@
-name: Release
+name: Release builds
 
-# Pushing a `v*` tag builds and publishes a draft GitHub release.
-# `workflow_dispatch` is also supported: run it from a `v*` tag ref, because
-# `github.ref_name` is used as the release tag.
+# Builds unsigned desktop bundles and the agent CLI for Linux, macOS and
+# Windows, and uploads them as workflow artifacts. Publishing the GitHub
+# release is done from a maintainer machine with `gh release create` +
+# `gh release upload` (see docs/RELEASING.md), which keeps this workflow free
+# of release-token permissions and signing secrets.
 on:
   push:
     tags:
@@ -10,14 +12,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
+  bundle:
     name: Bundles (${{ matrix.platform }})
     runs-on: ${{ matrix.platform }}
     strategy:
@@ -25,21 +27,17 @@ jobs:
       matrix:
         include:
           - platform: ubuntu-22.04
-            # Default target only.
+            artifact: kensaku-linux
             args: ""
-            targets: x86_64-unknown-linux-gnu
           - platform: macos-latest
-            # One universal .app/.dmg for Intel and Apple Silicon.
+            artifact: kensaku-macos
             args: "--target universal-apple-darwin"
-            targets: aarch64-apple-darwin,x86_64-apple-darwin
           - platform: windows-latest
-            # Default target only.
+            artifact: kensaku-windows
             args: ""
-            targets: x86_64-pc-windows-msvc
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install Linux system dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -56,62 +54,40 @@ jobs:
             wget \
             file
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-
-      # tauri-action runs on the runner's preinstalled Node.js, so setup-node is
-      # not required here. Add actions/setup-node@v4 only if a specific Node
-      # version becomes necessary.
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.targets }}
+          targets: >-
+            ${{
+              matrix.platform == 'macos-latest'
+                && 'aarch64-apple-darwin,x86_64-apple-darwin'
+                || ''
+            }}
 
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
-      # ---------------------------------------------------------------------
-      # Code signing / notarization (intentionally not configured)
-      # ---------------------------------------------------------------------
-      # This workflow produces unsigned builds and requires no signing secrets.
-      # To enable signing later, add the secrets below to the repository and
-      # expose them in the `env:` block of the tauri-action step:
-      #
-      #   macOS:   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
-      #            APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD,
-      #            APPLE_TEAM_ID (tauri-action signs and notarizes)
-      #   Windows: WINDOWS_CERTIFICATE, WINDOWS_CERTIFICATE_PASSWORD
-      #            (or a dedicated signtool step before bundling)
-      #   Linux:   AppImage/deb bundles are unsigned by convention
-      #
-      # Tauri updater signatures (TAURI_SIGNING_PRIVATE_KEY and its password)
-      # are separate and only needed if the updater is enabled.
-      # ---------------------------------------------------------------------
+      # Unsigned builds: no certificates or notarization secrets are required.
+      # To sign later, add the Apple/Windows secrets and the relevant Tauri
+      # signing env vars here (macOS: APPLE_CERTIFICATE, APPLE_SIGNING_IDENTITY,
+      # APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID; Windows: WINDOWS_CERTIFICATE).
+      - name: Build bundles
+        run: bunx tauri build ${{ matrix.args }}
 
-      - name: Build and publish draft release
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload bundles
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Kensaku ${{ github.ref_name }}
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
+          name: ${{ matrix.artifact }}
+          path: src-tauri/target/release/bundle/**
+          if-no-files-found: warn
 
-  # CLI binaries are built separately because tauri-action only uploads the
-  # desktop bundles. They are published as workflow artifacts (download them
-  # from the Actions run) rather than release assets: the draft release id is
-  # not readily available outside the tauri-action step, so attaching them with
-  # `gh release upload` would need extra plumbing. Artifacts are the simpler,
-  # correct option for unsigned builds. If release assets become a requirement,
-  # run `gh release upload "${{ github.ref_name }}" dist/kensaku-cli-* --clobber`
-  # in a job that `needs:` this one and has `contents: write`.
   cli:
-    name: CLI artifact (${{ matrix.platform }})
+    name: CLI (${{ matrix.platform }})
     runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -119,17 +95,16 @@ jobs:
         include:
           - platform: ubuntu-22.04
             artifact: kensaku-cli-linux
-            targets: x86_64-unknown-linux-gnu
+            target: x86_64-unknown-linux-gnu
           - platform: macos-latest
             artifact: kensaku-cli-macos
-            targets: aarch64-apple-darwin
+            target: aarch64-apple-darwin
           - platform: windows-latest
             artifact: kensaku-cli-windows
-            targets: x86_64-pc-windows-msvc
+            target: x86_64-pc-windows-msvc
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install Linux system dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -146,18 +121,16 @@ jobs:
             wget \
             file
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.targets }}
+          targets: ${{ matrix.target }}
 
-      # The CLI links the `kensaku_lib` crate, whose `generate_context!` embeds
-      # the frontend assets, so the web build has to exist first.
+      # generate_context! embeds the frontend, so build it before cargo.
       - name: Build frontend
         run: |
           bun install --frozen-lockfile
@@ -166,7 +139,7 @@ jobs:
       - name: Build CLI
         run: cargo build --release --bin kensaku-cli --manifest-path src-tauri/Cargo.toml
 
-      - name: Stage CLI binary (Unix)
+      - name: Stage CLI (Unix)
         if: runner.os != 'Windows'
         shell: bash
         run: |
@@ -178,18 +151,17 @@ jobs:
             aarch64|arm64) arch="aarch64" ;;
           esac
           cp src-tauri/target/release/kensaku-cli "dist/kensaku-cli-${os}-${arch}"
-          ls -l dist
+          chmod +x "dist/kensaku-cli-${os}-${arch}"
 
-      - name: Stage CLI binary (Windows)
+      - name: Stage CLI (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'aarch64' } else { 'x86_64' }
           Copy-Item src-tauri/target/release/kensaku-cli.exe "dist/kensaku-cli-windows-$arch.exe"
-          Get-ChildItem dist
 
-      - name: Upload CLI artifact
+      - name: Upload CLI
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
