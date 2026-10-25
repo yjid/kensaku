@@ -351,3 +351,20 @@ Remaining items (E2, B4-full) are low-impact/high-effort and deferred.
 ### Optimization Pass: COMPLETE
 All high-impact items are done. Remaining items are low-impact/high-effort and deferred.
 Next: PR 7 (Vision/OCR), PR 8 (Ask/actions), PR 9 (Launch/packaging)
+
+## PR 7 — Vision/OCR (partially complete)
+
+### Done
+- Image format sniffing (magic bytes + extension fallback)
+- OCR extraction via tesseract (Linux) — shells out to tesseract, returns text
+- Image extensions added to is_indexable_extension (png, jpg, jpeg, gif, bmp, webp, tiff, tif)
+- Config flag: ocr_enabled (default true)
+- Image text is indexed in Tantivy (searchable by OCR content)
+
+### Not yet done
+- macOS Vision framework integration (objc2-vision)
+- Windows OCR integration (windows crate)
+- Thumbnail generation for result cards
+- Image dimensions in metadata
+- Perceptual hash dedup
+- Image embedding (SigLIP/CLIP) — deferred to when ONNX smart pack is available
