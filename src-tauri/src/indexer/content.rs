@@ -186,7 +186,7 @@ impl ContentIndex {
         Ok(())
     }
 
-    pub fn search(&self, query_str: &str, limit: usize) -> Vec<ContentMatch> {
+    pub fn search(&self, query_str: &str, limit: usize, path_prefix: Option<&str>) -> Vec<ContentMatch> {
         if query_str.trim().is_empty() {
             return Vec::new();
         }
@@ -221,6 +221,13 @@ impl ContentIndex {
                     .and_then(|f| f.as_str())
                     .unwrap_or("")
                     .to_string();
+
+                // Apply path prefix filter (pushed from scope)
+                if let Some(prefix) = path_prefix
+                    && !path_str.starts_with(prefix)
+                {
+                    continue;
+                }
 
                 let filename = retrieved_doc
                     .get_first(self.filename_field)

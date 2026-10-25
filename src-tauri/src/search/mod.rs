@@ -169,7 +169,7 @@ impl SearchDispatcher {
         let mut bm25_ranks: HashMap<PathBuf, usize> = HashMap::new();
         if !search_text.is_empty()
             && let Some(c_index) = content_index {
-                let content_matches = c_index.search(&search_text, limit * 3);
+                let content_matches = c_index.search(&search_text, limit * 3, None);
                 for (rank, cm) in content_matches.into_iter().enumerate() {
                     bm25_ranks.insert(cm.path, rank + 1);
                 }
