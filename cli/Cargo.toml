@@ -1,0 +1,20 @@
+[package]
+name = "kensaku-cli"
+version = "0.3.3"
+edition = "2024"
+description = "Agent-facing CLI and MCP server for Kensaku"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "kensaku-cli"
+path = "src/main.rs"
+
+[dependencies]
+kensaku = { path = "../src-tauri" }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+strip = true

@@ -68,7 +68,7 @@ If you change layout or interaction, include a screenshot in both themes and che
 ## Performance changes
 
 If you touch the query path or the indexer, include before/after numbers from
-`cargo run --bin bench --release -- <dir>` (methodology in
+`cargo run --example bench --release -- <dir>` (methodology in
 [`BENCHMARKS.md`](BENCHMARKS.md)). Regressions above ~20% need justification.
 
 ## What we are not accepting (for now)

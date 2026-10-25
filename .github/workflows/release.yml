@@ -137,7 +137,7 @@ jobs:
           bun run build
 
       - name: Build CLI
-        run: cargo build --release --bin kensaku-cli --manifest-path src-tauri/Cargo.toml
+        run: cargo build --release --manifest-path cli/Cargo.toml
 
       - name: Stage CLI (Unix)
         if: runner.os != 'Windows'
@@ -150,7 +150,7 @@ jobs:
             x86_64|amd64) arch="x86_64" ;;
             aarch64|arm64) arch="aarch64" ;;
           esac
-          cp src-tauri/target/release/kensaku-cli "dist/kensaku-cli-${os}-${arch}"
+          cp cli/target/release/kensaku-cli "dist/kensaku-cli-${os}-${arch}"
           chmod +x "dist/kensaku-cli-${os}-${arch}"
 
       - name: Stage CLI (Windows)
@@ -159,7 +159,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'aarch64' } else { 'x86_64' }
-          Copy-Item src-tauri/target/release/kensaku-cli.exe "dist/kensaku-cli-windows-$arch.exe"
+          Copy-Item cli/target/release/kensaku-cli.exe "dist/kensaku-cli-windows-$arch.exe"
 
       - name: Upload CLI
         uses: actions/upload-artifact@v4
