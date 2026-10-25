@@ -203,6 +203,8 @@ pub fn run() {
             commands::open_folder,
             commands::get_file_preview,
             commands::get_thumbnail,
+            commands::get_ocr_status,
+            commands::download_ocr_language,
             commands::find_duplicates,
             commands::execute_command,
             commands::read_file_content,
