@@ -103,7 +103,17 @@
 
 > **Status: Skipped.** The user has decided to defer the agent/MCP/CLI surface. It may be revisited later. The architecture for it is fully documented in `docs/ARCHITECTURE.md` §9 and §13 Phase 4. The query AST, filters, and search pipeline are already designed to serve as the MCP tool contract (see PROGRESS.md item 6 in the "What's done" section).
 
-## What's next: PR 7 — Vision/OCR
+## What's next: Optimization Pass (docs/OPTIMIZATION.md)
+
+Before PR 7, run an optimization and correctness pass. See `docs/OPTIMIZATION.md` for the full plan (Phases A-E, ~7-9 days). Key items:
+
+- **Phase A (correctness):** Fix stale semantic units on re-embed, enable foreign keys, fix panic=abort vs catch_unwind, implement parsed-but-ignored grammar features.
+- **Phase B (latency):** Eliminate FileEntry clones per query, bitmap membership, precompiled filters, push filters into engines, stop trie rebuild on every add, batch embed worker, index indexed_gen, snippet caching.
+- **Phase C (indexing):** Parallelize crawl, avoid double lock acquisition, coalesce watcher events.
+- **Phase D (extraction/UI):** Stream zip XML, cache extraction, raise 100KB cap, frontend memoization.
+- **Phase E (filtering):** Wire excluded_extensions, type-based pre-filtering, extension interning, scope-aware candidate pruning.
+
+## Then: PR 7 — Vision/OCR
 
 Per `docs/ARCHITECTURE.md` §13, Phase 5. Scope:
 
