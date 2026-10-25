@@ -476,7 +476,19 @@ fn matches_type_category(typ: &str, ext_opt: Option<&str>, is_dir: bool) -> bool
         "pdf" => ext == "pdf",
         "doc" | "document" => matches!(
             ext.as_str(),
-            "doc" | "docx" | "pdf" | "txt" | "md" | "rtf" | "odt" | "pages"
+            "doc" | "docx" | "odt" | "rtf" | "pdf" | "txt" | "md" | "pages" | "epub"
+        ),
+        "sheet" | "spreadsheet" | "table" => matches!(
+            ext.as_str(),
+            "xlsx" | "xls" | "ods" | "csv" | "tsv" | "numbers"
+        ),
+        "presentation" | "slide" | "slides" => matches!(
+            ext.as_str(),
+            "pptx" | "ppt" | "odp" | "key"
+        ),
+        "ebook" | "book" => matches!(
+            ext.as_str(),
+            "epub" | "mobi" | "azw3" | "pdf"
         ),
         "code" => matches!(
             ext.as_str(),

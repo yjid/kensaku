@@ -165,32 +165,29 @@ pub async fn get_file_preview(path: String) -> Result<FilePreview, String> {
         });
     }
 
-    if ext == "pdf" {
-        return Ok(FilePreview {
-            path,
-            filename,
-            file_size,
-            modified,
-            is_dir: false,
-            preview_type: "pdf".to_string(),
-            content: None,
-            total_lines: None,
-            child_count: None,
-        });
-    }
+    if let Some(doc) = crate::indexer::extract::extract_document(p, 48_000) {
+        let preview_type = match crate::indexer::extract::sniff_format(p) {
+            crate::indexer::extract::DocumentFormat::Pdf => "pdf",
+            crate::indexer::extract::DocumentFormat::Docx => "doc",
+            crate::indexer::extract::DocumentFormat::Pptx => "presentation",
+            crate::indexer::extract::DocumentFormat::Xlsx => "sheet",
+            crate::indexer::extract::DocumentFormat::Epub
+            | crate::indexer::extract::DocumentFormat::Odt
+            | crate::indexer::extract::DocumentFormat::Rtf => "doc",
+            _ => "text",
+        };
 
-    if let Some(content) = crate::indexer::content::read_text_content(p, 48_000) {
-        let total_lines = content.lines().count();
+        let total_lines = doc.text.lines().count();
         return Ok(FilePreview {
             path,
             filename,
             file_size,
             modified,
             is_dir: false,
-            preview_type: "text".to_string(),
-            content: Some(content),
+            preview_type: preview_type.to_string(),
+            content: Some(doc.text),
             total_lines: Some(total_lines),
-            child_count: None,
+            child_count: doc.page_count,
         });
     }
 
