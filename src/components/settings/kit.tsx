@@ -3,6 +3,19 @@ import React from "react";
 /* Shared primitives for the Settings pages and elsewhere: 1px-bordered
    cards, field rows, switches, badges. Tokens only. */
 
+/** Tauri rejections are usually plain strings; extract a readable reason. */
+export function reasonFrom(err: unknown): string {
+  if (typeof err === "string" && err) return err;
+  if (err instanceof Error && err.message) return err.message;
+  try {
+    const text = JSON.stringify(err);
+    if (text && text !== "{}" && text !== "null") return text;
+  } catch {
+    /* non-serializable — fall through */
+  }
+  return "unknown error";
+}
+
 export function Field({
   label,
   description,
