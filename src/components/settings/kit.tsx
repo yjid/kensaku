@@ -6,10 +6,13 @@ import React from "react";
 export function Field({
   label,
   description,
+  hint,
   children,
 }: {
   label: string;
   description?: string;
+  /** Quiet sub-line under the description, shown only when relevant. */
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -17,6 +20,7 @@ export function Field({
       <div className="min-w-0 space-y-0.5">
         <p className="text-[12px] font-medium text-fg">{label}</p>
         {description && <p className="text-[11px] leading-relaxed text-muted">{description}</p>}
+        {hint && <p className="text-[11px] leading-relaxed text-muted">{hint}</p>}
       </div>
       {children}
     </div>
