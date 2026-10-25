@@ -18,6 +18,8 @@ pub struct KensakuConfig {
     pub semantic_enabled: bool,
     #[serde(default = "default_semantic_model")]
     pub semantic_model: String,
+    #[serde(default = "default_true")]
+    pub ocr_enabled: bool,
 }
 
 fn default_true() -> bool {
@@ -97,6 +99,7 @@ impl Default for KensakuConfig {
             skip_hidden: true,
             semantic_enabled: true,
             semantic_model: "static".to_string(),
+            ocr_enabled: true,
         }
     }
 }
