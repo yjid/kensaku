@@ -5,6 +5,8 @@ pub mod text;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::sync::Mutex;
+use std::collections::{HashMap, VecDeque};
 
 #[derive(Debug, Clone)]
 pub struct DocumentExtract {
@@ -94,9 +96,64 @@ pub fn sniff_format(path: &Path) -> DocumentFormat {
 /// - Max file size: 20MB (files above 20MB are metadata-only).
 /// - Extracted content capped at max_bytes (default 1MB).
 /// - Panic-isolated with std::panic::catch_unwind.
+/// Global LRU cache for extraction results, keyed by (path, size, mtime).
+static EXTRACTION_CACHE: std::sync::OnceLock<Mutex<ExtractionCache>> = std::sync::OnceLock::new();
+
+struct ExtractionCache {
+    capacity: usize,
+    map: HashMap<(std::path::PathBuf, u64, u64), DocumentExtract>,
+    order: VecDeque<(std::path::PathBuf, u64, u64)>,
+}
+
+impl ExtractionCache {
+    fn new(capacity: usize) -> Self {
+        Self {
+            capacity,
+            map: HashMap::new(),
+            order: VecDeque::new(),
+        }
+    }
+
+    fn get(&mut self, key: &(std::path::PathBuf, u64, u64)) -> Option<DocumentExtract> {
+        if let Some(val) = self.map.get(key) {
+            // Move to back (most recently used)
+            if let Some(pos) = self.order.iter().position(|k| k == key) {
+                self.order.remove(pos);
+            }
+            self.order.push_back(key.clone());
+            return Some(val.clone());
+        }
+        None
+    }
+
+    fn insert(&mut self, key: (std::path::PathBuf, u64, u64), val: DocumentExtract) {
+        if self.map.len() >= self.capacity
+            && let Some(oldest) = self.order.pop_front()
+        {
+            self.map.remove(&oldest);
+        }
+        self.order.push_back(key.clone());
+        self.map.insert(key, val);
+    }
+}
+
+fn get_extraction_cache() -> &'static Mutex<ExtractionCache> {
+    EXTRACTION_CACHE.get_or_init(|| Mutex::new(ExtractionCache::new(64)))
+}
+
 pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> {
     let meta = std::fs::metadata(path).ok()?;
     let file_size = meta.len();
+    let mtime = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+
+    // Check cache first
+    let cache_key = (path.to_path_buf(), file_size, mtime);
+    {
+        let mut cache = get_extraction_cache().lock().unwrap();
+        if let Some(cached) = cache.get(&cache_key) {
+            return Some(cached);
+        }
+    }
 
     // Content policy: metadata-only above 20 MB
     if file_size > 20_000_000 {
@@ -106,6 +163,19 @@ pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> 
     let capped_bytes = (max_bytes as usize).min(1_000_000);
     let format = sniff_format(path);
 
+    // Call inner extraction (all the match arms below)
+    let result = extract_document_inner(path, capped_bytes, format, file_size);
+
+    // Cache the result
+    if let Some(ref res) = result {
+        let mut cache = get_extraction_cache().lock().unwrap();
+        cache.insert(cache_key, res.clone());
+    }
+
+    result
+}
+
+fn extract_document_inner(path: &Path, capped_bytes: usize, format: DocumentFormat, file_size: u64) -> Option<DocumentExtract> {
     match format {
         DocumentFormat::Pdf => {
             let res = pdf::extract_pdf(path, capped_bytes)?;
