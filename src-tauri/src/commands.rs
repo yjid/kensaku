@@ -1,7 +1,7 @@
+use crate::AppState;
 use crate::config::KensakuConfig;
 use crate::indexer::IndexingStatus;
 use crate::search::{SearchDispatcher, SearchResponse, SearchResult};
-use crate::AppState;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
@@ -29,8 +29,8 @@ pub fn init_process_start() {
 
 fn record_query_latency(micros: u64) {
     QUERY_TOTAL.fetch_add(1, Ordering::Relaxed);
-    let buffer = QUERY_LATENCIES
-        .get_or_init(|| Mutex::new(VecDeque::with_capacity(QUERY_LATENCY_CAPACITY)));
+    let buffer =
+        QUERY_LATENCIES.get_or_init(|| Mutex::new(VecDeque::with_capacity(QUERY_LATENCY_CAPACITY)));
     // Recover from a poisoned lock instead of panicking: stats are best-effort.
     let mut guard = match buffer.lock() {
         Ok(guard) => guard,
@@ -43,8 +43,8 @@ fn record_query_latency(micros: u64) {
 }
 
 fn query_latency_samples() -> Vec<u64> {
-    let buffer = QUERY_LATENCIES
-        .get_or_init(|| Mutex::new(VecDeque::with_capacity(QUERY_LATENCY_CAPACITY)));
+    let buffer =
+        QUERY_LATENCIES.get_or_init(|| Mutex::new(VecDeque::with_capacity(QUERY_LATENCY_CAPACITY)));
     let guard = match buffer.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
@@ -270,17 +270,17 @@ pub async fn get_stats(state: State<'_, AppState>) -> Result<serde_json::Value, 
         .skip(samples.len().saturating_sub(QUERY_HISTORY_SHOWN))
         .map(|micros| *micros as f64 / 1000.0)
         .collect();
-    let last_ms = samples.last().map(|micros| *micros as f64 / 1000.0).unwrap_or(0.0);
+    let last_ms = samples
+        .last()
+        .map(|micros| *micros as f64 / 1000.0)
+        .unwrap_or(0.0);
 
     samples.sort_unstable();
     let p50_ms = percentile_ms(&samples, 50.0);
     let p95_ms = percentile_ms(&samples, 95.0);
     let p99_ms = percentile_ms(&samples, 99.0);
 
-    let uptime_secs = PROCESS_START
-        .get_or_init(Instant::now)
-        .elapsed()
-        .as_secs();
+    let uptime_secs = PROCESS_START.get_or_init(Instant::now).elapsed().as_secs();
     let rss_bytes = resident_set_bytes();
     let watcher_ok = indexer.watcher_ok.load(Ordering::Relaxed);
     let model_id = indexer.config.read().semantic_model.clone();
@@ -370,6 +370,10 @@ pub struct FilePreview {
     pub content: Option<String>,
     pub total_lines: Option<usize>,
     pub child_count: Option<usize>,
+    #[serde(default)]
+    pub width: Option<u32>,
+    #[serde(default)]
+    pub height: Option<u32>,
 }
 
 #[tauri::command]
@@ -405,6 +409,8 @@ pub async fn get_file_preview(path: String) -> Result<FilePreview, String> {
             content: None,
             total_lines: None,
             child_count: Some(child_count),
+            width: None,
+            height: None,
         });
     }
 
@@ -416,8 +422,9 @@ pub async fn get_file_preview(path: String) -> Result<FilePreview, String> {
 
     if matches!(
         ext.as_str(),
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico" | "bmp"
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico" | "bmp" | "tiff" | "tif"
     ) {
+        let dimensions = crate::indexer::extract::image::dimensions(p);
         return Ok(FilePreview {
             path,
             filename,
@@ -428,6 +435,8 @@ pub async fn get_file_preview(path: String) -> Result<FilePreview, String> {
             content: None,
             total_lines: None,
             child_count: None,
+            width: dimensions.map(|(width, _)| width),
+            height: dimensions.map(|(_, height)| height),
         });
     }
 
@@ -454,6 +463,8 @@ pub async fn get_file_preview(path: String) -> Result<FilePreview, String> {
             content: Some(doc.text),
             total_lines: Some(total_lines),
             child_count: doc.page_count,
+            width: None,
+            height: None,
         });
     }
 
@@ -467,7 +478,107 @@ pub async fn get_file_preview(path: String) -> Result<FilePreview, String> {
         content: None,
         total_lines: None,
         child_count: None,
+        width: None,
+        height: None,
     })
+}
+
+/// Cache directory for generated image thumbnails.
+fn thumbnail_cache_dir() -> PathBuf {
+    KensakuConfig::config_dir().join("thumbs")
+}
+
+/// Creates the thumbnail cache directory with owner-only permissions.
+fn ensure_thumbnail_cache_dir() -> Result<PathBuf, String> {
+    let dir = thumbnail_cache_dir();
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create thumbnail cache directory: {}", e))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| format!("Failed to secure thumbnail cache directory: {}", e))?;
+    }
+    Ok(dir)
+}
+
+fn generate_thumbnail(path: &str) -> Result<String, String> {
+    let source = Path::new(path);
+    let extension = source
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    if !crate::indexer::extract::image::is_supported_image_extension(&extension) {
+        return Err("not an image".to_string());
+    }
+
+    let dir = ensure_thumbnail_cache_dir()?;
+    let thumbnail = crate::indexer::extract::image::thumbnail(source, &dir)
+        .ok_or_else(|| format!("Failed to generate thumbnail for '{}'", path))?;
+
+    thumbnail
+        .to_str()
+        .map(|path| path.to_string())
+        .ok_or_else(|| "Thumbnail path is not valid UTF-8".to_string())
+}
+
+/// Returns an absolute path to a cached 320px JPEG thumbnail.
+///
+/// The frontend turns this path into an asset URL with `convertFileSrc`. Only
+/// raster formats supported by the decoder are accepted; anything else returns
+/// `"not an image"`.
+#[tauri::command]
+pub async fn get_thumbnail(path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || generate_thumbnail(&path))
+        .await
+        .map_err(|e| format!("Thumbnail task failed: {}", e))?
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DuplicateGroup {
+    /// `"content"` for exact extracted-content matches, `"image"` for
+    /// perceptual-hash matches.
+    pub kind: String,
+    /// Hex content hash or perceptual hash identifying the group.
+    pub hash: String,
+    pub paths: Vec<String>,
+}
+
+/// Finds exact content duplicates and near-duplicate images.
+#[tauri::command]
+pub async fn find_duplicates(
+    state: State<'_, AppState>,
+    max_distance: Option<u32>,
+    limit: Option<usize>,
+) -> Result<Vec<DuplicateGroup>, String> {
+    let db = state.indexer.metadata.read().db();
+    let Some(db) = db else {
+        return Ok(Vec::new());
+    };
+
+    let limit = limit.unwrap_or(200).clamp(1, 1_000);
+    let max_distance = max_distance.unwrap_or(10).min(64);
+    let mut groups = Vec::new();
+
+    for (hash, paths) in db.exact_duplicate_groups(limit)? {
+        groups.push(DuplicateGroup {
+            kind: "content".to_string(),
+            hash,
+            paths,
+        });
+    }
+
+    for (phash, paths) in db.near_duplicate_groups(max_distance, limit)? {
+        groups.push(DuplicateGroup {
+            kind: "image".to_string(),
+            hash: format!("{:016x}", phash),
+            paths,
+        });
+    }
+
+    Ok(groups)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -501,11 +612,7 @@ pub async fn execute_command(
             let units_count = state.indexer.unit_store.read().len();
             let msg = format!(
                 "Kensaku Doctor Report:\n• Metadata entries: {}\n• Full-text indexed docs: {}\n• Semantic units: {}\n• Configured roots: {}\n• Status: {}\n• Metadata DB: WAL enabled (healthy)",
-                meta_count,
-                status.content_indexed,
-                units_count,
-                roots,
-                status.current_status
+                meta_count, status.content_indexed, units_count, roots, status.current_status
             );
             Ok(CommandOutput {
                 success: true,
@@ -515,12 +622,14 @@ pub async fn execute_command(
         "model" => {
             let units_count = state.indexer.unit_store.read().len();
             let cfg = state.indexer.config.read().clone();
-            let status = if cfg.semantic_enabled { "enabled" } else { "disabled" };
+            let status = if cfg.semantic_enabled {
+                "enabled"
+            } else {
+                "disabled"
+            };
             let msg = format!(
                 "Active Model: {} (static int8 table, 256-dim, ~5µs/query, offline)\nStatus: {}\nLoaded Units: {}",
-                cfg.semantic_model,
-                status,
-                units_count
+                cfg.semantic_model, status, units_count
             );
             Ok(CommandOutput {
                 success: true,
