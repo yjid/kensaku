@@ -39,6 +39,16 @@ impl MetadataDb {
         Self::open_at(&db_dir.join("metadata.db"))
     }
 
+    /// Opens (and initializes) a database at `<dir>/metadata.db`.
+    ///
+    /// Used by the headless (CLI/MCP) surface to target an explicit config
+    /// directory, including temporary directories in tests.
+    pub fn open_in_dir(dir: &Path) -> Result<Self, String> {
+        std::fs::create_dir_all(dir)
+            .map_err(|e| format!("Failed to create metadata directory: {}", e))?;
+        Self::open_at(&dir.join("metadata.db"))
+    }
+
     /// Opens (and initializes) a database at an explicit path.
     ///
     /// Used by [`Self::open`] and by tests so they never touch the real config
