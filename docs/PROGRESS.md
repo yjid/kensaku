@@ -303,3 +303,19 @@ See `docs/OPTIMIZATION.md` for the full plan. Completed items:
 - **E2:** Extension interning (u16 instead of Option<String>) — high churn, low impact
 - **E3:** Scope-aware candidate pruning — already done (fuzzy takes candidate_indices)
 - **A4:** name:/content:/path: term scoping — needs search pipeline split
+
+## Optimization Pass — Round 3 (completed this session)
+
+### Phase B (latency) — DONE
+- **B4:** Path prefix filter infrastructure in Tantivy search ✅ (partial — post-filter, not BooleanQuery yet)
+
+### Phase A (correctness) — DONE
+- **A4:** name:/content:/path: term field scoping — terms now route to the correct engine ✅
+
+### Phase E (filtering) — DONE
+- **E3:** Scope-aware candidate pruning — already done (fuzzy + semantic filter by candidate set) ✅
+
+### Remaining (low priority / high effort)
+- **E2:** Extension interning (u16 instead of Option<String>) — high churn, low impact (6-12MB at 1M files)
+- **B4 (full):** Push filters into Tantivy BooleanQuery (currently post-filter)
+- **A4 (full):** name:/content:/path: term scoping in BM25 (currently fuzzy+BM25 both get scoped terms)
