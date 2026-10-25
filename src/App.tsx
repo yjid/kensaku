@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import {
   SearchResult,
   SearchResponse,
+  SnippetDto,
   ActiveFilter,
   IndexingStatus,
   CommandOutput,
@@ -102,6 +103,13 @@ function App() {
     return Math.max(1, count);
   }, []);
   const currentSeqRef = useRef(0);
+  /** Query at the time the current effect run scheduled its requests —
+   *  snippet merges are discarded if the user has typed since. */
+  const queryRef = useRef(query);
+  /** Snippets already fetched for a path, across queries ("path → snippet,
+   *  null = fetched and none exists"). Kept so the same path never pays for
+   *  extraction twice within a session; pruned when it grows past 200. */
+  const fetchedSnippetsRef = useRef(new Map<string, string | null>()).current;
 
   /* ---------------- setup gating ---------------- */
 
@@ -165,13 +173,75 @@ function App() {
     setIsSearching(true);
     const timer = setTimeout(async () => {
       const seq = ++currentSeqRef.current;
+      queryRef.current = query;
       try {
         const res = await invoke<SearchResponse>("search", { query });
         if (seq >= currentSeqRef.current) {
-          setResults(res.results);
+          // Seed rows with snippets already fetched for these paths so a
+          // repeated path never flashes snippet-less. Existing snippets are
+          // never cleared mid-flight — old rows keep theirs until these
+          // replace them.
+          const seen = new Set<string>();
+          const merged = res.results.map((r) => {
+            seen.add(r.path);
+            if (r.snippet == null && fetchedSnippetsRef.has(r.path)) {
+              return { ...r, snippet: fetchedSnippetsRef.get(r.path) ?? null };
+            }
+            return r;
+          });
+          if (fetchedSnippetsRef.size > 200) {
+            for (const p of fetchedSnippetsRef.keys()) {
+              if (!seen.has(p)) fetchedSnippetsRef.delete(p);
+            }
+          }
+          setResults(merged);
           setActiveFilters(res.active_filters);
           setHints(res.hints);
           setSelectedIndex(0);
+
+          /* Phase 2 — the fast results are on screen; content snippets
+             stream in afterwards and patch rows by path. Fails silently:
+             rows simply keep their meta sub-lines. */
+          const want: string[] = [];
+          for (const r of merged) {
+            if (r.snippet != null) continue;
+            if (fetchedSnippetsRef.has(r.path)) continue;
+            want.push(r.path);
+            if (want.length >= 20) break;
+          }
+          if (want.length > 0) {
+            invoke<SnippetDto[]>("get_snippets", { paths: want, query })
+              .then((dtos) => {
+                // Discard if a newer search superseded this one or the
+                // query text changed while we were fetching.
+                if (seq !== currentSeqRef.current || queryRef.current !== query) return;
+                if (!Array.isArray(dtos)) return;
+                let changed = false;
+                const patch = new Set<string>();
+                for (const dto of dtos) {
+                  if (dto && typeof dto.path === "string") {
+                    fetchedSnippetsRef.set(
+                      dto.path,
+                      typeof dto.snippet === "string" ? dto.snippet : null,
+                    );
+                    if (dto.snippet) patch.add(dto.path);
+                  }
+                }
+                setResults((prev) => {
+                  if (seq !== currentSeqRef.current || queryRef.current !== query) return prev;
+                  const next = prev.map((r) => {
+                    if (r.snippet != null || !patch.has(r.path)) return r;
+                    changed = true;
+                    return { ...r, snippet: fetchedSnippetsRef.get(r.path) ?? null };
+                  });
+                  // Avoid an identical state swap when nothing matched.
+                  return changed ? next : prev;
+                });
+              })
+              .catch(() => {
+                /* snippets are optional decoration — never surface errors */
+              });
+          }
         }
       } catch (err) {
         console.error("Search error:", err);

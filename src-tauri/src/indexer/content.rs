@@ -1,6 +1,7 @@
 use parking_lot::{Mutex, RwLock};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tantivy::collector::{DocSetCollector, TopDocs};
@@ -480,6 +481,17 @@ impl ContentIndex {
         Self::extract_snippet_from_text_cached(content, content_lower, query)
     }
 
+    /// Cheap, extraction-free snippet for query-time callers.
+    ///
+    /// Plain text/code/config files are read directly (at most 64 KB). Every
+    /// other format (PDF, Office, RTF, images, ...) is served only from the
+    /// extraction cache, so this never runs lopdf, unzip or tesseract on the
+    /// query path. A cold cache yields `None`; the UI fetches snippets
+    /// asynchronously via the `get_snippets` command instead.
+    pub fn get_snippet_fast(&self, path: &Path, query: &str) -> Option<String> {
+        snippet_for_path(path, query)
+    }
+
     pub fn extract_snippet_from_text_cached(
         content: &str,
         content_lower: &str,
@@ -528,6 +540,111 @@ impl ContentIndex {
     pub fn extract_snippet_from_text(content: &str, query: &str) -> Option<String> {
         Self::extract_snippet_from_text_cached(content, &content.to_lowercase(), query)
     }
+}
+
+/// Bytes read when producing a snippet straight from a text file.
+const SNIPPET_READ_LIMIT: u64 = 64 * 1024;
+
+/// True when the extension is plain text, code or configuration.
+///
+/// Deliberately excludes PDF, Office/OpenDocument, eBook, RTF and image
+/// formats: those need an extractor (or OCR) and must never be read as a text
+/// file on the query path.
+pub fn is_plain_text_extension(ext_opt: Option<&str>) -> bool {
+    let ext = match ext_opt {
+        Some(ext) => ext.to_ascii_lowercase(),
+        None => return false,
+    };
+
+    static PLAIN_TEXT_EXTENSIONS: &[&str] = &[
+        // Plain text / markup
+        "txt",
+        "md",
+        "markdown",
+        "rst",
+        "tex",
+        "log",
+        "diff",
+        "patch",
+        "csv",
+        "tsv",
+        // Code
+        "rs",
+        "ts",
+        "tsx",
+        "js",
+        "jsx",
+        "mjs",
+        "cjs",
+        "py",
+        "go",
+        "c",
+        "cpp",
+        "cc",
+        "cxx",
+        "h",
+        "hpp",
+        "java",
+        "kt",
+        "kts",
+        "rb",
+        "php",
+        "swift",
+        "r",
+        "lua",
+        "vim",
+        "sh",
+        "bash",
+        "zsh",
+        "fish",
+        "sql",
+        // Web
+        "html",
+        "htm",
+        "css",
+        "scss",
+        "sass",
+        "vue",
+        "svelte",
+        "astro",
+        "graphql",
+        "proto",
+        // Config
+        "json",
+        "toml",
+        "yaml",
+        "yml",
+        "xml",
+        "ini",
+        "cfg",
+        "conf",
+        "env",
+        "dockerfile",
+    ];
+
+    PLAIN_TEXT_EXTENSIONS.contains(&ext.as_str())
+}
+
+/// Builds a snippet without extracting anything.
+///
+/// Plain text is read directly; everything else only reads the extraction
+/// cache. See [`ContentIndex::get_snippet_fast`].
+pub fn snippet_for_path(path: &Path, query: &str) -> Option<String> {
+    if is_plain_text_extension(path.extension().and_then(|ext| ext.to_str())) {
+        let file = fs::File::open(path).ok()?;
+        let mut buffer = Vec::with_capacity(SNIPPET_READ_LIMIT as usize);
+        file.take(SNIPPET_READ_LIMIT)
+            .read_to_end(&mut buffer)
+            .ok()?;
+        let text = String::from_utf8_lossy(&buffer);
+        return ContentIndex::extract_snippet_from_text(&text, query);
+    }
+
+    let document = crate::indexer::extract::cached_document(path)?;
+    if document.text.is_empty() {
+        return None;
+    }
+    ContentIndex::extract_snippet_from_text(&document.text, query)
 }
 
 pub fn is_indexable_extension(ext_opt: Option<&str>) -> bool {
@@ -789,6 +906,62 @@ mod tests {
                 .unwrap_err(),
             "index is read-only"
         );
+    }
+
+    #[test]
+    fn fast_snippet_reads_text_and_never_extracts_documents() {
+        let temp = temp_index("fast-snippet");
+        let index = temp.index.as_ref().unwrap();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+
+        let text_path = std::env::temp_dir().join(format!(
+            "kensaku-fast-snippet-{}-{}.txt",
+            std::process::id(),
+            nanos
+        ));
+        fs::write(&text_path, "alpha line\nbeta needle line\nomega line\n").unwrap();
+        let snippet = index
+            .get_snippet_fast(&text_path, "needle")
+            .expect("text snippet");
+        assert!(snippet.contains("needle"), "got: {snippet}");
+        let _ = fs::remove_file(&text_path);
+
+        // A document format with a cold extraction cache returns `None`
+        // immediately instead of running the PDF extractor at query time.
+        let pdf_path = std::env::temp_dir().join(format!(
+            "kensaku-fast-snippet-{}-{}.pdf",
+            std::process::id(),
+            nanos
+        ));
+        fs::write(&pdf_path, b"%PDF-1.4\nnot a real document\n").unwrap();
+        let started = std::time::Instant::now();
+        assert!(index.get_snippet_fast(&pdf_path, "needle").is_none());
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(50),
+            "cold document snippet took {:?}",
+            started.elapsed()
+        );
+        let _ = fs::remove_file(&pdf_path);
+    }
+
+    #[test]
+    fn plain_text_extensions_exclude_documents_and_images() {
+        assert!(is_plain_text_extension(Some("txt")));
+        assert!(is_plain_text_extension(Some("RS")));
+        assert!(is_plain_text_extension(Some("json")));
+        for excluded in [
+            "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "epub", "odt", "ods", "odp", "rtf",
+            "png", "jpg", "jpeg", "gif", "webp", "tiff", "heic",
+        ] {
+            assert!(
+                !is_plain_text_extension(Some(excluded)),
+                "{excluded} must not be treated as plain text"
+            );
+        }
+        assert!(!is_plain_text_extension(None));
     }
 
     #[test]

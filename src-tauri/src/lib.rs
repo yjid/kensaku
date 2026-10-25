@@ -202,6 +202,7 @@ pub fn run() {
             commands::open_file,
             commands::open_folder,
             commands::get_file_preview,
+            commands::get_snippets,
             commands::get_thumbnail,
             commands::get_ocr_status,
             commands::download_ocr_language,
