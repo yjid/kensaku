@@ -1,0 +1,69 @@
+name: Bug report
+description: Something is wrong, slow, or missing results
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please include **Settings → Doctor → Copy report** and
+        **Stats for Nerds → Copy diagnostics** if you can — they answer most
+        environment questions up front.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the behaviour and what you expected instead.
+      placeholder: "Searching for `type:pdf invoice` returns nothing, but the PDF is in ~/Documents."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Watch ~/Documents
+        2. Wait for indexing to finish
+        3. Search `type:pdf invoice`
+        4. …
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Kensaku version
+      placeholder: "0.3.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux
+        - macOS (Intel)
+        - macOS (Apple Silicon)
+        - Windows
+    validations:
+      required: true
+
+  - type: input
+    id: corpus
+    attributes:
+      label: Approximate corpus size
+      placeholder: "~120k files across 2 roots"
+    validations:
+      required: false
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Doctor / diagnostics
+      description: Paste the JSON from Settings → Doctor and Stats for Nerds.
+      render: json
+    validations:
+      required: false
