@@ -325,8 +325,8 @@ pub fn is_indexable_extension(ext_opt: Option<&str>) -> bool {
         // Documents & Office (PR 5)
         "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "epub", "odt",
         "ods", "odp", "rtf", "pages", "key", "numbers",
+        "png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "tif",
     ];
-
     TEXT_EXTENSIONS.contains(&ext.as_str())
 }
 

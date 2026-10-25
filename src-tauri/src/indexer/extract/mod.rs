@@ -1,3 +1,4 @@
+pub mod image;
 pub mod office;
 pub mod pdf;
 pub mod text;
@@ -29,6 +30,7 @@ pub enum DocumentFormat {
     Odp,
     Rtf,
     PlainText,
+    Image,
     Unknown,
 }
 
@@ -46,6 +48,13 @@ pub fn sniff_format(path: &Path) -> DocumentFormat {
         // RTF magic: {\rtf
         if header.starts_with(b"{\\rtf") {
             return DocumentFormat::Rtf;
+        }
+        // Image magic bytes
+        if header.starts_with(b"\x89PNG") || header.starts_with(b"\xff\xd8\xff")
+            || header.starts_with(b"GIF8") || header.starts_with(b"RIFF")
+            || header.starts_with(b"BM")
+        {
+            return DocumentFormat::Image;
         }
         // ZIP magic: PK\x03\x04
         if header.starts_with(b"PK\x03\x04") {
@@ -85,6 +94,7 @@ pub fn sniff_format(path: &Path) -> DocumentFormat {
         "ods" => DocumentFormat::Ods,
         "odp" => DocumentFormat::Odp,
         "rtf" => DocumentFormat::Rtf,
+        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "tiff" | "tif" | "heic" | "heif" => DocumentFormat::Image,
         "txt" | "md" | "markdown" | "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "json"
         | "toml" | "yaml" | "yml" | "xml" | "html" | "htm" | "css" | "c" | "cpp" | "h"
         | "java" | "sh" | "log" | "csv" | "sql" => DocumentFormat::PlainText,
@@ -245,6 +255,17 @@ fn extract_document_inner(path: &Path, capped_bytes: usize, format: DocumentForm
                 is_encrypted: false,
                 is_scanned: false,
                 format_name: "Rich Text".to_string(),
+            })
+        }
+        DocumentFormat::Image => {
+            // OCR via tesseract (Linux) or platform APIs
+            let text = image::extract_image_ocr(path)?;
+            Some(DocumentExtract {
+                text,
+                page_count: None,
+                is_encrypted: false,
+                is_scanned: true,
+                format_name: "Image (OCR)".to_string(),
             })
         }
         DocumentFormat::PlainText | DocumentFormat::Unknown => {
