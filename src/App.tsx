@@ -83,11 +83,15 @@ function App() {
   const resultsContainerRef = useRef<HTMLDivElement>(null);
 
   /** Number of cards in the first grid row (1 in list view). Measured from
-   *  the DOM so it stays correct across window resizes and auto-fill. */
+   *  the DOM so it stays correct across window resizes and auto-fill.
+   *  Only `data-index` cells count — full-span labels ("Recent") sit in
+   *  the grid too but span every column. */
   const gridColumnCount = useCallback(() => {
     const el = resultsContainerRef.current;
     if (!el) return 1;
-    const children = Array.from(el.children) as HTMLElement[];
+    const children = Array.from(el.children).filter((child) =>
+      child.hasAttribute("data-index"),
+    ) as HTMLElement[];
     if (children.length === 0) return 1;
     const firstTop = children[0].offsetTop;
     let count = 0;
@@ -639,7 +643,7 @@ function App() {
                   ref={resultsContainerRef}
                   className={`min-w-0 flex-1 overflow-y-auto ${
                     view === "grid"
-                      ? "grid grid-cols-[repeat(auto-fill,160px)] justify-start gap-2 p-3"
+                      ? "grid grid-cols-[repeat(auto-fill,minmax(156px,1fr))] content-start gap-3 p-4"
                       : "px-2 py-1"
                   }`}
                 >
@@ -687,17 +691,17 @@ function App() {
                     ) : (
                       results.map((res, idx) => (
                         <div key={res.path + idx} data-index={idx}>
-                        <ResultItem
-                          result={res}
-                          query={query}
-                          index={idx}
-                          isSelected={idx === selectedIndex}
-                          view="grid"
-                          onSelect={() => setSelectedIndex(idx)}
-                          onOpen={() => handleOpenFile(res.path)}
-                          onReveal={() => handleOpenFolder(res.path)}
-                          onCopyPath={() => handleCopyPath(res.path)}
-                        />
+                          <ResultItem
+                            result={res}
+                            query={query}
+                            index={idx}
+                            isSelected={idx === selectedIndex}
+                            view="grid"
+                            onSelect={() => setSelectedIndex(idx)}
+                            onOpen={() => handleOpenFile(res.path)}
+                            onReveal={() => handleOpenFolder(res.path)}
+                            onCopyPath={() => handleCopyPath(res.path)}
+                          />
                         </div>
                       ))
                     )
@@ -726,47 +730,47 @@ function App() {
                   ) : (
                     /* Empty query — plain recent-files list, same rows. */
                     navList.length > 0 ? (
-                      <div>
-                        {view === "list" ? (
-                          <>
-                            <p className="eyebrow px-3 pb-1.5 pt-1">Recent</p>
-                            {navList.map((res, idx) => (
-                              <div key={res.path + idx} data-index={idx}>
-                                <ResultItem
-                                  result={res}
-                                  query=""
-                                  index={idx}
-                                  isSelected={idx === selectedIndex}
-                                  view="list"
-                                  onSelect={() => setSelectedIndex(idx)}
-                                  onOpen={() => handleOpenFile(res.path)}
-                                  onReveal={() => handleOpenFolder(res.path)}
-                                  onCopyPath={() => handleCopyPath(res.path)}
-                                />
-                              </div>
-                            ))}
-                          </>
-                        ) : (
-                          <>
-                            <p className="eyebrow px-1.5 pb-1.5 pt-1">Recent</p>
-                            {navList.map((res, idx) => (
-                              <div key={res.path + idx} data-index={idx}>
-                                <ResultItem
-                                  result={res}
-                                  query=""
-                                  index={idx}
-                                  isSelected={idx === selectedIndex}
-                                  view="grid"
-                                  onSelect={() => setSelectedIndex(idx)}
-                                  onOpen={() => handleOpenFile(res.path)}
-                                  onReveal={() => handleOpenFolder(res.path)}
-                                  onCopyPath={() => handleCopyPath(res.path)}
-                                />
-                              </div>
-                            ))}
-                          </>
-                        )}
-                      </div>
+                      view === "list" ? (
+                        <div>
+                          <p className="eyebrow px-3 pb-1.5 pt-1">Recent</p>
+                          {navList.map((res, idx) => (
+                            <div key={res.path + idx} data-index={idx}>
+                              <ResultItem
+                                result={res}
+                                query=""
+                                index={idx}
+                                isSelected={idx === selectedIndex}
+                                view="list"
+                                onSelect={() => setSelectedIndex(idx)}
+                                onOpen={() => handleOpenFile(res.path)}
+                                onReveal={() => handleOpenFolder(res.path)}
+                                onCopyPath={() => handleCopyPath(res.path)}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <>
+                          {/* Full-span label above the tiles; tiles themselves
+                              stay direct grid children so rows fill evenly. */}
+                          <p className="eyebrow col-span-full px-1 pb-1.5 pt-0.5">Recent</p>
+                          {navList.map((res, idx) => (
+                            <div key={res.path + idx} data-index={idx}>
+                              <ResultItem
+                                result={res}
+                                query=""
+                                index={idx}
+                                isSelected={idx === selectedIndex}
+                                view="grid"
+                                onSelect={() => setSelectedIndex(idx)}
+                                onOpen={() => handleOpenFile(res.path)}
+                                onReveal={() => handleOpenFolder(res.path)}
+                                onCopyPath={() => handleCopyPath(res.path)}
+                              />
+                            </div>
+                          ))}
+                        </>
+                      )
                     ) : (
                       <EmptyState variant="empty" caption="Nothing archived yet">
                         <p className="text-[11px] text-subtle">

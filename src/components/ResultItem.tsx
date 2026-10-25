@@ -13,8 +13,9 @@ import {
 
 /* Result row: fixed 56px, tinted type square, name with subtle match
    highlight, mono meta line, hover-only actions + chevron.
-   Grid card: 160px, 2-line name clamp, reserved meta line — no layout
-   shift when selection or hover state changes. */
+   Grid card: fluid 1fr tile, aspect-square enforced so every row of the
+   keyboard grid measures true squares — image cards fill the tile with
+   the thumbnail under a scrim, classic cards use the tinted-square icon. */
 
 export type ResultView = "list" | "grid";
 
@@ -90,72 +91,95 @@ export const ResultItem = React.memo<ResultItemProps>(
     const hasSnippet = Boolean(result.snippet) && view === "list";
 
     if (view === "grid") {
-      /* Image files get a thumbnail-forward card: 128px image area on top,
-         one-line name, meta line. Falls back to the classic icon card the
-         moment (or if) the thumbnail can't resolve. */
+      const ext =
+        !result.is_dir && result.filename.includes(".")
+          ? (result.filename.split(".").pop() ?? "").toLowerCase()
+          : "";
+
+      /* Image files get a thumbnail-forward card: the image fills the whole
+         square tile under a bottom scrim that carries the name + size in
+         light text (companion to the scrim gradient — raw white, tokens
+         don't ship an always-light ink). Falls back to the classic icon
+         card the moment (or if) the thumbnail can't resolve. */
       if (imageEligible && !thumbFailed) {
         return (
           <button
             type="button"
             onClick={onSelect}
             onDoubleClick={onOpen}
-            style={stagger}
-            className={`${index < 8 ? "row-stagger" : "row-enter"} group relative flex h-[192px] w-[160px] flex-col gap-1.5 rounded-[14px] border p-2.5 text-left transition-colors duration-150 ${
+            className={`group relative row-enter aspect-square w-full overflow-hidden rounded-[14px] border text-left transition-colors duration-150 ${
               isSelected
-                ? "border-accent bg-accent-soft"
-                : "border-line bg-elevated hover:border-line-strong hover:bg-sunken"
+                ? "border-line"
+                : "border-line hover:border-line-strong"
             }`}
           >
-            <span
-              aria-hidden={thumbSrc ? undefined : "true"}
-              className="block h-[128px] w-full shrink-0 overflow-hidden rounded-[10px] border border-line bg-sunken"
-            >
+            <span aria-hidden={!thumbSrc} className="absolute inset-0 block bg-sunken">
               {thumbSrc && (
                 <img
                   src={thumbSrc}
                   alt=""
                   draggable={false}
-                  className="fade-in h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.04]"
+                  className="fade-in absolute inset-0 h-full w-full object-cover transition-transform duration-[180ms] group-hover:scale-[1.02]"
                 />
               )}
             </span>
-            <p className="truncate text-[12px] font-medium leading-[16px] text-fg">
-              <HighlightedName text={result.filename} query={query} />
-            </p>
-            <div className="flex items-center justify-between gap-1">
-              <span className="truncate font-mono text-[10px] leading-[15px] text-subtle">
+            <span
+              aria-hidden="true"
+              className="absolute inset-0"
+              style={{ background: "linear-gradient(to top, rgba(0,0,0,.72), transparent 55%)" }}
+            />
+            {/* Selection ring paints above the image — an inset box-shadow on
+                the button itself would end up beneath the thumbnail layers. */}
+            {isSelected && (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 z-10 rounded-[14px] ring-2 ring-inset ring-accent"
+              />
+            )}
+            <span aria-hidden="true" className="absolute left-2 top-2 z-10">
+              <FileTypeIcon result={result} size={24} />
+            </span>
+            <span className="absolute inset-x-0 bottom-0 z-10 p-2.5 pb-2">
+              <p className="line-clamp-2 text-[12px] font-medium leading-[16px] text-white">
+                <HighlightedName text={result.filename} query={query} />
+              </p>
+              <p className="truncate pt-0.5 font-mono text-[10px] leading-[14px] text-white/70">
                 {formatBytes(result.file_size)}
-              </span>
-              <ChevronRight className="h-3.5 w-3.5 text-subtle opacity-0 transition-opacity duration-150 group-hover:opacity-100" />
-            </div>
+              </p>
+            </span>
           </button>
         );
       }
 
+      /* Classic icon card: 28px tinted type square, 2-line name clamp in
+         the middle, size/ext meta on the bottom row. 12px padding. */
       return (
         <button
           type="button"
           onClick={onSelect}
           onDoubleClick={onOpen}
-          style={stagger}
-          className={`${index < 8 ? "row-stagger" : "row-enter"} group relative flex h-[160px] w-[160px] flex-col gap-2 rounded-[14px] border p-3 text-left transition-colors duration-150 ${
+          className={`${index < 8 ? "row-stagger" : "row-enter"} group flex aspect-square w-full flex-col rounded-[14px] border p-3 text-left transition-colors duration-150 ${
             isSelected
-              ? "border-accent bg-accent-soft"
+              ? "border-line bg-accent-soft ring-2 ring-inset ring-accent"
               : "border-line bg-elevated hover:border-line-strong hover:bg-sunken"
           }`}
         >
-          <FileTypeIcon result={result} size={40} />
-          <div className="min-h-0 flex-1">
+          <FileTypeIcon result={result} size={28} />
+          <span className="flex min-h-0 w-full flex-1 items-center pt-1">
             <p className="line-clamp-2 text-[12px] font-medium leading-[16px] text-fg">
               <HighlightedName text={result.filename} query={query} />
             </p>
-          </div>
-          <div className="flex items-center justify-between gap-1">
-            <span className="truncate font-mono text-[10px] text-subtle">
+          </span>
+          <span className="flex w-full items-center justify-between gap-1">
+            <span className="truncate font-mono text-[10px] leading-[14px] text-subtle">
               {result.is_dir ? "folder" : formatBytes(result.file_size)}
             </span>
-            <ChevronRight className="h-3.5 w-3.5 text-subtle opacity-0 transition-opacity duration-150 group-hover:opacity-100" />
-          </div>
+            {ext && (
+              <span className="shrink-0 font-mono text-[10px] leading-[14px] text-subtle">
+                {ext}
+              </span>
+            )}
+          </span>
         </button>
       );
     }

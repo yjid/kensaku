@@ -79,32 +79,28 @@ export function DoctorSection() {
 
   return (
     <div>
-      {/* Header: description + actions. Instant, never blocks other sections. */}
-      <div className="mb-3 flex items-center justify-between gap-4">
-        <p className="text-[11px] text-subtle">
-          Diagnose the index, watcher, database and models. Local and instant.
-        </p>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {report && phase !== "running" && (
-            <button
-              type="button"
-              onClick={copyReport}
-              className="flex h-7 items-center gap-1.5 rounded-[10px] border border-line bg-elevated px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong"
-            >
-              {copied ? <Check className="h-3 w-3 text-accent" /> : <Copy className="h-3 w-3" />}
-              Copy report
-            </button>
-          )}
+      {/* Toolbar: actions right-aligned; the section header above carries
+          the description. */}
+      <div className="mb-3 flex items-center justify-end gap-1.5">
+        {report && phase !== "running" && (
           <button
             type="button"
-            onClick={run}
-            disabled={phase === "running"}
-            className="flex h-7 items-center gap-1.5 rounded-[10px] bg-accent px-3 text-[11px] font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+            onClick={copyReport}
+            className="flex h-7 items-center gap-1.5 rounded-[10px] border border-line bg-elevated px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong"
           >
-            <Stethoscope className="h-3 w-3" />
-            Run checks
+            {copied ? <Check className="h-3 w-3 text-accent" /> : <Copy className="h-3 w-3" />}
+            Copy report
           </button>
-        </div>
+        )}
+        <button
+          type="button"
+          onClick={run}
+          disabled={phase === "running"}
+          className="flex h-7 items-center gap-1.5 rounded-[10px] bg-accent px-3 text-[11px] font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          <Stethoscope className="h-3 w-3" />
+          Run checks
+        </button>
       </div>
 
       {phase === "idle" && (
