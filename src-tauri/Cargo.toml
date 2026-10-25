@@ -32,11 +32,9 @@ nucleo-matcher = "0.3"
 jwalk = "0.9"
 notify = "8"
 fs4 = "0.13"
-tokio = { version = "1", features = ["full"] }
 dirs = "6"
 log = "0.4"
-env_logger = "0.11"
-chrono = { version = "0.4", features = ["serde"] }
+auto-launch = "0.5"
 parking_lot = "0.12"
 open = "5"
 rusqlite = { version = "0.32", features = ["bundled"] }

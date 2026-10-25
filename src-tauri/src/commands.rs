@@ -2,6 +2,7 @@ use crate::AppState;
 use crate::config::KensakuConfig;
 use crate::indexer::IndexingStatus;
 use crate::search::{SearchDispatcher, SearchResponse, SearchResult};
+use auto_launch::AutoLaunch;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
@@ -764,6 +765,53 @@ pub async fn reset_all(app: AppHandle, confirm: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn get_reset_pending() -> Result<bool, String> {
     Ok(crate::reset_pending())
+}
+
+/// Builds the platform autostart handle for the running executable.
+///
+/// `current_exe()` is the release binary when Kensaku is installed normally. In
+/// development (`cargo run`) it resolves to `target/debug/kensaku`, so enabling
+/// autostart there registers the dev binary. That is acceptable: only released
+/// builds are ever registered by end users, and it keeps `cargo run` usable.
+fn autostart_handle() -> Result<AutoLaunch, String> {
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("Could not resolve the Kensaku executable path: {}", e))?;
+    let exe = exe
+        .to_str()
+        .ok_or_else(|| "Kensaku executable path is not valid UTF-8".to_string())?;
+
+    // macOS supports two mechanisms; the per-user LaunchAgent (`true`) is the
+    // least intrusive and does not need AppleScript automation permissions.
+    #[cfg(target_os = "macos")]
+    let handle = AutoLaunch::new("Kensaku", exe, true, &[] as &[&str]);
+    #[cfg(not(target_os = "macos"))]
+    let handle = AutoLaunch::new("Kensaku", exe, &[] as &[&str]);
+
+    Ok(handle)
+}
+
+#[tauri::command]
+pub async fn get_autostart() -> Result<bool, String> {
+    autostart_handle()?
+        .is_enabled()
+        .map_err(|e| format!("Failed to read autostart state: {}", e))
+}
+
+#[tauri::command]
+pub async fn set_autostart(enabled: bool) -> Result<(), String> {
+    let handle = autostart_handle()?;
+    let result = if enabled {
+        handle.enable()
+    } else {
+        handle.disable()
+    };
+    result.map_err(|e| {
+        format!(
+            "Failed to {} autostart: {}",
+            if enabled { "enable" } else { "disable" },
+            e
+        )
+    })
 }
 
 #[tauri::command]
