@@ -53,7 +53,9 @@ impl SnippetCache {
 pub struct ContentIndex {
     index: Index,
     reader: IndexReader,
-    writer: Arc<RwLock<IndexWriter>>,
+    /// `None` for read-only handles (CLI/MCP): Tantivy takes an exclusive lock
+    /// while a writer exists, so a second process can only open the reader.
+    writer: Option<Arc<RwLock<IndexWriter>>>,
     pub path_field: Field,
     pub filename_field: Field,
     pub content_field: Field,
@@ -121,13 +123,76 @@ impl ContentIndex {
         Ok(Self {
             index,
             reader,
-            writer: Arc::new(RwLock::new(writer)),
+            writer: Some(Arc::new(RwLock::new(writer))),
             path_field,
             filename_field,
             content_field,
             modified_field,
             snippet_cache: Mutex::new(SnippetCache::new(200)),
         })
+    }
+
+    /// Opens an existing index for searching only.
+    ///
+    /// Tantivy allows a writer in the GUI process and readers in other
+    /// processes at the same time, so the CLI/MCP surface uses this to read the
+    /// live index without taking the exclusive writer lock.
+    pub fn open_read_only(index_dir: &Path) -> Result<Self, String> {
+        if !index_dir.join("meta.json").exists() {
+            return Err(format!(
+                "No content index at {}",
+                index_dir.display()
+            ));
+        }
+
+        let index = Index::open_in_dir(index_dir).map_err(|e| e.to_string())?;
+        let schema = index.schema();
+        let path_field = schema
+            .get_field("path")
+            .map_err(|e| format!("Content index is missing the 'path' field: {}", e))?;
+        let filename_field = schema
+            .get_field("filename")
+            .map_err(|e| format!("Content index is missing the 'filename' field: {}", e))?;
+        let content_field = schema
+            .get_field("content")
+            .map_err(|e| format!("Content index is missing the 'content' field: {}", e))?;
+        let modified_field = schema
+            .get_field("modified")
+            .map_err(|e| format!("Content index is missing the 'modified' field: {}", e))?;
+
+        let reader = index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::OnCommitWithDelay)
+            .try_into()
+            .map_err(|e| e.to_string())?;
+
+        Ok(Self {
+            index,
+            reader,
+            writer: None,
+            path_field,
+            filename_field,
+            content_field,
+            modified_field,
+            snippet_cache: Mutex::new(SnippetCache::new(200)),
+        })
+    }
+
+    /// True when this handle can mutate the index.
+    pub fn is_writable(&self) -> bool {
+        self.writer.is_some()
+    }
+
+    fn writer(&self) -> Result<&Arc<RwLock<IndexWriter>>, String> {
+        self.writer
+            .as_ref()
+            .ok_or_else(|| "index is read-only".to_string())
+    }
+
+    /// Number of documents visible to the reader (including deleted-but-not-
+    /// yet-merged documents, which is what Tantivy reports).
+    pub fn num_docs(&self) -> u64 {
+        self.reader.searcher().num_docs()
     }
 
     pub fn add_or_update(
@@ -140,7 +205,7 @@ impl ContentIndex {
         let path_str = path.to_string_lossy().to_string();
         let term = Term::from_field_text(self.path_field, &path_str);
 
-        let writer = self.writer.write();
+        let writer = self.writer()?.write();
         writer.delete_term(term);
 
         let doc = doc!(
@@ -156,7 +221,7 @@ impl ContentIndex {
     pub fn remove(&self, path: &Path) -> Result<(), String> {
         let path_str = path.to_string_lossy().to_string();
         let term = Term::from_field_text(self.path_field, &path_str);
-        let writer = self.writer.write();
+        let writer = self.writer()?.write();
         writer.delete_term(term);
         Ok(())
     }
@@ -175,6 +240,9 @@ impl ContentIndex {
         valid_paths: &HashSet<PathBuf>,
         preserved_roots: &[PathBuf],
     ) -> Result<usize, String> {
+        // Read-only handles must fail before doing the (expensive) scan.
+        self.writer()?;
+
         // Documents store `to_string_lossy()` paths, so compare in the same
         // representation to avoid purging valid non-UTF-8 paths.
         let valid_lossy: HashSet<String> = valid_paths
@@ -210,7 +278,7 @@ impl ContentIndex {
         }
 
         {
-            let writer = self.writer.write();
+            let writer = self.writer()?.write();
             for path_str in &stale_paths {
                 let term = Term::from_field_text(self.path_field, path_str);
                 writer.delete_term(term);
@@ -222,7 +290,7 @@ impl ContentIndex {
     }
 
     pub fn commit(&self) -> Result<(), String> {
-        let mut writer = self.writer.write();
+        let mut writer = self.writer()?.write();
         writer.commit().map_err(|e| e.to_string())?;
         self.reader.reload().map_err(|e| e.to_string())?;
         Ok(())
@@ -686,5 +754,59 @@ mod tests {
         let capped = index.search_groups_with_regex(&[], &[too_long.as_str()], 10, None);
         assert!(capped.matches.is_empty());
         assert!(capped.hints.iter().any(|h| h.contains("too long")));
+    }
+
+    #[test]
+    fn read_only_handle_sees_committed_documents_while_writer_is_open() {
+        let temp = temp_index("read-only");
+        let writer_index = temp.index.as_ref().unwrap();
+        add(
+            writer_index,
+            "/tmp/kensaku/ro/hello.txt",
+            "hello.txt",
+            "read only needle content",
+        );
+        writer_index.commit().unwrap();
+
+        // The writer (and its exclusive Tantivy lock) is still alive here.
+        let reader = ContentIndex::open_read_only(&temp.dir).expect("open read-only");
+        assert!(!reader.is_writable());
+        assert!(reader.num_docs() >= 1);
+
+        let matches = reader.search_groups(&[(FieldKind::Content, "needle")], 10, None);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].filename, "hello.txt");
+
+        // Mutations are rejected instead of touching the shared index.
+        let err = reader
+            .add_or_update(Path::new("/tmp/kensaku/ro/other.txt"), "other.txt", "x", 0)
+            .unwrap_err();
+        assert_eq!(err, "index is read-only");
+        assert_eq!(reader.commit().unwrap_err(), "index is read-only");
+        assert_eq!(
+            reader
+                .purge_stale(&HashSet::new(), &[])
+                .unwrap_err(),
+            "index is read-only"
+        );
+    }
+
+    #[test]
+    fn open_read_only_requires_an_existing_index() {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "kensaku-content-missing-{}-{}",
+            std::process::id(),
+            nanos
+        ));
+        let err = match ContentIndex::open_read_only(&dir) {
+            Ok(_) => panic!("read-only open should fail without an index"),
+            Err(err) => err,
+        };
+        assert!(err.contains("No content index"), "unexpected error: {err}");
+        let _ = fs::remove_dir_all(&dir);
     }
 }
