@@ -4,7 +4,7 @@ use crate::embed::{ExactScanner, ModelRegistry, UnitStore};
 use crate::indexer::content::ContentIndex;
 use crate::indexer::metadata::MetadataStore;
 use crate::indexer::walker::FileEntry;
-use crate::query::ast::{ActiveFilterDto, FileKind, Filter};
+use crate::query::ast::{ActiveFilterDto, Filter};
 use crate::query::parse_query;
 use crate::search::fuzzy::FuzzySearcher;
 use serde::{Deserialize, Serialize};
@@ -493,14 +493,9 @@ impl CompiledFilter {
     }
 }
 
-// Keep the old matches_filter for backward compat (delegating to compiled)
-fn matches_filter(filter: &Filter, entry: &FileEntry) -> bool {
-    CompiledFilter::from(filter).matches(entry)
-}
+// Removed: replaced by CompiledFilter::from + CompiledFilter::matches
 
-fn matches_all_filters(filters: &[Filter], entry: &FileEntry) -> bool {
-    filters.iter().all(|f| matches_filter(f, entry))
-}
+// Removed: replaced by matches_all_compiled_filters + CompiledFilter
 
 fn matches_type_category(typ: &str, ext_opt: Option<&str>, is_dir: bool) -> bool {
     let ext = match ext_opt {

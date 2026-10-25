@@ -161,8 +161,10 @@ impl IndexerManager {
             // Phase 1: Collect all entries (jwalk is already parallel internally).
             let all_entries = walk_directories(&watched_dirs, &excluded_dirs);
 
-            // Phase 2: Process entries. Filter excluded extensions, check
-            // incremental, add metadata, extract content, index in Tantivy.
+            // Phase 2a: Filter excluded extensions, check incremental, add metadata.
+            // Collect indexable files for parallel content extraction.
+            let mut to_extract: Vec<(PathBuf, String, u64)> = Vec::new();
+
             for entry in all_entries {
                 files_count += 1;
                 crawled_paths.insert(entry.path.clone());
@@ -190,23 +192,11 @@ impl IndexerManager {
                     store.add(entry.clone());
                 }
 
-                // Content indexing for text files
+                // Queue indexable files for parallel content extraction
                 if !entry.is_dir
                     && (is_indexable_extension(entry.extension.as_deref()) || is_indexable_file_name(&entry.name))
-                    && let Some(content) = read_text_content(&entry.path, 1_048_576)
-                    && let Some(c_index) = content_index.read().as_ref()
                 {
-                    let _ = c_index.add_or_update(&entry.path, &entry.name, &content, entry.modified);
-                    content_count += 1;
-                    pending_commits += 1;
-                }
-
-                // Batch commits every 1000 content items
-                if pending_commits >= 1000 {
-                    if let Some(c_index) = content_index.read().as_ref() {
-                        let _ = c_index.commit();
-                    }
-                    pending_commits = 0;
+                    to_extract.push((entry.path.clone(), entry.name.clone(), entry.modified));
                 }
 
                 if files_count % 500 == 0 {
@@ -215,6 +205,35 @@ impl IndexerManager {
                     st.content_indexed = content_count;
                     st.current_status = format!("Indexed {} items", files_count);
                     Self::emit_status(&app_handle, &st);
+                }
+            }
+
+            // Phase 2b: Parallel content extraction with rayon
+            let extracted: Vec<(PathBuf, String, String, u64)> = {
+                use rayon::prelude::*;
+                to_extract
+                    .par_iter()
+                    .filter_map(|(path, name, modified)| {
+                        read_text_content(path, 1_048_576).map(|content| {
+                            (path.clone(), name.clone(), content, *modified)
+                        })
+                    })
+                    .collect()
+            };
+
+            // Phase 2c: Sequential Tantivy indexing (single writer)
+            for (path, name, content, modified) in extracted {
+                if let Some(c_index) = content_index.read().as_ref() {
+                    let _ = c_index.add_or_update(&path, &name, &content, modified);
+                    content_count += 1;
+                    pending_commits += 1;
+                }
+
+                if pending_commits >= 1000 {
+                    if let Some(c_index) = content_index.read().as_ref() {
+                        let _ = c_index.commit();
+                    }
+                    pending_commits = 0;
                 }
             }
 
