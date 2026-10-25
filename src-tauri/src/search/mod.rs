@@ -92,6 +92,9 @@ impl SearchDispatcher {
         let parsed = parse_query(raw_query, entries, path_index, Some(&trie), generation);
         let route = crate::query::router::route_query(&parsed);
 
+        // Pre-compile filters once per query (lowercase strings, intern extensions)
+        let compiled_filters: Vec<CompiledFilter> = parsed.filters.iter().map(CompiledFilter::from).collect();
+
         // 2. Resolve scopes and filter candidates
         let candidate_indices: Vec<usize> = if !parsed.scopes.is_empty() {
             let mut included = HashSet::new();
@@ -129,7 +132,7 @@ impl SearchDispatcher {
                 .filter(|idx| !excluded.contains(idx))
                 .filter(|&idx| {
                     if let Some(entry) = entries.get(idx) {
-                        matches_all_filters(&parsed.filters, entry)
+                        matches_all_compiled_filters(&compiled_filters, entry)
                     } else {
                         false
                     }
@@ -137,7 +140,7 @@ impl SearchDispatcher {
                 .collect()
         } else if !parsed.filters.is_empty() {
             (0..entries.len())
-                .filter(|&idx| matches_all_filters(&parsed.filters, &entries[idx]))
+                .filter(|&idx| matches_all_compiled_filters(&compiled_filters, &entries[idx]))
                 .collect()
         } else {
             (0..entries.len()).collect()
@@ -422,36 +425,81 @@ impl SearchDispatcher {
     }
 }
 
-fn matches_all_filters(filters: &[Filter], entry: &FileEntry) -> bool {
+fn matches_all_compiled_filters(filters: &[CompiledFilter], entry: &FileEntry) -> bool {
     for f in filters {
-        if !matches_filter(f, entry) {
+        if !f.matches(entry) {
             return false;
         }
     }
     true
 }
 
-fn matches_filter(filter: &Filter, entry: &FileEntry) -> bool {
-    match filter {
-        Filter::Ext(ext) => entry
-            .extension
-            .as_deref()
-            .map(|e| e.eq_ignore_ascii_case(ext))
-            .unwrap_or(false),
-        Filter::Type(typ) => matches_type_category(typ, entry.extension.as_deref(), entry.is_dir),
-        Filter::Modified(range) => range.matches(entry.modified),
-        Filter::Size(range) => range.matches(entry.size),
-        Filter::Kind(FileKind::Dir) => entry.is_dir,
-        Filter::Kind(FileKind::File) => !entry.is_dir,
-        Filter::Lang(lang) => matches_language(lang, entry.extension.as_deref()),
-        Filter::Name(name) => entry.name.to_lowercase().contains(&name.to_lowercase()),
-        Filter::Path(path_substr) => entry
-            .path
-            .to_string_lossy()
-            .to_lowercase()
-            .contains(&path_substr.to_lowercase()),
-        Filter::Not(inner) => !matches_filter(inner, entry),
+/// Pre-compiled filter that pre-lowercases strings to avoid per-entry allocation.
+#[derive(Clone)]
+enum CompiledFilter {
+    Ext(String),
+    Type(String),
+    Modified(crate::query::ast::RangeOp),
+    Size(crate::query::ast::RangeOp),
+    Kind(crate::query::ast::FileKind),
+    Lang(String),
+    Name(String),
+    Path(String),
+    Not(Box<CompiledFilter>),
+}
+
+impl CompiledFilter {
+    fn from(f: &Filter) -> Self {
+        match f {
+            Filter::Ext(e) => CompiledFilter::Ext(e.to_lowercase()),
+            Filter::Type(t) => CompiledFilter::Type(t.to_lowercase()),
+            Filter::Modified(r) => CompiledFilter::Modified(r.clone()),
+            Filter::Size(r) => CompiledFilter::Size(r.clone()),
+            Filter::Kind(k) => CompiledFilter::Kind(k.clone()),
+            Filter::Lang(l) => CompiledFilter::Lang(l.to_lowercase()),
+            Filter::Name(n) => CompiledFilter::Name(n.to_lowercase()),
+            Filter::Path(p) => CompiledFilter::Path(p.to_lowercase()),
+            Filter::Not(inner) => CompiledFilter::Not(Box::new(CompiledFilter::from(inner))),
+        }
     }
+
+    fn matches(&self, entry: &FileEntry) -> bool {
+        match self {
+            CompiledFilter::Ext(ext) => entry
+                .extension
+                .as_deref()
+                .map(|e| e.eq_ignore_ascii_case(ext))
+                .unwrap_or(false),
+            CompiledFilter::Type(typ) => matches_type_category(typ, entry.extension.as_deref(), entry.is_dir),
+            CompiledFilter::Modified(range) => range.matches(entry.modified),
+            CompiledFilter::Size(range) => range.matches(entry.size),
+            CompiledFilter::Kind(crate::query::ast::FileKind::Dir) => entry.is_dir,
+            CompiledFilter::Kind(crate::query::ast::FileKind::File) => !entry.is_dir,
+            CompiledFilter::Lang(lang) => matches_language(lang, entry.extension.as_deref()),
+            CompiledFilter::Name(name) => {
+                // Avoid allocation: compare lowercase name directly
+                // (name is already lowercase in CompiledFilter)
+                entry.name.to_lowercase().contains(name)
+            }
+            CompiledFilter::Path(path_substr) => {
+                entry
+                    .path
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .contains(path_substr)
+            }
+            CompiledFilter::Not(inner) => !inner.matches(entry),
+        }
+    }
+}
+
+// Keep the old matches_filter for backward compat (delegating to compiled)
+fn matches_filter(filter: &Filter, entry: &FileEntry) -> bool {
+    CompiledFilter::from(filter).matches(entry)
+}
+
+fn matches_all_filters(filters: &[Filter], entry: &FileEntry) -> bool {
+    filters.iter().all(|f| matches_filter(f, entry))
 }
 
 fn matches_type_category(typ: &str, ext_opt: Option<&str>, is_dir: bool) -> bool {
