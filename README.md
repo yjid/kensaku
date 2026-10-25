@@ -1,49 +1,132 @@
-# Kensaku (検索)
+<p align="center">
+  <img src="assets/icon.png" width="120" height="120" alt="Kensaku" />
+</p>
 
-**A warm, local search index for your machine — and for your AI agents.**
+<h1 align="center">Kensaku <span title="kensaku = search, in Japanese">検索</span></h1>
 
-Kensaku indexes filenames, file contents, documents, and image text once, keeps the
-index fresh with a filesystem watcher, and answers in milliseconds. It is a desktop
-app for you, and a read-only search backend for agents (MCP + CLI) on the same index.
+<p align="center">
+  <b>Your computer's search is broken. This one isn't.</b><br/>
+  <i>Filenames, file contents, PDFs, Office docs and image text — one local index, millisecond answers, zero cloud.</i>
+</p>
 
-- **Local only.** No cloud, no accounts, no telemetry.
-- **Hybrid ranking.** Fuzzy filename + BM25 content + static-vector semantic, fused
-  with reciprocal rank fusion.
-- **Documents included.** PDF, DOCX/PPTX/XLSX, EPUB/ODT, RTF, plus OCR for images.
-- **Agent-ready.** `kensaku-cli search …` and an MCP stdio server with `search`,
-  `read_snippet`, and `index_state`.
-- **Two themes.** `paper` and `void`, both designed to stay out of the way.
+<p align="center">
+  <a href="https://github.com/yjid/kensaku/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/yjid/kensaku?style=for-the-badge&color=2F7D6D" /></a>
+  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-2F7D6D?style=for-the-badge" /></a>
+  <a href=".github/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/yjid/kensaku/ci.yml?style=for-the-badge" /></a>
+</p>
+
+<p align="center">
+  <img alt="Linux" src="https://img.shields.io/badge/Linux-AppImage%20%7C%20deb%20%7C%20rpm-111110?style=flat-square&logo=linux&logoColor=white" />
+  <img alt="macOS" src="https://img.shields.io/badge/macOS-universal%20dmg-111110?style=flat-square&logo=apple&logoColor=white" />
+  <img alt="Windows" src="https://img.shields.io/badge/Windows-msi%20%7C%20exe-111110?style=flat-square&logo=windows&logoColor=white" />
+  <img alt="Rust" src="https://img.shields.io/badge/Rust-2024-111110?style=flat-square&logo=rust&logoColor=white" />
+  <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2-111110?style=flat-square&logo=tauri&logoColor=white" />
+</p>
 
 ---
 
-## What it does
+## The 10-second pitch
+
+You wrote a file two weeks ago. You need it *now*.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  ⌕  screenshot of docker error                          esc  │
+├──────────────────────────────────────────────────────────────┤
+│  All 12   Files   Images 4   Docs   Code   Media   Recent    │
+├──────────────────────────────────────────────────────────────┤
+│  ▣  docker-build-error.png         screenshot · 482 KB       │
+│      Error: failed to solve: process "/bin/sh -c cargo ..."  │
+│  ▣  compose-notes.md               content · edited 2h ago   │
+│  ▣  deploy.log                     content · 1.2 MB          │
+└──────────────────────────────────────────────────────────────┘
+   3.2 ms · indexed 3 seconds ago · semantic ✓
+```
+
+No cloud. No account. No "we're still searching…". Just your machine, indexed
+once, answered instantly.
+
+---
+
+## What's inside
 
 | | |
 |---|---|
-| **Find files** | Type a name; results stream as you type. |
-| **Find content** | `docker compose error`, `type:pdf invoice`, `modified:<7d`, `re:"fn \w+"`. |
-| **Search documents** | PDF page-level text, Office/EPUB extraction, encoding detection. |
-| **Search images** | OCR text from screenshots and photos; thumbnails in results. |
-| **Keep it fresh** | Native file watcher, incremental crawls, rename tracking by inode. |
-| **Stay honest** | Doctor (9 checks), Stats for Nerds, visible index freshness. |
-| **Give it to agents** | MCP server + CLI over the same read-only index. |
+| 🔍 **Search everything** | Filenames, code, configs, logs, Markdown — as you type. |
+| 📄 **Documents** | PDF, DOCX/PPTX/XLSX, EPUB/ODT, RTF, with encoding detection. |
+| 🖼️ **Images** | OCR for screenshots and photos, thumbnails, perceptual near-duplicates. |
+| ⚡ **Fast by construction** | SQLite snapshot + Tantivy BM25 + static vectors, fused with RRF. |
+| 🧠 **Semantic, quietly** | 256-d static embeddings bundled; no GPU, no ONNX at query time. |
+| 🤖 **Agent-ready** | MCP server + CLI over the same read-only index. |
+| 🎨 **Two themes** | `paper` and `void`. Hairlines, no gradients, no noise. |
+| 🔒 **Local by default** | No telemetry. The only network call is an optional model download. |
 
-### Query language
+<details>
+<summary><b>Query language (click to expand)</b></summary>
 
+Everything is optional. Plain typing always works; filters only narrow the set.
+
+```text
+type:pdf invoice                 PDFs only
+in:~/Projects kensaku            scope to a folder
+modified:<7d config              changed this week
+size:>2mb is:image               large images
+name:config content:timeout      field-scoped
+-node_modules docker error       exclusion
+"exact phrase"                   phrase
+re:"fn\s+\w+"                    regex
+mode:exhaustive                  every match, path-sorted
 ```
-type:pdf ext:rs in:~/Projects path:src-tauri
-modified:<7d size:>2mb is:image lang:rust
-name:config content:timeout -node_modules
-"exact phrase"   re:"fn\s+\w+"   mode:exhaustive
-```
 
-Plain typing always works; filters only narrow the set.
+Filters compose. Unknown `key:value` is treated as text, never an empty result.
+
+</details>
+
+<details>
+<summary><b>How ranking works (click to expand)</b></summary>
+
+Three tiers run in parallel — fuzzy filename, BM25 content, and static-vector
+semantic — then fuse with reciprocal rank fusion. On top: exact/prefix name
+bonuses, smooth recency, frecency from files you actually open, and a bounded
+depth penalty. Semantic-only hits below a cosine floor are dropped, so a keyword
+query doesn't return vaguely related documents. Results are deterministic:
+score, then path.
+
+</details>
 
 ---
 
-## Agent usage
+## Install
 
-MCP (Claude Code, Cursor, any MCP client):
+Grab the bundle for your platform from **[Releases](https://github.com/yjid/kensaku/releases)**:
+
+| 🐧 Linux | 🍎 macOS | 🪟 Windows |
+|---|---|---|
+| `.AppImage` · `.deb` · `.rpm` | universal `.dmg` | `.msi` · `.exe` |
+
+> **Unsigned builds.** macOS: right-click → **Open** the first time, or
+> `xattr -dr com.apple.quarantine /Applications/Kensaku.app`. Windows: SmartScreen →
+> **More info** → **Run anyway**. Details in [docs/INSTALL.md](docs/INSTALL.md).
+
+Build it yourself:
+
+```bash
+git clone https://github.com/yjid/kensaku
+cd kensaku
+bun install
+bun run tauri dev      # dev
+bun run tauri build    # bundles for your OS
+```
+
+Rust (edition 2024), Bun/Node 18+, and the
+[Tauri prerequisites](docs/INSTALL.md#build-prerequisites).
+
+---
+
+## Give it to your agents 🤖
+
+Kensaku is a **read-only search backend** for AI agents. There is no LLM inside
+the app — your agent brings its own.
 
 ```json
 {
@@ -53,118 +136,86 @@ MCP (Claude Code, Cursor, any MCP client):
 }
 ```
 
-CLI:
-
 ```bash
 kensaku-cli search "docker error" --json --limit 10
 kensaku-cli search "type:pdf invoice" --path ~/Documents
 kensaku-cli state --json
 ```
 
-Tools: `search` (ranked or exhaustive, path/ext/lookback filters, 400-char snippets),
-`read_snippet` (token-budgeted window with line numbers), `index_state`
-(counts, sizes, model ids, freshest-from timestamp). Read-only, no shell, no network.
-
-Full contract: [`docs/AGENTS.md`](docs/AGENTS.md).
+Tools: `search` (ranked or exhaustive, path/ext/lookback filters, 400-char
+snippets), `read_snippet` (token-budgeted window with line numbers), and
+`index_state` (counts, sizes, model ids, freshness). No writes, no shell, no
+network. Full contract: [docs/AGENTS.md](docs/AGENTS.md).
 
 ---
 
-## Performance
+## Numbers
 
-Measured on a 100,000-file synthetic corpus, release build, warm cache:
+100,000-file synthetic corpus, release build, warm cache
+([methodology](docs/BENCHMARKS.md)):
 
-| Operation | Result |
+|  |  |
 |---|---|
-| Filesystem walk | ~190 ms (≈530k files/s) |
-| Fuzzy filename query | avg **2.8 ms** (best 0.4 ms, worst 4.6 ms) |
-| Memory | 128 B per entry (~12 MB per 100k) |
-| Query path | ~8–18 ms keystroke → first paint |
+| Filesystem walk | **~190 ms** (≈530k files/s) |
+| Fuzzy filename query | **2.8 ms** avg · 0.4 ms best · 4.6 ms worst |
+| Keystroke → first paint | **~8–18 ms** |
+| Metadata | **128 B** per entry (~12 MB per 100k) |
 
-1M-file figures are projected, not yet measured; see
-[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) and [`docs/REMAINING.md`](docs/REMAINING.md).
-
----
-
-## Install & build
-
-Prerequisites: Rust (edition 2024), Bun (or Node), and the Tauri system dependencies
-for your OS (`webkit2gtk-4.1`, `libappindicator`, `librsvg`, `patchelf` on Linux).
-
-```bash
-git clone https://github.com/yjid/kensaku
-cd kensaku
-bun install
-
-# desktop app (dev)
-bun run tauri dev
-
-# desktop app (release bundles)
-bun run tauri build
-
-# agent CLI
-cargo build --release --manifest-path src-tauri/Cargo.toml --bin kensaku-cli
-```
-
-Put `kensaku-cli` on your `PATH` (or reference its absolute path in the MCP config).
-
-First launch asks for folders and builds the index. Everything after that is incremental.
-
----
-
-## How it works
-
-```
-filesystem → watcher + crawl ──► metadata (SQLite WAL) ──► in-memory snapshot
-                              └─► content (Tantivy BM25)
-                              └─► embeddings (static table, 256-d i8)
-
-query ──► parser/AST ──► scope + filters ──► fuzzy ∥ BM25 ∥ vector ──► RRF ──► rank
-                                                                        └─► snippets
-```
-
-- **Identity** is `(device, inode)`, so renames don't duplicate or lose entries.
-- **Startup** is search-first: load the snapshot, serve immediately, reconcile in the
-  background with a stat-only walk.
-- **Freshness** is explicit: results carry an `as_of` generation.
-- **Embeddings** use a bundled static estimator by default. The optional
-  potion-base-8M table can be downloaded in Settings and is used when present;
-  a model-id change triggers a resumable re-embed.
-- **Agents** open the same index read-only (no Tantivy writer lock), so the CLI and MCP
-  work while the app is running.
-
-More detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+1M-file figures are projected, not measured yet. Honest gaps are in
+[docs/REMAINING.md](docs/REMAINING.md).
 
 ---
 
 ## Privacy
 
-- No analytics, no telemetry, no network requests except the optional model download.
-- The index lives in `~/.config/kensaku/` (metadata DB, Tantivy index, thumbnails,
-  optional model files).
-- Hidden files and common junk directories are skipped by default.
-- Settings → About → **Reset everything** deletes the index, database, models, and
-  configuration, then restarts.
+- No analytics, no telemetry, no accounts.
+- Index lives in `~/.config/kensaku/` (or the platform equivalent).
+- Hidden files and junk directories are skipped by default.
+- **Settings → About → Reset everything** wipes the index, database, models, and
+  config, then restarts.
+
+---
+
+## Docs
+
+| | |
+|---|---|
+| [Install & build](docs/INSTALL.md) | platforms, prerequisites, CLI, unsigned notes |
+| [Usage](docs/USAGE.md) | query language, keys, settings, indexing behavior |
+| [Agents](docs/AGENTS.md) | MCP tools and CLI contract |
+| [Architecture](docs/ARCHITECTURE.md) | data model, index tiers, pipeline, budgets |
+| [Benchmarks](docs/BENCHMARKS.md) | methodology and numbers |
+| [Edge cases](docs/EDGE-CASES.md) | correctness catalogue for contributors |
+| [Remaining work](docs/REMAINING.md) | known gaps, with rationale |
+| [FAQ](docs/FAQ.md) | the questions people actually ask |
+| [Security](SECURITY.md) | threat model and reporting |
+| [Contributing](docs/CONTRIBUTING.md) | setup, checks, PR expectations |
 
 ---
 
 ## Status
 
-`v0.2.0`. Working: durable incremental index, query language, hybrid ranking,
-documents + OCR, image thumbnails, agent CLI/MCP, two themes, Doctor, Stats for Nerds,
-factory reset, CI.
+`v0.3.0` — usable daily. Working: durable incremental index, full query language,
+hybrid ranking, documents + OCR, image thumbnails and near-duplicates, agent
+CLI/MCP, two themes, Doctor, Stats for Nerds, factory reset, tests and CI.
 
-Known gaps and the roadmap: [`docs/REMAINING.md`](docs/REMAINING.md). The biggest ones
-are ONNX/CLIP embeddings, native platform OCR, a 1M-file prefilter, and signing /
-auto-update for release builds.
-
----
+Not yet: ONNX/CLIP embeddings, native platform OCR, a 1M-file prefilter, signing
+and notarization, auto-update, final artwork. See
+[docs/REMAINING.md](docs/REMAINING.md).
 
 ## Contributing
 
-Issues and PRs are welcome. Please run `cargo test --all-targets` and
-`cargo clippy --all-targets -- -D warnings` before opening a PR; CI runs both plus
-`tsc` and the frontend build.
+Issues and PRs are welcome — read [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) and
+make the checks pass:
+
+```bash
+cargo test --all-targets --manifest-path src-tauri/Cargo.toml
+cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
+npx tsc --noEmit && bun run build
+```
 
 ## License
 
-MIT © Yash Jangid
+MIT © Yash Jangid — [LICENSE](LICENSE).
+
+<p align="center"><sub>Built with Rust, Tantivy, Tauri 2, React and a stubborn dislike of slow search.</sub></p>
