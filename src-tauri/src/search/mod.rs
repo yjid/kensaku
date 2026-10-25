@@ -148,6 +148,9 @@ impl SearchDispatcher {
         let search_text = search_terms.join(" ");
         let search_text_lower = search_text.to_lowercase();
 
+        // Build a membership bitmap for O(1) candidate checks (replaces O(n) Vec::contains)
+        let candidate_set: std::collections::HashSet<usize> = candidate_indices.iter().copied().collect();
+
         // 3. Tier 1: Fuzzy filename search (< 5ms)
         let mut fuzzy_ranks: HashMap<usize, usize> = HashMap::new();
         if !search_text.is_empty() {
@@ -189,7 +192,7 @@ impl SearchDispatcher {
             for (rank, hit) in hits.into_iter().enumerate() {
                 if let Some(entry) = metadata.get_by_node_id(hit.node_id)
                     && let Some(&orig_idx) = path_index.get(&entry.path)
-                    && candidate_indices.contains(&orig_idx)
+                    && candidate_set.contains(&orig_idx)
                 {
                     semantic_ranks.insert(
                         entry.path.clone(),
@@ -257,7 +260,7 @@ impl SearchDispatcher {
             // Merge BM25 matches
             for (path, &rank) in &bm25_ranks {
                 if let Some(&orig_idx) = path_index.get(path) {
-                    if !candidate_indices.contains(&orig_idx) {
+                    if !candidate_set.contains(&orig_idx) {
                         continue;
                     }
                     let rrf = w_bm25 * (1.0 / (60.0 + (rank as f64)));
@@ -283,7 +286,7 @@ impl SearchDispatcher {
             // Merge Semantic matches
             for (path, &(rank, range)) in &semantic_ranks {
                 if let Some(&orig_idx) = path_index.get(path) {
-                    if !candidate_indices.contains(&orig_idx) {
+                    if !candidate_set.contains(&orig_idx) {
                         continue;
                     }
                     let rrf = w_semantic * (1.0 / (60.0 + (rank as f64)));

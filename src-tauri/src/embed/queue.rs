@@ -197,6 +197,10 @@ impl EmbeddingQueue {
                             units_to_insert.push((unit, vec));
                         }
 
+                        // Delete stale units for this node before inserting new ones
+                        let _ = db.delete_units_for_node(node_id);
+                        unit_store.write().remove_units_for_node(node_id);
+
                         // Store in SQLite and UnitStore
                         for (unit, vec) in units_to_insert {
                             if let Ok(inserted_id) = db.insert_unit(

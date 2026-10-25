@@ -29,6 +29,7 @@ impl MetadataDb {
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
              PRAGMA synchronous=NORMAL;
+             PRAGMA foreign_keys=ON;
              PRAGMA mmap_size=268435456;
              CREATE TABLE IF NOT EXISTS nodes (
                id INTEGER PRIMARY KEY,
@@ -189,6 +190,8 @@ impl MetadataDb {
 
     pub fn clear(&self) -> Result<(), String> {
         let conn = self.conn.lock();
+        let _ = conn.execute("DELETE FROM units", []);
+        let _ = conn.execute("DELETE FROM usage", []);
         conn.execute("DELETE FROM nodes", [])
             .map_err(|e| format!("Failed to clear metadata: {}", e))?;
 

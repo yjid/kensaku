@@ -10,7 +10,7 @@ use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocumen
 
 pub struct SnippetCache {
     capacity: usize,
-    map: HashMap<PathBuf, String>,
+    map: HashMap<PathBuf, (String, String)>, // (original, lowercase)
     order: VecDeque<PathBuf>,
 }
 
@@ -23,24 +23,25 @@ impl SnippetCache {
         }
     }
 
-    pub fn get_or_read(&mut self, path: &Path) -> Option<&str> {
+    pub fn get_or_read(&mut self, path: &Path) -> Option<(&str, &str)> {
         if self.map.contains_key(path) {
             if let Some(pos) = self.order.iter().position(|p| p == path) {
                 self.order.remove(pos);
             }
             self.order.push_back(path.to_path_buf());
-            return self.map.get(path).map(|s| s.as_str());
+            return self.map.get(path).map(|(orig, lower)| (orig.as_str(), lower.as_str()));
         }
 
         let content = read_text_content(path, 64_000)?;
+        let lower = content.to_lowercase();
         if self.map.len() >= self.capacity
             && let Some(oldest) = self.order.pop_front()
         {
             self.map.remove(&oldest);
         }
         self.order.push_back(path.to_path_buf());
-        self.map.insert(path.to_path_buf(), content);
-        self.map.get(path).map(|s| s.as_str())
+        self.map.insert(path.to_path_buf(), (content, lower));
+        self.map.get(path).map(|(orig, lower)| (orig.as_str(), lower.as_str()))
     }
 }
 
@@ -250,18 +251,17 @@ impl ContentIndex {
 
     pub fn get_snippet(&self, path: &Path, query: &str) -> Option<String> {
         let mut cache = self.snippet_cache.lock();
-        let content = cache.get_or_read(path)?;
-        Self::extract_snippet_from_text(content, query)
+        let (content, content_lower) = cache.get_or_read(path)?;
+        Self::extract_snippet_from_text_cached(content, content_lower, query)
     }
 
-    pub fn extract_snippet_from_text(content: &str, query: &str) -> Option<String> {
+    pub fn extract_snippet_from_text_cached(content: &str, content_lower: &str, query: &str) -> Option<String> {
         let query_lower = query.to_lowercase();
         let terms: Vec<&str> = query_lower.split_whitespace().collect();
         if terms.is_empty() {
             return None;
         }
 
-        let content_lower = content.to_lowercase();
         let mut first_match_idx = None;
 
         for term in &terms {
@@ -294,6 +294,10 @@ impl ContentIndex {
         let suffix = if safe_end < content.len() { "..." } else { "" };
 
         Some(format!("{}{}{}", prefix, cleaned, suffix))
+    }
+
+    pub fn extract_snippet_from_text(content: &str, query: &str) -> Option<String> {
+        Self::extract_snippet_from_text_cached(content, &content.to_lowercase(), query)
     }
 }
 
