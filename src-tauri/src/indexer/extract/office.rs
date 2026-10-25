@@ -1,7 +1,7 @@
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::BufReader;
 use std::path::Path;
 use zip::ZipArchive;
 
@@ -10,10 +10,8 @@ pub fn extract_docx(path: &Path, max_bytes: usize) -> Option<String> {
     let mut archive = ZipArchive::new(BufReader::new(file)).ok()?;
 
     let mut doc_file = archive.by_name("word/document.xml").ok()?;
-    let mut xml_content = String::new();
-    doc_file.read_to_string(&mut xml_content).ok()?;
-
-    let mut reader = Reader::from_str(&xml_content);
+    // Stream XML directly instead of buffering entire document in memory
+    let mut reader = Reader::from_reader(std::io::BufReader::new(&mut doc_file));
     reader.config_mut().trim_text(true);
 
     let mut text_out = String::new();
@@ -93,12 +91,7 @@ pub fn extract_pptx(path: &Path, max_bytes: usize) -> Option<String> {
             Err(_) => continue,
         };
 
-        let mut xml_content = String::new();
-        if slide_file.read_to_string(&mut xml_content).is_err() {
-            continue;
-        }
-
-        let mut reader = Reader::from_str(&xml_content);
+        let mut reader = Reader::from_reader(std::io::BufReader::new(&mut slide_file));
         reader.config_mut().trim_text(true);
 
         let mut slide_text = String::new();
@@ -158,10 +151,9 @@ pub fn extract_xlsx(path: &Path, max_bytes: usize) -> Option<String> {
     // 1. Read shared strings if present
     let mut shared_strings = Vec::new();
     if let Ok(mut ss_file) = archive.by_name("xl/sharedStrings.xml") {
-        let mut xml_content = String::new();
-        if ss_file.read_to_string(&mut xml_content).is_ok() {
-            let mut reader = Reader::from_str(&xml_content);
-            reader.config_mut().trim_text(true);
+        let mut reader = Reader::from_reader(std::io::BufReader::new(&mut ss_file));
+        reader.config_mut().trim_text(true);
+        {
             let mut in_t = false;
             let mut buf = Vec::new();
             loop {
@@ -224,12 +216,7 @@ pub fn extract_xlsx(path: &Path, max_bytes: usize) -> Option<String> {
             Err(_) => continue,
         };
 
-        let mut xml_content = String::new();
-        if sheet_file.read_to_string(&mut xml_content).is_err() {
-            continue;
-        }
-
-        let mut reader = Reader::from_str(&xml_content);
+        let mut reader = Reader::from_reader(std::io::BufReader::new(&mut sheet_file));
         reader.config_mut().trim_text(true);
 
         let mut in_v = false;
@@ -301,12 +288,7 @@ pub fn extract_epub(path: &Path, max_bytes: usize) -> Option<String> {
             Err(_) => continue,
         };
 
-        let mut html_content = String::new();
-        if chap_file.read_to_string(&mut html_content).is_err() {
-            continue;
-        }
-
-        let mut reader = Reader::from_str(&html_content);
+        let mut reader = Reader::from_reader(std::io::BufReader::new(&mut chap_file));
         reader.config_mut().trim_text(true);
 
         let mut buf = Vec::new();
@@ -347,10 +329,8 @@ pub fn extract_odt(path: &Path, max_bytes: usize) -> Option<String> {
     let mut archive = ZipArchive::new(BufReader::new(file)).ok()?;
 
     let mut content_file = archive.by_name("content.xml").ok()?;
-    let mut xml_content = String::new();
-    content_file.read_to_string(&mut xml_content).ok()?;
 
-    let mut reader = Reader::from_str(&xml_content);
+    let mut reader = Reader::from_reader(std::io::BufReader::new(&mut content_file));
     reader.config_mut().trim_text(true);
 
     let mut text_out = String::new();
