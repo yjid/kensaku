@@ -39,7 +39,7 @@ impl FuzzySearcher {
         }
     }
 
-    pub fn search(&mut self, query: &str, entries: &[FileEntry], limit: usize) -> Vec<(usize, u32)> {
+    pub fn search(&mut self, query: &str, all_entries: &[FileEntry], candidate_indices: &[usize], limit: usize) -> Vec<(usize, u32)> {
         let trimmed = query.trim();
         if trimmed.is_empty() {
             return Vec::new();
@@ -52,9 +52,13 @@ impl FuzzySearcher {
         let query_mask = compute_char_mask(trimmed);
         let match_path = trimmed.contains('/') || trimmed.contains('\\');
 
-        for (idx, entry) in entries.iter().enumerate() {
+        for &orig_idx in candidate_indices {
+            let entry = match all_entries.get(orig_idx) {
+                Some(e) => e,
+                None => continue,
+            };
+
             // Char-bloom prefilter: 64-bit letter mask per name.
-            // If query does not contain path separators, the filename must contain all query characters.
             if !match_path && (entry.char_bloom & query_mask) != query_mask {
                 continue;
             }
@@ -68,7 +72,7 @@ impl FuzzySearcher {
                 if let Some(name_score) = pattern.score(name_utf32, &mut self.matcher) {
                     final_score += name_score * 2;
                 }
-                scored_indices.push((idx, final_score));
+                scored_indices.push((orig_idx, final_score));
             }
         }
 
