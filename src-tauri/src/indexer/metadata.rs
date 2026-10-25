@@ -60,6 +60,26 @@ impl MetadataStore {
         self.generation.load(Ordering::SeqCst)
     }
 
+    /// Builds a store around an already-open database.
+    ///
+    /// Unlike [`Self::new`] this never opens the user's config directory and
+    /// never writes to stdout, which matters for the headless CLI/MCP surface
+    /// (stdout is the protocol stream there).
+    pub fn with_db(db: MetadataDb) -> Self {
+        let mut store = Self {
+            entries: Vec::new(),
+            path_index: HashMap::new(),
+            node_id_to_idx: HashMap::new(),
+            db: Some(Arc::new(db)),
+            generation: AtomicU64::new(1),
+            dir_generation: AtomicU64::new(1),
+            usage: RwLock::new(HashMap::new()),
+            cached_trie: RwLock::new(None),
+        };
+        store.load_from_db();
+        store
+    }
+
     /// Reload the in-memory index from the database, replacing any current state.
     /// Returns the number of entries loaded (0 if the database is unavailable).
     pub fn load_from_db(&mut self) -> usize {

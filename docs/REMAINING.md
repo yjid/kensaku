@@ -23,10 +23,12 @@
       crate). Today it shells out to `tesseract`, which may not be installed.
 - [ ] **Image thumbnails** in result rows/cards, image dimensions in metadata,
       perceptual-hash dedup before embedding.
-- [ ] **PR 8 — Ask/actions**: detect local Ollama/LM Studio, "Ask this folder"
-      with path+line citations, summarize, find similar, duplicate detection.
-- [ ] **PR 6 — Agent surface** (explicitly skipped for now): MCP server, CLI,
-      daemon socket, `index_state`, token-budgeted snippets.
+- [x] **Agent surface** — shipped: `kensaku-cli` with `search`, `state`, and an
+      MCP stdio server exposing `search`, `read_snippet`, `index_state`.
+      See `docs/AGENTS.md`. No in-app LLM by design.
+- [ ] **Agent surface v2** — daemon/local socket so one-off CLI calls avoid
+      metadata load, `find_symbol` (tree-sitter), `.gitignore`/`.cursorignore`
+      parity, pagination beyond the 10k exhaustive cap.
 
 ## B. Search quality & performance
 
@@ -112,4 +114,4 @@
 | Tantivy BooleanQuery pushdown (B4) | Needs schema change + full index rebuild. |
 | ANN index (USearch) | Exact i8 scan is enough below ~400k units; revisit at 1M. |
 | Cross-encoder reranker | 30–60 ms for 20 pairs does not fit the latency budget. |
-| Bundled LLM | Ollama integration gives "ask" without a 4 GB dependency. |
+| In-app LLM / "ask" panel | Product decision: Kensaku is the search backend for agents, not a chat app. The agent surface ships instead. |
