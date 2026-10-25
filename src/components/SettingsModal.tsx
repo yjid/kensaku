@@ -213,6 +213,19 @@ function ConfigSkeleton() {
 /* General                                                           */
 /* ---------------------------------------------------------------- */
 
+/** Tauri rejections are usually plain strings; extract a readable reason. */
+function reasonFrom(err: unknown): string {
+  if (typeof err === "string" && err) return err;
+  if (err instanceof Error && err.message) return err.message;
+  try {
+    const text = JSON.stringify(err);
+    if (text && text !== "{}" && text !== "null") return text;
+  } catch {
+    /* non-serializable — fall through */
+  }
+  return "unknown error";
+}
+
 function GeneralSection({
   config,
   setConfig,
@@ -222,6 +235,42 @@ function GeneralSection({
 }) {
   const { theme, setTheme } = useTheme();
   const [capturing, setCapturing] = useState(false);
+
+  /* null = unknown (backend rejected get_autostart) → switch stays off. */
+  const [autostart, setAutostart] = useState<boolean | null>(null);
+  const [autostartBusy, setAutostartBusy] = useState(false);
+  const [autostartError, setAutostartError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    invoke<boolean>("get_autostart")
+      .then((v) => {
+        if (!cancelled) setAutostart(v);
+      })
+      .catch(() => {
+        if (!cancelled) setAutostart(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** Optimistic toggle: flip the switch immediately, revert on failure. */
+  const toggleAutostart = async (next: boolean) => {
+    if (autostart === null || autostartBusy) return;
+    const prev = autostart;
+    setAutostart(next);
+    setAutostartError(null);
+    setAutostartBusy(true);
+    try {
+      await invoke("set_autostart", { enabled: next });
+    } catch (err) {
+      setAutostart(prev);
+      setAutostartError(reasonFrom(err));
+    } finally {
+      setAutostartBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!capturing) return;
@@ -295,9 +344,23 @@ function GeneralSection({
           />
         </Field>
 
-        <Field label="Start at login" description="Managed by the daemon in a later build.">
-          <Switch checked={false} disabled onChange={() => {}} />
+        <Field
+          label="Start at login"
+          description={
+            autostart === null ? "Unavailable on this system" : "Launch Kensaku when you sign in."
+          }
+        >
+          <Switch
+            checked={autostart ?? false}
+            disabled={autostart === null || autostartBusy}
+            onChange={toggleAutostart}
+          />
         </Field>
+        {autostartError && (
+          <p className="break-words border-t border-line px-4 py-2 font-mono text-[10px] text-danger">
+            Could not update login item: {autostartError}
+          </p>
+        )}
       </Card>
     </>
   );
