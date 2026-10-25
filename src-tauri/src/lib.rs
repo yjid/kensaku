@@ -2,6 +2,7 @@ pub mod agent;
 pub mod cli;
 pub mod commands;
 pub mod config;
+pub mod crashlog;
 pub mod doctor;
 pub mod embed;
 pub mod indexer;
@@ -132,6 +133,11 @@ fn maybe_apply_pending_reset() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Install the crash log hook before anything else so startup failures are
+    // captured too. It only touches the config directory path; it never loads
+    // or mutates the config.
+    crashlog::install_panic_hook();
+
     commands::init_process_start();
 
     // Single-instance guard. Acquire it before touching any state so a second
@@ -207,6 +213,8 @@ pub fn run() {
             commands::run_doctor,
             commands::reset_all,
             commands::get_reset_pending,
+            commands::get_autostart,
+            commands::set_autostart,
             models::get_models_status,
             models::download_models,
             models::delete_models,
