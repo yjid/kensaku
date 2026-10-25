@@ -290,7 +290,15 @@ impl SearchDispatcher {
         }
 
         // 5. Tier 3: Static semantic vector scan (< 5ms)
-        let mut semantic_ranks: HashMap<usize, (usize, (usize, usize))> = HashMap::new();
+        // Weak vectors are kept in the map (with their raw cosine) so hits that
+        // also match fuzzy/BM25 still contribute; the floor below is applied
+        // only when creating a semantic-only candidate.
+        let semantic_floor = if ModelRegistry::global().has_static_table() {
+            0.28
+        } else {
+            0.12
+        };
+        let mut semantic_ranks: HashMap<PathBuf, (usize, f32, (usize, usize))> = HashMap::new();
         if semantic_enabled
             && !search_text.is_empty()
             && let Some(store) = unit_store
@@ -309,10 +317,17 @@ impl SearchDispatcher {
                         .unwrap_or(usize::MAX),
                     None => continue,
                 };
-                if orig_idx != usize::MAX && candidate_set.contains(&orig_idx) {
+                if orig_idx != usize::MAX
+                    && candidate_set.contains(&orig_idx)
+                    && let Some(entry) = entries.get(orig_idx)
+                {
                     semantic_ranks.insert(
-                        orig_idx,
-                        (rank + 1, (hit.best_unit.byte_start, hit.best_unit.byte_end)),
+                        entry.path.clone(),
+                        (
+                            rank + 1,
+                            hit.score,
+                            (hit.best_unit.byte_start, hit.best_unit.byte_end),
+                        ),
                     );
                 }
             }
@@ -400,21 +415,26 @@ impl SearchDispatcher {
             }
 
             // Merge Semantic matches
-            for (&orig_idx, &(rank, range)) in &semantic_ranks {
-                let Some(entry) = entries.get(orig_idx) else {
+            for (path, &(rank, cosine, range)) in &semantic_ranks {
+                let Some(&orig_idx) = path_index.get(path) else {
                     continue;
                 };
                 if !candidate_set.contains(&orig_idx) {
                     continue;
                 }
                 let rrf = w_semantic * (1.0 / (60.0 + (rank as f64)));
-                if let Some(cand) = candidates.get_mut(&entry.path) {
+                if let Some(cand) = candidates.get_mut(path) {
                     cand.in_semantic = true;
                     cand.rrf_score += rrf;
                     cand.best_range = Some(range);
                 } else {
+                    // Semantic-only candidates must clear the relevance floor;
+                    // hits already found by fuzzy/BM25 are merged above.
+                    if cosine < semantic_floor {
+                        continue;
+                    }
                     candidates.insert(
-                        entry.path.clone(),
+                        path.clone(),
                         MatchCandidate {
                             entry_idx: orig_idx,
                             in_fuzzy: false,
@@ -429,11 +449,17 @@ impl SearchDispatcher {
         }
 
         // 7. Apply ranking bonuses & build SearchResults
+        // Normalize RRF before bonuses so an absolute depth term cannot
+        // dominate the fused relevance signal.
+        let max_rrf = candidates
+            .values()
+            .map(|candidate| candidate.rrf_score)
+            .fold(0.0f64, f64::max);
+
         let mut results: Vec<SearchResult> = candidates
             .into_iter()
             .filter_map(|(path, cand)| {
                 let entry = entries.get(cand.entry_idx)?;
-                let mut score = cand.rrf_score;
 
                 // MatchType resolution: Semantic badge if only found by semantic tier
                 let match_type = if cand.in_semantic && !cand.in_fuzzy && !cand.in_bm25 {
@@ -446,31 +472,16 @@ impl SearchDispatcher {
                     MatchType::FileName
                 };
 
-                // Exact substring in name: +0.20
-                let name_lower = entry.name.to_lowercase();
-                if !search_text_lower.is_empty() && name_lower.contains(&search_text_lower) {
-                    score += 0.20;
-                }
-
-                // Prefix in name: +0.15
-                if !search_text_lower.is_empty() && name_lower.starts_with(&search_text_lower) {
-                    score += 0.15;
-                }
-
-                // Smooth recency decay: +0.10 * exp(-age_days / 7)
-                let age_days = (now_sec.saturating_sub(entry.modified) as f64) / 86400.0;
-                score += 0.10 * (-age_days / 7.0).exp();
-
-                // Frecency bonus: +0.08 * log1p(opens) * exp(-last_open_days / 14)
-                let (opens, last_open) = metadata.get_usage(&entry.path);
-                if opens > 0 {
-                    let last_open_days = (now_sec.saturating_sub(last_open) as f64) / 86400.0;
-                    score += 0.08 * (opens as f64).ln_1p() * (-last_open_days / 14.0).exp();
-                }
-
-                // Depth penalty: -0.02 * depth
-                let depth = path.components().count();
-                score -= 0.02 * (depth as f64);
+                let usage = metadata.get_usage(&entry.path);
+                let score = finalize_score(
+                    cand.rrf_score,
+                    max_rrf,
+                    entry,
+                    &path,
+                    &search_text_lower,
+                    now_sec,
+                    usage,
+                );
 
                 Some(SearchResult {
                     path: path.to_string_lossy().to_string(),
@@ -557,6 +568,56 @@ impl SearchDispatcher {
             mode: "ranked",
         }
     }
+}
+
+/// Final score for a fused candidate.
+///
+/// RRF is normalized to `[0, 1]` before bonuses so scores are comparable
+/// regardless of how many tiers matched. The depth penalty is bounded (max
+/// `-0.10`) and can never push a score below zero.
+fn finalize_score(
+    rrf_score: f64,
+    max_rrf: f64,
+    entry: &FileEntry,
+    path: &Path,
+    search_text_lower: &str,
+    now_sec: u64,
+    usage: (u32, u64),
+) -> f64 {
+    let base = if max_rrf > 0.0 {
+        rrf_score / max_rrf
+    } else {
+        0.0
+    };
+    let mut score = base;
+
+    // Exact substring in name: +0.20
+    let name_lower = entry.name.to_lowercase();
+    if !search_text_lower.is_empty() && name_lower.contains(search_text_lower) {
+        score += 0.20;
+    }
+
+    // Prefix in name: +0.15
+    if !search_text_lower.is_empty() && name_lower.starts_with(search_text_lower) {
+        score += 0.15;
+    }
+
+    // Smooth recency decay: +0.10 * exp(-age_days / 7)
+    let age_days = (now_sec.saturating_sub(entry.modified) as f64) / 86400.0;
+    score += 0.10 * (-age_days / 7.0).exp();
+
+    // Frecency bonus: +0.08 * log1p(opens) * exp(-last_open_days / 14)
+    let (opens, last_open) = usage;
+    if opens > 0 {
+        let last_open_days = (now_sec.saturating_sub(last_open) as f64) / 86400.0;
+        score += 0.08 * (opens as f64).ln_1p() * (-last_open_days / 14.0).exp();
+    }
+
+    // Bounded depth penalty: at most -0.10, saturating at depth 20.
+    let depth = path.components().count();
+    score -= 0.10 * ((depth as f64) / 20.0).min(1.0);
+
+    score.max(0.0)
 }
 
 /// Enumerates matches for `mode:exhaustive`, ordered by path.
@@ -897,5 +958,132 @@ mod tests {
             sorted
         );
         assert!(!hints.iter().any(|h| h.contains("capped")));
+    }
+
+    #[test]
+    fn depth_penalty_is_bounded_and_does_not_dominate_relevance() {
+        let now = 1_700_000_000;
+        let deep_path = Path::new("/tmp/k/a/b/c/d/e/f/g/h/i/j/k/deep.rs");
+        let shallow_path = Path::new("/tmp/k/shallow.rs");
+        let deep = entry(1, deep_path.to_str().unwrap(), "deep.rs");
+        let shallow = entry(2, shallow_path.to_str().unwrap(), "shallow.rs");
+
+        // Equal relevance and metadata: only depth differs, so the shallower
+        // path must win.
+        let deep_score = finalize_score(0.5, 0.5, &deep, deep_path, "zzz", now, (0, 0));
+        let shallow_score = finalize_score(0.5, 0.5, &shallow, shallow_path, "zzz", now, (0, 0));
+        assert!(
+            shallow_score > deep_score,
+            "shallow {shallow_score} should beat deep {deep_score}"
+        );
+
+        // A very deep but highly relevant file still beats a shallow weak one.
+        let relevant_deep = entry(3, deep_path.to_str().unwrap(), "alpha.rs");
+        let weak_shallow = entry(4, shallow_path.to_str().unwrap(), "other.rs");
+        let relevant_score =
+            finalize_score(0.9, 1.0, &relevant_deep, deep_path, "alpha", now, (0, 0));
+        let weak_score =
+            finalize_score(0.1, 1.0, &weak_shallow, shallow_path, "alpha", now, (0, 0));
+        assert!(
+            relevant_score > weak_score,
+            "relevant deep {relevant_score} should beat weak shallow {weak_score}"
+        );
+        assert!(relevant_score >= 0.0);
+
+        // Scores never go negative, even for extremely deep unranked files.
+        let very_deep = Path::new("/a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t/u/v/w/x/y/z.rs");
+        let bottom = finalize_score(0.0, 1.0, &deep, very_deep, "", now, (0, 0));
+        assert_eq!(bottom, 0.0);
+    }
+
+    #[test]
+    fn semantic_floor_drops_weak_semantic_only_hits() {
+        use crate::embed::Unit;
+        use crate::indexer::metadata_db::MetadataDb;
+
+        let model = ModelRegistry::global();
+        let query_vec = model.embed_to_i8("needle");
+
+        // Build a vector with a deliberately small positive cosine (~0.07):
+        // above the scanner's 0.05 prefilter, below either semantic floor.
+        let (idx, value) = query_vec
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, value)| value.unsigned_abs())
+            .map(|(idx, value)| (idx, *value))
+            .expect("non-empty embedding");
+        assert_ne!(value, 0, "embedding should have a non-zero component");
+        let scaled = (1200.0 / f32::from(value.abs().max(1))).round().clamp(1.0, 127.0) as i8;
+        let mut weak_vec = vec![0i8; query_vec.len()];
+        weak_vec[idx] = scaled * value.signum();
+
+        let mut units = UnitStore::new(model.dim);
+        units.add_unit(
+            Unit {
+                id: 0,
+                node_id: 1,
+                byte_start: 0,
+                byte_end: 10,
+                model_id: model.model_id,
+            },
+            &query_vec,
+        );
+        units.add_unit(
+            Unit {
+                id: 1,
+                node_id: 2,
+                byte_start: 0,
+                byte_end: 10,
+                model_id: model.model_id,
+            },
+            &weak_vec,
+        );
+        assert_eq!(
+            ExactScanner::scan(&query_vec, &units, None, 10).len(),
+            2,
+            "the weak vector must pass the scanner prefilter"
+        );
+
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "kensaku-semantic-floor-{}-{}",
+            std::process::id(),
+            nanos
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let db = MetadataDb::open_in_dir(&dir).expect("open metadata db");
+        db.upsert(&entry(1, "/tmp/kensaku/sem/strong.txt", "strong.txt"))
+            .unwrap();
+        db.upsert(&entry(2, "/tmp/kensaku/sem/weak.txt", "weak.txt"))
+            .unwrap();
+        let metadata = MetadataStore::with_db(db);
+
+        let response = SearchDispatcher::search_response(
+            "needle",
+            &metadata,
+            &None,
+            Some(&units),
+            true,
+            10,
+            0,
+        );
+
+        assert_eq!(
+            response.results.len(),
+            1,
+            "weak semantic-only hit should be dropped: {:?}",
+            response
+                .results
+                .iter()
+                .map(|result| (&result.path, result.score))
+                .collect::<Vec<_>>()
+        );
+        assert!(response.results[0].path.ends_with("strong.txt"));
+        assert!(response.results[0].score >= 0.0);
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }
