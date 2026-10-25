@@ -62,6 +62,8 @@ impl MetadataDb {
              PRAGMA synchronous=NORMAL;
              PRAGMA foreign_keys=ON;
              PRAGMA mmap_size=268435456;
+             PRAGMA journal_size_limit=67108864;
+             PRAGMA optimize;
              CREATE TABLE IF NOT EXISTS nodes (
                id INTEGER PRIMARY KEY,
                path TEXT NOT NULL UNIQUE,
@@ -136,9 +138,72 @@ impl MetadataDb {
             eprintln!("[Kensaku] Failed to create unembedded index: {}", e);
         }
 
-        Ok(Self {
+        let db = Self {
             conn: Mutex::new(conn),
-        })
+        };
+
+        // Reclaim a bloated free list at startup. Best-effort: a busy or
+        // read-only database must never prevent Kensaku from opening.
+        db.compact_if_bloated();
+
+        Ok(db)
+    }
+
+    /// VACUUMs the database when a large fraction of its pages are free.
+    ///
+    /// Long-running crawls delete and rewrite many rows; SQLite keeps the
+    /// freed pages inside the file, so it can grow to several hundred MB for
+    /// a small index. Compaction is skipped unless more than 1000 pages are
+    /// free *and* they exceed 20% of the file, which keeps startup cheap on
+    /// healthy databases. Errors are logged, never propagated.
+    pub fn compact_if_bloated(&self) {
+        let conn = self.conn.lock();
+
+        let Ok(page_count) = conn.query_row("PRAGMA page_count", [], |row| row.get::<_, i64>(0))
+        else {
+            return;
+        };
+        let Ok(freelist_count) =
+            conn.query_row("PRAGMA freelist_count", [], |row| row.get::<_, i64>(0))
+        else {
+            return;
+        };
+        let page_count = page_count.max(0) as u64;
+        let freelist_count = freelist_count.max(0) as u64;
+        if !should_vacuum(page_count, freelist_count) {
+            return;
+        }
+
+        let page_size = conn
+            .query_row("PRAGMA page_size", [], |row| row.get::<_, i64>(0))
+            .unwrap_or(4096)
+            .max(1) as u64;
+        let before_bytes = page_count.saturating_mul(page_size);
+
+        if let Err(e) = conn.execute_batch("VACUUM; PRAGMA wal_checkpoint(TRUNCATE);") {
+            eprintln!(
+                "[Kensaku] Metadata DB compaction skipped ({} free pages): {}",
+                freelist_count, e
+            );
+            return;
+        }
+
+        let after_bytes = conn
+            .query_row("PRAGMA page_count", [], |row| row.get::<_, i64>(0))
+            .map(|pages| (pages.max(0) as u64).saturating_mul(page_size))
+            .unwrap_or(before_bytes);
+        eprintln!(
+            "[Kensaku] Metadata DB compacted: {} bytes -> {} bytes ({} free pages reclaimed)",
+            before_bytes, after_bytes, freelist_count
+        );
+    }
+
+    /// Cheap WAL checkpoint after a crawl commit. Non-blocking by design.
+    pub fn checkpoint_passive(&self) {
+        let conn = self.conn.lock();
+        if let Err(e) = conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE)") {
+            eprintln!("[Kensaku] Metadata WAL checkpoint failed: {}", e);
+        }
     }
 
     pub fn load_all(&self) -> Result<Vec<FileEntry>, String> {
@@ -753,6 +818,15 @@ impl MetadataDb {
     }
 }
 
+/// Whether a database is bloated enough to justify a `VACUUM`.
+///
+/// Requires both a meaningful absolute free list (more than 1000 pages) and a
+/// meaningful ratio (more than 20% of all pages), so a large but healthy index
+/// is never rewritten at startup.
+fn should_vacuum(page_count: u64, freelist_count: u64) -> bool {
+    page_count > 0 && freelist_count > 1000 && (freelist_count as f64 / page_count as f64) > 0.20
+}
+
 /// Extracts the bits covered by band `band` of a `bands`-way split of 64 bits.
 fn band_key(phash: u64, band: usize, bands: usize) -> u64 {
     let start = (band * 64 / bands) as u32;
@@ -847,6 +921,21 @@ mod tests {
             .into_iter()
             .map(|entry| entry.path)
             .collect()
+    }
+
+    #[test]
+    fn vacuum_requires_both_a_large_free_list_and_a_large_ratio() {
+        // Healthy: few free pages.
+        assert!(!should_vacuum(100_000, 500));
+        // Big absolute free list but a tiny fraction.
+        assert!(!should_vacuum(100_000, 1_001));
+        // Large fraction but below the absolute floor.
+        assert!(!should_vacuum(4_000, 1_000));
+        // Both conditions met.
+        assert!(should_vacuum(10_000, 3_000));
+        assert!(should_vacuum(1_001, 1_001));
+        // Degenerate inputs never panic or trigger.
+        assert!(!should_vacuum(0, 0));
     }
 
     #[test]

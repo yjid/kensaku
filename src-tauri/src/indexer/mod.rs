@@ -395,6 +395,9 @@ impl IndexerManager {
             // Commit the SQLite transaction (batched writes)
             if let Some(db) = metadata.read().db() {
                 let _ = db.commit_transaction();
+                // Keep the WAL from growing across crawls. PASSIVE never
+                // blocks readers/writers, so this is safe on the crawl thread.
+                db.checkpoint_passive();
             }
 
             // A configured root that cannot be read (unplugged external drive,
