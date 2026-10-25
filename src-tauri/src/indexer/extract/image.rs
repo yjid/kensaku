@@ -40,7 +40,7 @@ pub fn image_dimensions(path: &Path) -> Option<(u32, u32)> {
     }
 
     let s = String::from_utf8_lossy(&output.stdout);
-    let parts: Vec<&str> = s.trim().split_whitespace().collect();
+    let parts: Vec<&str> = s.split_whitespace().collect();
     if parts.len() >= 2 {
         let w = parts[0].parse().ok()?;
         let h = parts[1].parse().ok()?;
