@@ -22,7 +22,7 @@ path = "src/bin/cli.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
 tauri-plugin-opener = "2"
 tauri-plugin-global-shortcut = "2"
 serde = { version = "1", features = ["derive"] }
@@ -46,6 +46,7 @@ lopdf = "0.46.0"
 quick-xml = "0.42.0"
 zip = "9.1.0"
 ureq = { version = "2", features = ["tls"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff"] }
 
 [profile.release]
 codegen-units = 1
