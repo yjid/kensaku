@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { SearchResult, FilePreview } from "../types";
 import {
   ExternalLink,
@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { FileTypeIcon } from "./FileTypeIcon";
 import { EmptyState } from "./EmptyState";
+import { useThumbnail } from "../lib/thumbnails";
 import { formatBytes, queryTerms } from "../lib/format";
 
 /* 360px preview. Text/PDF/doc bodies render as mono lines with the
@@ -137,17 +138,21 @@ export const PreviewPane = React.memo<PreviewPaneProps>(
             </button>
           </div>
 
-          <div className="mt-2 flex items-center gap-2 border-t border-line pt-2 font-mono text-[10px] leading-[14px] text-subtle">
-            <span>{formatBytes(result.file_size)}</span>
-            <span>·</span>
-            <span>{new Date(result.modified * 1000).toLocaleString()}</span>
-            {preview?.preview_type === "pdf" && preview.child_count != null && (
-              <>
-                <span>·</span>
-                <span className="text-fg">{preview.child_count} pages</span>
-              </>
-            )}
-          </div>
+          {/* For image previews the meta line moves under the large
+              thumbnail in the body, so it isn't duplicated here. */}
+          {preview?.preview_type !== "image" && (
+            <div className="mt-2 flex items-center gap-2 border-t border-line pt-2 font-mono text-[10px] leading-[14px] text-subtle">
+              <span>{formatBytes(result.file_size)}</span>
+              <span>·</span>
+              <span>{new Date(result.modified * 1000).toLocaleString()}</span>
+              {preview?.preview_type === "pdf" && preview.child_count != null && (
+                <>
+                  <span>·</span>
+                  <span className="text-fg">{preview.child_count} pages</span>
+                </>
+              )}
+            </div>
+          )}
         </header>
 
         {/* Body */}
@@ -191,18 +196,12 @@ function renderContent(
 
   if (preview.preview_type === "image") {
     return (
-      <div className="flex items-center justify-center p-3">
-        <div className="min-h-[160px] w-full rounded-[10px] border border-line bg-elevated p-2">
-          <img
-            src={convertFileSrc(result.path)}
-            alt={result.filename}
-            className="mx-auto max-h-[340px] rounded-md object-contain"
-            onError={(e) => {
-              (e.currentTarget.parentElement as HTMLElement).classList.add("hidden");
-            }}
-          />
-        </div>
-      </div>
+      <ImagePreviewBody
+        key={result.path}
+        result={result}
+        width={preview.width ?? null}
+        height={preview.height ?? null}
+      />
     );
   }
 
@@ -231,6 +230,64 @@ function renderContent(
     <EmptyState variant="empty" caption="Binary — no words to show">
       <p className="font-mono text-[11px] text-subtle">preview not supported for this type</p>
     </EmptyState>
+  );
+}
+
+/* Large thumbnail for image previews — sits above the metadata line.
+   Failures (missing get_thumbnail, unreadable file) swap in the empty
+   state illustration; nothing logs. */
+function ImagePreviewBody({
+  result,
+  width,
+  height,
+}: {
+  result: SearchResult;
+  width: number | null;
+  height: number | null;
+}) {
+  const { src, failed } = useThumbnail(result.path, true);
+  const [loadErr, setLoadErr] = useState(false);
+
+  if (failed || loadErr) {
+    return (
+      <EmptyState variant="empty" caption="Preview unavailable">
+        <p className="font-mono text-[11px] text-subtle">image preview not available</p>
+      </EmptyState>
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col p-3">
+      <div className="flex min-h-0 flex-1 items-center justify-center">
+        <div className="overflow-hidden rounded-[14px] border border-line bg-elevated p-1.5">
+          {src ? (
+            <img
+              src={src}
+              alt={result.filename}
+              draggable={false}
+              className="fade-in mx-auto max-h-[360px] max-w-full rounded-[10px] object-contain"
+              onError={() => setLoadErr(true)} />
+          ) : (
+            <div className="flex h-40 w-56 items-center justify-center">
+              <LoaderCircle className="h-4 w-4 animate-spin text-subtle" />
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="mt-2 flex shrink-0 items-center justify-center gap-2 border-t border-line pt-2 font-mono text-[10px] leading-[14px] text-subtle">
+        <span>{formatBytes(result.file_size)}</span>
+        <span>·</span>
+        <span>{new Date(result.modified * 1000).toLocaleString()}</span>
+        {width != null && height != null && (
+          <>
+            <span>·</span>
+            <span>
+              {width} × {height}
+            </span>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
