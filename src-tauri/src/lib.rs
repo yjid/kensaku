@@ -15,9 +15,9 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock};
 use tauri::{
+    Manager, WindowEvent,
     menu::{Menu, MenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
-    Manager, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
@@ -117,7 +117,10 @@ fn maybe_apply_pending_reset() {
                 use std::os::unix::fs::PermissionsExt;
                 let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
             }
-            eprintln!("[Kensaku] Reset requested: cleared all data in {}", dir.display());
+            eprintln!(
+                "[Kensaku] Reset requested: cleared all data in {}",
+                dir.display()
+            );
         }
         Err(e) => eprintln!(
             "[Kensaku] Reset requested but could not clear {}: {}",
@@ -191,6 +194,8 @@ pub fn run() {
             commands::open_file,
             commands::open_folder,
             commands::get_file_preview,
+            commands::get_thumbnail,
+            commands::find_duplicates,
             commands::execute_command,
             commands::read_file_content,
             commands::get_config,
@@ -207,13 +212,18 @@ pub fn run() {
             models::delete_models,
         ])
         .setup(move |app| {
-            app.state::<AppState>().indexer.set_app_handle(app.handle().clone());
+            app.state::<AppState>()
+                .indexer
+                .set_app_handle(app.handle().clone());
 
             // 1. Register global shortcut (e.g. Alt+Space)
             if let Ok(shortcut) = Shortcut::from_str(&shortcut_str) {
                 let _ = app.global_shortcut().register(shortcut);
             } else {
-                eprintln!("[Kensaku] Could not parse global shortcut: {}", shortcut_str);
+                eprintln!(
+                    "[Kensaku] Could not parse global shortcut: {}",
+                    shortcut_str
+                );
             }
 
             // 2. Setup System Tray
