@@ -4,7 +4,8 @@ import { X, Plus, RefreshCw, Save, Check, Copy, Sun, Moon } from "lucide-react";
 import { KensakuConfig } from "../types";
 import { useTheme } from "../hooks/useTheme";
 import { useStats } from "../hooks/useStats";
-import { Card, Field, Switch, Stepper } from "./settings/kit";
+import { Card, Field, Switch, Stepper, reasonFrom } from "./settings/kit";
+import { OcrField } from "./settings/ocr";
 import { StatsForNerds } from "./settings/stats";
 import { DoctorSection } from "./settings/doctor";
 import { ModelFilesCard } from "./settings/models";
@@ -212,19 +213,6 @@ function ConfigSkeleton() {
 /* ---------------------------------------------------------------- */
 /* General                                                           */
 /* ---------------------------------------------------------------- */
-
-/** Tauri rejections are usually plain strings; extract a readable reason. */
-function reasonFrom(err: unknown): string {
-  if (typeof err === "string" && err) return err;
-  if (err instanceof Error && err.message) return err.message;
-  try {
-    const text = JSON.stringify(err);
-    if (text && text !== "{}" && text !== "null") return text;
-  } catch {
-    /* non-serializable — fall through */
-  }
-  return "unknown error";
-}
 
 function GeneralSection({
   config,
@@ -631,9 +619,7 @@ function SearchSection({
             onChange={(v) => setConfig((c) => (c ? { ...c, semantic_enabled: v } : c))}
           />
         </Field>
-        <Field label="OCR (images)" description="Lands with backend phase 6.">
-          <Switch checked={false} disabled onChange={() => {}} />
-        </Field>
+        <OcrField config={config} setConfig={setConfig} />
       </Card>
 
       <Card title="Query language">

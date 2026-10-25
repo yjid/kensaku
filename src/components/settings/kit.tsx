@@ -3,13 +3,29 @@ import React from "react";
 /* Shared primitives for the Settings pages and elsewhere: 1px-bordered
    cards, field rows, switches, badges. Tokens only. */
 
+/** Tauri rejections are usually plain strings; extract a readable reason. */
+export function reasonFrom(err: unknown): string {
+  if (typeof err === "string" && err) return err;
+  if (err instanceof Error && err.message) return err.message;
+  try {
+    const text = JSON.stringify(err);
+    if (text && text !== "{}" && text !== "null") return text;
+  } catch {
+    /* non-serializable — fall through */
+  }
+  return "unknown error";
+}
+
 export function Field({
   label,
   description,
+  hint,
   children,
 }: {
   label: string;
   description?: string;
+  /** Quiet sub-line under the description, shown only when relevant. */
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -17,6 +33,7 @@ export function Field({
       <div className="min-w-0 space-y-0.5">
         <p className="text-[12px] font-medium text-fg">{label}</p>
         {description && <p className="text-[11px] leading-relaxed text-muted">{description}</p>}
+        {hint && <p className="text-[11px] leading-relaxed text-muted">{hint}</p>}
       </div>
       {children}
     </div>

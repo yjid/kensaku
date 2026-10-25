@@ -1,9 +1,11 @@
 use image::{DynamicImage, ImageReader, Limits};
+use serde::Serialize;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 /// Upper bound for a single decodable image (50 megapixels).
 ///
@@ -26,18 +28,244 @@ pub fn is_supported_image_extension(ext: &str) -> bool {
     )
 }
 
+/// Snapshot of the local OCR engine and its language data.
+#[derive(Debug, Clone, Serialize)]
+pub struct OcrStatus {
+    /// Whether `tesseract --version` exits successfully.
+    pub engine_present: bool,
+    /// Languages reported by `tesseract --list-langs`.
+    pub languages: Vec<String>,
+    /// `engine_present && !languages.is_empty()`.
+    pub available: bool,
+    /// Where Kensaku stores downloaded language data.
+    pub tessdata_dir: String,
+    /// Last error line when the engine is missing or failing.
+    pub error: Option<String>,
+}
+
+/// Directory holding language data downloaded by Kensaku.
+///
+/// The directory is created lazily by [`download_eng_tessdata`]; read-only
+/// callers such as [`ocr_status`] never create it.
+pub fn tessdata_dir() -> PathBuf {
+    crate::config::KensakuConfig::config_dir().join("tessdata")
+}
+
+fn build_status(
+    engine_present: bool,
+    languages: Vec<String>,
+    tessdata_dir: PathBuf,
+    error: Option<String>,
+) -> OcrStatus {
+    OcrStatus {
+        available: engine_present && !languages.is_empty(),
+        engine_present,
+        languages,
+        tessdata_dir: tessdata_dir.to_string_lossy().to_string(),
+        error,
+    }
+}
+
+fn last_non_empty_line(bytes: &[u8]) -> Option<String> {
+    String::from_utf8_lossy(bytes)
+        .lines()
+        .map(str::trim)
+        .rfind(|line| !line.is_empty())
+        .map(str::to_string)
+}
+
+/// Parses the output of `tesseract --list-langs`.
+///
+/// Handles the `List of available languages` header, blank lines, CRLF line
+/// endings and duplicate entries while preserving the reported order.
+fn parse_langs(raw: &str) -> Vec<String> {
+    let mut languages: Vec<String> = Vec::new();
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty()
+            || line
+                .to_ascii_lowercase()
+                .starts_with("list of available languages")
+        {
+            continue;
+        }
+        if !languages.iter().any(|existing| existing.as_str() == line) {
+            languages.push(line.to_string());
+        }
+    }
+    languages
+}
+
+/// Returns `dir` when it contains at least one `*.traineddata` file.
+///
+/// This is the switch that lets Kensaku prefer its private language data over
+/// a system-wide `tessdata` directory without overriding a working install.
+fn private_tessdata(dir: &Path) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) == Some("traineddata") && path.is_file() {
+            return Some(dir.to_path_buf());
+        }
+    }
+    None
+}
+
+/// Inspects the tesseract binary and its language data. Never panics.
+pub fn ocr_status() -> OcrStatus {
+    let dir = tessdata_dir();
+
+    // Some builds print version information to stderr instead of stdout.
+    let (engine_present, mut error) = match Command::new("tesseract").arg("--version").output() {
+        Ok(output) if output.status.success() => (true, None),
+        Ok(output) => (
+            false,
+            last_non_empty_line(&output.stderr).or_else(|| last_non_empty_line(&output.stdout)),
+        ),
+        Err(e) => (false, Some(e.to_string())),
+    };
+
+    let mut languages = Vec::new();
+    let mut list = Command::new("tesseract");
+    list.arg("--list-langs");
+    // The configured (private) tessdata directory takes precedence when it
+    // exists, mirroring what `extract_image_ocr` does at runtime.
+    if dir.is_dir() {
+        list.env("TESSDATA_PREFIX", &dir);
+    }
+
+    match list.output() {
+        Ok(output) if output.status.success() => {
+            languages = parse_langs(&String::from_utf8_lossy(&output.stdout));
+            if languages.is_empty() {
+                // Keep working with builds that print the list to stderr.
+                languages = parse_langs(&String::from_utf8_lossy(&output.stderr));
+            }
+        }
+        Ok(output) => {
+            if error.is_none() {
+                error = last_non_empty_line(&output.stderr)
+                    .or_else(|| last_non_empty_line(&output.stdout));
+            }
+        }
+        Err(e) => {
+            if error.is_none() {
+                error = Some(e.to_string());
+            }
+        }
+    }
+
+    build_status(engine_present, languages, dir, error)
+}
+
+/// Downloads `eng.traineddata` into [`tessdata_dir`] and returns its path.
+///
+/// An existing file larger than 1 MB is reused. The download is written to a
+/// `.part` file and renamed into place only after it passes a size sanity
+/// check, so a failed attempt never leaves a corrupt language file behind.
+pub fn download_eng_tessdata() -> Result<PathBuf, String> {
+    download_eng_tessdata_to(&tessdata_dir())
+}
+
+fn download_eng_tessdata_to(dir: &Path) -> Result<PathBuf, String> {
+    const URL: &str = "https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata";
+    const MIN_BYTES: u64 = 1_000_000;
+
+    let target = dir.join("eng.traineddata");
+    if let Ok(metadata) = std::fs::metadata(&target)
+        && metadata.is_file()
+        && metadata.len() > MIN_BYTES
+    {
+        return Ok(target);
+    }
+
+    std::fs::create_dir_all(dir).map_err(|e| {
+        format!(
+            "Failed to create tessdata directory {}: {}",
+            dir.display(),
+            e
+        )
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| format!("Failed to secure {}: {}", dir.display(), e))?;
+    }
+
+    let part = dir.join("eng.traineddata.part");
+    let _ = std::fs::remove_file(&part);
+
+    let download = (|| -> Result<u64, String> {
+        let response = match ureq::get(URL).timeout(Duration::from_secs(600)).call() {
+            Ok(response) => response,
+            Err(ureq::Error::Status(code, _)) => {
+                return Err(format!("Download failed: HTTP {}", code));
+            }
+            Err(e) => return Err(format!("Download failed: {}", e)),
+        };
+        let status = response.status();
+        let mut reader = response.into_reader();
+        let mut file = File::create(&part)
+            .map_err(|e| format!("Failed to create {}: {}", part.display(), e))?;
+
+        let written = std::io::copy(&mut reader, &mut file)
+            .map_err(|e| format!("HTTP {}: download interrupted: {}", status, e))?;
+        file.flush()
+            .map_err(|e| format!("Failed to flush {}: {}", part.display(), e))?;
+        file.sync_all()
+            .map_err(|e| format!("Failed to sync {}: {}", part.display(), e))?;
+        Ok(written)
+    })();
+
+    let written = match download {
+        Ok(written) => written,
+        Err(e) => {
+            let _ = std::fs::remove_file(&part);
+            return Err(e);
+        }
+    };
+
+    if written <= MIN_BYTES {
+        let _ = std::fs::remove_file(&part);
+        return Err(format!(
+            "Downloaded eng.traineddata is too small ({} bytes; expected more than {})",
+            written, MIN_BYTES
+        ));
+    }
+
+    if let Err(first) = std::fs::rename(&part, &target) {
+        // Windows refuses to replace an existing file.
+        let _ = std::fs::remove_file(&target);
+        if let Err(second) = std::fs::rename(&part, &target) {
+            let _ = std::fs::remove_file(&part);
+            return Err(format!(
+                "Failed to finalize {}: {} (initial rename: {})",
+                target.display(),
+                second,
+                first
+            ));
+        }
+    }
+
+    Ok(target)
+}
+
 /// Extracts text from an image via OCR.
 /// On Linux: shells out to tesseract.
 /// Returns None if OCR fails or produces no text.
 pub fn extract_image_ocr(path: &Path) -> Option<String> {
     // Try tesseract (available on Linux and macOS with Homebrew)
-    let output = Command::new("tesseract")
-        .arg(path)
-        .arg("stdout")
-        .arg("--psm")
-        .arg("3") // Fully automatic page segmentation
-        .output()
-        .ok()?;
+    let mut command = Command::new("tesseract");
+    command.arg(path).arg("stdout").arg("--psm").arg("3"); // Fully automatic page segmentation
+
+    // Prefer Kensaku's private language data when it has been downloaded, but
+    // never override a working system installation.
+    if let Some(dir) = private_tessdata(&tessdata_dir()) {
+        command.env("TESSDATA_PREFIX", dir);
+    }
+
+    let output = command.output().ok()?;
 
     if !output.status.success() {
         return None;
@@ -382,6 +610,71 @@ mod tests {
         assert_eq!(
             first_mtime, second_mtime,
             "fresh thumbnail must not be rewritten"
+        );
+    }
+
+    #[test]
+    fn parse_langs_skips_header_blanks_crlf_and_duplicates() {
+        let raw = "List of available languages in /usr/share/tessdata (3):\r\n\
+                   eng\r\n\
+                   \r\n\
+                   osd\r\n\
+                   eng\r\n\
+                   \r\n\
+                   deu\r\n";
+
+        assert_eq!(parse_langs(raw), vec!["eng", "osd", "deu"]);
+        assert!(parse_langs("").is_empty());
+        assert!(parse_langs("List of available languages (0):\n").is_empty());
+    }
+
+    #[test]
+    fn status_can_report_a_missing_engine() {
+        let status = build_status(
+            false,
+            Vec::new(),
+            PathBuf::from("/nonexistent/tessdata"),
+            Some("No such file or directory (os error 2)".to_string()),
+        );
+
+        assert!(!status.engine_present);
+        assert!(!status.available);
+        assert!(status.languages.is_empty());
+        assert_eq!(
+            status.error.as_deref(),
+            Some("No such file or directory (os error 2)")
+        );
+        assert_eq!(status.tessdata_dir, "/nonexistent/tessdata");
+    }
+
+    #[test]
+    fn private_tessdata_requires_a_traineddata_file() {
+        let dir = TempDir::new("tessdata-empty");
+        assert_eq!(private_tessdata(&dir.path), None);
+
+        // Unrelated files do not count.
+        std::fs::write(dir.join("README.txt"), b"not language data").expect("write unrelated file");
+        assert_eq!(private_tessdata(&dir.path), None);
+
+        std::fs::write(dir.join("eng.traineddata"), b"x").expect("write language file");
+        assert_eq!(private_tessdata(&dir.path), Some(dir.path.clone()));
+    }
+
+    #[test]
+    fn existing_large_tessdata_is_reused_without_download() {
+        let dir = TempDir::new("tessdata-existing");
+        let target = dir.join("eng.traineddata");
+        let file = std::fs::File::create(&target).expect("create sparse file");
+        file.set_len(2_000_000).expect("size sparse file");
+        drop(file);
+
+        let resolved = download_eng_tessdata_to(&dir.path).expect("existing file is reused");
+
+        assert_eq!(resolved, target);
+        assert!(!dir.join("eng.traineddata.part").exists());
+        assert_eq!(
+            std::fs::metadata(&target).expect("metadata").len(),
+            2_000_000
         );
     }
 }

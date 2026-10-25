@@ -529,6 +529,7 @@ mod tests {
             dev: 0,
             ino: 0,
             char_bloom: crate::search::fuzzy::compute_char_mask("notes.txt"),
+            content_pending: false,
         })
         .unwrap();
         drop(db);

@@ -22,8 +22,14 @@ Yes — PDF, DOCX/PPTX/XLSX, EPUB/ODT, RTF. Scanned PDFs need OCR; encrypted PDF
 flagged, not indexed.
 
 **Does it search images?**
-By filename, by OCR text when `tesseract` is installed, and by perceptual
-near-duplicate. Semantic image search (CLIP) is not implemented yet.
+By filename, by OCR text when `tesseract` **and** language data are available,
+and by perceptual near-duplicate. Semantic image search (CLIP) is not implemented
+yet.
+
+**OCR is on but no image text is indexed.**
+Tesseract is probably installed without language data. Settings → Search shows
+the state; click **Download English · 4 MB** (or install `tesseract-ocr-eng`),
+then save. Existing images are re-scanned. Doctor repeats the check.
 
 **Can it search across multiple drives?**
 Yes. Add each root in Settings → Folders. Unplugged drives are preserved rather

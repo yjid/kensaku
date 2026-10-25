@@ -416,6 +416,39 @@ fn check_models() -> DoctorCheck {
     }
 }
 
+fn check_ocr() -> DoctorCheck {
+    const ID: &str = "ocr";
+    const LABEL: &str = "OCR engine";
+
+    let status = crate::indexer::extract::image::ocr_status();
+
+    if status.available {
+        ok(
+            ID,
+            LABEL,
+            format!("languages: {}", status.languages.join(", ")),
+        )
+    } else if status.engine_present {
+        warn(
+            ID,
+            LABEL,
+            "tesseract is installed but no language data is available.".to_string(),
+            Some("Download English language data in Settings → Search".to_string()),
+        )
+    } else {
+        let detail = match status.error {
+            Some(error) => format!("tesseract not found: {}", error),
+            None => "tesseract not found".to_string(),
+        };
+        warn(
+            ID,
+            LABEL,
+            detail,
+            Some("Install tesseract (e.g. sudo apt install tesseract-ocr)".to_string()),
+        )
+    }
+}
+
 fn check_version() -> DoctorCheck {
     ok(
         "version",
@@ -443,6 +476,7 @@ pub fn run(state: &AppState) -> DoctorReport {
     #[cfg(target_os = "linux")]
     checks.push(check_inotify_limit());
     checks.push(check_models());
+    checks.push(check_ocr());
     checks.push(check_version());
 
     let mut summary = DoctorSummary {

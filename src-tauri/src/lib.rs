@@ -158,6 +158,8 @@ pub fn run() {
     }
 
     let config = KensakuConfig::load();
+    // OCR is enforced through the extraction layer's process-wide flag.
+    indexer::extract::set_ocr_enabled(config.ocr_enabled);
     let is_setup = config.is_setup_complete;
     let indexer_manager = Arc::new(IndexerManager::new(config.clone()));
 
@@ -201,6 +203,8 @@ pub fn run() {
             commands::open_folder,
             commands::get_file_preview,
             commands::get_thumbnail,
+            commands::get_ocr_status,
+            commands::download_ocr_language,
             commands::find_duplicates,
             commands::execute_command,
             commands::read_file_content,

@@ -75,6 +75,18 @@ export interface KensakuConfig {
   config_version?: number;
 }
 
+/* ---- OCR (get_ocr_status / download_ocr_language). The backend may ---- */
+/* ---- not expose these yet; consumers must degrade to "unknown".     ---- */
+
+export interface OcrStatus {
+  engine_present: boolean;
+  languages: string[];
+  /** Engine present AND at least one language data file on disk. */
+  available: boolean;
+  tessdata_dir: string;
+  error: string | null;
+}
+
 /* ---- SystemStats (get_stats). The backend may not expose this yet; ---- */
 /* ---- all consumers must degrade gracefully to zeroed fallbacks.      ---- */
 
