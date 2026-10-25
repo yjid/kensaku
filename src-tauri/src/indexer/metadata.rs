@@ -14,6 +14,7 @@ pub struct MetadataStore {
     node_id_to_idx: HashMap<u64, usize>,
     db: Option<Arc<MetadataDb>>,
     generation: AtomicU64,
+    dir_generation: AtomicU64,
     usage: RwLock<HashMap<PathBuf, (u32, u64)>>,
     cached_trie: RwLock<Option<(u64, Arc<DirectoryTrie>)>>,
 }
@@ -40,6 +41,7 @@ impl MetadataStore {
             node_id_to_idx: HashMap::new(),
             db,
             generation: AtomicU64::new(1),
+            dir_generation: AtomicU64::new(1),
             usage: RwLock::new(HashMap::new()),
             cached_trie: RwLock::new(None),
         };
@@ -94,6 +96,7 @@ impl MetadataStore {
         }
 
         self.generation.fetch_add(1, Ordering::SeqCst);
+        self.dir_generation.fetch_add(1, Ordering::SeqCst);
         *self.cached_trie.write() = None;
 
         count
@@ -104,6 +107,7 @@ impl MetadataStore {
         self.path_index.clear();
         self.node_id_to_idx.clear();
         self.generation.fetch_add(1, Ordering::SeqCst);
+        self.dir_generation.fetch_add(1, Ordering::SeqCst);
         *self.cached_trie.write() = None;
 
         if let Some(db) = self.db.as_ref()
@@ -114,6 +118,7 @@ impl MetadataStore {
     }
 
     pub fn add(&mut self, entry: FileEntry) {
+        let is_dir = entry.is_dir;
         let entry_id = entry.id;
         let idx = if let Some(&idx) = self.path_index.get(&entry.path) {
             self.entries[idx] = entry;
@@ -129,8 +134,14 @@ impl MetadataStore {
             self.node_id_to_idx.insert(entry_id, idx);
         }
 
+        // Bump metadata generation for search consistency (metadata changed).
         self.generation.fetch_add(1, Ordering::SeqCst);
-        *self.cached_trie.write() = None;
+
+        // Only bump dir_generation (and invalidate trie) when a directory changes.
+        if is_dir {
+            self.dir_generation.fetch_add(1, Ordering::SeqCst);
+            *self.cached_trie.write() = None;
+        }
 
         if let Some(db) = self.db.as_ref()
             && let Err(e) = db.upsert(&self.entries[idx])
@@ -145,6 +156,7 @@ impl MetadataStore {
 
     pub fn remove(&mut self, path: &Path) {
         if let Some(idx) = self.path_index.remove(path) {
+            let was_dir = self.entries[idx].is_dir;
             let removed_id = self.entries[idx].id;
             if removed_id > 0 {
                 self.node_id_to_idx.remove(&removed_id);
@@ -161,7 +173,10 @@ impl MetadataStore {
             }
             self.entries.pop();
             self.generation.fetch_add(1, Ordering::SeqCst);
-            *self.cached_trie.write() = None;
+            if was_dir {
+                self.dir_generation.fetch_add(1, Ordering::SeqCst);
+                *self.cached_trie.write() = None;
+            }
         }
 
         if let Some(db) = self.db.as_ref()
@@ -200,7 +215,7 @@ impl MetadataStore {
     }
 
     pub fn get_directory_trie(&self) -> Arc<DirectoryTrie> {
-        let current_gen = self.generation();
+        let current_gen = self.dir_generation.load(Ordering::SeqCst);
         {
             let cache = self.cached_trie.read();
             if let Some((cached_gen, ref trie)) = *cache

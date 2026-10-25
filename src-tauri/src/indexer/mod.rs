@@ -139,9 +139,9 @@ impl IndexerManager {
         let app_handle = Arc::clone(&self.app_handle);
 
         thread::spawn(move || {
-            let (watched_dirs, excluded_dirs) = {
+            let (watched_dirs, excluded_dirs, excluded_exts) = {
                 let cfg = config_arc.read();
-                (cfg.watched_dirs.clone(), cfg.excluded_dirs.clone())
+                (cfg.watched_dirs.clone(), cfg.excluded_dirs.clone(), cfg.excluded_extensions.clone())
             };
 
             {
@@ -161,6 +161,14 @@ impl IndexerManager {
             walk_directories(&watched_dirs, &excluded_dirs, |entry| {
                 files_count += 1;
                 crawled_paths.insert(entry.path.clone());
+
+                // Skip files whose extension is in the excluded list.
+                if !entry.is_dir
+                    && let Some(ref ext) = entry.extension
+                    && excluded_exts.iter().any(|e| e.eq_ignore_ascii_case(ext))
+                {
+                    return true;
+                }
 
                 // Incremental crawl: skip entries whose size and mtime are unchanged.
                 let unchanged = metadata
