@@ -107,6 +107,7 @@ pub fn sniff_format(path: &Path) -> DocumentFormat {
 /// - Max file size: 20MB (files above 20MB are metadata-only).
 /// - Extracted content capped at max_bytes (default 1MB).
 /// - Panic-isolated with std::panic::catch_unwind.
+///
 /// Global LRU cache for extraction results, keyed by (path, size, mtime).
 static EXTRACTION_CACHE: std::sync::OnceLock<Mutex<ExtractionCache>> = std::sync::OnceLock::new();
 
@@ -397,5 +398,111 @@ fn extract_document_inner(path: &Path, capped_bytes: usize, format: DocumentForm
                 })
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Instant;
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    /// A temp file that removes itself on drop.
+    struct TempFile {
+        path: PathBuf,
+    }
+
+    impl TempFile {
+        fn new(extension: &str, bytes: &[u8]) -> Self {
+            let path = Self::path_for(extension);
+            std::fs::write(&path, bytes).expect("write temp file");
+            Self { path }
+        }
+
+        fn empty(extension: &str) -> Self {
+            let path = Self::path_for(extension);
+            File::create(&path).expect("create temp file");
+            Self { path }
+        }
+
+        fn path_for(extension: &str) -> PathBuf {
+            let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+            std::env::temp_dir().join(format!(
+                "kensaku-extract-{}-{}.{}",
+                std::process::id(),
+                id,
+                extension
+            ))
+        }
+    }
+
+    impl Drop for TempFile {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+
+    fn extract(path: &Path) -> (Option<DocumentExtract>, Duration) {
+        let started = Instant::now();
+        let result = extract_document(path, 1_000_000);
+        (result, started.elapsed())
+    }
+
+    #[test]
+    fn garbage_pdf_returns_none_without_hanging() {
+        let file = TempFile::new("pdf", b"this is definitely not a pdf\n\x00\x01\x02\xff");
+        let (result, elapsed) = extract(&file.path);
+
+        assert!(result.is_none(), "garbage PDF should not extract: {result:?}");
+        assert!(elapsed < Duration::from_secs(2), "took {elapsed:?}");
+    }
+
+    #[test]
+    fn truncated_pdf_header_returns_sane_result() {
+        let file = TempFile::new("pdf", b"%PDF-1.4\n");
+        let (result, elapsed) = extract(&file.path);
+
+        // A header-only document may fail to load (None) or load as an empty
+        // document; either way it must not panic or report pages with content.
+        if let Some(doc) = &result {
+            assert_eq!(doc.page_count, Some(0));
+            assert!(doc.text.is_empty(), "unexpected text: {:?}", doc.text);
+        }
+        assert!(elapsed < Duration::from_secs(2), "took {elapsed:?}");
+    }
+
+    #[test]
+    fn docx_zip_without_document_xml_returns_none() {
+        let file = TempFile::path_for("docx");
+        {
+            let handle = File::create(&file).expect("create zip");
+            let mut zip = zip::ZipWriter::new(handle);
+            zip.start_file("word/styles.xml", zip::write::SimpleFileOptions::default())
+                .expect("start file");
+            zip.write_all(b"<styles/>").expect("write entry");
+            zip.finish().expect("finish zip");
+        }
+        let _cleanup = TempFile { path: file.clone() };
+
+        let (result, elapsed) = extract(&file);
+
+        assert!(
+            result.is_none(),
+            "docx without word/document.xml should not extract: {result:?}"
+        );
+        assert!(elapsed < Duration::from_secs(2), "took {elapsed:?}");
+    }
+
+    #[test]
+    fn zero_byte_file_returns_none_without_hanging() {
+        let file = TempFile::empty("txt");
+        let (result, elapsed) = extract(&file.path);
+
+        assert!(result.is_none(), "empty file should not extract: {result:?}");
+        assert!(elapsed < Duration::from_secs(2), "took {elapsed:?}");
     }
 }
