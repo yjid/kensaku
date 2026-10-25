@@ -158,7 +158,12 @@ impl IndexerManager {
             let mut pending_commits = 0;
             let mut crawled_paths: HashSet<PathBuf> = HashSet::new();
 
-            walk_directories(&watched_dirs, &excluded_dirs, |entry| {
+            // Phase 1: Collect all entries (jwalk is already parallel internally).
+            let all_entries = walk_directories(&watched_dirs, &excluded_dirs);
+
+            // Phase 2: Process entries. Filter excluded extensions, check
+            // incremental, add metadata, extract content, index in Tantivy.
+            for entry in all_entries {
                 files_count += 1;
                 crawled_paths.insert(entry.path.clone());
 
@@ -167,11 +172,10 @@ impl IndexerManager {
                     && let Some(ref ext) = entry.extension
                     && excluded_exts.iter().any(|e| e.eq_ignore_ascii_case(ext))
                 {
-                    return true;
+                    continue;
                 }
 
-                // Incremental crawl: check + add under a single write lock
-                // (avoids read-then-write lock upgrade and entry.clone).
+                // Incremental crawl: check + add under a single write lock.
                 {
                     let mut store = metadata.write();
                     let unchanged = store
@@ -181,7 +185,7 @@ impl IndexerManager {
                         })
                         .unwrap_or(false);
                     if unchanged {
-                        return true;
+                        continue;
                     }
                     store.add(entry.clone());
                 }
@@ -212,9 +216,7 @@ impl IndexerManager {
                     st.current_status = format!("Indexed {} items", files_count);
                     Self::emit_status(&app_handle, &st);
                 }
-
-                true
-            });
+            }
 
             // Drop metadata entries for files that no longer exist on disk.
             let stale_paths: Vec<PathBuf> = {
