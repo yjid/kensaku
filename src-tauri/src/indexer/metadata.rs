@@ -141,6 +141,12 @@ impl MetadataStore {
         let is_dir = entry.is_dir;
         let entry_id = entry.id;
         let idx = if let Some(&idx) = self.path_index.get(&entry.path) {
+            let mut entry = entry;
+            // `mark_images_pending` sets this flag; a crawl must not erase it
+            // by re-adding walker data before the image has been re-read.
+            if self.entries[idx].content_pending {
+                entry.content_pending = true;
+            }
             self.entries[idx] = entry;
             idx
         } else {
@@ -169,6 +175,57 @@ impl MetadataStore {
             eprintln!(
                 "[Kensaku] Failed to persist metadata entry '{}': {}",
                 self.entries[idx].path.display(),
+                e
+            );
+        }
+    }
+
+    /// Marks every in-memory raster image for a content re-read and mirrors the
+    /// change into SQLite. Used when the OCR setting changes.
+    ///
+    /// Returns the number of in-memory entries marked.
+    pub fn mark_images_pending(&mut self) -> usize {
+        let mut marked = 0;
+        for entry in &mut self.entries {
+            if !entry.is_dir
+                && entry
+                    .extension
+                    .as_deref()
+                    .is_some_and(crate::indexer::extract::image::is_supported_image_extension)
+            {
+                entry.content_pending = true;
+                marked += 1;
+            }
+        }
+
+        if marked > 0 {
+            self.generation.fetch_add(1, Ordering::SeqCst);
+        }
+
+        if let Some(db) = self.db.as_ref()
+            && let Err(e) = db.mark_images_pending()
+        {
+            eprintln!("[Kensaku] Failed to mark images pending: {}", e);
+        }
+
+        marked
+    }
+
+    /// Clears the pending flag for `path` in memory and in SQLite.
+    pub fn clear_content_pending(&mut self, path: &Path) {
+        if let Some(&idx) = self.path_index.get(path)
+            && self.entries[idx].content_pending
+        {
+            self.entries[idx].content_pending = false;
+            self.generation.fetch_add(1, Ordering::SeqCst);
+        }
+
+        if let Some(db) = self.db.as_ref()
+            && let Err(e) = db.clear_content_pending(path)
+        {
+            eprintln!(
+                "[Kensaku] Failed to clear pending content for '{}': {}",
+                path.display(),
                 e
             );
         }
@@ -354,5 +411,126 @@ impl MetadataStore {
 
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
+
+    struct TempStore {
+        store: Option<MetadataStore>,
+        dir: PathBuf,
+    }
+
+    impl TempStore {
+        fn new(tag: &str) -> Self {
+            let seq = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir().join(format!(
+                "kensaku-metadata-store-test-{}-{}-{}",
+                tag,
+                std::process::id(),
+                seq
+            ));
+            std::fs::create_dir_all(&dir).expect("create temp dir");
+            let db = MetadataDb::open_in_dir(&dir).expect("open temp db");
+            Self {
+                store: Some(MetadataStore::with_db(db)),
+                dir,
+            }
+        }
+
+        fn store(&mut self) -> &mut MetadataStore {
+            self.store.as_mut().expect("store open")
+        }
+    }
+
+    impl Drop for TempStore {
+        fn drop(&mut self) {
+            // Drop the store (and its SQLite handle) before removing the dir.
+            self.store.take();
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    fn entry(path: &Path, is_dir: bool) -> FileEntry {
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        FileEntry {
+            id: 0,
+            path: path.to_path_buf(),
+            name,
+            extension: if is_dir {
+                None
+            } else {
+                path.extension()
+                    .map(|ext| ext.to_string_lossy().to_lowercase())
+            },
+            size: 1,
+            modified: 1,
+            is_dir,
+            dev: 0,
+            ino: 0,
+            char_bloom: 0,
+            content_pending: false,
+        }
+    }
+
+    #[test]
+    fn mark_images_pending_updates_memory_and_only_images() {
+        let mut temp = TempStore::new("mark");
+        let image = temp.dir.join("photo.jpg");
+        let doc = temp.dir.join("notes.txt");
+        let dir_path = temp.dir.join("folder.png");
+
+        let store = temp.store();
+        store.add(entry(&image, false));
+        store.add(entry(&doc, false));
+        store.add(entry(&dir_path, true));
+
+        assert_eq!(store.mark_images_pending(), 1);
+        assert!(store.get(&image).expect("image").content_pending);
+        assert!(!store.get(&doc).expect("doc").content_pending);
+        assert!(!store.get(&dir_path).expect("dir").content_pending);
+
+        store.clear_content_pending(&image);
+        assert!(!store.get(&image).expect("image").content_pending);
+
+        let db = store.db().expect("database");
+        let loaded = db.load_all().expect("load nodes");
+        assert!(
+            !loaded
+                .iter()
+                .find(|entry| entry.path == image)
+                .expect("image row")
+                .content_pending,
+            "clear must be persisted"
+        );
+    }
+
+    #[test]
+    fn add_preserves_pending_when_replacing_an_entry() {
+        let mut temp = TempStore::new("preserve");
+        let image = temp.dir.join("photo.png");
+
+        let mut first = entry(&image, false);
+        first.content_pending = true;
+        first.size = 10;
+        temp.store().add(first);
+
+        let mut replacement = entry(&image, false);
+        replacement.size = 20;
+        temp.store().add(replacement);
+
+        let stored = temp.store().get(&image).expect("image entry");
+        assert!(
+            stored.content_pending,
+            "replacing an entry must preserve its pending flag"
+        );
+        assert_eq!(stored.size, 20, "the new metadata must still be applied");
     }
 }

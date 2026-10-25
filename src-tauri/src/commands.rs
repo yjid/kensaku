@@ -670,8 +670,30 @@ pub async fn get_config(state: State<'_, AppState>) -> Result<KensakuConfig, Str
 
 #[tauri::command]
 pub async fn save_config(config: KensakuConfig, state: State<'_, AppState>) -> Result<(), String> {
+    let previous = state.indexer.config.read().clone();
+    let ocr_changed = previous.ocr_enabled != config.ocr_enabled;
+
     config.save()?;
-    *state.indexer.config.write() = config;
+    *state.indexer.config.write() = config.clone();
+
+    if ocr_changed {
+        // Apply the setting immediately, then flag only the image rows for a
+        // re-read. `start_indexing` spawns its own thread, so the IPC call
+        // returns without waiting for the crawl.
+        crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
+        let marked = state.indexer.metadata.write().mark_images_pending();
+        eprintln!(
+            "[Kensaku] OCR {}: {} image(s) queued for re-scan",
+            if config.ocr_enabled {
+                "enabled"
+            } else {
+                "disabled"
+            },
+            marked
+        );
+        state.indexer.start_indexing();
+    }
+
     Ok(())
 }
 
@@ -698,6 +720,7 @@ pub async fn complete_setup(
     config.is_setup_complete = true;
     config.save()?;
 
+    crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
     *state.indexer.config.write() = config;
     state.indexer.start_indexing();
 

@@ -418,6 +418,7 @@ fn handle_file_upsert(
         dev,
         ino,
         char_bloom,
+        content_pending: false,
     };
 
     metadata.write().add(entry);
