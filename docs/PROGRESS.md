@@ -368,3 +368,29 @@ Next: PR 7 (Vision/OCR), PR 8 (Ask/actions), PR 9 (Launch/packaging)
 - Image dimensions in metadata
 - Perceptual hash dedup
 - Image embedding (SigLIP/CLIP) — deferred to when ONNX smart pack is available
+
+## UI/UX v2 Redesign
+
+### Design system
+- Two themes only: `paper` (warm white #FAFAF8) and `void` (near-black #0A0A0B), CSS variables + `data-theme` on `<html>`, pre-applied before first paint.
+- Typography: Inter (UI), JetBrains Mono (stats/paths/latency), Instrument Serif italic (empty-state captions only).
+- Elevation = 1px hairline + background shift; no shadows. Radius 10/14/999.
+- Palette derived from the illustration: muted teal accent, pink/olive/blue category tints.
+- Motion 120–180ms hover, 220ms panels, 20ms stagger on first 8 rows, reduced-motion respected.
+
+### Screens
+- Search window: 60px pill input with rotating placeholder, category chips (All/Files/Folders/Images/Docs/Code/Media/Recent → `type:`/`modified:` tokens), dense 56px rows + 160px grid view, 360px preview (hidden on home and <900px), 28px mono status bar with latency buckets + semantic/watcher dots + theme toggle + gear.
+- Home bento: Recent files (8) · Index health (4) · Quick actions (4) · Storage (4) · Query latency + sparkline (4) · Search syntax (12).
+- ⌘K command palette: grouped Actions/Filters/Settings, arrow nav, client filter.
+- Settings: full overlay page, 8-section rail, including **Stats for Nerds** (p50/p95/p99 + sparkline, index composition + on-disk sizes, ingestion phase/progress/queue, runtime uptime/RSS, Copy diagnostics JSON).
+- Onboarding: 3 steps with the ink-style isometric illustration.
+- Progress: 2px indeterminate line while indexing; status-bar phase text; never blocks typing; stale-while-revalidate keeps previous results visible.
+
+### Backend additions
+- `get_stats` command: query percentiles (256-sample ring buffer), index counts/sizes, ingestion phase/files-per-sec/queue depth, runtime uptime/RSS/watcher/model.
+- `set_theme` command + persisted `theme` in config (`paper`|`void`).
+- `IndexingStatus.phase` (walking/extracting/embedding/committing/idle), crawl start + last reconcile + watcher health.
+
+### Verified
+- `cargo build` clean, `npx tsc --noEmit` clean, `bun run build` clean (28.8 kB CSS / 317 kB JS).
+- Both themes rendered and checked in a browser with mocked Tauri IPC; 760px and 1200px layouts checked.

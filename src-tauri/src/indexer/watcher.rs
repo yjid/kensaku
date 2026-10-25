@@ -43,12 +43,21 @@ pub fn start_file_watcher(
     metadata: Arc<RwLock<MetadataStore>>,
     content_index: Arc<RwLock<Option<ContentIndex>>>,
     config: Arc<RwLock<KensakuConfig>>,
+    watcher_ok: Arc<AtomicBool>,
 ) -> WatcherHandle {
     let stop = Arc::new(AtomicBool::new(false));
     let stop_thread = Arc::clone(&stop);
+    watcher_ok.store(false, Ordering::SeqCst);
 
     let thread = thread::spawn(move || {
-        run_watcher(watched_dirs, metadata, content_index, config, stop_thread);
+        run_watcher(
+            watched_dirs,
+            metadata,
+            content_index,
+            config,
+            stop_thread,
+            watcher_ok,
+        );
     });
 
     WatcherHandle {
@@ -63,6 +72,7 @@ fn run_watcher(
     content_index: Arc<RwLock<Option<ContentIndex>>>,
     config: Arc<RwLock<KensakuConfig>>,
     stop: Arc<AtomicBool>,
+    watcher_ok: Arc<AtomicBool>,
 ) {
     let (tx, rx) = channel::<notify::Result<Event>>();
 
@@ -70,9 +80,12 @@ fn run_watcher(
         Ok(w) => w,
         Err(e) => {
             eprintln!("[Kensaku Watcher] Failed to initialize watcher: {}", e);
+            watcher_ok.store(false, Ordering::SeqCst);
             return;
         }
     };
+
+    watcher_ok.store(true, Ordering::SeqCst);
 
     for dir in &watched_dirs {
         if dir.exists() {

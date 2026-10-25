@@ -20,6 +20,9 @@ pub struct KensakuConfig {
     pub semantic_model: String,
     #[serde(default = "default_true")]
     pub ocr_enabled: bool,
+    /// Persisted UI theme ("paper" or "void").
+    #[serde(default = "default_theme")]
+    pub theme: String,
 }
 
 fn default_true() -> bool {
@@ -28,6 +31,10 @@ fn default_true() -> bool {
 
 fn default_semantic_model() -> String {
     "static".to_string()
+}
+
+fn default_theme() -> String {
+    "paper".to_string()
 }
 
 impl Default for KensakuConfig {
@@ -100,6 +107,7 @@ impl Default for KensakuConfig {
             semantic_enabled: true,
             semantic_model: "static".to_string(),
             ocr_enabled: true,
+            theme: default_theme(),
         }
     }
 }

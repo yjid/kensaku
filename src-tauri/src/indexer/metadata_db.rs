@@ -229,6 +229,20 @@ impl MetadataDb {
         Ok(usize::try_from(count).unwrap_or(0))
     }
 
+    /// Number of file (non-directory) nodes that still need semantic units.
+    pub fn count_unembedded(&self) -> Result<usize, String> {
+        let conn = self.conn.lock();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM nodes WHERE is_dir = 0 AND indexed_gen = 0",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Failed to count unembedded nodes: {}", e))?;
+
+        Ok(usize::try_from(count).unwrap_or(0))
+    }
+
     pub fn record_open(&self, path: &Path) -> Result<(), String> {
         let conn = self.conn.lock();
         let now = SystemTime::now()

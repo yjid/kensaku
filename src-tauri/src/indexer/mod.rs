@@ -15,7 +15,7 @@ use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 
@@ -31,6 +31,24 @@ pub struct IndexingStatus {
     pub units_indexed: usize,
     #[serde(default)]
     pub semantic_ready: bool,
+    /// Coarse pipeline phase: "idle", "walking", "extracting", "embedding", "committing".
+    #[serde(default = "default_phase")]
+    pub phase: String,
+}
+
+fn default_phase() -> String {
+    "idle".to_string()
+}
+
+fn now_unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn now_unix_secs() -> u64 {
+    now_unix_ms() / 1000
 }
 
 pub struct IndexerManager {
@@ -41,6 +59,12 @@ pub struct IndexerManager {
     pub query_in_flight: Arc<AtomicBool>,
     pub config: Arc<RwLock<KensakuConfig>>,
     pub status: Arc<RwLock<IndexingStatus>>,
+    /// Unix timestamp (ms) when the current/last crawl started, 0 if none.
+    pub crawl_start_unix_ms: Arc<AtomicU64>,
+    /// Unix timestamp (secs) of the last successful reconcile, 0 if never.
+    pub last_reconcile_unix_secs: Arc<AtomicU64>,
+    /// True while a live filesystem watcher is running.
+    pub watcher_ok: Arc<AtomicBool>,
     is_running: Arc<AtomicBool>,
     watcher_handle: Arc<Mutex<Option<WatcherHandle>>>,
     app_handle: Arc<RwLock<Option<tauri::AppHandle>>>,
@@ -96,7 +120,11 @@ impl IndexerManager {
                 is_embedding: false,
                 units_indexed: units_count,
                 semantic_ready: units_count > 0,
+                phase: "idle".to_string(),
             })),
+            crawl_start_unix_ms: Arc::new(AtomicU64::new(0)),
+            last_reconcile_unix_secs: Arc::new(AtomicU64::new(0)),
+            watcher_ok: Arc::new(AtomicBool::new(false)),
             is_running: Arc::new(AtomicBool::new(false)),
             watcher_handle: Arc::new(Mutex::new(None)),
             app_handle: Arc::new(RwLock::new(None)),
@@ -126,6 +154,7 @@ impl IndexerManager {
         if let Some(mut handle) = previous_watcher {
             handle.stop();
         }
+        self.watcher_ok.store(false, Ordering::SeqCst);
 
         let metadata = Arc::clone(&self.metadata);
         let content_index = Arc::clone(&self.content_index);
@@ -137,6 +166,9 @@ impl IndexerManager {
         let is_running = Arc::clone(&self.is_running);
         let watcher_handle = Arc::clone(&self.watcher_handle);
         let app_handle = Arc::clone(&self.app_handle);
+        let crawl_start_unix_ms = Arc::clone(&self.crawl_start_unix_ms);
+        let last_reconcile_unix_secs = Arc::clone(&self.last_reconcile_unix_secs);
+        let watcher_ok = Arc::clone(&self.watcher_ok);
 
         thread::spawn(move || {
             let (watched_dirs, excluded_dirs, excluded_exts) = {
@@ -144,9 +176,13 @@ impl IndexerManager {
                 (cfg.watched_dirs.clone(), cfg.excluded_dirs.clone(), cfg.excluded_extensions.clone())
             };
 
+            crawl_start_unix_ms.store(now_unix_ms(), Ordering::Relaxed);
+            watcher_ok.store(false, Ordering::Relaxed);
+
             {
                 let mut st = status.write();
                 st.is_indexing = true;
+                st.phase = "walking".to_string();
                 st.current_status = "Scanning files...".to_string();
                 Self::emit_status(&app_handle, &st);
             }
@@ -214,6 +250,15 @@ impl IndexerManager {
             }
 
             // Phase 2b: Parallel content extraction with rayon
+            {
+                let mut st = status.write();
+                st.phase = "extracting".to_string();
+                st.files_indexed = files_count;
+                st.content_indexed = content_count;
+                st.current_status = format!("Extracting text from {} potential files...", to_extract.len());
+                Self::emit_status(&app_handle, &st);
+            }
+
             let extracted: Vec<(PathBuf, String, String, u64)> = {
                 use rayon::prelude::*;
                 to_extract
@@ -227,6 +272,15 @@ impl IndexerManager {
             };
 
             // Phase 2c: Sequential Tantivy indexing (single writer)
+            {
+                let mut st = status.write();
+                st.phase = "committing".to_string();
+                st.files_indexed = files_count;
+                st.content_indexed = content_count;
+                st.current_status = "Updating search index...".to_string();
+                Self::emit_status(&app_handle, &st);
+            }
+
             for (path, name, content, modified) in extracted {
                 if let Some(c_index) = content_index.read().as_ref() {
                     let _ = c_index.add_or_update(&path, &name, &content, modified);
@@ -301,9 +355,12 @@ impl IndexerManager {
                 let _ = c_index.commit();
             }
 
+            last_reconcile_unix_secs.store(now_unix_secs(), Ordering::Relaxed);
+
             {
                 let mut st = status.write();
                 st.is_indexing = false;
+                st.phase = "idle".to_string();
                 st.files_indexed = files_count;
                 st.content_indexed = content_count;
                 st.current_status = format!("Ready ({} files indexed)", files_count);
@@ -313,7 +370,13 @@ impl IndexerManager {
             println!("[Kensaku Indexer] Finished initial index: {} files ({} with full text)", files_count, content_count);
 
             // Start file watcher for live changes, replacing any previous one.
-            let handle = start_file_watcher(watched_dirs, metadata.clone(), content_index, config_arc.clone());
+            let handle = start_file_watcher(
+                watched_dirs,
+                metadata.clone(),
+                content_index,
+                config_arc.clone(),
+                Arc::clone(&watcher_ok),
+            );
             *watcher_handle.lock() = Some(handle);
 
             // Start background embedding worker if semantic search is enabled

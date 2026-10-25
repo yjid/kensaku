@@ -22,6 +22,7 @@ pub struct AppState {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    commands::init_process_start();
     let config = KensakuConfig::load();
     let is_setup = config.is_setup_complete;
     let indexer_manager = Arc::new(IndexerManager::new(config.clone()));
@@ -60,6 +61,8 @@ pub fn run() {
             commands::search,
             commands::legacy_search,
             commands::get_indexing_status,
+            commands::get_stats,
+            commands::set_theme,
             commands::open_file,
             commands::open_folder,
             commands::get_file_preview,
