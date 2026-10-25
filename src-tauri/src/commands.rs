@@ -157,7 +157,9 @@ pub async fn search(
     let max_results = cfg.max_results;
     let semantic_enabled = cfg.semantic_enabled;
 
-    let resp = SearchDispatcher::search_response(
+    // The UI asks for snippets separately (`get_snippets`) so the search
+    // itself never touches file contents.
+    let resp = SearchDispatcher::search_response_fast(
         &query,
         &metadata,
         &content_index,
@@ -170,6 +172,48 @@ pub async fn search(
     indexer.query_in_flight.store(false, Ordering::SeqCst);
     record_query_latency(started.elapsed().as_micros() as u64);
     Ok(resp)
+}
+
+/// Snippet payload fetched in a second round-trip after search results render.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnippetDto {
+    pub path: String,
+    pub snippet: Option<String>,
+}
+
+/// Longest snippet returned to the frontend.
+const MAX_SNIPPET_CHARS: usize = 499;
+/// Upper bound on paths accepted by a single `get_snippets` call.
+const MAX_SNIPPET_PATHS: usize = 50;
+
+/// Computes snippets for up to 50 paths in parallel.
+///
+/// Deliberately extraction-free: plain text is read directly and other
+/// formats are served from the extraction cache, so a preview request can
+/// never trigger OCR or PDF parsing.
+#[tauri::command]
+pub async fn get_snippets(paths: Vec<String>, query: String) -> Result<Vec<SnippetDto>, String> {
+    // File reads stay off the async runtime even though they are cheap.
+    tauri::async_runtime::spawn_blocking(move || compute_snippets(paths, &query))
+        .await
+        .map_err(|e| format!("Snippet task failed: {}", e))
+}
+
+fn compute_snippets(paths: Vec<String>, query: &str) -> Vec<SnippetDto> {
+    use rayon::prelude::*;
+
+    let paths: Vec<String> = paths.into_iter().take(MAX_SNIPPET_PATHS).collect();
+    paths
+        .par_iter()
+        .map(|path| {
+            let snippet = crate::indexer::content::snippet_for_path(Path::new(path), query)
+                .map(|snippet| crate::agent::truncate_chars(&snippet, MAX_SNIPPET_CHARS));
+            SnippetDto {
+                path: path.clone(),
+                snippet,
+            }
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -227,6 +271,14 @@ pub async fn get_stats(state: State<'_, AppState>) -> Result<serde_json::Value, 
     };
 
     let semantic_units = indexer.unit_store.read().len() as u64;
+    // Real Tantivy document count, independent of the current session's
+    // `content_indexed` counter (which resets on every launch).
+    let content_docs = indexer
+        .content_index
+        .read()
+        .as_ref()
+        .map(|index| index.num_docs())
+        .unwrap_or(0);
 
     let metadata_db_bytes = config_prefixed_bytes("metadata.db", false);
     let tantivy_bytes = dir_size_bytes(&KensakuConfig::index_dir());
@@ -299,7 +351,7 @@ pub async fn get_stats(state: State<'_, AppState>) -> Result<serde_json::Value, 
         "index": {
             "files": files,
             "dirs": dirs,
-            "content_docs": status.content_indexed as u64,
+            "content_docs": content_docs,
             "semantic_units": semantic_units,
             "metadata_db_bytes": metadata_db_bytes,
             "tantivy_bytes": tantivy_bytes,
@@ -380,7 +432,15 @@ pub struct FilePreview {
 
 #[tauri::command]
 pub async fn get_file_preview(path: String) -> Result<FilePreview, String> {
-    let p = Path::new(&path);
+    // Metadata, image decoding and document extraction are all blocking work;
+    // keep them off the async runtime.
+    tauri::async_runtime::spawn_blocking(move || build_file_preview(&path))
+        .await
+        .map_err(|e| format!("Preview task failed: {}", e))?
+}
+
+fn build_file_preview(path: &str) -> Result<FilePreview, String> {
+    let p = Path::new(path);
     if !p.exists() {
         return Err("File does not exist".to_string());
     }
@@ -402,7 +462,7 @@ pub async fn get_file_preview(path: String) -> Result<FilePreview, String> {
     if is_dir {
         let child_count = std::fs::read_dir(p).map(|rd| rd.count()).unwrap_or(0);
         return Ok(FilePreview {
-            path,
+            path: path.to_string(),
             filename,
             file_size,
             modified,
@@ -422,13 +482,16 @@ pub async fn get_file_preview(path: String) -> Result<FilePreview, String> {
         .unwrap_or("")
         .to_lowercase();
 
-    if matches!(
-        ext.as_str(),
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico" | "bmp" | "tiff" | "tif"
-    ) {
+    // Raster images are previewed by the webview directly. SVG/ICO are handled
+    // the same way (the browser decodes them), but they have no raster
+    // dimensions here. This check runs before any extraction so an image can
+    // never reach tesseract on preview.
+    let is_image = crate::indexer::extract::image::is_supported_image_extension(&ext)
+        || matches!(ext.as_str(), "svg" | "ico");
+    if is_image {
         let dimensions = crate::indexer::extract::image::dimensions(p);
         return Ok(FilePreview {
-            path,
+            path: path.to_string(),
             filename,
             file_size,
             modified,
@@ -456,7 +519,7 @@ pub async fn get_file_preview(path: String) -> Result<FilePreview, String> {
 
         let total_lines = doc.text.lines().count();
         return Ok(FilePreview {
-            path,
+            path: path.to_string(),
             filename,
             file_size,
             modified,
@@ -471,7 +534,7 @@ pub async fn get_file_preview(path: String) -> Result<FilePreview, String> {
     }
 
     Ok(FilePreview {
-        path,
+        path: path.to_string(),
         filename,
         file_size,
         modified,
@@ -863,4 +926,75 @@ pub async fn set_autostart(enabled: bool) -> Result<(), String> {
 #[tauri::command]
 pub async fn run_doctor(state: State<'_, AppState>) -> Result<crate::doctor::DoctorReport, String> {
     Ok(crate::doctor::run(&state))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_path(extension: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "kensaku-commands-test-{}-{}.{}",
+            std::process::id(),
+            nanos,
+            extension
+        ))
+    }
+
+    #[test]
+    fn image_preview_returns_dimensions_and_no_content() {
+        let path = temp_path("png");
+        ::image::RgbImage::from_pixel(12, 7, ::image::Rgb([10, 20, 30]))
+            .save_with_format(&path, ::image::ImageFormat::Png)
+            .expect("write test png");
+
+        let preview = build_file_preview(path.to_str().unwrap()).expect("preview");
+
+        assert_eq!(preview.preview_type, "image");
+        assert!(preview.content.is_none(), "images must not be OCR'd");
+        assert_eq!((preview.width, preview.height), (Some(12), Some(7)));
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn thumbnail_cache_lives_at_config_dir_thumbs() {
+        let dir = thumbnail_cache_dir();
+        assert_eq!(
+            dir.file_name().and_then(|name| name.to_str()),
+            Some("thumbs")
+        );
+        assert_eq!(dir.parent(), Some(KensakuConfig::config_dir().as_path()));
+        assert_eq!(
+            KensakuConfig::config_dir()
+                .file_name()
+                .and_then(|name| name.to_str()),
+            Some("kensaku")
+        );
+    }
+
+    #[test]
+    fn asset_protocol_scope_includes_the_config_thumbs_dir() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).expect("valid tauri config");
+        let scope = config["app"]["security"]["assetProtocol"]["scope"]
+            .as_array()
+            .expect("asset protocol scope");
+        let entries: Vec<&str> = scope.iter().filter_map(|value| value.as_str()).collect();
+
+        assert_eq!(entries.first().copied(), Some("$CONFIG/kensaku/thumbs/**"));
+        for expected in [
+            "$CONFIG/kensaku/thumbs/**",
+            "$APPCONFIG/thumbs/**",
+            "$APPLOCALDATA/kensaku/thumbs/**",
+            "$APPDATA/kensaku/thumbs/**",
+        ] {
+            assert!(entries.contains(&expected), "missing scope {expected}");
+        }
+    }
 }

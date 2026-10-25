@@ -171,6 +171,46 @@ fn get_extraction_cache() -> &'static Mutex<ExtractionCache> {
     EXTRACTION_CACHE.get_or_init(|| Mutex::new(ExtractionCache::new(64)))
 }
 
+/// Cache key for a path: `(path, size, mtime)`.
+///
+/// Shared by [`extract_document`] and [`cached_document`] so a lookup never
+/// disagrees with what was inserted.
+fn cache_key(path: &Path) -> Option<(PathBuf, u64, u64)> {
+    let meta = std::fs::metadata(path).ok()?;
+    let size = meta.len();
+    let mtime = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    Some((path.to_path_buf(), size, mtime))
+}
+
+/// Returns a previously extracted document from the LRU cache, if present.
+///
+/// This is a **cache-only** lookup: it never reads, parses, OCRs or otherwise
+/// extracts anything. Query-time callers use it so a snippet can be produced
+/// for a document without paying the PDF/Office/OCR cost. Returns `None` when
+/// the path is not cached (or cannot be stat'ed).
+pub fn cached_document(path: &Path) -> Option<DocumentExtract> {
+    let key = cache_key(path)?;
+    let mut cache = get_extraction_cache().lock().ok()?;
+    cache.get(&key)
+}
+
+/// Inserts an extraction result into the process-wide cache.
+///
+/// Test-only: production inserts happen in [`extract_document`].
+#[cfg(test)]
+pub fn insert_cached_document(path: &Path, document: DocumentExtract) {
+    let Some(key) = cache_key(path) else {
+        return;
+    };
+    let mut cache = get_extraction_cache().lock().unwrap();
+    cache.insert(key, document);
+}
+
 /// Upper bound for a single document extraction. A malformed PDF (or a stalled
 /// network/FUSE filesystem) must not block indexing forever.
 const EXTRACTION_TIMEOUT: Duration = Duration::from_secs(8);
@@ -535,6 +575,32 @@ mod tests {
 
         assert!(result.is_none(), "empty file should not extract: {result:?}");
         assert!(elapsed < Duration::from_secs(2), "took {elapsed:?}");
+    }
+
+    fn cached_text(text: &str) -> DocumentExtract {
+        DocumentExtract {
+            text: text.to_string(),
+            page_count: None,
+            is_encrypted: false,
+            is_scanned: false,
+            format_name: "Text".to_string(),
+        }
+    }
+
+    #[test]
+    fn cached_document_only_consults_the_cache() {
+        let file = TempFile::new("txt", b"on-disk text that must never be read");
+        let path = &file.path;
+
+        // Nothing has been extracted for this unique path yet.
+        assert!(
+            cached_document(path).is_none(),
+            "a cold cache must not extract on lookup"
+        );
+
+        insert_cached_document(path, cached_text("cached needle text"));
+        let hit = cached_document(path).expect("cached document");
+        assert_eq!(hit.text, "cached needle text");
     }
 
     #[test]
