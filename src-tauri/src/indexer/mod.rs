@@ -409,4 +409,9 @@ impl IndexerManager {
     pub fn get_status(&self) -> IndexingStatus {
         self.status.read().clone()
     }
+
+    /// True while a live filesystem watcher is running.
+    pub fn watcher_ok(&self) -> bool {
+        self.watcher_ok.load(Ordering::Relaxed)
+    }
 }

@@ -17,12 +17,9 @@ import { FilterChips } from "./components/FilterChips";
 import { PreviewPane } from "./components/PreviewPane";
 import { SearchBar } from "./components/SearchBar";
 import { CategoryChips } from "./components/CategoryChips";
-import { StatusBar } from "./components/StatusBar";
-import { HomeGrid } from "./components/HomeGrid";
 import { Palette, PaletteGroup, PaletteItem } from "./components/Palette";
 import { EmptyState } from "./components/EmptyState";
 import { useTheme } from "./hooks/useTheme";
-import { useStatsSlow } from "./hooks/useStats";
 import { CATEGORY_CHIPS, CategoryChip } from "./lib/categories";
 import {
   Eye,
@@ -73,7 +70,6 @@ function App() {
   const [settingsSection, setSettingsSection] = useState<string | undefined>(undefined);
   const [showPalette, setShowPalette] = useState(false);
   const [commandOutput, setCommandOutput] = useState<string | null>(null);
-  const [searchTimeMs, setSearchTimeMs] = useState<number | null>(null);
   const [view, setView] = useState<ResultView>(
     () => (localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "list") as ResultView,
   );
@@ -82,7 +78,6 @@ function App() {
   );
 
   const { theme, toggle: toggleTheme } = useTheme();
-  const { stats: slowStats, live: slowStatsLive } = useStatsSlow();
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
@@ -124,8 +119,6 @@ function App() {
     };
   }, [isSetupComplete]);
 
-  /* Search only. Ingestion uses the periodic slow stats poll above. */
-
   /* ---------------- search (stale-while-revalidate) ---------------- */
 
   useEffect(() => {
@@ -137,7 +130,6 @@ function App() {
       setActiveFilters([]);
       setHints([]);
       setSelectedIndex(0);
-      setSearchTimeMs(null);
       setIsSearching(false);
       return;
     }
@@ -160,7 +152,6 @@ function App() {
           setActiveFilters(res.active_filters);
           setHints(res.hints);
           setSelectedIndex(0);
-          setSearchTimeMs(res.search_time_ms);
         }
       } catch (err) {
         console.error("Search error:", err);
@@ -400,6 +391,11 @@ function App() {
       if (showSettings) return;
 
       if (e.key === "Tab") {
+        // Tab toggles the preview pane, except when focus is on a real
+        // control (theme/settings buttons) — then native focus cycling runs
+        // so chrome stays reachable by keyboard. ⌘K also exposes both.
+        const t = e.target;
+        if (t instanceof HTMLElement && t.closest("button")) return;
         e.preventDefault();
         setPreviewOpen((p) => !p);
         return;
@@ -438,15 +434,15 @@ function App() {
 
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setSelectedIndex((prev) => (results.length > 0 ? (prev + 1) % results.length : 0));
+        setSelectedIndex((prev) => (navList.length > 0 ? (prev + 1) % navList.length : 0));
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
         setSelectedIndex((prev) =>
-          results.length > 0 ? (prev - 1 + results.length) % results.length : 0,
+          navList.length > 0 ? (prev - 1 + navList.length) % navList.length : 0,
         );
-      } else if (e.key === "Enter" && results[selectedIndex]) {
+      } else if (e.key === "Enter" && navList[selectedIndex]) {
         e.preventDefault();
-        const target = results[selectedIndex];
+        const target = navList[selectedIndex];
         if (e.metaKey || e.ctrlKey) {
           // "Open at line" — backend currently opens at default; reveal path is a safe stand-in.
           handleOpenFile(target.path);
@@ -467,7 +463,7 @@ function App() {
         }
       }
     },
-    [showPalette, showSettings, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings],
+    [showPalette, showSettings, query, results, recent, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings],
   );
 
   /* ---------------- render ---------------- */
@@ -488,8 +484,10 @@ function App() {
   const hasQuery = query.trim() !== "";
   const noResults = hasQuery && !isCommandMode && results.length === 0;
   const isIndexing = indexingStatus?.is_indexing ?? false;
-  // Home bento owns the full width; the preview pane would just be empty chrome.
+  // The main page shows files only: preview pane appears when a query has results.
   const showPreview = !isCommandMode && previewOpen && hasQuery;
+  // The list keyboard navigation operates over — search results or recent files.
+  const navList = hasQuery ? results : recent;
 
   return (
     <div
@@ -530,10 +528,36 @@ function App() {
                 onOpenPalette={() => setShowPalette(true)}
                 onFocusInput={() => {}}
                 resultCount={results.length}
+                trailing={
+                  <>
+                    <button
+                      type="button"
+                      title={
+                        theme === "paper" ? "Switch to void theme" : "Switch to paper theme"
+                      }
+                      onClick={toggleTheme}
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors duration-150 hover:bg-sunken hover:text-fg"
+                    >
+                      {theme === "paper" ? (
+                        <Moon className="h-3.5 w-3.5" />
+                      ) : (
+                        <Sun className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      title="Settings (⌘,)"
+                      onClick={() => openSettings()}
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors duration-150 hover:bg-sunken hover:text-fg"
+                    >
+                      <SettingsIcon className="h-3.5 w-3.5" />
+                    </button>
+                  </>
+                }
               />
 
-              {/* Global indexing progress: 2px accent line under the bar.
-                  Stale results stay visible — never a spinner over the list. */}
+              {/* Global indexing progress: 2px accent line under the bar —
+                  pure feedback, no numbers. Stale results stay visible. */}
               {isIndexing && (
                 <div className="progress-track shrink-0 px-0">
                   <div className="progress-bar" />
@@ -665,28 +689,56 @@ function App() {
                       </div>
                     </EmptyState>
                   ) : (
-                    /* Home — empty query bento */
-                    <HomeGrid
-                      recent={recent}
-                      stats={slowStats}
-                      statsLive={slowStatsLive}
-                      onOpenFile={handleOpenFile}
-                      onSelectResult={(r) => {
-                        setQuery(r.filename);
-                        inputRef.current?.focus();
-                      }}
-                      onAddFolder={() => openSettings("folders")}
-                      onReindex={() => handleRunCommand(">reindex")}
-                      onOpenSettings={() => openSettings()}
-                      onToggleView={() => setView((v) => (v === "list" ? "grid" : "list"))}
-                      view={view}
-                      onTogglePreview={() => setPreviewOpen((p) => !p)}
-                      previewOpen={previewOpen}
-                      onRunQuery={(q) => {
-                        setQuery(q);
-                        inputRef.current?.focus();
-                      }}
-                    />
+                    /* Empty query — plain recent-files list, same rows. */
+                    navList.length > 0 ? (
+                      <div>
+                        {view === "list" ? (
+                          <>
+                            <p className="eyebrow px-3 pb-1.5 pt-1">Recent</p>
+                            {navList.map((res, idx) => (
+                              <div key={res.path + idx} data-index={idx}>
+                                <ResultItem
+                                  result={res}
+                                  query=""
+                                  index={idx}
+                                  isSelected={idx === selectedIndex}
+                                  view="list"
+                                  onSelect={() => setSelectedIndex(idx)}
+                                  onOpen={() => handleOpenFile(res.path)}
+                                  onReveal={() => handleOpenFolder(res.path)}
+                                  onCopyPath={() => handleCopyPath(res.path)}
+                                />
+                              </div>
+                            ))}
+                          </>
+                        ) : (
+                          <>
+                            <p className="eyebrow px-1.5 pb-1.5 pt-1">Recent</p>
+                            {navList.map((res, idx) => (
+                              <div key={res.path + idx} data-index={idx}>
+                                <ResultItem
+                                  result={res}
+                                  query=""
+                                  index={idx}
+                                  isSelected={idx === selectedIndex}
+                                  view="grid"
+                                  onSelect={() => setSelectedIndex(idx)}
+                                  onOpen={() => handleOpenFile(res.path)}
+                                  onReveal={() => handleOpenFolder(res.path)}
+                                  onCopyPath={() => handleCopyPath(res.path)}
+                                />
+                              </div>
+                            ))}
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <EmptyState variant="empty" caption="Nothing archived yet">
+                        <p className="text-[11px] text-subtle">
+                          Type to search across your files
+                        </p>
+                      </EmptyState>
+                    )
                   )}
                 </div>
 
@@ -701,25 +753,6 @@ function App() {
                   />
                 )}
               </div>
-
-              {/* Status bar */}
-              <StatusBar
-                searchTimeMs={searchTimeMs}
-                resultCount={results.length}
-                indexingStatus={indexingStatus}
-                stats={
-                  slowStats
-                    ? {
-                        files: slowStats.index.files,
-                        lastReconcileSecsAgo: slowStats.index.last_reconcile_secs_ago,
-                        watcherOk: slowStats.runtime.watcher_ok || !slowStatsLive,
-                      }
-                    : null
-                }
-                theme={theme}
-                onToggleTheme={toggleTheme}
-                onOpenSettings={openSettings}
-              />
 
               {/* Palette */}
               {showPalette && (

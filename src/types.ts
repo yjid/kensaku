@@ -123,6 +123,50 @@ export interface SystemStats {
   runtime: RuntimeStats;
 }
 
+/* ---- Model files (get_models_status / download_models / delete_models). ---- */
+/* ---- The backend may not expose these yet; consumers degrade gracefully. ---- */
+
+export interface ModelArtifact {
+  name: string;
+  url: string;
+  bytes_expected: number;
+  bytes_on_disk: number;
+  present: boolean;
+}
+
+export interface ModelProgress {
+  file: string;
+  downloaded: number;
+  total: number;
+}
+
+export interface ModelsStatus {
+  dir: string;
+  ready: boolean;
+  downloading: boolean;
+  progress: ModelProgress | null;
+  error: string | null;
+  artifacts: ModelArtifact[];
+  total_bytes: number;
+  total_present_bytes: number;
+}
+
+/* ---- Doctor (run_doctor). One-shot diagnostics; never auto-blocks UI. ---- */
+
+export interface DoctorCheck {
+  id: string;
+  label: string;
+  status: "ok" | "warn" | "fail";
+  detail: string;
+  fix: string | null;
+}
+
+export interface DoctorReport {
+  checks: DoctorCheck[];
+  ran_at: number;
+  summary: { ok: number; warn: number; fail: number };
+}
+
 /** Fully quantified, safe-to-render fallback for when `get_stats` is missing. */
 export function emptyStats(): SystemStats {
   return {

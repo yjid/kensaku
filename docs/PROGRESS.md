@@ -394,3 +394,22 @@ Next: PR 7 (Vision/OCR), PR 8 (Ask/actions), PR 9 (Launch/packaging)
 ### Verified
 - `cargo build` clean, `npx tsc --noEmit` clean, `bun run build` clean (28.8 kB CSS / 317 kB JS).
 - Both themes rendered and checked in a browser with mocked Tauri IPC; 760px and 1200px layouts checked.
+
+## Settings: Reset, Doctor, Model files
+
+### Doctor (new settings section)
+- `run_doctor` command, 9 best-effort checks: config dir writable, SQLite `PRAGMA quick_check` + node count, Tantivy presence/size, semantic unit count, watched-folder readability, watcher health, Linux `inotify.max_user_watches`, model artifacts, version.
+- UI: run-on-demand, fails-first ordering, status dots, per-check detail + copyable fix, summary counts, copy report JSON.
+
+### Model files (AI & Semantic)
+- `models.rs` with a static 3-artifact manifest (potion-base-8M: model.safetensors, tokenizer.json, config.json; ~29.5 MB) from HuggingFace.
+- Background downloader (`ureq`): single-flight guard, 64 KiB chunks, `.part` → rename + `sync_all`, progress in a global; `delete_models` refuses while downloading.
+- UI: not-present / downloading (progress bar + MB) / ready / error states, directory path with copy, honest "pre-fetch for offline use" note.
+
+### Reset everything (About → Danger zone)
+- `reset_all` requires the exact string `RESET`, writes `.reset-requested`, then restarts.
+- `maybe_apply_pending_reset()` runs at the very start of `run()`, before config/DB/index handles open: removes the whole `~/.config/kensaku` dir (config, metadata, index, models, vectors, marker), recreates it 0700.
+- UI: danger-tinted card, type-`RESET` confirmation dialog with focus trap, Esc/Enter handling, clears client view state after success.
+
+### Main page simplification
+- Removed the bento home and status bar. Main window is now search + category chips + files (recent list when the query is empty) + preview when a result is selected. Theme toggle and settings gear live at the right edge of the search header. All stats/actions live in Settings.

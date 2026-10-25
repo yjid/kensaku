@@ -48,11 +48,3 @@ export function useStats(intervalMs: number | null = 2000): UseStatsResult {
 
   return { stats, live, refresh: fetch };
 }
-
-/**
- * Slow background poll for ambient UI (status bar, home bento). Kept
- * infrequent on purpose — live 2s polling only happens in Stats for Nerds.
- */
-export function useStatsSlow(): UseStatsResult {
-  return useStats(15000);
-}

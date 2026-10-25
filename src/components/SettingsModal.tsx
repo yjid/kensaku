@@ -6,6 +6,8 @@ import { useTheme } from "../hooks/useTheme";
 import { useStats } from "../hooks/useStats";
 import { Card, Field, Switch, Stepper } from "./settings/kit";
 import { StatsForNerds } from "./settings/stats";
+import { DoctorSection } from "./settings/doctor";
+import { ModelFilesCard } from "./settings/models";
 import { formatBytes, formatComma } from "../lib/format";
 
 export interface SettingsProps {
@@ -22,6 +24,7 @@ type SectionId =
   | "ai"
   | "agents"
   | "stats"
+  | "doctor"
   | "about";
 
 const SECTIONS: { id: SectionId; label: string }[] = [
@@ -32,6 +35,7 @@ const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "ai", label: "AI & Semantic" },
   { id: "agents", label: "Agents" },
   { id: "stats", label: "Stats for Nerds" },
+  { id: "doctor", label: "Doctor" },
   { id: "about", label: "About" },
 ];
 
@@ -188,6 +192,8 @@ function renderSection(
       return <AgentsSection />;
     case "stats":
       return <StatsForNerds />;
+    case "doctor":
+      return <DoctorSection />;
     case "about":
       return <AboutSection />;
   }
@@ -640,7 +646,7 @@ function AiSection({ config }: { config: KensakuConfig }) {
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-sunken">
             <div
               className="h-full rounded-full bg-accent transition-[width] duration-500"
-              style={{ width: `${Math.max(4, Math.min(100, 100 - Math.min(96, queueDepth)))}%` }}
+              style={{ width: `${queueDepth > 0 ? Math.max(4, Math.min(100, queueDepth)) : 0}%` }}
             />
           </div>
           <div className="flex items-center justify-between pt-1">
@@ -659,23 +665,7 @@ function AiSection({ config }: { config: KensakuConfig }) {
         </div>
       </Card>
 
-      <Card title="Smart pack">
-        <div className="flex items-center justify-between gap-4 p-4 opacity-50">
-          <div>
-            <p className="text-[12px] font-medium text-fg">Prebuilt smart pack</p>
-            <p className="text-[11px] leading-relaxed text-muted">
-              A curated model + lexicon bundle for faster first-run indexing.
-            </p>
-          </div>
-          <button
-            type="button"
-            disabled
-            className="flex h-7 shrink-0 items-center gap-1.5 rounded-[10px] border border-line px-2.5 text-[11px] text-subtle"
-          >
-            Download — soon
-          </button>
-        </div>
-      </Card>
+      <ModelFilesCard />
     </>
   );
 }
@@ -753,12 +743,193 @@ function AgentsSection() {
 }
 
 /* ---------------------------------------------------------------- */
-/* About                                                             */
+/* About + Danger zone                                               */
 /* ---------------------------------------------------------------- */
 
+const CONFIRM_WORD = "RESET";
+
+/** Best-effort: the backend may not ship get_reset_pending yet. */
+function useResetPending(): boolean {
+  const [pending, setPending] = useState(false);
+  useEffect(() => {
+    invoke<boolean>("get_reset_pending")
+      .then(setPending)
+      .catch(() => setPending(false));
+  }, []);
+  return pending;
+}
+
+/** Tracks keys the app persists in localStorage, so a reset starts clean. */
+function clearClientState() {
+  try {
+    for (const key of ["kensaku.theme", "kensaku.view", "kensaku.preview"]) {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    /* storage unavailable — the backend reset owns the rest */
+  }
+}
+
+/**
+ * Type-RESET confirmation. Traps focus, Esc cancels, Enter submits only
+ * when the word matches exactly. On reject the error surfaces inline and
+ * nothing is cleared; on resolve the app is expected to restart.
+ */
+function ResetDialog({ onClose }: { onClose: () => void }) {
+  const [text, setText] = useState("");
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+  const matches = text === CONFIRM_WORD;
+
+  /* Window-level capture so Esc/Tab are handled before the settings
+     overlay's own Escape-to-close listener sees them. */
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusables = () =>
+      Array.from(dialog.querySelectorAll<HTMLElement>("input, button:not([disabled])"));
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      if (e.key === "Tab") {
+        const list = focusables();
+        if (list.length === 0) return;
+        const first = list[0];
+        const last = list[list.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && (active === last || !dialog.contains(active))) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    const input = dialog.querySelector<HTMLInputElement>("input");
+    input?.focus();
+    input?.select();
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+
+  const submit = async () => {
+    if (!matches || running) return;
+    setRunning(true);
+    setError(null);
+    try {
+      await invoke("reset_all", { confirm: CONFIRM_WORD });
+      // Resolves → the app restarts. Clear client-only view state so a
+      // relaunched window comes up fresh; show nothing.
+      clearClientState();
+      onClose();
+    } catch (err) {
+      // Rejects → keep everything, surface the reason inline.
+      console.error("reset_all failed:", err);
+      setError(String(err));
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div
+      className="fade-in absolute inset-0 z-50 flex items-center justify-center p-6 backdrop-blur-[2px]"
+      style={{ background: "var(--scrim)" }}
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Reset Kensaku"
+        className="overlay-in w-full max-w-[400px] overflow-hidden rounded-[14px] border border-danger/30 bg-elevated shadow-lg"
+      >
+        <div className="flex items-center justify-between border-b border-line bg-sunken px-4 py-2.5">
+          <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-danger">Danger zone</p>
+          <button
+            type="button"
+            title="Cancel (Esc)"
+            onClick={onClose}
+            className="flex h-6 w-6 items-center justify-center rounded text-muted transition-colors hover:bg-elevated hover:text-fg"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          <div className="p-4">
+            <p className="text-[13px] font-semibold text-fg">Reset Kensaku</p>
+            <p className="pt-0.5 text-[11px] leading-relaxed text-muted">
+              This will delete your index and settings and restart Kensaku.
+            </p>
+          </div>
+
+          <div className="px-4 pb-4">
+            <label htmlFor="reset-confirm" className="eyebrow pb-1.5 block">
+              Type <span className="font-mono normal-case text-danger">RESET</span> to confirm
+            </label>
+            <input
+              id="reset-confirm"
+              type="text"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              className={`h-9 w-full rounded-[10px] border bg-sunken px-2.5 font-mono text-[12px] text-fg outline-none transition-colors focus:border-accent ${
+                text && !matches ? "border-danger/50" : "border-line"
+              }`}
+            />
+            {error && (
+              <p className="break-words pt-2 font-mono text-[10px] text-danger">{error}</p>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-1.5 border-t border-line bg-sunken px-3 py-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-8 items-center rounded-[10px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!matches || running}
+              className="flex h-8 items-center rounded-[10px] bg-danger px-3 text-[12px] font-medium text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {running ? "Resetting…" : "Reset and restart"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function AboutSection() {
+  const resetPending = useResetPending();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
   return (
     <>
+      {resetPending && (
+        <div className="flex items-center gap-2 rounded-[14px] border border-warning/40 bg-elevated px-4 py-2.5">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
+          <p className="text-[11px] text-muted">A reset is pending and will finish on next launch.</p>
+        </div>
+      )}
+      {resetPending && <div className="h-3" />}
+
       <Card title="Version">
         <div className="flex items-center justify-between p-4">
           <div>
@@ -788,6 +959,33 @@ function AboutSection() {
           </p>
         </div>
       </Card>
+
+      {/* Danger zone — visually separated, outline-destructive by default. */}
+      <div className="mb-3">
+        <p className="pb-2 text-[10px] font-medium uppercase tracking-[0.08em] text-danger">
+          Danger zone
+        </p>
+        <div className="overflow-hidden rounded-[14px] border border-danger/30 bg-elevated">
+          <div className="flex items-center justify-between gap-4 p-4">
+            <div className="min-w-0">
+              <p className="text-[12px] font-medium text-fg">Reset Kensaku</p>
+              <p className="pt-0.5 text-[11px] leading-relaxed text-muted">
+                Deletes the index, metadata database, downloaded models, and settings. This cannot
+                be undone.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setConfirmOpen(true)}
+              className="h-8 shrink-0 rounded-[10px] border border-danger/40 px-3 text-[11px] font-medium text-danger transition-colors hover:bg-danger/10"
+            >
+              Reset everything…
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {confirmOpen && <ResetDialog onClose={() => setConfirmOpen(false)} />}
     </>
   );
 }
