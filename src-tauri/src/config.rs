@@ -23,6 +23,9 @@ pub struct KensakuConfig {
     /// Persisted UI theme ("paper" or "void").
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// Config schema version, used for one-time migrations.
+    #[serde(default)]
+    pub config_version: u32,
 }
 
 fn default_true() -> bool {
@@ -68,21 +71,17 @@ impl Default for KensakuConfig {
         .map(String::from)
         .collect();
 
-        // NOTE: binary document formats (pdf, docx, xlsx, ...) are excluded for now
-        // because content extraction is not implemented yet. Revisit when PDF/Office
-        // text extraction lands in a later phase.
+        // Documents (PDF/Office/EPUB) and images are indexed via text extraction
+        // and OCR, so they are deliberately NOT excluded by default.
         let default_excluded_extensions: Vec<String> = vec![
-            // Images
-            "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp", "tiff", "tif", "psd", "ai", "sketch",
-            "fig",
+            // Raw/editor-only image formats we cannot read text from
+            "psd", "ai", "sketch", "fig",
             // Audio/Video
             "mp3", "mp4", "wav", "avi", "mov", "mkv", "flac", "ogg", "webm",
             // Archives
             "zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz",
             // Binaries
             "exe", "dll", "so", "dylib", "bin", "o", "a", "lib", "class", "pyc", "pyo",
-            // Documents (binary formats, not text)
-            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
             // Database
             "db", "sqlite", "sqlite3",
             // Lock files
@@ -108,6 +107,7 @@ impl Default for KensakuConfig {
             semantic_model: "static".to_string(),
             ocr_enabled: true,
             theme: default_theme(),
+            config_version: 1,
         }
     }
 }
@@ -133,8 +133,21 @@ impl KensakuConfig {
         let path = Self::config_path();
         if path.exists()
             && let Ok(content) = fs::read_to_string(&path)
-            && let Ok(cfg) = serde_json::from_str::<Self>(&content)
+            && let Ok(mut cfg) = serde_json::from_str::<Self>(&content)
         {
+            if cfg.config_version < 1 {
+                // v1: document/image formats became indexable (text extraction + OCR).
+                // Strip the legacy defaults so existing installs start indexing them.
+                const LEGACY_EXCLUDED: &[&str] = &[
+                    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+                    "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp", "tiff", "tif",
+                ];
+                cfg.excluded_extensions.retain(|ext| {
+                    !LEGACY_EXCLUDED.iter().any(|legacy| legacy.eq_ignore_ascii_case(ext))
+                });
+                cfg.config_version = 1;
+                let _ = cfg.save();
+            }
             return cfg;
         }
         Self::default()

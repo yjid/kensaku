@@ -413,3 +413,15 @@ Next: PR 7 (Vision/OCR), PR 8 (Ask/actions), PR 9 (Launch/packaging)
 
 ### Main page simplification
 - Removed the bento home and status bar. Main window is now search + category chips + files (recent list when the query is empty) + preview when a result is selected. Theme toggle and settings gear live at the right edge of the search header. All stats/actions live in Settings.
+
+## v0.2.0 snapshot
+
+Version bumped to **0.2.0** across `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`.
+
+Also fixed a real regression: `excluded_extensions` was wired into the crawl while the
+default list still excluded `pdf/doc/docx/xls/xlsx/ppt/pptx` and common image formats —
+so document extraction and OCR were effectively off by default. The defaults now exclude
+only non-indexable formats, and a `config_version` migration strips those legacy entries
+from existing configs.
+
+See **`docs/REMAINING.md`** for the full list of what is left.
