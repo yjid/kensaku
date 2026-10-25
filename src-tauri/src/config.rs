@@ -108,7 +108,7 @@ impl Default for KensakuConfig {
             semantic_model: "static".to_string(),
             ocr_enabled: true,
             theme: default_theme(),
-            config_version: 1,
+            config_version: 2,
         }
     }
 }
@@ -150,6 +150,22 @@ impl KensakuConfig {
                 !LEGACY_EXCLUDED.iter().any(|legacy| legacy.eq_ignore_ascii_case(ext))
             });
             cfg.config_version = 1;
+            migrated = true;
+        }
+
+        if cfg.config_version < 2 {
+            // v2: early UI configs stored exclusions with a leading dot
+            // (".jpg"), so the v1 bare-name strip missed them and documents /
+            // images were never indexed. Normalize before comparing.
+            const NOW_INDEXABLE: &[&str] = &[
+                "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "epub", "odt", "ods", "odp",
+                "rtf", "png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "tif",
+            ];
+            cfg.excluded_extensions.retain(|ext| {
+                let normalized = ext.trim_start_matches('.').to_ascii_lowercase();
+                !NOW_INDEXABLE.contains(&normalized.as_str())
+            });
+            cfg.config_version = 2;
             migrated = true;
         }
 
@@ -291,9 +307,9 @@ mod tests {
     }
 
     #[test]
-    fn default_config_is_v1_and_paper() {
+    fn default_config_is_v2_and_paper() {
         let cfg = KensakuConfig::default();
-        assert_eq!(cfg.config_version, 1);
+        assert_eq!(cfg.config_version, 2);
         assert!(cfg.skip_hidden);
         assert!(cfg.ocr_enabled);
         assert_eq!(cfg.theme, "paper");
@@ -312,7 +328,7 @@ mod tests {
 
         let cfg = KensakuConfig::load_from_str(legacy);
 
-        assert_eq!(cfg.config_version, 1);
+        assert_eq!(cfg.config_version, 2);
         // Legacy document/image extensions are stripped (case-insensitively)...
         assert!(!cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case("pdf")));
         assert!(!cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case("png")));
@@ -331,22 +347,45 @@ mod tests {
         let current = r#"{
             "watched_dirs": [],
             "excluded_dirs": [],
-            "excluded_extensions": ["pdf"],
+            "excluded_extensions": ["rs", "node_modules"],
+            "shortcut": "Alt+Space",
+            "max_results": 50,
+            "is_setup_complete": false,
+            "config_version": 2
+        }"#;
+
+        let cfg = KensakuConfig::load_from_str(current);
+        assert_eq!(cfg.config_version, 2);
+        assert_eq!(
+            cfg.excluded_extensions,
+            vec!["rs".to_string(), "node_modules".to_string()]
+        );
+    }
+
+    #[test]
+    fn v2_migration_strips_dotted_document_and_image_extensions() {
+        let legacy = r#"{
+            "watched_dirs": [],
+            "excluded_dirs": [],
+            "excluded_extensions": [".jpg", ".PNG", ".pdf", ".o", "zip"],
             "shortcut": "Alt+Space",
             "max_results": 50,
             "is_setup_complete": false,
             "config_version": 1
         }"#;
 
-        let cfg = KensakuConfig::load_from_str(current);
-        assert_eq!(cfg.config_version, 1);
-        assert_eq!(cfg.excluded_extensions, vec!["pdf".to_string()]);
+        let cfg = KensakuConfig::load_from_str(legacy);
+        assert_eq!(cfg.config_version, 2);
+        assert_eq!(
+            cfg.excluded_extensions,
+            vec![".o".to_string(), "zip".to_string()]
+        );
     }
 
     #[test]
     fn corrupt_config_falls_back_to_defaults() {
         let cfg = KensakuConfig::load_from_str("{ not json");
-        assert_eq!(cfg.config_version, 1);
+        assert_eq!(cfg.config_version, 2);
         assert_eq!(cfg.theme, "paper");
     }
 
@@ -366,7 +405,7 @@ mod tests {
 
         let saved: KensakuConfig =
             serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(saved.config_version, 1);
+        assert_eq!(saved.config_version, 2);
         assert_eq!(saved.theme, "paper");
 
         // A second save replaces the existing file atomically.
