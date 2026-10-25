@@ -146,9 +146,31 @@ impl SearchDispatcher {
             (0..entries.len()).collect()
         };
 
-        // Extract positive terms text
-        let search_terms: Vec<&str> = parsed.terms.iter().map(|t| t.text.as_str()).collect();
-        let search_text = search_terms.join(" ");
+        // Extract positive terms text, split by field scoping (name:/content:/path:)
+        // so that field-scoped terms only search their target field.
+        let mut fuzzy_terms: Vec<&str> = Vec::new();  // Any, Name, Path → fuzzy (filename + path)
+        let mut bm25_terms: Vec<&str> = Vec::new();   // Any, Content, Name → BM25 (content + filename)
+        for t in &parsed.terms {
+            match t.field {
+                crate::query::ast::TermField::Any => {
+                    fuzzy_terms.push(&t.text);
+                    bm25_terms.push(&t.text);
+                }
+                crate::query::ast::TermField::Name => {
+                    fuzzy_terms.push(&t.text);
+                    bm25_terms.push(&t.text); // also search filename in BM25
+                }
+                crate::query::ast::TermField::Content => {
+                    bm25_terms.push(&t.text);
+                }
+                crate::query::ast::TermField::Path => {
+                    fuzzy_terms.push(&t.text);
+                }
+            }
+        }
+        let fuzzy_text = fuzzy_terms.join(" ");
+        let bm25_text = bm25_terms.join(" ");
+        let search_text = if fuzzy_text.is_empty() { &bm25_text } else { &fuzzy_text };
         let search_text_lower = search_text.to_lowercase();
 
         // Build a membership bitmap for O(1) candidate checks (replaces O(n) Vec::contains)
@@ -156,10 +178,10 @@ impl SearchDispatcher {
 
         // 3. Tier 1: Fuzzy filename search (< 5ms)
         let mut fuzzy_ranks: HashMap<usize, usize> = HashMap::new();
-        if !search_text.is_empty() {
+        if !fuzzy_text.is_empty() {
             let mut fuzzy_searcher = FuzzySearcher::new();
             // Search across candidate entries by index (no clone needed)
-            let fuzzy_matches = fuzzy_searcher.search(&search_text, entries, &candidate_indices, limit * 3);
+            let fuzzy_matches = fuzzy_searcher.search(&fuzzy_text, entries, &candidate_indices, limit * 3);
             for (rank, (orig_idx, _score)) in fuzzy_matches.into_iter().enumerate() {
                 fuzzy_ranks.insert(orig_idx, rank + 1);
             }
@@ -167,9 +189,9 @@ impl SearchDispatcher {
 
         // 4. Tier 2: Tantivy BM25 content search (< 50ms)
         let mut bm25_ranks: HashMap<PathBuf, usize> = HashMap::new();
-        if !search_text.is_empty()
+        if !bm25_text.is_empty()
             && let Some(c_index) = content_index {
-                let content_matches = c_index.search(&search_text, limit * 3, None);
+                let content_matches = c_index.search(&bm25_text, limit * 3, None);
                 for (rank, cm) in content_matches.into_iter().enumerate() {
                     bm25_ranks.insert(cm.path, rank + 1);
                 }
@@ -210,7 +232,7 @@ impl SearchDispatcher {
 
         let mut candidates: HashMap<PathBuf, MatchCandidate> = HashMap::new();
 
-        if search_text.is_empty() {
+        if fuzzy_text.is_empty() && bm25_text.is_empty() {
             // Filter-only / folder navigation browsing mode
             for &idx in &candidate_indices {
                 if let Some(entry) = entries.get(idx) {
