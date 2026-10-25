@@ -103,15 +103,47 @@
 
 > **Status: Skipped.** The user has decided to defer the agent/MCP/CLI surface. It may be revisited later. The architecture for it is fully documented in `docs/ARCHITECTURE.md` §9 and §13 Phase 4. The query AST, filters, and search pipeline are already designed to serve as the MCP tool contract (see PROGRESS.md item 6 in the "What's done" section).
 
-## What's next: Optimization Pass (docs/OPTIMIZATION.md)
+## Optimization Pass — PARTIALLY COMPLETE
 
-Before PR 7, run an optimization and correctness pass. See `docs/OPTIMIZATION.md` for the full plan (Phases A-E, ~7-9 days). Key items:
+See `docs/OPTIMIZATION.md` for the full plan (Phases A-E). Completed items:
 
-- **Phase A (correctness):** Fix stale semantic units on re-embed, enable foreign keys, fix panic=abort vs catch_unwind, implement parsed-but-ignored grammar features.
-- **Phase B (latency):** Eliminate FileEntry clones per query, bitmap membership, precompiled filters, push filters into engines, stop trie rebuild on every add, batch embed worker, index indexed_gen, snippet caching.
-- **Phase C (indexing):** Parallelize crawl, avoid double lock acquisition, coalesce watcher events.
-- **Phase D (extraction/UI):** Stream zip XML, cache extraction, raise 100KB cap, frontend memoization.
-- **Phase E (filtering):** Wire excluded_extensions, type-based pre-filtering, extension interning, scope-aware candidate pruning.
+### Phase A (correctness) — DONE
+- **A1:** Delete stale semantic units before re-embedding (fixes corrupt ranking) ✅
+- **A2:** Enable PRAGMA foreign_keys=ON; db.clear() cascades to units/usage ✅
+- **A3:** Remove panic=abort from release profile (catch_unwind now works) ✅
+- **A4:** (deferred) name:/content:/path: term scoping — parsed but not yet wired
+
+### Phase B (latency) — PARTIALLY DONE
+- **B1:** Eliminate per-query FileEntry clones (fuzzy search takes indices, no clone) ✅
+- **B2:** Replace Vec::contains with HashSet bitmap membership ✅
+- **B5:** Separate dir_generation — trie only rebuilds on directory changes ✅
+- **B8:** Snippet cache stores pre-lowercased content (no re-lowercase per query) ✅
+- **B3, B4, B6, B7:** (not yet done) Precompiled filters, push filters into engines, batch embed worker, index indexed_gen
+
+### Phase D (UI) — PARTIALLY DONE
+- **D4:** Frontend memoization (React.memo for ResultItem and PreviewPane) ✅
+- **D1, D2, D3:** (not yet done) Stream zip XML, cache extraction, raise 100KB cap
+
+### Phase E (filtering) — PARTIALLY DONE
+- **E1:** Wire excluded_extensions into crawl callback (was dead code) ✅
+- **E2, E3:** (not yet done) Extension interning, scope-aware candidate pruning
+
+### Phase C (indexing) — NOT STARTED
+- **C1, C2, C3:** (not yet done) Parallelize crawl, avoid double lock, coalesce watcher events
+
+## What's next: Continue optimization (remaining items) OR PR 7 — Vision/OCR
+
+Remaining optimization items (see docs/OPTIMIZATION.md for details):
+- B3: Precompile filters at parse time (LRU cache)
+- B4: Push filters into Tantivy BooleanQuery + semantic scanner
+- B6: Batch embed worker (one transaction per 16 nodes)
+- B7: Partial index on indexed_gen
+- C1-C3: Parallelize crawl, avoid double lock, coalesce watcher
+- D1-D3: Stream zip XML, cache extraction, raise 100KB cap
+- E2-E3: Extension interning, scope-aware pruning
+- A4: Implement name:/content:/path: term scoping
+
+Then: PR 7 — Vision/OCR (platform OCR, image embedding, thumbnails)
 
 ## Then: PR 7 — Vision/OCR
 
