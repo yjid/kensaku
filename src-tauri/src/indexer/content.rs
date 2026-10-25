@@ -1,7 +1,6 @@
 use parking_lot::{Mutex, RwLock};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::fs::{self, File};
-use std::io::Read;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tantivy::collector::{DocSetCollector, TopDocs};
@@ -305,12 +304,16 @@ pub fn is_indexable_extension(ext_opt: Option<&str>) -> bool {
     };
 
     static TEXT_EXTENSIONS: &[&str] = &[
+        // Plain text and code
         "txt", "md", "markdown", "rs", "ts", "tsx", "js", "jsx", "py", "go",
         "json", "toml", "yaml", "yml", "xml", "html", "htm", "css", "scss",
         "c", "cpp", "cc", "cxx", "h", "hpp", "java", "kt", "sh", "bash",
         "zsh", "fish", "env", "cfg", "ini", "conf", "log", "csv", "sql",
         "rb", "php", "swift", "r", "lua", "vim", "vue", "svelte", "astro",
         "dockerfile", "diff", "patch", "tex", "graphql", "proto",
+        // Documents & Office (PR 5)
+        "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "epub", "odt",
+        "ods", "odp", "rtf", "pages", "key", "numbers",
     ];
 
     TEXT_EXTENSIONS.contains(&ext.as_str())
@@ -325,14 +328,5 @@ pub fn is_indexable_file_name(name: &str) -> bool {
 }
 
 pub fn read_text_content(path: &Path, max_bytes: u64) -> Option<String> {
-    let file = File::open(path).ok()?;
-    let mut handle = file.take(max_bytes);
-    let mut buffer = Vec::new();
-    handle.read_to_end(&mut buffer).ok()?;
-
-    if buffer.iter().take(1024).any(|&b| b == 0) {
-        return None;
-    }
-
-    String::from_utf8(buffer).ok()
+    crate::indexer::extract::extract_document(path, max_bytes).map(|doc| doc.text)
 }
