@@ -130,6 +130,26 @@ fn check_config_dir_writable() -> DoctorCheck {
     }
 }
 
+fn check_crash_log() -> DoctorCheck {
+    const ID: &str = "crash_log";
+    const LABEL: &str = "Crash log";
+
+    let path = crate::crashlog::path();
+    let last_line = crate::crashlog::tail(1).pop();
+
+    match (std::fs::metadata(&path), last_line) {
+        (Ok(meta), Some(line)) if meta.len() > 0 => warn(
+            ID,
+            LABEL,
+            line,
+            // The fix is intentionally just the path: the UI opens it in the
+            // user's editor rather than trying to interpret the crash.
+            Some(path.display().to_string()),
+        ),
+        _ => ok(ID, LABEL, "No crash log entries.".to_string()),
+    }
+}
+
 fn check_metadata_db(config_dir: &Path) -> DoctorCheck {
     const ID: &str = "metadata_db";
     const LABEL: &str = "Metadata database";
@@ -413,6 +433,7 @@ pub fn run(state: &AppState) -> DoctorReport {
 
     let mut checks = vec![
         check_config_dir_writable(),
+        check_crash_log(),
         check_metadata_db(&config_dir),
         check_full_text_index(nodes),
         check_semantic_index(units),
