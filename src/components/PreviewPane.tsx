@@ -240,6 +240,30 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
           <span>{formatSize(result.file_size)}</span>
           <span>•</span>
           <span>{formatModified(result.modified)}</span>
+          {preview?.preview_type === "pdf" && preview.child_count && (
+            <>
+              <span>•</span>
+              <span className="text-rose-300 font-medium">{preview.child_count} pages</span>
+            </>
+          )}
+          {preview?.preview_type === "presentation" && (
+            <>
+              <span>•</span>
+              <span className="text-orange-300 font-medium">Slide deck</span>
+            </>
+          )}
+          {preview?.preview_type === "sheet" && (
+            <>
+              <span>•</span>
+              <span className="text-emerald-300 font-medium">Spreadsheet</span>
+            </>
+          )}
+          {preview?.preview_type === "doc" && (
+            <>
+              <span>•</span>
+              <span className="text-sky-300 font-medium">Document</span>
+            </>
+          )}
           {result.snippet && (
             <>
               <span>•</span>
@@ -255,8 +279,31 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
           <div className="flex items-center justify-center h-48 text-slate-500">
             <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
           </div>
-        ) : preview?.preview_type === "text" && preview.content ? (
-          <div className="py-1">{renderContentWithHighlights(preview.content)}</div>
+        ) : (preview?.preview_type === "text" || preview?.preview_type === "doc" || preview?.preview_type === "presentation" || preview?.preview_type === "sheet" || preview?.preview_type === "pdf") && preview.content ? (
+          <div>
+            {preview.preview_type === "pdf" && (
+              <div className="mb-2 px-2 py-1 rounded bg-rose-500/10 border border-rose-500/20 text-rose-300 text-[10px] flex items-center justify-between">
+                <span>PDF Text Layer • {preview.child_count ?? 1} pages</span>
+                <span className="text-slate-400 text-[9px]">Press Enter to open PDF</span>
+              </div>
+            )}
+            {preview.preview_type === "presentation" && (
+              <div className="mb-2 px-2 py-1 rounded bg-orange-500/10 border border-orange-500/20 text-orange-300 text-[10px]">
+                Presentation Slides
+              </div>
+            )}
+            {preview.preview_type === "sheet" && (
+              <div className="mb-2 px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-[10px]">
+                Spreadsheet Content
+              </div>
+            )}
+            {preview.preview_type === "doc" && (
+              <div className="mb-2 px-2 py-1 rounded bg-sky-500/10 border border-sky-500/20 text-sky-300 text-[10px]">
+                Extracted Document Content
+              </div>
+            )}
+            <div className="py-1">{renderContentWithHighlights(preview.content)}</div>
+          </div>
         ) : preview?.preview_type === "image" ? (
           <div className="flex flex-col items-center justify-center p-4">
             <img

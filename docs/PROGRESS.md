@@ -8,7 +8,7 @@
 
 - **Branch:** `master`
 - **Last commit before v2 work:** `d690ada` (initial release v0.1)
-- **v2 work:** PR 1, PR 2, PR 3, and PR 4 implemented and committed. Builds clean (`cargo build` and `npx tsc --noEmit` pass; `cargo clippy -- -D warnings` clean).
+- **v2 work:** PR 1, PR 2, PR 3, PR 4, and PR 5 implemented and committed. Builds clean (`cargo build` and `npx tsc --noEmit` pass; `cargo clippy -- -D warnings` clean).
 - **Working tree:** clean after commits.
 
 ## What's done
@@ -70,6 +70,25 @@
   - Preview pane highlights lines in the semantic match's `best_range`.
   - Added `>model` CLI output showing active model parameters and unit count; updated `>doctor` diagnostic report.
 
+### PR 5 — Documents (PDF, Office, eBooks)
+**Files:** `src-tauri/src/indexer/extract/` (new module: `mod.rs`, `pdf.rs`, `office.rs`, `text.rs`), `src-tauri/src/indexer/content.rs`, `src-tauri/src/indexer/mod.rs`, `src-tauri/src/search/mod.rs`, `src-tauri/src/commands.rs`, `src-tauri/Cargo.toml`, `src/types.ts`, `src/components/ResultItem.tsx`, `src/components/PreviewPane.tsx`
+
+- **Magic Byte Sniffing (`extract/mod.rs`):** Sniffs file headers before trusting extensions (`%PDF-` for PDFs, `PK\x03\x04` for Zip-based office documents, `{\rtf` for RTF).
+- **PDF Text Layer Extraction (`extract/pdf.rs`):** Pure-Rust extraction using `lopdf`. Checks for encryption (`is_encrypted()`) and returns explicit state (`"[Encrypted PDF: Password Protected]"`). Extracts page-by-page text with headers (`--- Page N ---`), tracks total page counts, and flags scanned/image-only PDFs (`is_scanned: true`). Fully protected by panic isolation (`std::panic::catch_unwind`).
+- **Office Document Parsing (`extract/office.rs`):** Streaming pull-parser using `quick-xml` and `zip` (immune to XML external entity / billion-laughs expansion):
+  - `.docx`: extracts text from `word/document.xml` with paragraph separation (`<w:p>`).
+  - `.pptx`: extracts text from all `ppt/slides/slide*.xml` with numeric slide ordering and headers.
+  - `.xlsx`: resolves `xl/sharedStrings.xml` and parses sheet cells from `xl/worksheets/sheet*.xml`.
+  - `.epub`: parses chapter `.xhtml` and `.html` files in zip archive and strips HTML markup.
+  - `.odt` / `.ods` / `.odp`: extracts content from `content.xml`.
+- **Text & Encoding Improvements (`extract/text.rs`):** UTF-16LE and UTF-16BE detection with BOM handling, markdown frontmatter stripping (`--- ... ---`), and RTF control tag stripping.
+- **Content Policy Enforcement (ARCHITECTURE §5.2):** Files > 20MB are skipped (metadata-only); files $\le 1$MB undergo full text extraction; files 1MB–20MB use head 512KB + tail 512KB for plain text, or up to 1MB extracted text for documents.
+- **Filter Integration (`search/mod.rs`):** Expanded type filters to support `type:pdf`, `type:doc` / `type:document` (docx, odt, rtf, pdf, epub), `type:sheet` / `type:spreadsheet` (xlsx, xls, ods, csv, tsv), `type:presentation` / `type:slide` (pptx, ppt, odp, key), and `type:ebook` (epub, mobi, azw3).
+- **Document Previews & UI (`commands.rs`, `PreviewPane.tsx`, `ResultItem.tsx`):**
+  - Preview pane renders extracted document text with search term highlighting and semantic match byte range highlights.
+  - Displays document-specific badges: page counts for PDFs, slide deck badge for presentations, spreadsheet badge for sheets.
+  - Visual icons for documents: rose for PDF, emerald table for spreadsheets, orange presentation for slides, sky blue for Word documents.
+
 ## Known issues (not blocking, but should be addressed)
 
 1. **Watcher directory rename** only removes old descendants and upserts the new directory entry — it does NOT recursively rewrite child paths. Children appear after next crawl/restart.
@@ -80,23 +99,26 @@
 6. **No tests exist** anywhere in the codebase.
 7. **Static embedding upgrade:** feature hashing embedder validates full pipeline offline; can be swapped for potion-base-8M safetensors table when local weights loader is added.
 
-## What's next: PR 5 — Documents (PDF, Office)
+## What's next: PR 6 — Agent surface (MCP, CLI, daemon socket)
 
-Per `docs/ARCHITECTURE.md` §13, Phase 3. Scope:
+Per `docs/ARCHITECTURE.md` §9 and §13, Phase 4. Scope:
 
-1. **Document content extraction:**
-   - PDF text extraction (`pdf-extract` or `lopdf`).
-   - Office documents: `.docx` (zip + xml extraction), `.xlsx`, `.pptx`.
-   - Markdown & plain text improvements (frontmatter stripping, code block indexing).
-2. **Document preview rendering:**
-   - PDF page thumbnail / preview generation.
-   - Text rendering with formatted excerpts.
-3. **Filter integration:**
-   - `type:pdf`, `type:doc`, `type:sheet`, `type:presentation` category mappings.
-4. **Content caching & budget adherence:**
-   - Respect memory limits on large document parses (<10MB file ceiling, streaming parser).
+1. **Daemon socket & protocol:**
+   - IPC listener (`127.0.0.1` HTTP/SSE or Unix domain socket `~/.local/state/kensaku/daemon.sock`).
+   - Authentication token at `~/.local/state/kensaku/token` (0600 permissions).
+2. **CLI commands:**
+   - `kensaku search <query> [--type <t>] [--since <d>] [--json]`
+   - `kensaku find --name <pat> [--in <dir>] [--exhaustive]`
+   - `kensaku state [--json]`
+   - `kensaku index add <path>`
+   - `kensaku doctor`
+   - `kensaku mcp` (stdio MCP proxy)
+3. **Model Context Protocol (MCP) server:**
+   - Stdio transport for IDEs (Cursor, Claude Code, Windsurf, VS Code).
+   - Tools: `search`, `read_snippet`, `find_related`, `index_state`.
+   - Ranked vs exhaustive mode distinction.
+   - Ready-to-paste configurations for Cursor and Claude Code in settings and docs.
 
-### Then PR 6 — Agent surface (MCP, CLI, daemon socket)
 ### Then PR 7 — Vision/OCR
 ### Then PR 8 — Ask/actions
 ### Then PR 9 — Launch/packaging
@@ -125,7 +147,9 @@ cd .. && bun run tauri dev    # dev mode
 | `src-tauri/src/indexer/walker.rs` | jwalk filesystem crawl |
 | `src-tauri/src/indexer/watcher.rs` | notify-based file watcher |
 | `src-tauri/src/indexer/content.rs` | Tantivy BM25 index |
-| `src-tauri/src/search/mod.rs` | Search dispatcher, merge, rank |
+| `src-tauri/src/indexer/extract/` | Document extraction (PDF, DOCX, PPTX, XLSX, EPUB) |
+| `src-tauri/src/embed/` | Static embeddings, vector store & parallel scanner |
+| `src-tauri/src/search/mod.rs` | Search dispatcher, 3-tier RRF merge, rank |
 | `src-tauri/src/search/fuzzy.rs` | nucleo-matcher fuzzy search |
 | `src-tauri/src/commands.rs` | Tauri IPC commands |
 | `src-tauri/src/config.rs` | Config load/save |

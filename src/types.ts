@@ -31,7 +31,7 @@ export interface FilePreview {
   file_size: number;
   modified: number;
   is_dir: boolean;
-  preview_type: "text" | "image" | "pdf" | "dir" | "binary";
+  preview_type: "text" | "image" | "pdf" | "doc" | "presentation" | "sheet" | "dir" | "binary";
   content?: string | null;
   total_lines?: number | null;
   child_count?: number | null;
