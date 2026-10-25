@@ -81,6 +81,22 @@ function App() {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
+
+  /** Number of cards in the first grid row (1 in list view). Measured from
+   *  the DOM so it stays correct across window resizes and auto-fill. */
+  const gridColumnCount = useCallback(() => {
+    const el = resultsContainerRef.current;
+    if (!el) return 1;
+    const children = Array.from(el.children) as HTMLElement[];
+    if (children.length === 0) return 1;
+    const firstTop = children[0].offsetTop;
+    let count = 0;
+    for (const child of children) {
+      if (child.offsetTop !== firstTop) break;
+      count += 1;
+    }
+    return Math.max(1, count);
+  }, []);
   const currentSeqRef = useRef(0);
 
   /* ---------------- setup gating ---------------- */
@@ -432,14 +448,33 @@ function App() {
         return;
       }
 
-      if (e.key === "ArrowDown") {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
         e.preventDefault();
-        setSelectedIndex((prev) => (navList.length > 0 ? (prev + 1) % navList.length : 0));
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSelectedIndex((prev) =>
-          navList.length > 0 ? (prev - 1 + navList.length) % navList.length : 0,
-        );
+        if (navList.length === 0) {
+          setSelectedIndex(0);
+          return;
+        }
+        // Grid view navigates by rows first: Up/Down jump a whole row,
+        // Left/Right step within the row. List view stays linear with wrap.
+        const grid = view === "grid";
+        if (grid) {
+          const cols = gridColumnCount();
+          if (e.key === "ArrowLeft") {
+            setSelectedIndex((prev) => Math.max(0, prev - 1));
+          } else if (e.key === "ArrowRight") {
+            setSelectedIndex((prev) => Math.min(navList.length - 1, prev + 1));
+          } else if (e.key === "ArrowDown") {
+            setSelectedIndex((prev) => Math.min(navList.length - 1, prev + cols));
+          } else {
+            setSelectedIndex((prev) => Math.max(0, prev - cols));
+          }
+        } else {
+          if (e.key === "ArrowDown") {
+            setSelectedIndex((prev) => (prev + 1) % navList.length);
+          } else if (e.key === "ArrowUp") {
+            setSelectedIndex((prev) => (prev - 1 + navList.length) % navList.length);
+          }
+        }
       } else if (e.key === "Enter" && navList[selectedIndex]) {
         e.preventDefault();
         const target = navList[selectedIndex];
@@ -463,7 +498,7 @@ function App() {
         }
       }
     },
-    [showPalette, showSettings, query, results, recent, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings],
+    [showPalette, showSettings, query, results, recent, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount],
   );
 
   /* ---------------- render ---------------- */
