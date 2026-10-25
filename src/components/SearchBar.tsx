@@ -12,6 +12,8 @@ interface SearchBarProps {
   onOpenPalette: () => void;
   onFocusInput: () => void;
   resultCount: number;
+  /** 28px icon buttons rendered to the right of the pill (theme, settings). */
+  trailing?: React.ReactNode;
 }
 
 const PLACEHOLDERS = [
@@ -28,6 +30,7 @@ export function SearchBar({
   onOpenPalette,
   onFocusInput,
   resultCount,
+  trailing,
 }: SearchBarProps) {
   const [phIdx, setPhIdx] = useState(0);
   const rotateRef = useRef(false);
@@ -46,7 +49,7 @@ export function SearchBar({
   const isCommandMode = query.startsWith(">");
 
   return (
-    <div className="flex h-[60px] shrink-0 items-center gap-3 px-4">
+    <div className="flex h-[60px] shrink-0 items-center gap-2 px-4">
       <div
         className={`flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-[14px] border bg-elevated px-3 transition-colors duration-150 ${
           isCommandMode
@@ -107,6 +110,10 @@ export function SearchBar({
 
         <kbd className="kbd mr-1 shrink-0">esc</kbd>
       </div>
+
+      {trailing && (
+        <div className="flex shrink-0 items-center gap-0.5">{trailing}</div>
+      )}
     </div>
   );
 }

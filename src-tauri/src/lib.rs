@@ -1,7 +1,9 @@
 pub mod commands;
 pub mod config;
+pub mod doctor;
 pub mod embed;
 pub mod indexer;
+pub mod models;
 pub mod query;
 pub mod search;
 
@@ -20,9 +22,57 @@ pub struct AppState {
     pub indexer: Arc<IndexerManager>,
 }
 
+/// Marker consumed on the next launch to wipe all Kensaku state.
+fn reset_marker_path() -> std::path::PathBuf {
+    KensakuConfig::config_dir().join(".reset-requested")
+}
+
+/// True when a reset was requested but not applied yet.
+pub fn reset_pending() -> bool {
+    reset_marker_path().exists()
+}
+
+/// Clears Kensaku state when a reset was requested by `reset_all`.
+///
+/// Must run before `KensakuConfig::load()` and before `IndexerManager::new()`:
+/// removing the directory while the database or index is open would leave
+/// handles pointing at deleted inodes.
+fn maybe_apply_pending_reset() {
+    let marker = reset_marker_path();
+    if !marker.exists() {
+        return;
+    }
+
+    let dir = KensakuConfig::config_dir();
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) => {
+            if let Err(e) = std::fs::create_dir_all(&dir) {
+                eprintln!(
+                    "[Kensaku] Reset requested but could not recreate {}: {}",
+                    dir.display(),
+                    e
+                );
+                return;
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+            }
+            eprintln!("[Kensaku] Reset requested: cleared all data in {}", dir.display());
+        }
+        Err(e) => eprintln!(
+            "[Kensaku] Reset requested but could not clear {}: {}",
+            dir.display(),
+            e
+        ),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     commands::init_process_start();
+    maybe_apply_pending_reset();
     let config = KensakuConfig::load();
     let is_setup = config.is_setup_complete;
     let indexer_manager = Arc::new(IndexerManager::new(config.clone()));
@@ -74,6 +124,12 @@ pub fn run() {
             commands::complete_setup,
             commands::get_suggested_directories,
             commands::hide_window,
+            commands::run_doctor,
+            commands::reset_all,
+            commands::get_reset_pending,
+            models::get_models_status,
+            models::download_models,
+            models::delete_models,
         ])
         .setup(move |app| {
             app.state::<AppState>().indexer.set_app_handle(app.handle().clone());

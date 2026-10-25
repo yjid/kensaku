@@ -628,3 +628,36 @@ pub async fn hide_window(app_handle: AppHandle) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// Wipes all Kensaku state on the next launch.
+///
+/// The marker file is written now and consumed by `maybe_apply_pending_reset`
+/// before the restarted process opens the config, database or index. This keeps
+/// the removal ordering safe: no open handles exist when the directory is
+/// deleted.
+#[tauri::command]
+pub async fn reset_all(app: AppHandle, confirm: String) -> Result<(), String> {
+    if confirm != "RESET" {
+        return Err("Reset cancelled: confirmation must be exactly \"RESET\".".to_string());
+    }
+
+    let dir = KensakuConfig::config_dir();
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create config directory: {}", e))?;
+    let marker = dir.join(".reset-requested");
+    std::fs::write(&marker, b"1").map_err(|e| format!("Failed to write reset marker: {}", e))?;
+
+    // Never returns: the process exits and relaunches, and the fresh process
+    // applies the pending reset before constructing any application state.
+    app.restart();
+}
+
+#[tauri::command]
+pub async fn get_reset_pending() -> Result<bool, String> {
+    Ok(crate::reset_pending())
+}
+
+#[tauri::command]
+pub async fn run_doctor(state: State<'_, AppState>) -> Result<crate::doctor::DoctorReport, String> {
+    Ok(crate::doctor::run(&state))
+}
