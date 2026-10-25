@@ -26,6 +26,9 @@ versioning: [SemVer](https://semver.org/).
 ### Changed
 - Release pipeline builds bundles and CLI binaries as workflow artifacts;
   publishing is done with `gh` (see `docs/RELEASING.md`).
+- Packaging: `bench` is now a cargo example and `kensaku-cli` is a separate
+  crate, so Tauri bundles exactly one binary. This fixes the macOS universal
+  build failing while trying to copy the extra binaries.
 
 ## [0.3.1] — 2026-10-26
 

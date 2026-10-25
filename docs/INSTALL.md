@@ -105,17 +105,17 @@ on a `v*` tag and uploads a draft release.
 `kensaku-cli` is a separate binary that shares the same index.
 
 ```bash
-cargo build --release --manifest-path src-tauri/Cargo.toml --bin kensaku-cli
+cargo build --release --manifest-path cli/Cargo.toml
 ```
 
 Install it on your `PATH`:
 
 ```bash
 # Linux / macOS
-install -m 755 src-tauri/target/release/kensaku-cli ~/.local/bin/kensaku-cli
+install -m 755 cli/target/release/kensaku-cli ~/.local/bin/kensaku-cli
 
 # Windows (PowerShell)
-Copy-Item src-tauri\target\release\kensaku-cli.exe "$env:USERPROFILE\bin\"
+Copy-Item cli\target\release\kensaku-cli.exe "$env:USERPROFILE\bin\"
 ```
 
 Then point your MCP client at it:

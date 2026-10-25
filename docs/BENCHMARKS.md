@@ -9,10 +9,10 @@ that runs on every keystroke.
 
 ```bash
 # from the repository root
-cargo run --manifest-path src-tauri/Cargo.toml --bin bench --release -- ~/Projects
+cargo run --manifest-path src-tauri/Cargo.toml --example bench --release -- ~/Projects
 
 # or from src-tauri/
-cargo run --bin bench --release -- ~/Projects
+cargo run --manifest-path src-tauri/Cargo.toml --example bench --release -- ~/Projects
 ```
 
 Always use `--release`. Debug builds are 10–50× slower and are not comparable
@@ -57,7 +57,7 @@ percentiles across runs. For example, 20 warm runs:
 
 ```bash
 for _ in $(seq 1 20); do
-  cargo run --manifest-path src-tauri/Cargo.toml --bin bench --release -- ~/Projects \
+  cargo run --manifest-path src-tauri/Cargo.toml --example bench --release -- ~/Projects \
     | awk '/Average across/ {print $(NF-1)}'
 done | sort -n | awk '{a[NR]=$1} END {printf "p50 %.3f ms\np95 %.3f ms\n", a[int(NR*0.5)], a[int(NR*0.95)]}'
 ```
