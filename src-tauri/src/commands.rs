@@ -1,6 +1,7 @@
 use crate::AppState;
 use crate::config::KensakuConfig;
 use crate::indexer::IndexingStatus;
+use crate::indexer::extract::image::{self, OcrStatus};
 use crate::search::{SearchDispatcher, SearchResponse, SearchResult};
 use auto_launch::AutoLaunch;
 use serde::{Deserialize, Serialize};
@@ -535,6 +536,28 @@ pub async fn get_thumbnail(path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || generate_thumbnail(&path))
         .await
         .map_err(|e| format!("Thumbnail task failed: {}", e))?
+}
+
+/// Reports whether tesseract and its language data are usable.
+///
+/// The engine is probed by spawning `tesseract --version`, so the work runs on
+/// a blocking thread to keep the async runtime responsive.
+#[tauri::command]
+pub async fn get_ocr_status() -> Result<OcrStatus, String> {
+    tauri::async_runtime::spawn_blocking(image::ocr_status)
+        .await
+        .map_err(|e| format!("OCR status task failed: {}", e))
+}
+
+/// Downloads the English tessdata file, then returns the refreshed status.
+#[tauri::command]
+pub async fn download_ocr_language() -> Result<OcrStatus, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        image::download_eng_tessdata()?;
+        Ok::<OcrStatus, String>(image::ocr_status())
+    })
+    .await
+    .map_err(|e| format!("OCR download task failed: {}", e))?
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
