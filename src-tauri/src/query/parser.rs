@@ -456,3 +456,363 @@ fn parse_size_range(val: &str) -> Option<RangeOp> {
     let size = parse_size(s)?;
     Some(RangeOp::Between(size.saturating_sub(1024), size + 1024))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DAY: u64 = 86_400;
+    const WEEK: u64 = 7 * DAY;
+    const MONTH: u64 = 30 * DAY;
+
+    struct Fixture {
+        entries: Vec<FileEntry>,
+        path_index: HashMap<PathBuf, usize>,
+        trie: DirectoryTrie,
+        projects_idx: usize,
+        src_idx: usize,
+    }
+
+    fn file_entry(path: PathBuf, is_dir: bool) -> FileEntry {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let extension = if is_dir {
+            None
+        } else {
+            path.extension()
+                .and_then(|e| e.to_str())
+                .map(str::to_lowercase)
+        };
+        FileEntry {
+            id: 0,
+            char_bloom: crate::search::fuzzy::compute_char_mask(&name),
+            path,
+            name,
+            extension,
+            size: 0,
+            modified: 0,
+            is_dir,
+            dev: 0,
+            ino: 0,
+        }
+    }
+
+    /// Synthetic tree rooted at the user's home directory so that `~/Projects`
+    /// resolves through the same code path as production.
+    fn fixture() -> Fixture {
+        let projects = match dirs::home_dir() {
+            Some(home) => home.join("Projects"),
+            None => PathBuf::from("~/Projects"),
+        };
+        let kensaku = projects.join("kensaku");
+        let src = kensaku.join("src");
+
+        let specs = [
+            (projects.clone(), true),
+            (kensaku.clone(), true),
+            (src.clone(), true),
+            (kensaku.join("Cargo.toml"), false),
+            (src.join("main.rs"), false),
+        ];
+
+        let entries: Vec<FileEntry> = specs
+            .into_iter()
+            .map(|(path, is_dir)| file_entry(path, is_dir))
+            .collect();
+        let path_index: HashMap<PathBuf, usize> = entries
+            .iter()
+            .enumerate()
+            .map(|(idx, entry)| (entry.path.clone(), idx))
+            .collect();
+        let trie = DirectoryTrie::build(&entries, &path_index, 1);
+
+        Fixture {
+            projects_idx: path_index[&projects],
+            src_idx: path_index[&src],
+            entries,
+            path_index,
+            trie,
+        }
+    }
+
+    fn parse(raw: &str) -> Query {
+        let fixture = fixture();
+        parse_query(
+            raw,
+            &fixture.entries,
+            &fixture.path_index,
+            Some(&fixture.trie),
+            1,
+        )
+    }
+
+    fn term(text: &str) -> Term {
+        Term {
+            text: text.to_string(),
+            field: TermField::Any,
+            phrase: false,
+            is_regex: false,
+        }
+    }
+
+    fn now_secs() -> u64 {
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
+
+    fn bound(op: &RangeOp) -> u64 {
+        match *op {
+            RangeOp::Gte(value) | RangeOp::Lte(value) | RangeOp::Gt(value) | RangeOp::Lt(value) => {
+                value
+            }
+            RangeOp::Between(low, high) => panic!("expected a single bound, got Between({low}, {high})"),
+        }
+    }
+
+    fn modified_range(query: &Query) -> &RangeOp {
+        match query.filters.as_slice() {
+            [Filter::Modified(op)] => op,
+            other => panic!("expected exactly one modified filter, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_plain_terms() {
+        let query = parse("alpha beta");
+        assert_eq!(query.terms, vec![term("alpha"), term("beta")]);
+        assert!(query.filters.is_empty());
+        assert!(query.scopes.is_empty());
+        assert_eq!(query.mode, Mode::Ranked);
+        assert_eq!(query.raw, "alpha beta");
+    }
+
+    #[test]
+    fn parses_quoted_phrases() {
+        let query = parse("say \"hello world\"");
+        assert_eq!(query.terms.len(), 2);
+        assert_eq!(query.terms[0], term("say"));
+        assert_eq!(query.terms[1].text, "hello world");
+        assert!(query.terms[1].phrase);
+        assert!(!query.terms[1].is_regex);
+    }
+
+    #[test]
+    fn parses_negation() {
+        let query = parse("keep -draft");
+        assert_eq!(query.terms, vec![term("keep")]);
+        assert_eq!(
+            query.filters,
+            vec![Filter::Not(Box::new(Filter::Path("draft".to_string())))]
+        );
+        assert_eq!(query.active_filters_dto.len(), 1);
+        assert!(query.active_filters_dto[0].negated);
+    }
+
+    #[test]
+    fn parses_keyword_filters() {
+        let query = parse("type:PDF ext:.rs is:image lang:rust");
+        assert!(query.terms.is_empty());
+        assert_eq!(
+            query.filters,
+            vec![
+                Filter::Type("pdf".to_string()),
+                Filter::Ext("rs".to_string()),
+                Filter::Type("image".to_string()),
+                Filter::Lang("rust".to_string()),
+            ]
+        );
+        assert_eq!(query.active_filters_dto.len(), 4);
+    }
+
+    #[test]
+    fn parses_modified_less_than() {
+        let before = now_secs();
+        let query = parse("modified:<7d");
+        let after = now_secs();
+
+        let op = modified_range(&query);
+        assert!(matches!(op, RangeOp::Gte(_)));
+        let target = bound(op);
+        let low = before.saturating_sub(WEEK);
+        let high = after.saturating_sub(WEEK);
+        assert!(
+            (low..=high).contains(&target),
+            "target {target} not in {low}..={high}"
+        );
+    }
+
+    #[test]
+    fn parses_modified_greater_than() {
+        let before = now_secs();
+        let query = parse("modified:>30d");
+        let after = now_secs();
+
+        let op = modified_range(&query);
+        assert!(matches!(op, RangeOp::Lte(_)));
+        let target = bound(op);
+        let low = before.saturating_sub(MONTH);
+        let high = after.saturating_sub(MONTH);
+        assert!(
+            (low..=high).contains(&target),
+            "target {target} not in {low}..={high}"
+        );
+    }
+
+    #[test]
+    fn parses_modified_between() {
+        let before = now_secs();
+        let query = parse("modified:7d..30d");
+        let after = now_secs();
+
+        match modified_range(&query) {
+            RangeOp::Between(low, high) => {
+                assert!(
+                    (before.saturating_sub(MONTH)..=after.saturating_sub(MONTH)).contains(low),
+                    "low {low} out of range"
+                );
+                assert!(
+                    (before.saturating_sub(WEEK)..=after.saturating_sub(WEEK)).contains(high),
+                    "high {high} out of range"
+                );
+            }
+            other => panic!("expected Between, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_size_ranges() {
+        let query = parse("size:>2mb");
+        assert_eq!(
+            query.filters,
+            vec![Filter::Size(RangeOp::Gt(2 * 1024 * 1024))]
+        );
+
+        let query = parse("size:<100kb");
+        assert_eq!(
+            query.filters,
+            vec![Filter::Size(RangeOp::Lt(100 * 1024))]
+        );
+    }
+
+    #[test]
+    fn resolves_home_scope() {
+        let fixture = fixture();
+        let query = parse_query(
+            "in:~/Projects",
+            &fixture.entries,
+            &fixture.path_index,
+            Some(&fixture.trie),
+            1,
+        );
+
+        assert!(query.terms.is_empty());
+        assert!(query.filters.is_empty());
+        assert_eq!(query.scopes.len(), 1);
+        assert!(query.scopes[0].include);
+        assert_eq!(query.scopes[0].dir_id, fixture.projects_idx as u64);
+        assert_eq!(
+            query.scopes[0].path,
+            fixture.entries[fixture.projects_idx].path
+        );
+    }
+
+    #[test]
+    fn resolves_leading_directory_token() {
+        let fixture = fixture();
+        let query = parse_query(
+            "src/ fuzzy",
+            &fixture.entries,
+            &fixture.path_index,
+            Some(&fixture.trie),
+            1,
+        );
+
+        assert_eq!(query.scopes.len(), 1);
+        assert!(query.scopes[0].include);
+        assert_eq!(
+            query.scopes[0].path,
+            fixture.entries[fixture.src_idx].path
+        );
+        assert_eq!(query.terms, vec![term("fuzzy")]);
+    }
+
+    #[test]
+    fn routes_field_terms() {
+        let query = parse("name:\"cargo\" content:needle path:src/main.rs");
+        assert_eq!(
+            query.terms,
+            vec![
+                Term {
+                    text: "cargo".to_string(),
+                    field: TermField::Name,
+                    phrase: true,
+                    is_regex: false,
+                },
+                Term {
+                    text: "needle".to_string(),
+                    field: TermField::Content,
+                    phrase: false,
+                    is_regex: false,
+                },
+                Term {
+                    text: "src/main.rs".to_string(),
+                    field: TermField::Path,
+                    phrase: false,
+                    is_regex: false,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_regex_terms() {
+        let query = parse(r#"re:"fn \\w+""#);
+        assert_eq!(query.terms.len(), 1);
+        assert!(query.terms[0].is_regex);
+        assert_eq!(query.terms[0].text, r"fn \w+");
+    }
+
+    #[test]
+    fn malformed_regex_does_not_panic() {
+        let query = parse("re:");
+        assert_eq!(query.terms.len(), 1);
+        assert!(query.terms[0].is_regex);
+        assert_eq!(query.terms[0].text, "");
+    }
+
+    #[test]
+    fn unknown_key_falls_back_to_literal_text() {
+        let query = parse("foo:bar baz");
+        assert_eq!(query.terms, vec![term("foo:bar"), term("baz")]);
+        assert!(query.filters.is_empty());
+        assert!(query.hints.is_empty());
+    }
+
+    #[test]
+    fn parses_empty_and_whitespace_only_queries() {
+        for raw in ["", "   ", "\t\n  "] {
+            let query = parse(raw);
+            assert!(query.terms.is_empty(), "raw: {raw:?}");
+            assert!(query.filters.is_empty(), "raw: {raw:?}");
+            assert!(query.scopes.is_empty(), "raw: {raw:?}");
+            assert_eq!(query.mode, Mode::Ranked);
+        }
+    }
+
+    #[test]
+    fn parses_filter_only_query() {
+        let query = parse("type:pdf size:>1kb");
+        assert!(query.terms.is_empty());
+        assert_eq!(
+            query.filters,
+            vec![
+                Filter::Type("pdf".to_string()),
+                Filter::Size(RangeOp::Gt(1024)),
+            ]
+        );
+    }
+}
