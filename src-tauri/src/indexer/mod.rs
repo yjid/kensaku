@@ -6,17 +6,19 @@ pub mod walker;
 pub mod watcher;
 
 use crate::config::KensakuConfig;
-use crate::embed::{EmbeddingQueue, ModelRegistry, UnitStore, EMBEDDING_DIM};
-use crate::indexer::content::{is_indexable_extension, is_indexable_file_name, read_text_content, ContentIndex};
+use crate::embed::{EMBEDDING_DIM, EmbeddingQueue, ModelRegistry, UnitStore};
+use crate::indexer::content::{
+    ContentIndex, is_indexable_extension, is_indexable_file_name, read_text_content,
+};
 use crate::indexer::metadata::MetadataStore;
 use crate::indexer::walker::{is_cloud_placeholder_path, walk_directories};
-use crate::indexer::watcher::{start_file_watcher, WatcherHandle};
+use crate::indexer::watcher::{WatcherHandle, start_file_watcher};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,7 +125,10 @@ impl IndexerManager {
                         store.add_unit(unit, &vec);
                     }
                     if units_count > 0 {
-                        println!("[Kensaku] Loaded {} semantic units from database", units_count);
+                        println!(
+                            "[Kensaku] Loaded {} semantic units from database",
+                            units_count
+                        );
                     }
                 }
                 Err(e) => {
@@ -200,7 +205,11 @@ impl IndexerManager {
         thread::spawn(move || {
             let (watched_dirs, excluded_dirs, excluded_exts) = {
                 let cfg = config_arc.read();
-                (cfg.watched_dirs.clone(), cfg.excluded_dirs.clone(), cfg.excluded_extensions.clone())
+                (
+                    cfg.watched_dirs.clone(),
+                    cfg.excluded_dirs.clone(),
+                    cfg.excluded_extensions.clone(),
+                )
             };
 
             crawl_start_unix_ms.store(now_unix_ms(), Ordering::Relaxed);
@@ -214,7 +223,10 @@ impl IndexerManager {
                 Self::emit_status(&app_handle, &st);
             }
 
-            println!("[Kensaku Indexer] Starting directory scan across {:?}", watched_dirs);
+            println!(
+                "[Kensaku Indexer] Starting directory scan across {:?}",
+                watched_dirs
+            );
 
             let mut files_count = 0;
             let mut content_count = 0;
@@ -286,18 +298,37 @@ impl IndexerManager {
                 st.phase = "extracting".to_string();
                 st.files_indexed = files_count;
                 st.content_indexed = content_count;
-                st.current_status = format!("Extracting text from {} potential files...", to_extract.len());
+                st.current_status = format!(
+                    "Extracting text from {} potential files...",
+                    to_extract.len()
+                );
                 Self::emit_status(&app_handle, &st);
             }
 
             let extracted: Vec<(PathBuf, String, String, u64)> = {
                 use rayon::prelude::*;
+                // Image metadata is best-effort: a corrupt or unsupported image
+                // must not prevent text extraction (OCR) from being attempted.
+                let image_db = metadata.read().db();
                 to_extract
                     .par_iter()
                     .filter_map(|(path, name, modified)| {
-                        read_text_content(path, 1_048_576).map(|content| {
-                            (path.clone(), name.clone(), content, *modified)
-                        })
+                        let image_extension =
+                            path.extension().and_then(|ext| ext.to_str()).filter(|ext| {
+                                crate::indexer::extract::image::is_supported_image_extension(ext)
+                            });
+                        if image_extension.is_some()
+                            && let (Some((width, height)), Some(phash)) = (
+                                crate::indexer::extract::image::dimensions(path),
+                                crate::indexer::extract::image::phash64(path),
+                            )
+                            && let Some(db) = image_db.as_ref()
+                        {
+                            let _ = db.set_image_meta(path, width, height, phash);
+                        }
+
+                        read_text_content(path, 1_048_576)
+                            .map(|content| (path.clone(), name.clone(), content, *modified))
                     })
                     .collect()
             };
@@ -341,8 +372,9 @@ impl IndexerManager {
                 .filter(|root| std::fs::read_dir(root).is_err())
                 .cloned()
                 .collect();
-            let belongs_to_unavailable_root =
-                |path: &std::path::Path| unavailable_roots.iter().any(|root| path.starts_with(root));
+            let belongs_to_unavailable_root = |path: &std::path::Path| {
+                unavailable_roots.iter().any(|root| path.starts_with(root))
+            };
 
             if !unavailable_roots.is_empty() {
                 let hint = format!(
@@ -396,7 +428,10 @@ impl IndexerManager {
                 match c_index.purge_stale(&valid_paths, &unavailable_roots) {
                     Ok(0) => {}
                     Ok(purged) => {
-                        println!("[Kensaku Indexer] Purged {} stale content documents", purged);
+                        println!(
+                            "[Kensaku Indexer] Purged {} stale content documents",
+                            purged
+                        );
                     }
                     Err(e) => {
                         eprintln!(
@@ -424,7 +459,10 @@ impl IndexerManager {
                 Self::emit_status(&app_handle, &st);
             }
 
-            println!("[Kensaku Indexer] Finished initial index: {} files ({} with full text)", files_count, content_count);
+            println!(
+                "[Kensaku Indexer] Finished initial index: {} files ({} with full text)",
+                files_count, content_count
+            );
 
             // Start file watcher for live changes, replacing any previous one.
             let handle = start_file_watcher(

@@ -39,6 +39,9 @@ export interface FilePreview {
   content?: string | null;
   total_lines?: number | null;
   child_count?: number | null;
+  /** Pixel dimensions, image previews only — best-effort from the backend. */
+  width?: number | null;
+  height?: number | null;
 }
 
 export interface CommandOutput {

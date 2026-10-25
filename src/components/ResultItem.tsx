@@ -3,6 +3,7 @@ import { ChevronRight, Copy, Check, ExternalLink, FolderOpen } from "lucide-reac
 import { SearchResult } from "../types";
 import { FileTypeIcon } from "./FileTypeIcon";
 import { HighlightedName } from "./EmptyState";
+import { isThumbImage, useThumbnail, THUMBNAIL_LAZY_LIMIT } from "../lib/thumbnails";
 import {
   formatBytes,
   formatRelativeTime,
@@ -63,6 +64,13 @@ export const ResultItem = React.memo<ResultItemProps>(
   ({ result, query, index, isSelected, view, onSelect, onOpen, onReveal, onCopyPath }) => {
     const [copied, setCopied] = React.useState(false);
 
+    /* Thumbnails only for image files inside the initial visible window;
+       the row is a fixed 56px square either way, so load/failure can't shift
+       layout — the icon stays until pixels are on screen. */
+    const imageEligible =
+      !result.is_dir && isThumbImage(result.filename) && index < THUMBNAIL_LAZY_LIMIT;
+    const { src: thumbSrc, failed: thumbFailed } = useThumbnail(result.path, imageEligible);
+
     const handleCopy = (e: React.MouseEvent) => {
       e.stopPropagation();
       onCopyPath();
@@ -82,6 +90,48 @@ export const ResultItem = React.memo<ResultItemProps>(
     const hasSnippet = Boolean(result.snippet) && view === "list";
 
     if (view === "grid") {
+      /* Image files get a thumbnail-forward card: 128px image area on top,
+         one-line name, meta line. Falls back to the classic icon card the
+         moment (or if) the thumbnail can't resolve. */
+      if (imageEligible && !thumbFailed) {
+        return (
+          <button
+            type="button"
+            onClick={onSelect}
+            onDoubleClick={onOpen}
+            style={stagger}
+            className={`${index < 8 ? "row-stagger" : "row-enter"} group relative flex h-[192px] w-[160px] flex-col gap-1.5 rounded-[14px] border p-2.5 text-left transition-colors duration-150 ${
+              isSelected
+                ? "border-accent bg-accent-soft"
+                : "border-line bg-elevated hover:border-line-strong hover:bg-sunken"
+            }`}
+          >
+            <span
+              aria-hidden={thumbSrc ? undefined : "true"}
+              className="block h-[128px] w-full shrink-0 overflow-hidden rounded-[10px] border border-line bg-sunken"
+            >
+              {thumbSrc && (
+                <img
+                  src={thumbSrc}
+                  alt=""
+                  draggable={false}
+                  className="fade-in h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.04]"
+                />
+              )}
+            </span>
+            <p className="truncate text-[12px] font-medium leading-[16px] text-fg">
+              <HighlightedName text={result.filename} query={query} />
+            </p>
+            <div className="flex items-center justify-between gap-1">
+              <span className="truncate font-mono text-[10px] leading-[15px] text-subtle">
+                {formatBytes(result.file_size)}
+              </span>
+              <ChevronRight className="h-3.5 w-3.5 text-subtle opacity-0 transition-opacity duration-150 group-hover:opacity-100" />
+            </div>
+          </button>
+        );
+      }
+
       return (
         <button
           type="button"
@@ -129,7 +179,16 @@ export const ResultItem = React.memo<ResultItemProps>(
           }
         `}
       >
-        <FileTypeIcon result={result} />
+        {thumbSrc ? (
+          <img
+            src={thumbSrc}
+            alt=""
+            draggable={false}
+            className="fade-in h-8 w-8 shrink-0 rounded-lg border border-line object-cover"
+          />
+        ) : (
+          <FileTypeIcon result={result} />
+        )}
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
