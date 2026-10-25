@@ -11,6 +11,8 @@ import {
   FolderOpen,
   Copy,
   Check,
+  Table,
+  Presentation,
 } from "lucide-react";
 
 interface ResultItemProps {
@@ -66,7 +68,16 @@ export const ResultItem: React.FC<ResultItemProps> = ({
     if (["zip", "tar", "gz", "rar", "7z"].includes(ext)) {
       return <FileArchive className="w-5 h-5 text-amber-400" />;
     }
-    if (["md", "txt", "doc", "pdf", "log"].includes(ext)) {
+    if (["xls", "xlsx", "csv", "tsv", "ods", "numbers"].includes(ext)) {
+      return <Table className="w-5 h-5 text-emerald-400" />;
+    }
+    if (["ppt", "pptx", "odp", "key"].includes(ext)) {
+      return <Presentation className="w-5 h-5 text-orange-400" />;
+    }
+    if (ext === "pdf") {
+      return <FileText className="w-5 h-5 text-rose-400" />;
+    }
+    if (["md", "txt", "doc", "docx", "log", "rtf", "odt", "pages", "epub"].includes(ext)) {
       return <FileText className="w-5 h-5 text-sky-400" />;
     }
     return <File className="w-5 h-5 text-slate-400" />;
