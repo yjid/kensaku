@@ -1,3 +1,11 @@
+/* ---- get_snippets DTO. Snippets are fetched in a second phase after ---- */
+/* ---- results land; `null` means "no snippet for this path".          ---- */
+
+export interface SnippetDto {
+  path: string;
+  snippet: string | null;
+}
+
 export interface SearchResult {
   path: string;
   filename: string;

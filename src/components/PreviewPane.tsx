@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { SearchResult, FilePreview } from "../types";
 import {
@@ -33,36 +33,61 @@ export const PreviewPane = React.memo<PreviewPaneProps>(
     const [loading, setLoading] = useState(false);
     const [copiedPath, setCopiedPath] = useState(false);
 
+    /* Preview fetching is debounced (200ms) and sequence-guaranteed: the
+       timer cancels on selection change, and in-flight responses from a
+       previous selection are discarded by a monotonic request counter. A
+       loaded path is never refetched — flipping `result` identity for the
+       same path stays intact. */
+    const loadedPathRef = useRef<string | null>(null);
+    const reqSeqRef = useRef(0);
+
     useEffect(() => {
-      if (!result) {
+      const current = result;
+
+      if (current === null) {
+        reqSeqRef.current += 1; // invalidate anything in flight
+        loadedPathRef.current = null;
         setPreview(null);
+        setLoading(false);
         return;
       }
-      let cancelled = false;
-      setLoading(true);
-      invoke<FilePreview>("get_file_preview", { path: result.path })
-        .then((p) => {
-          if (!cancelled) {
+
+      const path = current.path;
+
+      // Same path already rendered — do not refetch on identity changes.
+      if (loadedPathRef.current === path) return;
+
+      const timer = window.setTimeout(() => {
+        const req = ++reqSeqRef.current;
+        setLoading(true);
+        invoke<FilePreview>("get_file_preview", { path })
+          .then((p) => {
+            if (reqSeqRef.current !== req) return; // stale response
+            loadedPathRef.current = path;
             setPreview(p);
             setLoading(false);
-          }
-        })
-        .catch((err) => {
-          console.error("Preview error:", err);
-          if (!cancelled) {
+          })
+          .catch((err) => {
+            console.error("Preview error:", err);
+            if (reqSeqRef.current !== req) return; // stale response
+            loadedPathRef.current = path;
             setPreview({
-              path: result.path,
-              filename: result.filename,
-              file_size: result.file_size,
-              modified: result.modified,
-              is_dir: result.is_dir,
-              preview_type: result.is_dir ? "dir" : "binary",
+              path,
+              filename: current.filename,
+              file_size: current.file_size,
+              modified: current.modified,
+              is_dir: current.is_dir,
+              preview_type: current.is_dir ? "dir" : "binary",
             });
             setLoading(false);
-          }
-        });
+          });
+      }, 200);
+
       return () => {
-        cancelled = true;
+        // Selection changed (or unmounted): cancel pending timer and
+        // discard any response that is already in flight.
+        window.clearTimeout(timer);
+        reqSeqRef.current += 1;
       };
     }, [result?.path]);
 
@@ -86,6 +111,9 @@ export const PreviewPane = React.memo<PreviewPaneProps>(
     };
 
     const contentRender = renderContent(preview, searchQuery, result);
+    // While the debounced fetch runs, a previous file's body could paint
+    // under the new header — show the spinner instead of mismatched content.
+    const contentStale = preview !== null && preview.path !== result.path;
 
     return (
       <aside className={`hidden min-[900px]:flex h-full flex-col overflow-hidden ${PREVIEW_W}`}>
@@ -157,7 +185,7 @@ export const PreviewPane = React.memo<PreviewPaneProps>(
 
         {/* Body */}
         <div className="min-h-0 flex-1 overflow-y-auto bg-sunken/50 p-2">
-          {loading ? (
+          {loading || contentStale ? (
             <div className="flex h-40 items-center justify-center">
               <LoaderCircle className="h-4 w-4 animate-spin text-subtle" />
             </div>
