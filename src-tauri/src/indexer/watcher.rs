@@ -92,18 +92,46 @@ fn run_watcher(
             break;
         }
 
-        // Read with timeout so we can periodically commit and honor stop.
-        match rx.recv_timeout(Duration::from_millis(500)) {
-            Ok(Ok(event)) => {
-                let cfg = config.read().clone();
-                pending_commits += handle_event(&event, &cfg, &metadata, &content_index);
+        // Drain all available events in a batch (coalescing) instead of
+        // one-at-a-time. Read config once per batch, not per event.
+        let cfg = config.read().clone();
+        let mut batch_count = 0;
+        loop {
+            match rx.try_recv() {
+                Ok(Ok(event)) => {
+                    pending_commits += handle_event(&event, &cfg, &metadata, &content_index);
+                    batch_count += 1;
+                    if batch_count >= 100 {
+                        break; // Process max 100 per batch to avoid blocking
+                    }
+                }
+                Ok(Err(e)) => {
+                    eprintln!("[Kensaku Watcher] Error event: {:?}", e);
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    // No more events; fall through to commit check
+                    break;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    return; // Channel closed
+                }
             }
-            Ok(Err(e)) => {
-                eprintln!("[Kensaku Watcher] Error event: {:?}", e);
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                break;
+        }
+
+        // If no events were drained, wait for one with timeout
+        if batch_count == 0 {
+            match rx.recv_timeout(Duration::from_millis(500)) {
+                Ok(Ok(event)) => {
+                    let cfg = config.read().clone();
+                    pending_commits += handle_event(&event, &cfg, &metadata, &content_index);
+                }
+                Ok(Err(e)) => {
+                    eprintln!("[Kensaku Watcher] Error event: {:?}", e);
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    break;
+                }
             }
         }
 
