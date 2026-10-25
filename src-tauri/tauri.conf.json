@@ -32,9 +32,10 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$APPCONFIG/kensaku/thumbs/**",
-          "$APPDATA/kensaku/thumbs/**",
-          "$APPLOCALDATA/kensaku/thumbs/**"
+          "$CONFIG/kensaku/thumbs/**",
+          "$APPCONFIG/thumbs/**",
+          "$APPLOCALDATA/kensaku/thumbs/**",
+          "$APPDATA/kensaku/thumbs/**"
         ]
       }
     }
