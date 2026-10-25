@@ -1,7 +1,9 @@
 use crate::config::KensakuConfig;
 use crate::indexer::content::{is_indexable_extension, is_indexable_file_name, read_text_content, ContentIndex};
 use crate::indexer::metadata::MetadataStore;
-use crate::indexer::walker::{file_identity, FileEntry};
+use crate::indexer::walker::{
+    file_identity, is_cloud_placeholder, is_cloud_placeholder_path, walk_directories, FileEntry,
+};
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use parking_lot::RwLock;
@@ -199,13 +201,30 @@ fn handle_event(
                 let old_path = &event.paths[0];
                 let new_path = &event.paths[1];
 
-                if !is_path_excluded(old_path, cfg) {
-                    handle_path_remove(old_path, metadata, content_index);
-                    changes += 1;
-                }
-                if !is_path_excluded(new_path, cfg) {
-                    handle_file_upsert(new_path, metadata, content_index);
-                    changes += 1;
+                let old_excluded = is_path_excluded(old_path, cfg);
+                let new_excluded = is_path_excluded(new_path, cfg);
+
+                if new_path.is_dir() {
+                    // Moving a directory does not produce per-child events, so
+                    // the whole subtree has to be translated to the new prefix
+                    // (and its content re-indexed) instead of being dropped.
+                    if !new_excluded {
+                        handle_directory_rename(old_path, new_path, cfg, metadata, content_index);
+                        changes += 1;
+                    } else if !old_excluded {
+                        // Moved into an excluded location: drop the subtree.
+                        handle_path_remove(old_path, metadata, content_index);
+                        changes += 1;
+                    }
+                } else {
+                    if !old_excluded {
+                        handle_path_remove(old_path, metadata, content_index);
+                        changes += 1;
+                    }
+                    if !new_excluded {
+                        handle_file_upsert(new_path, metadata, content_index);
+                        changes += 1;
+                    }
                 }
             }
         }
@@ -259,6 +278,75 @@ fn handle_event(
     }
 
     changes
+}
+
+/// Applies a directory rename that the watcher reported as a single event.
+///
+/// Rewrites the stored subtree under the metadata write lock (one database
+/// transaction), drops the content documents that belonged to the old paths,
+/// and then walks the new directory in a short-lived thread to restore content
+/// without waiting for a restart.
+fn handle_directory_rename(
+    old_path: &Path,
+    new_path: &Path,
+    cfg: &KensakuConfig,
+    metadata: &Arc<RwLock<MetadataStore>>,
+    content_index: &Arc<RwLock<Option<ContentIndex>>>,
+) {
+    let old_paths = metadata.write().rename_prefix(old_path, new_path);
+
+    // The old path terms no longer match anything; the repair walk re-adds
+    // fresh documents under the new paths.
+    if let Some(c_index) = content_index.read().as_ref() {
+        for path in &old_paths {
+            let _ = c_index.remove(path);
+        }
+        let _ = c_index.commit();
+    }
+
+    let new_dir = new_path.to_path_buf();
+    let excluded_dirs = cfg.excluded_dirs.clone();
+    let metadata = Arc::clone(metadata);
+    let content_index = Arc::clone(content_index);
+
+    // A large directory move can take a while; re-index it off the watcher
+    // thread so event draining is not blocked.
+    thread::spawn(move || {
+        let entries = walk_directories(std::slice::from_ref(&new_dir), &excluded_dirs);
+        let mut pending_commits = 0usize;
+
+        for entry in entries {
+            let is_indexable = !entry.is_dir
+                && (is_indexable_extension(entry.extension.as_deref())
+                    || is_indexable_file_name(&entry.name));
+            let path = entry.path.clone();
+            let name = entry.name.clone();
+            let modified = entry.modified;
+
+            metadata.write().add(entry);
+
+            // Cloud placeholders keep metadata only: reading them would
+            // download the file.
+            if !is_indexable || is_cloud_placeholder_path(&path) {
+                continue;
+            }
+
+            if let Some(content) = read_text_content(&path, 1_048_576)
+                && let Some(c_index) = content_index.read().as_ref()
+            {
+                let _ = c_index.add_or_update(&path, &name, &content, modified);
+                pending_commits += 1;
+                if pending_commits >= 1000 {
+                    let _ = c_index.commit();
+                    pending_commits = 0;
+                }
+            }
+        }
+
+        if let Some(c_index) = content_index.read().as_ref() {
+            let _ = c_index.commit();
+        }
+    });
 }
 
 fn handle_file_upsert(
@@ -320,6 +408,7 @@ fn handle_file_upsert(
 
     if !is_dir
         && (is_indexable_extension(extension.as_deref()) || is_indexable_file_name(&name))
+        && !is_cloud_placeholder(&meta)
         && let Some(content) = read_text_content(path, 100_000)
         && let Some(c_index) = content_index.read().as_ref()
     {
