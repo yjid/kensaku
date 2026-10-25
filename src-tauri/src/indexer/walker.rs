@@ -38,13 +38,11 @@ pub fn file_identity(meta: &std::fs::Metadata) -> (u64, u64) {
     }
 }
 
-pub fn walk_directories<F>(
+pub fn walk_directories(
     dirs: &[PathBuf],
     excluded_dirs: &[String],
-    mut on_entry: F,
-) where
-    F: FnMut(FileEntry) -> bool,
-{
+) -> Vec<FileEntry> {
+    let mut result = Vec::new();
     let excluded_set: HashSet<String> = excluded_dirs.iter().map(|s| s.to_lowercase()).collect();
 
     for root in dirs {
@@ -122,9 +120,9 @@ pub fn walk_directories<F>(
                 char_bloom,
             };
 
-            if !on_entry(file_entry) {
-                return;
-            }
+            result.push(file_entry);
         }
     }
+
+    result
 }
