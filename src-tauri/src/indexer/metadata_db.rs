@@ -36,8 +36,15 @@ impl MetadataDb {
         std::fs::create_dir_all(&db_dir)
             .map_err(|e| format!("Failed to create metadata directory: {}", e))?;
 
-        let db_path = db_dir.join("metadata.db");
-        let conn = Connection::open(&db_path)
+        Self::open_at(&db_dir.join("metadata.db"))
+    }
+
+    /// Opens (and initializes) a database at an explicit path.
+    ///
+    /// Used by [`Self::open`] and by tests so they never touch the real config
+    /// directory.
+    fn open_at(db_path: &Path) -> Result<Self, String> {
+        let conn = Connection::open(db_path)
             .map_err(|e| format!("Failed to open metadata database: {}", e))?;
 
         conn.execute_batch(
@@ -208,6 +215,84 @@ impl MetadataDb {
         .map_err(|e| format!("Failed to delete metadata entry: {}", e))?;
 
         Ok(())
+    }
+
+    /// Rewrites every node that is `old` or lives under `old` so that it lives
+    /// under `new` instead, preserving relative suffixes.
+    ///
+    /// The whole rewrite runs in one transaction so a crash cannot leave a
+    /// moved directory half-indexed at its old location. Rows that already sit
+    /// under the destination are dropped first: the filesystem rename replaced
+    /// that subtree and the caller re-indexes it. Returns the number of rows
+    /// moved.
+    pub fn rename_prefix(&self, old: &Path, new: &Path) -> Result<usize, String> {
+        let old_str = old.to_string_lossy().into_owned();
+        let new_str = new.to_string_lossy().into_owned();
+        if old_str.is_empty() || old_str == new_str {
+            return Ok(0);
+        }
+        // Trailing separator keeps the match component-aligned (`/a/b` must not
+        // match `/a/bc`).
+        let old_prefix = format!("{}{}", old_str, std::path::MAIN_SEPARATOR);
+        let new_prefix = format!("{}{}", new_str, std::path::MAIN_SEPARATOR);
+
+        let conn = self.conn.lock();
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Failed to start rename transaction: {}", e))?;
+
+        // Comparing paths in Rust avoids SQL `LIKE` metacharacter surprises
+        // (`_` and `%` are legal in file names).
+        let all_paths: Vec<String> = {
+            let mut stmt = tx
+                .prepare("SELECT path FROM nodes")
+                .map_err(|e| format!("Failed to prepare rename query: {}", e))?;
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|e| format!("Failed to read paths for rename: {}", e))?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("Failed to decode paths for rename: {}", e))?
+        };
+
+        for path in &all_paths {
+            if path == &new_str || path.starts_with(&new_prefix) {
+                tx.execute("DELETE FROM nodes WHERE path = ?1", params![path])
+                    .map_err(|e| format!("Failed to clear destination path: {}", e))?;
+            }
+        }
+
+        let mut moved = 0usize;
+        for path in &all_paths {
+            let new_path = if path == &old_str {
+                new_str.clone()
+            } else if let Some(suffix) = path.strip_prefix(&old_prefix) {
+                format!("{}{}{}", new_str, std::path::MAIN_SEPARATOR, suffix)
+            } else {
+                continue;
+            };
+
+            moved += tx
+                .execute(
+                    "UPDATE nodes SET path = ?1 WHERE path = ?2",
+                    params![new_path, path],
+                )
+                .map_err(|e| format!("Failed to rename node path: {}", e))?;
+        }
+
+        // Only the moved root changes its display name; descendants keep theirs.
+        if moved > 0
+            && let Some(name) = new.file_name()
+        {
+            tx.execute(
+                "UPDATE nodes SET name = ?1 WHERE path = ?2",
+                params![name.to_string_lossy().to_string(), new_str],
+            )
+            .map_err(|e| format!("Failed to rename node: {}", e))?;
+        }
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit rename: {}", e))?;
+        Ok(moved)
     }
 
     pub fn clear(&self) -> Result<(), String> {
@@ -461,5 +546,118 @@ impl MetadataDb {
         } else {
             Ok(None)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
+
+    struct TempDb {
+        db: Option<MetadataDb>,
+        dir: PathBuf,
+    }
+
+    impl TempDb {
+        fn new(tag: &str) -> Self {
+            let seq = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir().join(format!(
+                "kensaku-metadata-test-{}-{}-{}",
+                tag,
+                std::process::id(),
+                seq
+            ));
+            std::fs::create_dir_all(&dir).expect("create temp db dir");
+            let db = MetadataDb::open_at(&dir.join("metadata.db")).expect("open temp db");
+            Self {
+                db: Some(db),
+                dir,
+            }
+        }
+
+        fn db(&self) -> &MetadataDb {
+            self.db.as_ref().expect("db open")
+        }
+    }
+
+    impl Drop for TempDb {
+        fn drop(&mut self) {
+            // Close the connection before deleting the directory (Windows).
+            self.db.take();
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    fn entry(path: &Path, is_dir: bool) -> FileEntry {
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        FileEntry {
+            id: 0,
+            path: path.to_path_buf(),
+            name,
+            extension: if is_dir {
+                None
+            } else {
+                path.extension().map(|ext| ext.to_string_lossy().to_lowercase())
+            },
+            size: 1,
+            modified: 1,
+            is_dir,
+            dev: 0,
+            ino: 0,
+            char_bloom: 0,
+        }
+    }
+
+    fn paths(db: &MetadataDb) -> Vec<PathBuf> {
+        db.load_all()
+            .expect("load nodes")
+            .into_iter()
+            .map(|entry| entry.path)
+            .collect()
+    }
+
+    #[test]
+    fn rename_prefix_rewrites_subtree_and_preserves_siblings() {
+        let temp = TempDb::new("rename-prefix");
+        let db = temp.db();
+        let old_root = temp.dir.join("old");
+        let new_root = temp.dir.join("new");
+
+        db.upsert(&entry(&old_root, true)).unwrap();
+        db.upsert(&entry(&old_root.join("a.txt"), false)).unwrap();
+        db.upsert(&entry(&old_root.join("nested"), true)).unwrap();
+        db.upsert(&entry(&old_root.join("nested").join("b.rs"), false))
+            .unwrap();
+        // Component-aligned prefix: a sibling with a longer name must survive.
+        let sibling = temp.dir.join("oldish").join("c.txt");
+        db.upsert(&entry(&sibling, false)).unwrap();
+
+        let moved = db
+            .rename_prefix(&old_root, &new_root)
+            .expect("rename prefix");
+        assert_eq!(moved, 4);
+
+        let after = paths(db);
+        assert!(after.contains(&new_root));
+        assert!(after.contains(&new_root.join("a.txt")));
+        assert!(after.contains(&new_root.join("nested")));
+        assert!(after.contains(&new_root.join("nested").join("b.rs")));
+        assert!(after.contains(&sibling));
+        assert!(!after.iter().any(|path| path.starts_with(&old_root)));
+
+        let renamed_root = db
+            .load_all()
+            .expect("load nodes")
+            .into_iter()
+            .find(|entry| entry.path == new_root)
+            .expect("renamed root row");
+        assert_eq!(renamed_root.name, "new");
+        assert!(renamed_root.is_dir);
     }
 }

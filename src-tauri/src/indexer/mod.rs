@@ -9,7 +9,7 @@ use crate::config::KensakuConfig;
 use crate::embed::{EmbeddingQueue, ModelRegistry, UnitStore, EMBEDDING_DIM};
 use crate::indexer::content::{is_indexable_extension, is_indexable_file_name, read_text_content, ContentIndex};
 use crate::indexer::metadata::MetadataStore;
-use crate::indexer::walker::walk_directories;
+use crate::indexer::walker::{is_cloud_placeholder_path, walk_directories};
 use crate::indexer::watcher::{start_file_watcher, WatcherHandle};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
@@ -260,9 +260,13 @@ impl IndexerManager {
                     store.add(entry.clone());
                 }
 
-                // Queue indexable files for parallel content extraction
+                // Queue indexable files for parallel content extraction.
+                // Cloud placeholders stay metadata-only so indexing does not
+                // hydrate (download) them.
                 if !entry.is_dir
-                    && (is_indexable_extension(entry.extension.as_deref()) || is_indexable_file_name(&entry.name))
+                    && (is_indexable_extension(entry.extension.as_deref())
+                        || is_indexable_file_name(&entry.name))
+                    && !is_cloud_placeholder_path(&entry.path)
                 {
                     to_extract.push((entry.path.clone(), entry.name.clone(), entry.modified));
                 }
@@ -328,13 +332,39 @@ impl IndexerManager {
                 let _ = db.commit_transaction();
             }
 
+            // A configured root that cannot be read (unplugged external drive,
+            // unmounted network share) is not "everything was deleted": keep
+            // its metadata and documents so reconnecting the drive does not
+            // require a full rebuild.
+            let unavailable_roots: Vec<PathBuf> = watched_dirs
+                .iter()
+                .filter(|root| std::fs::read_dir(root).is_err())
+                .cloned()
+                .collect();
+            let belongs_to_unavailable_root =
+                |path: &std::path::Path| unavailable_roots.iter().any(|root| path.starts_with(root));
+
+            if !unavailable_roots.is_empty() {
+                let hint = format!(
+                    "{} roots unavailable, index preserved",
+                    unavailable_roots.len()
+                );
+                println!("[Kensaku Indexer] {}: {:?}", hint, unavailable_roots);
+                let mut st = status.write();
+                st.current_status = hint;
+                Self::emit_status(&app_handle, &st);
+            }
+
             // Drop metadata entries for files that no longer exist on disk.
             let stale_paths: Vec<PathBuf> = {
                 let store = metadata.read();
                 store
                     .get_entries()
                     .iter()
-                    .filter(|entry| !crawled_paths.contains(&entry.path))
+                    .filter(|entry| {
+                        !crawled_paths.contains(&entry.path)
+                            && !belongs_to_unavailable_root(&entry.path)
+                    })
                     .map(|entry| entry.path.clone())
                     .collect()
             };
@@ -363,7 +393,7 @@ impl IndexerManager {
             };
 
             if let Some(c_index) = content_index.read().as_ref() {
-                match c_index.purge_stale(&valid_paths) {
+                match c_index.purge_stale(&valid_paths, &unavailable_roots) {
                     Ok(0) => {}
                     Ok(purged) => {
                         println!("[Kensaku Indexer] Purged {} stale content documents", purged);
