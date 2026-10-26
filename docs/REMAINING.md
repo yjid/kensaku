@@ -25,8 +25,10 @@ thumbnail asset scope fix, snippets no longer invoke the full extractor
 (3.86 s → 0.14 s), metadata DB vacuum (310 MB → 604 KB), OCR toggle persistence,
 and OCR language download. The crawl is now a single extraction pass that feeds
 Tantivy and the semantic index together (images are OCR'd once), with bounded
-extraction slots, OMP-pinned tesseract children, streaming index commits, and a
-16 MB Tantivy writer arena. See [BENCHMARKS.md](BENCHMARKS.md#indexing-and-extraction-reference).
+extraction slots, OMP-pinned tesseract children, streaming index commits, a
+16 MB Tantivy writer arena, and perceptual hashing deferred to a background
+one-decode-at-a-time pass. Dev builds optimize dependency code so profiling is
+representative. See [BENCHMARKS.md](BENCHMARKS.md#indexing-and-extraction-reference).
 
 ---
 

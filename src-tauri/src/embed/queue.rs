@@ -11,6 +11,9 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+/// Cached chunk vectors for one content hash.
+type CachedChunks = Arc<Vec<(usize, usize, Vec<i8>)>>;
+
 pub struct EmbeddingQueue {
     pub model: ModelRegistry,
     pub unit_store: Arc<RwLock<UnitStore>>,
@@ -76,7 +79,7 @@ impl EmbeddingQueue {
                     .build()
                     .ok();
 
-                let mut hash_cache: HashMap<String, Arc<Vec<(usize, usize, Vec<i8>)>>> = HashMap::new();
+                let mut hash_cache: HashMap<String, CachedChunks> = HashMap::new();
                 let mut was_embedding = false;
 
                 while is_running.load(Ordering::SeqCst) {
@@ -115,7 +118,9 @@ impl EmbeddingQueue {
                             }
                             Self::emit_status(&app_handle, &status);
                         }
-                        thread::sleep(Duration::from_millis(1000));
+                        // Idle poll interval. Kept short so a crawl that stops
+                        // this worker does not sit in `join` for a full second.
+                        thread::sleep(Duration::from_millis(200));
                         continue;
                     }
 

@@ -42,6 +42,17 @@ versioning: [SemVer](https://semver.org/).
 - **No unbounded timeout backlog.** Extraction slots are bounded, so slow
   documents can no longer queue detached work faster than it completes (which
   used to turn a crawl into hundreds of spurious 8-second timeouts).
+- **Perceptual hashing no longer blocks indexing.** Images contribute their
+  dimensions from the header during the crawl; the perceptual hash is computed
+  afterwards by a one-decode-at-a-time background pass for `/dupes`. Previously
+  a two-slot decode gate sat in front of OCR and serialized image-heavy crawls.
+- **Live progress counters.** Document and embedding counts are published during
+  extraction instead of only at commit boundaries, so the first-run UI no
+  longer shows `0` while work is happening.
+- **Faster dev builds.** `make dev` now compiles dependencies (`image`, Tantivy,
+  PDF/Office parsers) at `opt-level = 2` without dependency debug info, so
+  profile builds are much closer to release and `target/debug` is several GB
+  smaller.
 - **Streaming index commit.** Extracted text is written through a bounded
   channel instead of accumulating every document in memory until the end.
 - **No full index purge per crawl.** Disappeared files are removed by path

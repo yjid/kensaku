@@ -106,6 +106,70 @@ fn fnv_hash(data: &str) -> u64 {
     h
 }
 
+/// True while a perceptual-hash backfill thread is running.
+static PHASH_BACKFILL_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Computes perceptual hashes for images the crawl deliberately skipped.
+///
+/// Full-image decoding is the slowest and most memory-hungry part of image
+/// handling, and the hash is only used by the `/dupes` view — it must never
+/// gate OCR or the search index. This worker decodes one image at a time,
+/// pauses during crawls and while a query is in flight, and lets hashes appear
+/// progressively in duplicate grouping.
+fn start_phash_backfill(
+    metadata: Arc<RwLock<MetadataStore>>,
+    crawl_running: Arc<AtomicBool>,
+    query_in_flight: Arc<AtomicBool>,
+) {
+    if PHASH_BACKFILL_RUNNING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    thread::spawn(move || {
+        struct ResetOnExit;
+        impl Drop for ResetOnExit {
+            fn drop(&mut self) {
+                PHASH_BACKFILL_RUNNING.store(false, Ordering::SeqCst);
+            }
+        }
+        let _reset = ResetOnExit;
+
+        let Some(db) = metadata.read().db() else {
+            return;
+        };
+
+        loop {
+            // Never compete with a crawl or an interactive query.
+            while crawl_running.load(Ordering::Relaxed) {
+                thread::sleep(std::time::Duration::from_millis(500));
+            }
+            while query_in_flight.load(Ordering::Relaxed) {
+                thread::sleep(std::time::Duration::from_millis(100));
+            }
+
+            let paths = match db.image_paths_missing_phash(16) {
+                Ok(paths) => paths,
+                Err(_) => return,
+            };
+            if paths.is_empty() {
+                return;
+            }
+
+            for path in paths {
+                if crawl_running.load(Ordering::Relaxed) {
+                    break;
+                }
+                let hash =
+                    crate::indexer::extract::image::phash64(&path).unwrap_or(u64::MAX);
+                let _ = db.set_image_phash(&path, hash);
+                // One decode at a time, with a small yield between images so
+                // typing stays responsive.
+                thread::sleep(std::time::Duration::from_millis(20));
+            }
+        }
+    });
+}
+
 pub struct IndexerManager {
     pub metadata: Arc<RwLock<MetadataStore>>,
     pub content_index: Arc<RwLock<Option<ContentIndex>>>,
@@ -304,7 +368,7 @@ impl IndexerManager {
                 watched_dirs
             );
 
-            let mut files_count = 0;
+            let mut files_count: usize = 0;
             let mut content_count = 0;
             let mut pending_commits = 0;
             let mut crawled_paths: HashSet<PathBuf> = HashSet::new();
@@ -390,7 +454,7 @@ impl IndexerManager {
                     });
                 }
 
-                if files_count % 500 == 0 {
+                if files_count.is_multiple_of(500) {
                     let mut st = status.write();
                     st.files_indexed = files_count;
                     st.content_indexed = content_count;
@@ -451,6 +515,7 @@ impl IndexerManager {
 
             let extract_done = AtomicUsize::new(0);
             let mut extracted_paths: HashSet<PathBuf> = HashSet::new();
+            let mut units_added = 0usize;
 
             // Bounded handoff: at most 32 extracted documents (and their
             // vectors) are in flight at any moment.
@@ -467,18 +532,17 @@ impl IndexerManager {
 
                 scope.spawn(move |_| {
                     to_extract.par_iter().for_each_with(tx, |tx, job| {
-                        // Image metadata is best-effort: a corrupt or unsupported
-                        // image must not prevent text extraction (OCR).
+                        // Image dimensions come from the file header, which is
+                        // cheap. Perceptual hashing needs a full decode; doing
+                        // it here would serialize the whole crawl behind a
+                        // handful of decode slots and starve OCR. The hash is
+                        // filled in later by the background backfill.
                         if job.is_image
-                            && let Some(_decode_slot) =
-                                crate::indexer::extract::acquire_image_decode_slot()
-                            && let (Some((width, height)), Some(phash)) = (
-                                crate::indexer::extract::image::dimensions(&job.path),
-                                crate::indexer::extract::image::phash64(&job.path),
-                            )
+                            && let Some((width, height)) =
+                                crate::indexer::extract::image::dimensions(&job.path)
                             && let Some(db) = image_db.as_ref()
                         {
-                            let _ = db.set_image_meta(&job.path, width, height, phash);
+                            let _ = db.set_image_dimensions(&job.path, width, height);
                         }
 
                         let content = read_text_content(&job.path, 1_048_576);
@@ -501,7 +565,7 @@ impl IndexerManager {
                         };
 
                         let done = extract_done.fetch_add(1, Ordering::Relaxed) + 1;
-                        if done % 25 == 0 || done == extract_total {
+                        if done.is_multiple_of(25) || done == extract_total {
                             let mut st = producer_status.write();
                             st.extract_done = done;
                             st.current_status =
@@ -534,6 +598,16 @@ impl IndexerManager {
                             c_index.add_or_update(&work.path, &work.name, content, work.modified);
                         content_count += 1;
                         pending_commits += 1;
+
+                        // Publish live counts instead of waiting for a commit
+                        // boundary, otherwise the UI reports 0 documents while
+                        // extraction is still running.
+                        if content_count.is_multiple_of(64) {
+                            let mut st = status.write();
+                            st.files_indexed = files_count;
+                            st.content_indexed = content_count;
+                            Self::emit_status(&app_handle, &st);
+                        }
                     }
 
                     if pending_images.contains(&work.path) && work.content.is_some() {
@@ -555,6 +629,13 @@ impl IndexerManager {
                                     model_id,
                                 };
                                 unit_store.write().add_unit(unit, vector);
+                                units_added += 1;
+                                if units_added.is_multiple_of(256) {
+                                    let mut st = status.write();
+                                    st.units_indexed = unit_store.read().len();
+                                    st.semantic_ready = st.units_indexed > 0;
+                                    Self::emit_status(&app_handle, &st);
+                                }
                             }
                         }
                         let _ = db.update_node_indexed_gen(
@@ -732,6 +813,15 @@ impl IndexerManager {
             }
 
             is_running.store(false, Ordering::SeqCst);
+
+            // Fill in perceptual hashes that the crawl skipped, one image at a
+            // time. Safe to start here: the crawl transaction is committed and
+            // the worker pauses if another crawl begins.
+            start_phash_backfill(
+                Arc::clone(&metadata),
+                Arc::clone(&is_running),
+                Arc::clone(&query_in_flight),
+            );
         });
     }
 

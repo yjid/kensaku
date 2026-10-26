@@ -36,10 +36,10 @@ me" identity are planned — see [VISION.md](VISION.md). Semantic image search
 (CLIP) is not implemented yet.
 
 **Can I just type "latest resume" or use `/` and `@`?**
-Not yet. Today plain words are searched as terms and narrowing uses
-`key:value` filters such as `type:pdf` and `modified:<7d`. Plain-language intent,
-`/` commands, `@` scopes, and visible interpretation chips are the next
-milestone — see [VISION.md](VISION.md).
+Yes. A deterministic, local intent compiler turns recency, size, type, and place
+phrases into the normal filters and sort, and shows each inference as a removable
+chip. `/` opens the command menu and `@` inserts a directory scope. The explicit
+`key:value` grammar (for example `type:pdf` and `modified:<7d`) always works too.
 
 **OCR is on but no image text is indexed.**
 Tesseract is probably installed without language data. Settings → Search shows
@@ -56,11 +56,12 @@ than pruned.
 The metadata layer keeps roughly 128 bytes per file entry (≈12 MB per 100k
 files), plus a path index and the ~30 MB static embedding table when the semantic
 pack is installed. The crawl is bounded: extracted text is written through a
-small queue instead of accumulating in memory, image hashing decodes at most two
-images at once, and the Tantivy writer arena is 16 MB. On the development
-machine the indexer process peaked at ~73 MB for text-only corpora and ~153 MB
-while OCR'ing a batch of images (debug build; release is lower). Total app memory
-is dominated by the OS webview that hosts the desktop window.
+small queue instead of accumulating in memory, perceptual image hashing runs in a
+separate background pass that decodes one image at a time, and the Tantivy writer
+arena is 16 MB. On the development machine the indexer process peaked at roughly
+72–73 MB for both text-only and mixed image/text corpora (before adding the
+~30 MB embedding table). Total app memory is dominated by the OS webview that
+hosts the desktop window.
 
 **Does it conflict with Spotlight / Everything / Recoll?**
 No. It builds its own index and does not read or write theirs.
