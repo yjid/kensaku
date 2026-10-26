@@ -503,7 +503,7 @@ Rule: **`kensaku-core` must not depend on Tauri.** The GUI must not depend on in
 
 **Status (v0.3.x + K1–K14):** the foundation, query layer, semantic tier,
 document extraction, OCR/thumbnail work, opt-in external extractors, daemon
-split, accurate OCR pack, model/download hygiene, and native quick-window spike
+split, PP-OCRv6 pack, model/download hygiene, and native quick-window spike
 are implemented. The GUI, CLI, and MCP are daemon clients with a read-only
 fallback. The next slice is the remaining product backlog in
 [REMAINING.md](REMAINING.md): visual search, native platform OCR, HTTP/SSE,
@@ -585,7 +585,7 @@ GitHub Actions (AppImage/deb/AUR, dmg universal, msi/exe) · benchmark harness +
 11. **Daemon owns the index before more workers land.** The webview must not be in the memory path for OCR, image decoding, or model packs. ([K1](ROADMAP.md#k1-daemon-split-epic))
 12. **Compact arena inside the daemon.** The daemon owns the name/attribute arenas; clients never receive the full metadata payload. ([K2](ROADMAP.md#k2-compact-metadata-arena))
 13. **Thumbnail hashing, not full-image hashing.** A 480 px thumbnail is the source for dHash; full decodes never happen just to compute a duplicate key. ([K3](ROADMAP.md#k3-thumbnail-based-hashing--memory-release))
-14. **Tesseract by default, accurate OCR opt-in.** Bulk indexing stays fast and light; the PP-OCRv6 tiny pack is a ~6 MB opt-in for UI text, with native platform OCR still planned. ([K6](ROADMAP.md#k6-optional-high-accuracy-ocr-pack))
+14. **Tesseract by default, PP-OCRv6 opt-in.** Bulk indexing stays fast and light; the PP-OCRv6 tiny pack is a ~6 MB, slower alternative for small UI text, with native platform OCR still planned. ([K6](ROADMAP.md#k6-optional-pp-ocrv6-ocr-pack))
 15. **Exact → folded → semantic.** Never let tolerant matching run when exact results already fill the limit; verify folded candidates against the raw text. ([K5](ROADMAP.md#k5-folded--trigram-content-tier))
 
 ---

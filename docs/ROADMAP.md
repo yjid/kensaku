@@ -30,7 +30,7 @@
 | K3 | Shipped — legacy 320 px fix, thumbnail hashing, one-decode backfill, thumbnail-only hashing |
 | K4 | Shipped — visible-only snippets, daemon read_snippet, line ranges, LRU |
 | K5 | Shipped — folded tier, OCR-lookalike verification, `internally` negative case |
-| K6 | Shipped — PP-OCRv6 tiny pack, 100% fixture recall; native platform OCR in B |
+| K6 | Shipped — PP-OCRv6 pack, parity with Tesseract on our fixture; native platform OCR in B |
 | K7 | Shipped — default mode now `full`; measurement pending |
 | K8 | Shipped |
 | K9 | Shipped — Potion and PP-OCRv6 packs pinned, mirrored, resumed, disk-checked |
@@ -180,11 +180,12 @@ snippets for the ranked set.
 
 **Files:** `indexer/content.rs`, `search/mod.rs`, migrations.
 
-### K6. Optional high-accuracy OCR pack
+### K6. Optional PP-OCRv6 OCR pack
 
-**Why:** A public OCR bake-off found Tesseract missed every small sidebar label,
-while PaddleOCR PP-OCRv6 read nearly everything. We keep Tesseract as the fast
-default and offer the accurate path.
+**Why:** A public OCR bake-off found Tesseract missed small sidebar labels while
+PaddleOCR PP-OCRv6 read nearly everything. Our own fixture shows parity, so
+Tesseract stays the fast, smaller default and PP-OCRv6 is a slower alternative
+the user can choose.
 
 **Work**
 - [x] K6.1 Add an OCR engine abstraction (`Tesseract`, `Paddle`, `Native`).
@@ -199,17 +200,19 @@ default and offer the accurate path.
 
 **Acceptance**
 - On the frozen UI-text set, recall ≥ 95% of words (vs Paddle reference).
-- Pack off: no new dependency, no memory cost, current Tesseract behavior.
+- Tesseract and PP-OCRv6 are presented as alternatives; only the selected
+  engine's pack is offered in setup and Settings.
+- Pack off: current Tesseract behavior; the engine is compiled but no pack is
+  downloaded.
 - Peak per worker documented; no OCR process left behind on cancel.
 - License/attribution for models recorded.
 
 **Measured:** PP-OCRv6 tiny pack, 104/104 lines exact; Tesseract 5.5.3 also
 scores 104/104 on the same fixture, so it does not demonstrate the claimed
 small-sidebar advantage. Pack size ~6.1 MB. The `accurate-ocr` feature is
-compiled into default app builds; the
-model pack itself remains an explicit download and Tesseract stays the default
-engine until the user selects Accurate. Minimal builds can use
-`--no-default-features`.
+compiled into default app builds; the model pack itself remains an explicit
+download, and Tesseract stays the default until the user selects PP-OCRv6.
+Minimal builds can use `--no-default-features`.
 
 **Files:** `indexer/extract/image.rs`, `models.rs`, new `ocr/`, setup UI.
 
@@ -257,7 +260,7 @@ read-only guarantees preserved.
   resume, mirror fallback, atomic rename, checksum verification, disk precheck,
   and pinned checksums for the three Potion + three PP-OCRv6 artifacts.
 - [x] One pack manifest shared by setup, Settings, and Doctor: semantic and
-  accurate-OCR manifests drive setup, Settings, and Doctor.
+  PP-OCRv6 manifests drive setup, Settings, and Doctor.
 
 **Acceptance:** corrupt download fails loudly and retries; interrupted download
 resumes; no unverified artifact is loaded.

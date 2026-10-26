@@ -99,7 +99,7 @@ Work in this order. Dependencies are explicit.
 | 4 | K4 lazy snippets | K1 |
 | 5 | K7 scheduling + watcher robustness | K1 |
 | 6 | K5 folded/trigram tier | K4 |
-| 7 | K6 optional high-accuracy OCR pack | K1 |
+| 7 | K6 optional PP-OCRv6 OCR pack | K1 |
 | 8 | K8 MCP v2 | K1 |
 | 9 | K9 download hygiene | — |
 | 10 | K10 pluggable extractors | K1 |
@@ -322,7 +322,7 @@ exact matches, with raw-text verification.
 **Pitfalls:** trigram query construction (AND of ngrams), Unicode, regex
 metacharacters, stored-text size, index migration.
 
-### K6 — Optional high-accuracy OCR pack
+### K6 — Optional PP-OCRv6 OCR pack
 
 **Goal:** Tesseract stays the fast default; an opt-in pack reads small UI text.
 
@@ -343,7 +343,7 @@ metacharacters, stored-text size, index migration.
   benchmark/test that reports word recall vs the Paddle reference and peak RSS.
 
 **Acceptance**
-- Recall ≥ 95% of words on the frozen UI-text set for the accurate engine.
+- Recall ≥ 95% of words on the frozen UI-text set for the PP-OCRv6 engine.
 - Pack off: no new dependency, no memory cost, current behavior.
 - Missing/corrupt pack → Tesseract fallback, clear error, no orphan process.
 - License/attribution recorded for models/ORT.

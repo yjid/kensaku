@@ -18,7 +18,7 @@ Durable metadata + warm start · incremental crawl · inode identity ·
 rename/delete handling · full query language (`type:`, `ext:`, `in:`, `path:`,
 `modified:`, `size:`, `is:`, `lang:`, `name:`, `content:`, `re:`, negation,
 `mode:exhaustive`) · three-tier RRF ranking · semantic vectors · PDF/Office/
-EPUB/ODT/RTF extraction · tesseract OCR + optional PP-OCRv6 accurate pack ·
+EPUB/ODT/RTF extraction · tesseract OCR + optional PP-OCRv6 pack ·
 image thumbnails, dimensions, and perceptual duplicates · CLI + MCP · warm daemon
 with Unix socket / Windows named pipe · `/` command menu · two themes · Doctor ·
 Stats for Nerds · factory reset · extraction timeout · cloud-placeholder guard ·
@@ -99,10 +99,10 @@ These are the highest-leverage gaps. None require a new model.
       remains default; missing/incompatible providers fall back cleanly with
       recorded reasons; model-id isolation prevents mixing incompatible vectors.
       (ROADMAP K16)
-- [x] **ONNX "smart pack"** — optional `ort`/ONNX model (`bge-small-en-v1.5` int8)
-      behind `smart-embeddings` feature, activation after download with K9 hygiene,
-      pinned SHA-256, bounded concurrency (max 2 workers, 1 intra-op thread),
-      static fallback with recorded reason. (ROADMAP K17)
+- [~] **ONNX "smart pack"** — optional `ort`/ONNX model (`bge-small-en-v1.5`
+      int8) behind `smart-embeddings`, with K9 download hygiene, pinned SHA-256,
+      bounded concurrency, and static fallback. Code path compiles; real-model
+      recall and memory are not measured yet. (ROADMAP K17)
 - [~] **Image embeddings & visual search** — moved to an opt-in Beta settings
       surface. The Beta tab can enable the experiment and download the pinned
       CLIP ViT-B/32 vision + text pack (~150 MB) with checksum/resume. The pack is
@@ -112,9 +112,11 @@ These are the highest-leverage gaps. None require a new model.
       "not available" until the beta visual tier is wired. Hidden from MCP tools
       when unavailable. (ROADMAP K20)
 - [ ] **Native OCR** — not implemented. An automated pass added an `osascript`
-      shim and a Windows stub; both were removed. Real macOS Vision and Windows
-      Media OCR require platform bindings and platform CI. Scanned-PDF embedded
-      image-stream OCR is partial. (ROADMAP K21; blocked.)
+      shim and a Windows stub; both were removed. Settings shows a disabled
+      "Native — not available yet" option so the UI does not pretend it works.
+      Real macOS Vision and Windows Media OCR require platform bindings and
+      platform CI. Scanned-PDF embedded image-stream OCR is partial.
+      (ROADMAP K21; blocked.)
 - [-] **"This is me" identity** — skipped for now; revisit after the vision
       tier and sensitive-data controls. Local face embeddings + clustering,
       opt-in enrollment with 3–5 photos, explainable matches, delete-all.
@@ -158,8 +160,8 @@ These are the highest-leverage gaps. None require a new model.
 ## D. Search quality & performance
 
 - [ ] **E2 extension interning** — `FileEntry.extension: Option<String>` is
-      128 B per entry. A `u16` intern table saves ~6–12 MB per 1M files.
-      Part of [ROADMAP K2](ROADMAP.md#k2-compact-metadata-arena). (ROADMAP K2)
+      still a per-entry allocation. A `u16` intern table can save ~6–12 MB per
+      1M files. This is a follow-up to K2, not part of the shipped arena.
 - [~] **B4 full pushdown** — scope paths are now pushed into the Tantivy query
       as a path-prefix clause. `ext` / `size` fast fields still need schema work
       and a rebuild before those filters can be pushed too. (ROADMAP K12)
@@ -168,10 +170,9 @@ These are the highest-leverage gaps. None require a new model.
       broad BM25, so keep Tantivy + folded; a separate bounded prefilter is
       still the next option if filename search exceeds the <15 ms budget. See
       [the decision memo](decisions/index-format.md). (ROADMAP K12)
-- [ ] **Metadata arena** — still `Vec<FileEntry>` + `HashMap<PathBuf, usize>`.
-      A compact arena (name bytes + parent id + attrs ≈ 40–50 B/entry) cuts the
-      footprint ~3×. Target: 1M entries ≤ 100 MB (stretch 64 MB). Full task:
-      [ROADMAP K2](ROADMAP.md#k2-compact-metadata-arena). (ROADMAP K2)
+- [x] **Metadata arena** — shipped: compact open-addressed path index, lazy id
+      map, and names/attrs arena. Measured 91.3 MB RSS at 1M synthetic entries
+      (target ≤ 100 MB). [ROADMAP K2](ROADMAP.md#k2-compact-metadata-arena).
 - [x] **Embedding table quantization** — the static table is ~30 MB f32 today;
       i8 with scales targets ~8 MB with a golden-set quality check. Task:
       [ROADMAP K14](ROADMAP.md#k14-quantize-the-static-embedding-table-to-i8).
@@ -185,30 +186,29 @@ These are the highest-leverage gaps. None require a new model.
       fetch snippets for visible rows. This is the difference between 60–90 ms
       and 1–10 ms on broad queries. Task: [ROADMAP K4](ROADMAP.md#k4-lazy-snippets-and-line-highlighting).
       (ROADMAP K4)
-- [ ] **Folded / trigram content tier** — substring and OCR-error tolerance
+- [x] **Folded / trigram content tier** — substring and OCR-error tolerance
       (`nutsmp` → `donutsmp.net`, `0RDER` → `ORDER`), ranked after exact matches
-      with raw-text verification. Task: [ROADMAP K5](ROADMAP.md#k5-folded--trigram-content-tier).
-      (ROADMAP K5)
-- [x] **Optional high-accuracy OCR pack** — PaddleOCR PP-OCRv6 tiny for UI
-      screenshots; Tesseract stays the fast default. Native macOS/Windows OCR
-      remains in section B. Task: [ROADMAP K6](ROADMAP.md#k6-optional-high-accuracy-ocr-pack).
-      (ROADMAP K6; 104/104 fixture lines exact.)
-- [ ] **Idle/battery scheduling + watcher robustness** — `SCHED_IDLE`/ioprio,
+      with raw-text verification. [ROADMAP K5](ROADMAP.md#k5-folded--trigram-content-tier).
+- [x] **Optional PP-OCRv6 OCR pack** — PaddleOCR PP-OCRv6 tiny as a slower,
+      in-process alternative for small UI text. Tesseract stays the fast, smaller
+      default. Native macOS/Windows OCR remains in section B.
+      [ROADMAP K6](ROADMAP.md#k6-optional-pp-ocrv6-ocr-pack). Our 104-image
+      fixture scores 104/104 for both engines, so the pack is a choice, not a
+      proven accuracy upgrade.
+- [x] **Idle/battery scheduling + watcher robustness** — `SCHED_IDLE`/ioprio,
       `PRIO_DARWIN_BG`, battery pacing, pause, 400 ms settle, still-writing
-      retry, newest-first fresh files. Task: [ROADMAP K7](ROADMAP.md#k7-scheduling-and-watcher-robustness).
-      (ROADMAP K7)
-- [ ] **Search-result grouping** — collapse near-identical screenshots/versions
+      retry, newest-first fresh files. [ROADMAP K7](ROADMAP.md#k7-scheduling-and-watcher-robustness).
+- [x] **Search-result grouping** — collapse near-identical screenshots/versions
       at write time (text overlap + thumbnail dHash), like screenshot bursts.
-      Task: [ROADMAP K11](ROADMAP.md#k11-search-result-grouping). (ROADMAP K11)
+      [ROADMAP K11](ROADMAP.md#k11-search-result-grouping).
 - [ ] **Tantivy writer pipeline** — extraction is parallel; `add_document` and
       commits are still single-threaded. Benchmark before changing; see K12.
       (ROADMAP K12)
-- [ ] **Golden query set in CI** — a frozen set of 40–50 labelled queries with
-      recall@5, MRR, NDCG, and latency thresholds. Include intent queries
-      ("latest resume", "screenshots from last week", "docker error in
-      Projects") alongside lexical and semantic ones. The CJK/multilingual
-      cases are added by [ROADMAP K22](ROADMAP.md#p3--intelligence--vision),
-      not as a separate set. (ROADMAP K4, K5, K14, K22)
+- [x] **Golden query set in CI** — a frozen 43-query non-visual set with
+      recall@5, MRR, NDCG, and latency metrics, including intent, CJK, and
+      accented-Latin queries. Debug: Recall@5 1.000, MRR 0.988, p50 5.9 ms.
+      [ROADMAP K22](ROADMAP.md#p3--intelligence--vision). Visual cases are
+      deferred until the beta visual tier is wired.
 - [ ] **Facet latency tests** — counts and toggles must hold their budgets at
       100k and 1M files. (ROADMAP K4)
 
@@ -233,18 +233,33 @@ These are the highest-leverage gaps. None require a new model.
 
 ## F. Packaging & launch
 
+Release blockers:
+
+- [ ] **Version bump** — update `package.json`, `src-tauri/Cargo.toml`,
+      `src-tauri/tauri.conf.json`, CLI version, and `CHANGELOG.md` together.
+- [ ] **Release build** — `make build` on macOS, Windows, and Linux; verify the
+      PP-OCRv6 engine is compiled in and the Beta visual pack is hidden from
+      setup.
 - [ ] **Signing** — macOS codesign + notarization, Windows Authenticode.
-      Needed before shipping an ONNX dylib and for a non-scary installer.
+      Needed before shipping the ONNX runtime and for a non-scary installer.
 - [ ] **Auto-updater** — Tauri updater plugin + signing keys + release channel.
-- [ ] **Icons / tray artwork** — still placeholder Tauri icons.
-- [ ] **Demo GIF + published benchmark post** — the numbers and methodology
-      exist in `docs/BENCHMARKS.md`; the artifacts do not. (ROADMAP K12)
+- [ ] **Icons / tray artwork** — replace remaining placeholder Tauri icons.
 - [ ] **Release workflow assets** — CLI binaries currently upload as workflow
-      artifacts; moving them to the draft release needs `needs:` + `gh release
-      upload` plumbing.
-- [ ] **Vision Pack packaging** — model download, checksum, resume, disk-space
-      precheck, offline handling, and a one-click uninstall. Shared download
-      manifest/checksum rules: [ROADMAP K9](ROADMAP.md#k9-model-and-download-hygiene).
+      artifacts; move them to the draft release with `needs:` + `gh release
+      upload`.
+- [ ] **Smoke test the site download links** — installer names, checksums, and
+      the version shown on the site must match the draft release.
+
+Post-release / nice to have:
+
+- [ ] **Demo GIF + benchmark post** — the numbers and methodology exist in
+      `docs/BENCHMARKS.md`; the public artifacts do not. (ROADMAP K12)
+- [~] **Visual search pack packaging** — Settings → Beta downloads the pinned
+      CLIP pack with checksum/resume/disk precheck. One-click uninstall and
+      offline retry UI are still missing; search integration is deferred.
+- [ ] **Native platform OCR** — blocked on macOS Vision / Windows Media OCR
+      bindings and platform CI. See section B and
+      [NATIVE_OCR_VERIFICATION.md](NATIVE_OCR_VERIFICATION.md).
 
 ---
 
@@ -269,7 +284,7 @@ These are the highest-leverage gaps. None require a new model.
 | Daemon split (K1) before HTTP, OCR packs, native UI | Index ownership must be outside the webview before more workers/models land; CLI/MCP also stop reloading metadata. |
 | Thumbnail hashing (K3) before result grouping (K11) | Grouping needs a cheap hash; hashing a thumbnail is ~2.4 ms and avoids full decodes. |
 | Folded tier (K5) after lazy snippets (K4) | The folded tier increases candidate count; the query path must already fetch only visible highlights. |
-| PaddleOCR/native OCR (K6) as opt-in packs | Tesseract stays the fast, low-memory default; the accurate reader is a per-platform pack with checksums and a memory budget. |
+| PP-OCRv6/native OCR (K6) as opt-in packs | Tesseract stays the fast, low-memory default; PP-OCRv6 is slower and not proven more accurate on our fixture. Native OCR remains blocked. |
 | Native quick-search window (K13) as a spike | Only after the daemon lands; keep Tauri for settings if a native summoner does not clearly win on RSS/latency. |
 | Extension interning (E2) | High churn across 7 files for 6–12 MB at 1M files. |
 | Tantivy BooleanQuery pushdown (B4) | Needs a schema change and a full index rebuild; now required for Milestone 2. |

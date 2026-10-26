@@ -118,9 +118,10 @@ thread, and measured **~15 screenshots/s** on the same class of images (400 in
 ~26 s). So for bulk screenshot indexing Kensaku is roughly an order of
 magnitude faster; the reference app buys much better small-UI-text recall for that cost.
 
-The sensible synthesis is not to pick one: keep Tesseract as the default for
-documents and bulk speed, and offer PaddleOCR/native OCR as an optional
-high-accuracy pack for screenshots and UI captures.
+The sensible synthesis is not to pick one: keep Tesseract as the fast, smaller
+default for documents and bulk speed, and offer PaddleOCR PP-OCRv6 as a slower
+alternative for screenshots and UI captures. Our own fixture showed parity, so
+this is a user choice rather than a proven accuracy upgrade.
 
 ## 2. The comparable landscape
 

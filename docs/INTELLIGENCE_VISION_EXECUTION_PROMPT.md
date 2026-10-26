@@ -414,7 +414,7 @@ integration.
 - Extend the OCR abstraction in `src-tauri/src/ocr.rs` with a `Native` backend.
   Keep Tesseract as the default and fallback.
 - On macOS/Windows, use native OCR when the feature is enabled and the platform
-  API is available. Otherwise fall back to Tesseract, then to the accurate pack
+  API is available. Otherwise fall back to Tesseract, then to the PP-OCRv6 pack
   if selected.
 - Route scanned PDFs through the same OCR path. Today `extract_pdf` returns
   `[Scanned PDF: Image only]`; replace that marker with page rendering + OCR.
