@@ -1,5 +1,10 @@
 # Kensaku — Intelligence & Vision execution prompt
 
+> **Status note:** K15/K16 shipped; K17 is code-complete but unmeasured; visual
+> search is now a Settings → Beta model-download experiment and is **not wired
+> into search**; K21 native OCR is blocked. Use the status tables in ROADMAP.md
+> and INTELLIGENCE_VISION_PLAN.md before running this prompt.
+
 You are a senior Rust/Tauri engineer working in `/home/gochi/Projects/Kensaku`.
 Implement the complete Intelligence & Vision slice end to end: tasks K15–K22 in
 `docs/INTELLIGENCE_VISION_PLAN.md`. Do not stop at a plan. Write the code, tests,

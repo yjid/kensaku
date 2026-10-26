@@ -110,7 +110,10 @@ fn main() {
     println!("bursts_allocated={}", store.bursts_allocated());
     println!("rss_before_kb={}", rss_before);
     println!("rss_after_kb={}", rss_after);
-    println!("rss_delta_mb={:.1}", (rss_after as i64 - rss_before as i64) as f64 / 1024.0);
+    println!(
+        "rss_delta_mb={:.1}",
+        (rss_after as i64 - rss_before as i64) as f64 / 1024.0
+    );
     println!("rss_hwm_after_kb={}", hwm_after.max(hwm_before));
     println!("lookup_p50_us={:.3}", p50);
     println!("lookup_p95_us={:.3}", p95);

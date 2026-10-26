@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { FileTypeIcon } from "./FileTypeIcon";
 import { EmptyState } from "./EmptyState";
+import { useTheme } from "../hooks/useTheme";
 import { useThumbnail } from "../lib/thumbnails";
 import { formatBytes, queryTerms } from "../lib/format";
 
@@ -30,6 +31,7 @@ export const PreviewPane = React.memo<PreviewPaneProps>(
     const [preview, setPreview] = useState<FilePreview | null>(null);
     const [loading, setLoading] = useState(false);
     const [copiedPath, setCopiedPath] = useState(false);
+    const { theme } = useTheme();
 
     /* Preview fetching is debounced (200ms) and sequence-guaranteed: the
        timer cancels on selection change, and in-flight responses from a
@@ -92,12 +94,20 @@ export const PreviewPane = React.memo<PreviewPaneProps>(
     if (!result) {
       return (
         <aside className={`hidden min-[900px]:flex flex-col ${PREVIEW_W}`}>
-          <EmptyState variant="empty" caption="Select a file to preview">
+          <div className="flex h-full flex-col items-center justify-center gap-1 p-8 text-center select-none">
+            <img
+              src={theme === "paper" ? "/setup-icon-paper.png" : "/setup-icon-void.png"}
+              alt="Kensaku"
+              className="h-32 w-32 object-contain"
+            />
+            <p className="font-serif text-[17px] italic text-muted mt-1">
+              Select a file to preview
+            </p>
             <p className="text-[11px] text-subtle">
               <kbd className="kbd">↑</kbd> <kbd className="kbd">↓</kbd> to navigate ·
               <kbd className="kbd ml-1.5">tab</kbd> to hide this pane
             </p>
-          </EmptyState>
+          </div>
         </aside>
       );
     }

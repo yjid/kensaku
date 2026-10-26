@@ -821,8 +821,8 @@ mod tests {
         gradient(&source, false);
 
         let cached = phash64_cached(&source, &thumbs).expect("cached hash");
-        let reused = phash64_reusing_fresh_thumbnail(&source, &thumbs)
-            .expect("fresh thumbnail hash");
+        let reused =
+            phash64_reusing_fresh_thumbnail(&source, &thumbs).expect("fresh thumbnail hash");
         assert_eq!(cached, reused);
 
         // The thumbnail mtime must be untouched, proving the source was not
@@ -831,8 +831,8 @@ mod tests {
             .and_then(|m| m.modified())
             .expect("mtime");
         std::thread::sleep(Duration::from_millis(60));
-        let reused_again = phash64_reusing_fresh_thumbnail(&source, &thumbs)
-            .expect("thumbnail-only hash");
+        let reused_again =
+            phash64_reusing_fresh_thumbnail(&source, &thumbs).expect("thumbnail-only hash");
         assert_eq!(cached, reused_again);
         let mtime2 = std::fs::metadata(thumbnail_path(&source, &thumbs))
             .and_then(|m| m.modified())

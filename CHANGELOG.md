@@ -5,45 +5,44 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Removed the fake visual and native-OCR paths introduced by the automated
+  K18–K21 pass. Visual search is now a Settings → Beta model-download experiment
+  only and is not wired into search; `similar_images` is hidden from MCP when
+  unavailable; native OCR is documented as blocked. This prevents mock vectors
+  and stub backends from producing false results.
+
 ### Added
-- K21 native platform OCR: platform-native OCR integration support for macOS
-  (Apple Vision framework via `VNRecognizeTextRequest`) behind `native-ocr-macos`
-  and Windows (`Windows.Media.Ocr.OcrEngine`) behind `native-ocr-windows`.
-  Features zero-external-dependency OCR when compiled on supported platforms.
-  Integrated transparent dispatch hierarchy: Native -> Accurate (PP-OCRv6 tiny pack) ->
-  Tesseract (default/fallback). Routed scanned PDF extraction through the unified OCR
-  pipeline when pages lack textual content. Provided comprehensive verification guide
-  in `docs/NATIVE_OCR_VERIFICATION.md`.
-- K20 similar-image lookup: nearest-neighbor image-to-image search using cosine distance
-  over 512-dimensional visual vector embeddings in `VisualStore`. Excludes the query image node,
-  applies a cosine floor (0.30) to reject weak or unrelated candidates, and returns ranked
-  matches with similarity scores and file metadata. Exposed via Tauri command `find_similar_images`,
-  daemon IPC method `find_similar_images`, and read-only MCP agent tool `similar_images`.
-- K19 visual search tier fused into RRF: 4-tier reciprocal rank fusion integrating
-  visual vector retrieval alongside fuzzy filename, Tantivy BM25 content, and static/smart
-  text semantics. Text-to-image queries encode text via `VisualEncoder::embed_text`, scanning
-  `VisualStore` with a cosine relevance floor (0.20) and candidate prefiltering. Image
-  matches are restricted to supported raster formats. Fused via dynamic query routing:
-  boosts `w_visual` to 2.0 when `QueryRoute::VisualSearch` is selected by `visual:` filter
-  syntax or `type:image` with descriptive terms, and scales proportionally (`w_visual = w_semantic * 0.8`)
-  for general queries. Added `MatchType::Visual` badge in backend and UI for visual-only hits,
-  and `MatchType::Both` for combined lexical and visual matches. Daemon and IPC search pipelines
-  pass `visual_store` concurrently.
-- K18 image embedding extraction pipeline: dedicated `VisualStore` holding 512-dimensional
-  quantized i8 vectors per image node, backed by SQLite `visual_units` table with cascade delete.
-  224x224 RGB planar preprocessing with standard CLIP normalization (`CLIP_MEAN`, `CLIP_STD`).
-  VisualEncoder abstraction with deterministic `MockVisualEncoder` and pinned ONNX manifest in
-  `models.rs` (`models/visual/`, CLIP ViT-B/32 int8). Reuses 480 px thumbnails directly from K3
-  so source images are never decoded twice; skips unchanged images via thumbnail dHash comparison;
-  yields immediately when queries are in flight (`query_in_flight`). Surfaced `visual_units` in stats.
-- K17 optional ONNX smart embedding pack: `bge-small-en-v1.5` int8 text embedding model
-  (MIT license, 33.4M parameters, 384 dimensions) behind the `smart-embeddings`
-  Cargo feature using `ort`. Features zero cost when disabled. Pinned artifact manifest
-  in `models.rs` (`models/smart/`) with SHA-256 verification, resume, and mirror support.
-  Shared BERT WordPiece tokenizer (`embed::wordpiece`). Bounded concurrency with 1 intra-op
-  thread per session and maximum 2 inference workers. Model isolation via `model_id = 3`
-  with automatic fallback to `StaticTable` when artifacts are missing or feature is disabled.
+- K22 golden query set: 43 non-visual intent, lexical, content, CJK, and
+  accented-Latin queries on a 50-document synthetic corpus. Debug results:
+  Recall@1 0.9767, Recall@5 1.0000, MRR 0.9884, NDCG@10 0.9914, p50 5.881 ms,
+  p95 6.676 ms. Visual cases stay in the fixture but are skipped until K18 has a
+  real encoder.
+- K21 native platform OCR (partial/blocked): the initial automated attempt used an
+  `osascript` shim for macOS and a no-op Windows stub. Both were removed because
+  they were not native implementations and could claim a backend that did not
+  work. Scanned PDFs now attempt OCR on embedded image streams, which is a partial
+  improvement but not full page rendering. See `docs/NATIVE_OCR_VERIFICATION.md`.
+- K20 similar-image lookup (deferred): read-only command, daemon IPC, and MCP
+  tool plumbing exist. The beta visual pack is not wired into search, so these
+  paths return "not available" instead of comparing mock vectors.
+- K19 visual search tier (deferred): RRF plumbing, `visual:` parsing, image-only
+  filtering, and the `Visual` badge exist, but the tier is not wired into the
+  product. Tests inject a mock encoder; production does not.
+- K18 visual-search beta surface: Settings → Beta can opt into the experiment and
+  download the pinned CLIP ViT-B/32 vision/text pack (~150 MB) with the existing
+  checksum, resume, mirror, and disk-precheck rules. `VisualStore`, SQLite
+  persistence, 224x224 CLIP preprocessing, thumbnail reuse, and cancel checks
+  exist, but no image vectors are generated or searched in the normal build.
+  The setup flow and the main search path do not mention or use visual search.
+- K17 optional ONNX smart embedding pack (code path): `bge-small-en-v1.5` int8 text
+  embedding model behind the `smart-embeddings` Cargo feature using `ort`. Pinned
+  artifact manifest in `models.rs` (`models/smart/`) with SHA-256 verification,
+  resume, and mirror support. Shared BERT WordPiece tokenizer
+  (`embed::wordpiece`). Model isolation via `model_id = 3` with automatic fallback
+  to `StaticTable` when artifacts are missing or the feature is disabled.
   Tauri commands `get_smart_pack_status` and `download_smart_pack` registered.
+  The real-model quality/recall run has not been performed yet.
 - K16 embedding provider contract: real provider selection supporting `Static`
   (quantized Potion table / hashing estimator), `Smart` (reserved for ONNX),
   and `None` (lexical-only mode). Reads `semantic_enabled`, `semantic_model`, and

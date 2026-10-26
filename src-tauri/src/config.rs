@@ -145,6 +145,10 @@ pub struct KensakuConfig {
     /// default: no external command ever runs without explicit configuration.
     #[serde(default)]
     pub extractors: Vec<ExternalExtractor>,
+    /// Beta visual-search model pack. This only gates the Beta settings tab and
+    /// model download; it is intentionally not wired into search yet.
+    #[serde(default)]
+    pub visual_search_beta_enabled: bool,
     /// Persisted UI theme ("paper" or "void").
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -187,23 +191,59 @@ impl Default for KensakuConfig {
 
         let default_excluded_dirs: Vec<String> = vec![
             // Version control
-            ".git", ".svn", ".hg", ".bzr",
+            ".git",
+            ".svn",
+            ".hg",
+            ".bzr",
             // Package managers / dependencies
-            "node_modules", "vendor", "Pods", ".bundle",
+            "node_modules",
+            "vendor",
+            "Pods",
+            ".bundle",
             // Build outputs
-            "target", "build", "dist", "out", ".output", ".next", ".nuxt", ".svelte-kit", ".turbo",
-            ".vercel", ".netlify",
+            "target",
+            "build",
+            "dist",
+            "out",
+            ".output",
+            ".next",
+            ".nuxt",
+            ".svelte-kit",
+            ".turbo",
+            ".vercel",
+            ".netlify",
             // Caches
-            ".cache", ".npm", ".yarn", ".pnpm", ".cargo", ".rustup", ".gradle", ".m2", "__pycache__",
-            ".pytest_cache", ".mypy_cache", ".tox", ".nox",
+            ".cache",
+            ".npm",
+            ".yarn",
+            ".pnpm",
+            ".cargo",
+            ".rustup",
+            ".gradle",
+            ".m2",
+            "__pycache__",
+            ".pytest_cache",
+            ".mypy_cache",
+            ".tox",
+            ".nox",
             // Virtual environments
-            "venv", ".venv", "env", ".env",
+            "venv",
+            ".venv",
+            "env",
+            ".env",
             // IDE / editor
-            ".vscode", ".idea", ".vs", ".eclipse",
+            ".vscode",
+            ".idea",
+            ".vs",
+            ".eclipse",
             // OS junk
-            ".DS_Store", "Thumbs.db", "desktop.ini",
+            ".DS_Store",
+            "Thumbs.db",
+            "desktop.ini",
             // Misc
-            ".Trash", ".Trash-*", "lost+found",
+            ".Trash",
+            ".Trash-*",
+            "lost+found",
         ]
         .into_iter()
         .map(String::from)
@@ -213,22 +253,15 @@ impl Default for KensakuConfig {
         // and OCR, so they are deliberately NOT excluded by default.
         let default_excluded_extensions: Vec<String> = vec![
             // Raw/editor-only image formats we cannot read text from
-            "psd", "ai", "sketch", "fig",
-            // Audio/Video
-            "mp3", "mp4", "wav", "avi", "mov", "mkv", "flac", "ogg", "webm",
-            // Archives
-            "zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz",
-            // Binaries
+            "psd", "ai", "sketch", "fig", // Audio/Video
+            "mp3", "mp4", "wav", "avi", "mov", "mkv", "flac", "ogg", "webm", // Archives
+            "zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz", // Binaries
             "exe", "dll", "so", "dylib", "bin", "o", "a", "lib", "class", "pyc", "pyo",
             // Secrets / credentials
-            "pem", "key", "pfx", "p12", "crt", "cer",
-            // Database
-            "db", "sqlite", "sqlite3",
-            // Lock files
-            "lock", "lockb",
-            // Minified/generated
-            "min.js", "min.css", "map",
-            // Font
+            "pem", "key", "pfx", "p12", "crt", "cer", // Database
+            "db", "sqlite", "sqlite3", // Lock files
+            "lock", "lockb", // Minified/generated
+            "min.js", "min.css", "map", // Font
             "ttf", "otf", "woff", "woff2", "eot",
         ]
         .into_iter()
@@ -250,6 +283,7 @@ impl Default for KensakuConfig {
             crawl_mode: CrawlMode::Full,
             pause_indexing: false,
             mcp_allow_reindex: false,
+            visual_search_beta_enabled: false,
             extractors: Vec::new(),
             ocr_enabled: true,
             ocr_engine: default_ocr_engine(),
@@ -292,11 +326,13 @@ impl KensakuConfig {
             // v1: document/image formats became indexable (text extraction + OCR).
             // Strip the legacy defaults so existing installs start indexing them.
             const LEGACY_EXCLUDED: &[&str] = &[
-                "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
-                "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp", "tiff", "tif",
+                "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "png", "jpg", "jpeg", "gif",
+                "bmp", "ico", "webp", "tiff", "tif",
             ];
             cfg.excluded_extensions.retain(|ext| {
-                !LEGACY_EXCLUDED.iter().any(|legacy| legacy.eq_ignore_ascii_case(ext))
+                !LEGACY_EXCLUDED
+                    .iter()
+                    .any(|legacy| legacy.eq_ignore_ascii_case(ext))
             });
             cfg.config_version = 1;
             migrated = true;
@@ -332,7 +368,11 @@ impl KensakuConfig {
             // v4: default-deny common secret/credential file extensions.
             const SENSITIVE_EXTS: &[&str] = &["pem", "key", "pfx", "p12", "crt", "cer"];
             for ext in SENSITIVE_EXTS {
-                if !cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case(ext)) {
+                if !cfg
+                    .excluded_extensions
+                    .iter()
+                    .any(|e| e.eq_ignore_ascii_case(ext))
+                {
                     cfg.excluded_extensions.push((*ext).to_string());
                 }
             }
@@ -453,15 +493,18 @@ impl KensakuConfig {
     }
 
     pub fn is_dir_excluded(&self, dir_name: &str) -> bool {
-        self.excluded_dirs.iter().any(|ex| ex.eq_ignore_ascii_case(dir_name))
+        self.excluded_dirs
+            .iter()
+            .any(|ex| ex.eq_ignore_ascii_case(dir_name))
     }
 
     pub fn is_extension_excluded(&self, path: &Path) -> bool {
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
             let ext = ext.trim_start_matches('.').to_ascii_lowercase();
-            return self.excluded_extensions.iter().any(|e| {
-                e.trim_start_matches('.').eq_ignore_ascii_case(&ext)
-            });
+            return self
+                .excluded_extensions
+                .iter()
+                .any(|e| e.trim_start_matches('.').eq_ignore_ascii_case(&ext));
         }
         false
     }
@@ -546,9 +589,21 @@ mod tests {
 
         assert_eq!(cfg.config_version, 4);
         // Legacy document/image extensions are stripped (case-insensitively)...
-        assert!(!cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case("pdf")));
-        assert!(!cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case("png")));
-        assert!(!cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case("doc")));
+        assert!(
+            !cfg.excluded_extensions
+                .iter()
+                .any(|e| e.eq_ignore_ascii_case("pdf"))
+        );
+        assert!(
+            !cfg.excluded_extensions
+                .iter()
+                .any(|e| e.eq_ignore_ascii_case("png"))
+        );
+        assert!(
+            !cfg.excluded_extensions
+                .iter()
+                .any(|e| e.eq_ignore_ascii_case("doc"))
+        );
         // ...while user-defined exclusions survive.
         assert!(cfg.excluded_extensions.iter().any(|e| e == "rs"));
         assert!(cfg.excluded_extensions.iter().any(|e| e == "zip"));

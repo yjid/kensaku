@@ -414,6 +414,7 @@ pub fn stats_for(indexer: &crate::indexer::IndexerManager) -> Result<serde_json:
             "content_indexed": status.content_indexed as u64,
             "units_indexed": status.units_indexed as u64,
             "visual_units": indexer.visual_store.read().len() as u64,
+            "visual_available": crate::embed::visual::visual_available(),
             "files_per_sec": files_per_sec,
             "eta_secs": Option::<u64>::None,
             "embed_queue_depth": embed_queue_depth as u64,
@@ -708,6 +709,19 @@ pub async fn get_smart_pack_status() -> Result<crate::models::ModelsStatus, Stri
 pub async fn download_smart_pack() -> Result<crate::models::ModelsStatus, String> {
     crate::models::download_smart_pack();
     Ok(crate::models::smart_status())
+}
+
+/// Reports the optional beta visual-search model pack inventory.
+#[tauri::command]
+pub async fn get_visual_pack_status() -> Result<crate::models::ModelsStatus, String> {
+    Ok(crate::models::visual_status())
+}
+
+/// Starts the background download of the beta visual-search model pack.
+#[tauri::command]
+pub async fn download_visual_pack() -> Result<crate::models::ModelsStatus, String> {
+    crate::models::download_visual_pack();
+    Ok(crate::models::visual_status())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

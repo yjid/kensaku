@@ -707,11 +707,7 @@ mod tests {
             .enumerate()
             .map(|(index, word)| {
                 let vector = table.embed(word);
-                let score = query
-                    .iter()
-                    .zip(&vector)
-                    .map(|(a, b)| a * b)
-                    .sum::<f32>();
+                let score = query.iter().zip(&vector).map(|(a, b)| a * b).sum::<f32>();
                 (index, score)
             })
             .collect();
@@ -757,9 +753,7 @@ mod tests {
         let recall = hits as f32 / rows as f32;
         let f32_mrr = f32_rr / rows as f32;
         let i8_mrr = i8_rr / rows as f32;
-        println!(
-            "K14 synthetic recall@5={recall:.3} mrr(f32)={f32_mrr:.3} mrr(i8)={i8_mrr:.3}"
-        );
+        println!("K14 synthetic recall@5={recall:.3} mrr(f32)={f32_mrr:.3} mrr(i8)={i8_mrr:.3}");
         assert!(recall >= 0.99, "i8 recall@5 regressed: {recall}");
         assert!(
             i8_mrr >= f32_mrr - 0.01,
@@ -772,7 +766,10 @@ mod tests {
         let i8_bytes = vocab_rows * EMBEDDING_DIM + vocab_rows * std::mem::size_of::<f32>();
         println!("K14 table bytes f32={f32_bytes} i8={i8_bytes}");
         assert!(i8_bytes <= 8_000_000, "i8 table exceeds 8 MB: {i8_bytes}");
-        assert!(f32_bytes >= 29_000_000, "unexpected f32 baseline: {f32_bytes}");
+        assert!(
+            f32_bytes >= 29_000_000,
+            "unexpected f32 baseline: {f32_bytes}"
+        );
 
         let empty: Vec<(&str, u32)> = Vec::new();
         let dense = StaticTable::test_table_f32(
@@ -843,7 +840,6 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod real_model_validation {
     use super::StaticTable;
@@ -907,18 +903,58 @@ mod real_model_validation {
 
         // A small labelled set: the relevant document is always index 0.
         let queries: &[(&str, &[&str])] = &[
-            ("invoice payment", &["billing receipt total due", "cat photo", "server logs"]),
-            ("deploy docker", &["container image build deploy", "resume cv", "invoice"]),
-            ("vacation beach", &["summer holiday ocean sand", "database migration", "invoice"]),
-            ("resume cv", &["curriculum vitae job experience", "invoice payment", "docker deploy"]),
-            ("error timeout", &["connection timed out retry", "holiday photo", "invoice"]),
-            ("screenshot design", &["ui mockup wireframe design", "invoice", "server logs"]),
-            ("meeting notes", &["minutes agenda discussion", "photo", "invoice"]),
-            ("database query", &["sql index table query", "holiday", "invoice"]),
-            ("photo sunset", &["beach ocean sky sunset", "database", "invoice"]),
-            ("security password", &["login credential secret", "invoice", "photo"]),
-            ("machine learning", &["neural network training model", "invoice", "photo"]),
-            ("budget report", &["finance spreadsheet cost", "holiday", "docker"]),
+            (
+                "invoice payment",
+                &["billing receipt total due", "cat photo", "server logs"],
+            ),
+            (
+                "deploy docker",
+                &["container image build deploy", "resume cv", "invoice"],
+            ),
+            (
+                "vacation beach",
+                &["summer holiday ocean sand", "database migration", "invoice"],
+            ),
+            (
+                "resume cv",
+                &[
+                    "curriculum vitae job experience",
+                    "invoice payment",
+                    "docker deploy",
+                ],
+            ),
+            (
+                "error timeout",
+                &["connection timed out retry", "holiday photo", "invoice"],
+            ),
+            (
+                "screenshot design",
+                &["ui mockup wireframe design", "invoice", "server logs"],
+            ),
+            (
+                "meeting notes",
+                &["minutes agenda discussion", "photo", "invoice"],
+            ),
+            (
+                "database query",
+                &["sql index table query", "holiday", "invoice"],
+            ),
+            (
+                "photo sunset",
+                &["beach ocean sky sunset", "database", "invoice"],
+            ),
+            (
+                "security password",
+                &["login credential secret", "invoice", "photo"],
+            ),
+            (
+                "machine learning",
+                &["neural network training model", "invoice", "photo"],
+            ),
+            (
+                "budget report",
+                &["finance spreadsheet cost", "holiday", "docker"],
+            ),
         ];
 
         let f32_mrr = mrr(&f32_table, queries);

@@ -11,75 +11,8 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 pub const TESSERACT: &str = "tesseract";
 pub const ACCURATE: &str = "accurate";
-pub const NATIVE: &str = "native";
 
 static ENGINE: AtomicU8 = AtomicU8::new(0);
-
-pub mod macos {
-    use std::path::Path;
-
-    #[cfg(all(target_os = "macos", feature = "native-ocr-macos"))]
-    pub fn extract_text_vision(path: &Path) -> Option<String> {
-        let path_str = path.to_str()?;
-        // macOS Vision framework text recognition via osascript bridge
-        let script = format!(
-            r#"
-            ObjC.import('Vision');
-            ObjC.import('Foundation');
-            var url = $.NSURL.fileURLWithPath('{}');
-            var handler = $.VNImageRequestHandler.alloc.initWithURLOptions(url, $());
-            var req = $.VNRecognizeTextRequest.alloc.init;
-            req.recognitionLevel = $.VNRequestTextRecognitionLevelAccurate;
-            var ok = handler.performRequestsError($([req]), null);
-            if (!ok) {{ $.exit(1); }}
-            var results = req.results;
-            var text = [];
-            for (var i = 0; i < results.count; i++) {{
-                var topCandidates = results.objectAtIndex(i).topCandidates(1);
-                if (topCandidates.count > 0) {{
-                    text.push(topCandidates.objectAtIndex(0).string.js);
-                }}
-            }}
-            text.join('\n');
-            "#,
-            path_str
-        );
-        let output = std::process::Command::new("/usr/bin/osascript")
-            .arg("-l")
-            .arg("JavaScript")
-            .arg("-e")
-            .arg(script)
-            .output()
-            .ok()?;
-        if output.status.success() {
-            let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !s.is_empty() {
-                return Some(s);
-            }
-        }
-        None
-    }
-
-    #[cfg(not(all(target_os = "macos", feature = "native-ocr-macos")))]
-    pub fn extract_text_vision(_path: &Path) -> Option<String> {
-        None
-    }
-}
-
-pub mod windows {
-    use std::path::Path;
-
-    #[cfg(all(target_os = "windows", feature = "native-ocr-windows"))]
-    pub fn extract_text_windows_ocr(_path: &Path) -> Option<String> {
-        // Windows.Media.Ocr.OcrEngine integration point
-        None
-    }
-
-    #[cfg(not(all(target_os = "windows", feature = "native-ocr-windows")))]
-    pub fn extract_text_windows_ocr(_path: &Path) -> Option<String> {
-        None
-    }
-}
 
 /// Directory holding the optional PP-OCRv6 pack.
 pub fn pack_dir() -> PathBuf {
@@ -113,34 +46,12 @@ pub fn accurate_available() -> bool {
     accurate_compiled() && pack_present()
 }
 
-/// True when the compiled binary has a native platform OCR engine.
-pub fn native_compiled() -> bool {
-    #[cfg(any(
-        all(target_os = "macos", feature = "native-ocr-macos"),
-        all(target_os = "windows", feature = "native-ocr-windows")
-    ))]
-    {
-        true
-    }
-    #[cfg(not(any(
-        all(target_os = "macos", feature = "native-ocr-macos"),
-        all(target_os = "windows", feature = "native-ocr-windows")
-    )))]
-    {
-        false
-    }
-}
-
-/// True when the native engine is available on the current platform.
-pub fn native_available() -> bool {
-    native_compiled()
-}
-
 /// Updates the process-wide OCR backend from config.
+///
+/// Values other than `accurate` (including the old `native` string) fall back
+/// to Tesseract. Native platform OCR is not implemented yet.
 pub fn set_engine(engine: &str) {
-    let value = if engine.eq_ignore_ascii_case(NATIVE) {
-        2
-    } else if engine.eq_ignore_ascii_case(ACCURATE) {
+    let value = if engine.eq_ignore_ascii_case(ACCURATE) {
         1
     } else {
         0
@@ -150,42 +61,27 @@ pub fn set_engine(engine: &str) {
 
 pub fn engine_name() -> &'static str {
     match ENGINE.load(Ordering::SeqCst) {
-        2 => NATIVE,
         1 => ACCURATE,
         _ => TESSERACT,
     }
 }
 
-/// Extracts text from an image using the configured engine hierarchy:
-/// 1. Native platform OCR (if NATIVE is selected and available)
-/// 2. Accurate PP-OCRv6 pack (if ACCURATE or NATIVE fallback is available)
-/// 3. Returns None so the caller falls back to Tesseract.
+/// Extracts text from an image using the optional accurate pack.
+///
+/// Returns `None` so the caller falls back to Tesseract when the pack is
+/// missing, disabled, or returns no text. Native macOS/Windows OCR is a
+/// separate, not-yet-implemented backlog item.
 pub fn extract_image_ocr(path: &Path) -> Option<String> {
-    let _ = path;
-    if engine_name() == NATIVE {
-        #[cfg(all(target_os = "macos", feature = "native-ocr-macos"))]
-        {
-            if let Some(text) = macos::extract_text_vision(path) {
-                return Some(text);
-            }
-        }
-        #[cfg(all(target_os = "windows", feature = "native-ocr-windows"))]
-        {
-            if let Some(text) = windows::extract_text_windows_ocr(path) {
-                return Some(text);
-            }
-        }
-    }
-
     #[cfg(feature = "accurate-ocr")]
     {
-        if (engine_name() == ACCURATE || engine_name() == NATIVE) && pack_present() {
+        if engine_name() == ACCURATE && pack_present() {
             if let Some(text) = extract_accurate_ocr(path) {
                 return Some(text);
             }
         }
     }
 
+    let _ = path;
     None
 }
 
@@ -215,11 +111,7 @@ fn extract_accurate_ocr(path: &Path) -> Option<String> {
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>()
         .join("\n");
-    if text.is_empty() {
-        None
-    } else {
-        Some(text)
-    }
+    if text.is_empty() { None } else { Some(text) }
 }
 
 #[cfg(test)]
@@ -232,28 +124,17 @@ mod tests {
         assert_eq!(engine_name(), TESSERACT);
         set_engine(ACCURATE);
         assert_eq!(engine_name(), ACCURATE);
-        set_engine(NATIVE);
-        assert_eq!(engine_name(), NATIVE);
+        // The retired `native` value must fall back to Tesseract rather than
+        // claiming a backend that does not exist.
+        set_engine("native");
+        assert_eq!(engine_name(), TESSERACT);
         set_engine(TESSERACT);
-    }
-
-    #[test]
-    fn native_engine_availability_on_current_platform() {
-        // On Linux without native-ocr flags, native_available() returns false cleanly
-        #[cfg(not(any(
-            all(target_os = "macos", feature = "native-ocr-macos"),
-            all(target_os = "windows", feature = "native-ocr-windows")
-        )))]
-        assert!(!native_available());
     }
 
     #[test]
     fn pack_presence_requires_all_three_files() {
         // The real config dir should not be touched by this test.
-        let dir = std::env::temp_dir().join(format!(
-            "kensaku-ocr-pack-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("kensaku-ocr-pack-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         // pack_dir() is config-based, so only the path helpers are exercised
@@ -274,8 +155,8 @@ mod tests {
         let det = std::fs::read(dir.join("det.onnx")).expect("det.onnx");
         let rec = std::fs::read(dir.join("rec.onnx")).expect("rec.onnx");
         let dict = std::fs::read(dir.join("dict.txt")).expect("dict.txt");
-        let engine = paddleocr_rs_onnx::OcrEngine::new(&det, &rec, &dict)
-            .expect("load PP-OCRv6 tiny pack");
+        let engine =
+            paddleocr_rs_onnx::OcrEngine::new(&det, &rec, &dict).expect("load PP-OCRv6 tiny pack");
         assert!(engine.device() == paddleocr_rs_onnx::AccelerationDevice::Cpu);
     }
 
@@ -329,7 +210,10 @@ mod tests {
         let engine = paddleocr_rs_onnx::OcrEngine::new(&det, &rec, &dict).expect("engine");
 
         let labels = std::fs::read_to_string(fixture.join("labels.txt")).expect("labels.txt");
-        let labels: Vec<&str> = labels.lines().filter(|line| !line.trim().is_empty()).collect();
+        let labels: Vec<&str> = labels
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .collect();
         let mut hits = 0usize;
         let mut missed = Vec::new();
         for (index, label) in labels.iter().enumerate() {

@@ -61,11 +61,7 @@ fn apply_platform(background: bool) {
 
 #[cfg(target_os = "macos")]
 fn apply_platform(background: bool) {
-    let priority = if background {
-        libc::PRIO_DARWIN_BG
-    } else {
-        0
-    };
+    let priority = if background { libc::PRIO_DARWIN_BG } else { 0 };
     unsafe {
         let _ = libc::setpriority(libc::PRIO_DARWIN_PROCESS, 0, priority);
     }
@@ -96,8 +92,8 @@ fn apply_platform(_background: bool) {}
 
 #[cfg(test)]
 mod tests {
-    use crate::config::CrawlMode;
     use super::*;
+    use crate::config::CrawlMode;
 
     #[test]
     fn only_full_stays_at_normal_priority() {

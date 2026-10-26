@@ -196,9 +196,9 @@ Full threat model: [SECURITY.md](SECURITY.md).
 
 ## Project status
 
-**Available today:** desktop app, daemon-backed GUI/CLI/MCP over Unix socket or Windows named pipe, semantic + lexical + folded/trigram hybrid search, config-only external extractors, full query grammar, PDF/Office/EPUB/ODT/RTF extraction, tesseract OCR plus an optional PP-OCRv6 accurate pack, image thumbnails, near-duplicate grouping and screenshot bursts, incremental indexing, rename/delete tracking, two themes, Doctor, factory reset, guided first-run setup, and 177 Rust tests.
+**Available today:** desktop app, daemon-backed GUI/CLI/MCP over Unix socket or Windows named pipe, semantic + lexical + folded/trigram hybrid search, CJK-aware tokenization, config-only external extractors, full query grammar, PDF/Office/EPUB/ODT/RTF extraction, tesseract OCR plus an optional PP-OCRv6 accurate pack, image thumbnails, near-duplicate grouping and screenshot bursts, incremental indexing, rename/delete tracking, two themes, Doctor, factory reset, guided first-run setup, and 200 Rust tests plus the golden-query integration test.
 
-**Planned:** native platform OCR (macOS Vision / Windows OCR), CJK/multilingual search, CLIP/SigLIP visual search, similar images, 1M-file prefilter, loopback HTTP/SSE, one-click agent connect, signing/notarization, auto-update, and installer packaging of the daemon sidecar. Face identity and VLM captions are currently deferred. See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/INTELLIGENCE_VISION_PLAN.md](docs/INTELLIGENCE_VISION_PLAN.md), [docs/REMAINING.md](docs/REMAINING.md), [docs/VISION.md](docs/VISION.md), and the [landscape notes](docs/LANDSCAPE.md).
+**Planned:** native platform OCR (macOS Vision / Windows OCR), CJK/multilingual search, 1M-file prefilter, loopback HTTP/SSE, one-click agent connect, signing/notarization, auto-update, and installer packaging of the daemon sidecar. Visual search is a **Settings → Beta** model-download experiment and is not wired into search yet; similar images follow it. Face identity and VLM captions are currently deferred. See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/INTELLIGENCE_VISION_PLAN.md](docs/INTELLIGENCE_VISION_PLAN.md), [docs/REMAINING.md](docs/REMAINING.md), [docs/VISION.md](docs/VISION.md), and the [landscape notes](docs/LANDSCAPE.md).
 
 ## Contributing
 

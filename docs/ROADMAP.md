@@ -4,9 +4,10 @@
 > competitive analysis). [REMAINING.md](REMAINING.md) is the full backlog;
 > this file is the ordered, testable slice we should work through next.
 >
-> Status: K1-K14 shipped. K15-K22 are the planned Intelligence & Vision slice;
-> see [INTELLIGENCE_VISION_PLAN.md](INTELLIGENCE_VISION_PLAN.md) for the detailed
-> step-by-step execution plan. Update the checkboxes as tasks land.
+> Status: K1-K17 are shipped (K17 unmeasured on a real model). K18-K20 are
+> deferred/beta-only, K21 is blocked, and K22 is shipped as a non-visual golden
+> set. See [INTELLIGENCE_VISION_PLAN.md](INTELLIGENCE_VISION_PLAN.md) for the
+> detailed plan and status table.
 
 ## Principles
 
@@ -40,12 +41,12 @@
 | K14 | Shipped — real Potion artifacts validated: 7.56 MB i8 matrix, MRR 1.0 vs f32 1.0 |
 | K15 | Shipped — CJK-aware Tantivy tokenization, schema marker v2, 9.73x index size on CJK fixture |
 | K16 | Shipped — embedding provider contract, model-id isolation, doctor/stats reporting |
-| K17 | Shipped — optional ONNX smart pack (bge-small-en-v1.5 int8, smart-embeddings feature) |
-| K18 | Shipped — image embedding pipeline (VisualStore, thumbnail reuse, cancel safety) |
-| K19 | Shipped — visual search tier fused into RRF, visual: filter, visual badge |
-| K20 | Shipped — similar-image lookup, daemon method, MCP tool |
-| K21 | Shipped — native platform OCR (macOS Vision / Windows OCR features, Tesseract fallback, scanned PDF routing) |
-| K22 | Planned — CJK/multilingual golden queries |
+| K17 | Shipped — optional ONNX smart pack code path; real-model quality not measured yet |
+| K18 | Beta only — Settings → Beta can download the pinned CLIP pack; model download/status is implemented, search integration is not |
+| K19 | Deferred — visual RRF plumbing exists but is not wired; mock encoder is test-only |
+| K20 | Deferred — command/daemon/MCP plumbing exists but returns "not available"; hidden from MCP when unavailable |
+| K21 | Blocked — native OCR was not implemented; fake macOS/Windows paths were removed. Scanned-PDF image-stream OCR is partial |
+| K22 | Shipped — 43 non-visual golden queries; Recall@5 1.0, MRR 0.988; visual cases skipped until a real encoder exists |
 
 ## P0 — foundation
 
@@ -319,16 +320,16 @@ Detailed steps, acceptance criteria, and risks live in
 [INTELLIGENCE_VISION_PLAN.md](INTELLIGENCE_VISION_PLAN.md). This is the backlog
 section B expansion; identity and VLM captions remain deferred.
 
-| Task | Scope | Effort |
-|---|---|---|
-| K15 | CJK-aware Tantivy tokenization | 1 wk |
-| K16 | Embedding provider contract (wire `semantic_model`) | 3-5 d |
-| K17 | Optional ONNX smart embedding pack | 2 wk |
-| K18 | Image embedding extraction pipeline | 2 wk |
-| K19 | Visual search tier and RRF integration | 2 wk |
-| K20 | Similar-image lookup | 1 wk |
-| K21 | Native macOS/Windows OCR | 1-2 wk |
-| K22 | Extend the golden query set with CJK/multilingual cases | 3-5 d |
+| Task | Scope | Effort | Status |
+|---|---|---|---|
+| K15 | CJK-aware Tantivy tokenization | 1 wk | Shipped |
+| K16 | Embedding provider contract (wire `semantic_model`) | 3-5 d | Shipped |
+| K17 | Optional ONNX smart embedding pack | 2 wk | Code shipped; unmeasured |
+| K18 | Image embedding extraction pipeline | 2 wk | Beta model download only; not wired |
+| K19 | Visual search tier and RRF integration | 2 wk | Deferred; tier disabled |
+| K20 | Similar-image lookup | 1 wk | Deferred; returns unavailable |
+| K21 | Native macOS/Windows OCR | 1-2 wk | Blocked |
+| K22 | Extend the golden query set with CJK/multilingual cases | 3-5 d | In progress |
 
 ## Order and effort
 

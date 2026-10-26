@@ -1,6 +1,5 @@
 pub mod fuzzy;
 
-use crate::embed::visual::VisualEncoder;
 use crate::embed::{ExactScanner, ModelRegistry, UnitStore};
 use crate::indexer::content::{ContentIndex, FieldKind};
 use crate::indexer::metadata::MetadataStore;
@@ -939,8 +938,8 @@ impl SearchDispatcher {
         if !search_text.is_empty()
             && let Some(v_store) = visual_store
             && !v_store.is_empty()
+            && let Some(encoder) = crate::embed::visual::active_encoder()
         {
-            let encoder = crate::embed::visual::MockVisualEncoder;
             let query_vec = encoder.embed_text(search_text);
             let hits = v_store.scan(
                 &query_vec,

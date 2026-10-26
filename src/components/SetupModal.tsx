@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Check, Plus, X, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download } from "lucide-react";
-import { EmptyState } from "./EmptyState";
 import { useTheme } from "../hooks/useTheme";
 import type { IndexingStatus, ModelsStatus, OcrStatus } from "../types";
 
@@ -351,7 +350,14 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
       <main className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-8 pb-6 pt-2">
         {step === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <EmptyState variant="empty" caption="Everything, already in its place" />
+            <img
+              src={theme === "paper" ? "/setup-icon-paper.png" : "/setup-icon-void.png"}
+              alt="Kensaku"
+              className="h-40 w-40 object-contain"
+            />
+            <p className="font-serif text-[17px] italic text-muted mt-1">
+              Everything, already in its place
+            </p>
             <h1 className="pt-2 text-[20px] font-semibold tracking-tight text-fg">
               A precision index of your machine.
             </h1>
@@ -534,7 +540,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <span className="block text-[12px] font-medium text-fg">OCR language data</span>
-                    <span className="block text-[11px] text-muted">English tessdata, ~4 MB</span>
+                    <span className="block text-[11px] text-muted">English tessdata, ~4 MB · uses Tesseract</span>
                   </div>
                   {ocrStatus?.available ? (
                     <span className="flex h-8 items-center gap-1.5 rounded-[10px] px-2 text-[11px] text-success">
@@ -579,7 +585,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 )}
               </div>
 
-              {ocrStatus?.accurate_compiled && (
+              {ocrStatus?.accurate_compiled ? (
                 <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
                   <div className="flex items-center justify-between gap-4">
                     <div>
@@ -587,7 +593,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                         Accurate OCR pack
                       </span>
                       <span className="block text-[11px] text-muted">
-                        PP-OCRv6 tiny detector + recognizer, ~6 MB
+                        PP-OCRv6 tiny detector + recognizer, ~6 MB · uses PP-OCRv6
                       </span>
                     </div>
                     {ocrPackStatus?.ready ? (
@@ -625,6 +631,13 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                   {ocrPackStatus?.error && (
                     <p className="pt-1.5 text-[11px] text-warning">{ocrPackStatus.error}</p>
                   )}
+                </div>
+              ) : (
+                <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+                  <div>
+                    <span className="block text-[12px] font-medium text-fg">Accurate OCR pack (PP-OCRv6)</span>
+                    <span className="block text-[11px] text-muted">Not included in this build.</span>
+                  </div>
                 </div>
               )}
 

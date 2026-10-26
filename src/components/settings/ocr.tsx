@@ -8,6 +8,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { KensakuConfig, ModelsStatus, OcrStatus } from "../../types";
+import { formatBytes } from "../../lib/format";
 import { Switch } from "./kit";
 
 /* OCR row — state-aware. Calls `get_ocr_status` on mount; every outcome
@@ -16,7 +17,7 @@ import { Switch } from "./kit";
    reserved so resolving the status never shifts the row. */
 
 const OCR_DESCRIPTION =
-  "Read text from screenshots, scans and photos. Existing images are re-scanned after saving.";
+  "Read text from screenshots, scans and photos using Tesseract. Existing images are re-scanned after saving.";
 
 const INSTALL_COMMANDS = [
   {
@@ -150,13 +151,13 @@ export function OcrField({
         />
       </div>
 
-      {status?.accurate_compiled && (
+      {status?.accurate_compiled ? (
         <div className="mt-3 border-t border-line pt-3">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
               <p className="text-[11px] font-medium text-fg">Accurate OCR pack</p>
               <p className="text-[10px] leading-relaxed text-muted">
-                PP-OCRv6 tiny · about 6 MB · higher recall on UI text.
+                PP-OCRv6 tiny · about 6 MB · higher recall on UI text · uses PP-OCRv6.
               </p>
               <p className="mt-0.5 font-mono text-[10px] text-subtle">
                 {pack?.downloading
@@ -201,6 +202,32 @@ export function OcrField({
               )}
             </div>
           </div>
+          {pack && (
+            <div className="mt-3 space-y-1 border-t border-line pt-2">
+              <p className="truncate font-mono text-[10px] text-subtle">{pack.dir}</p>
+              {pack.artifacts.map((a) => (
+                <div key={a.name + a.url} className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                        a.present ? "bg-success" : "bg-subtle"
+                      }`}
+                    />
+                    <code className="font-mono text-[10px] text-fg">{a.name}</code>
+                  </div>
+                  <span className="font-mono text-[10px] text-subtle">
+                    {formatBytes(a.present ? a.bytes_on_disk || a.bytes_expected : a.bytes_expected)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="mt-3 border-t border-line pt-3">
+          <p className="text-[11px] leading-relaxed text-muted">
+            Accurate OCR pack (PP-OCRv6) is not included in this build.
+          </p>
         </div>
       )}
 

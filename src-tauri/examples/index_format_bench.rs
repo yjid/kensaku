@@ -159,9 +159,10 @@ fn build_tantivy(
     };
     let schema = builder.build();
     let index = Index::create_in_dir(dir, schema).map_err(|e| e.to_string())?;
-    index
-        .tokenizers()
-        .register("trigram", NgramTokenizer::new(3, 3, false).map_err(|e| e.to_string())?);
+    index.tokenizers().register(
+        "trigram",
+        NgramTokenizer::new(3, 3, false).map_err(|e| e.to_string())?,
+    );
     let mut writer = index
         .writer_with_num_threads(1, 16_000_000)
         .map_err(|e| e.to_string())?;

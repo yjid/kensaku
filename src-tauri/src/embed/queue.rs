@@ -1,13 +1,13 @@
 use crate::embed::model::ModelRegistry;
-use crate::embed::units::{chunk_text, Unit, UnitStore};
+use crate::embed::units::{Unit, UnitStore, chunk_text};
+use crate::indexer::IndexingStatus;
 use crate::indexer::content::{is_indexable_extension, is_indexable_file_name, read_text_content};
 use crate::indexer::metadata_db::MetadataDb;
-use crate::indexer::IndexingStatus;
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -95,7 +95,10 @@ impl EmbeddingQueue {
                     let pending_nodes = match db.get_nodes_for_embedding(16) {
                         Ok(nodes) => nodes,
                         Err(e) => {
-                            eprintln!("[Kensaku Embedder] Failed to get nodes for embedding: {}", e);
+                            eprintln!(
+                                "[Kensaku Embedder] Failed to get nodes for embedding: {}",
+                                e
+                            );
                             thread::sleep(Duration::from_millis(1000));
                             continue;
                         }
@@ -169,37 +172,39 @@ impl EmbeddingQueue {
 
                         let content_hash = format!("{:x}", fnv_hash(&content));
 
-                        let chunks_with_vectors = if let Some(cached) = hash_cache.get(&content_hash) {
-                            Arc::clone(cached)
-                        } else {
-                            let chunks = chunk_text(&content, size as usize);
-                            let model_ref = &model;
-                            let computed: Vec<(usize, usize, Vec<i8>)> = if let Some(ref pool) = embed_pool {
-                                pool.install(|| {
-                                    chunks
-                                        .into_par_iter()
-                                        .map(|(start, end, chunk_str)| {
-                                            let vec = model_ref.embed_to_i8(&chunk_str);
-                                            (start, end, vec)
-                                        })
-                                        .collect()
-                                })
+                        let chunks_with_vectors =
+                            if let Some(cached) = hash_cache.get(&content_hash) {
+                                Arc::clone(cached)
                             } else {
-                                chunks
-                                    .into_iter()
-                                    .map(|(start, end, chunk_str)| {
-                                        let vec = model_ref.embed_to_i8(&chunk_str);
-                                        (start, end, vec)
-                                    })
-                                    .collect()
-                            };
+                                let chunks = chunk_text(&content, size as usize);
+                                let model_ref = &model;
+                                let computed: Vec<(usize, usize, Vec<i8>)> =
+                                    if let Some(ref pool) = embed_pool {
+                                        pool.install(|| {
+                                            chunks
+                                                .into_par_iter()
+                                                .map(|(start, end, chunk_str)| {
+                                                    let vec = model_ref.embed_to_i8(&chunk_str);
+                                                    (start, end, vec)
+                                                })
+                                                .collect()
+                                        })
+                                    } else {
+                                        chunks
+                                            .into_iter()
+                                            .map(|(start, end, chunk_str)| {
+                                                let vec = model_ref.embed_to_i8(&chunk_str);
+                                                (start, end, vec)
+                                            })
+                                            .collect()
+                                    };
 
-                            let computed = Arc::new(computed);
-                            if hash_cache.len() < 512 {
-                                hash_cache.insert(content_hash.clone(), Arc::clone(&computed));
-                            }
-                            computed
-                        };
+                                let computed = Arc::new(computed);
+                                if hash_cache.len() < 512 {
+                                    hash_cache.insert(content_hash.clone(), Arc::clone(&computed));
+                                }
+                                computed
+                            };
 
                         batch_node_ids.push(node_id);
                         for (start, end, vec) in chunks_with_vectors.iter() {
