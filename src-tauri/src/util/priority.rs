@@ -9,12 +9,27 @@
 //! profiling, and diagnosing slow crawls).
 
 use crate::config::CrawlMode;
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+#[cfg(test)]
+static BACKGROUND_REQUESTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn apply(crawl_mode: CrawlMode) {
     if std::env::var_os("KENSAKU_NO_BG_PRIORITY").is_some() {
         return;
     }
-    apply_platform(crawl_mode.is_background());
+    let background = crawl_mode.is_background();
+    #[cfg(test)]
+    if background {
+        BACKGROUND_REQUESTS.fetch_add(1, Ordering::SeqCst);
+    }
+    apply_platform(background);
+}
+
+#[cfg(test)]
+pub fn background_requests() -> usize {
+    BACKGROUND_REQUESTS.load(Ordering::SeqCst)
 }
 
 #[cfg(target_os = "linux")]
@@ -82,11 +97,19 @@ fn apply_platform(_background: bool) {}
 #[cfg(test)]
 mod tests {
     use crate::config::CrawlMode;
+    use super::*;
 
     #[test]
     fn only_full_stays_at_normal_priority() {
         assert!(!CrawlMode::Full.is_background());
         assert!(CrawlMode::Balanced.is_background());
         assert!(CrawlMode::Eco.is_background());
+    }
+
+    #[test]
+    fn full_does_not_request_background_priority() {
+        let before = background_requests();
+        apply(CrawlMode::Full);
+        assert_eq!(background_requests(), before);
     }
 }

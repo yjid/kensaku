@@ -6,6 +6,7 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- K7 default scheduling mode is now `full`; balanced/eco still opt in.
 - K3 thumbnail version fix: legacy 320 px thumbnails are no longer hashed;
   `image_hash_version` bumped to 2.
 - K2 metadata memory fix: replaced the `HashMap` path/id/burst maps with a
