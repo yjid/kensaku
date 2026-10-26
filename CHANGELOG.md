@@ -6,6 +6,9 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- K9 download hygiene framework: resumable `.part` downloads, HTTP Range resume,
+  mirror fallback, atomic rename, SHA-256 verification, and progress reporting.
+  Production artifact checksums remain to be pinned.
 - K7 default scheduling mode is now `full`; balanced/eco still opt in.
 - K3 thumbnail version fix: legacy 320 px thumbnails are no longer hashed;
   `image_hash_version` bumped to 2.
