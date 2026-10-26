@@ -22,12 +22,12 @@
 
 | Task | Status |
 |---|---|
-| K1 | Partial — Unix daemon, clients, metadata RPCs, snippets; Windows named pipe and packaging pending |
+| K1 | Shipped — daemon, Unix socket + Windows named pipe, clients, metadata RPCs, snippets; release packaging in F |
 | K2 | Shipped — 92.8 MB at 1M (target ≤ 100 MB) |
 | K3 | Shipped — legacy 320 px fix, thumbnail hashing, one-decode backfill, thumbnail-only hashing |
 | K4 | Shipped — visible-only snippets, daemon read_snippet, line ranges, LRU |
 | K5 | Shipped — folded tier + verification; verification tightening pending |
-| K6 | Shipped — PP-OCRv6 tiny pack, 100% fixture recall; native platform OCR deferred |
+| K6 | Shipped — PP-OCRv6 tiny pack, 100% fixture recall; native platform OCR in B |
 | K7 | Shipped — default mode now `full`; measurement pending |
 | K8 | Shipped |
 | K9 | Shipped — Potion and PP-OCRv6 packs pinned, mirrored, resumed, disk-checked |
@@ -48,10 +48,10 @@ session reloads metadata and vectors.
 **Work**
 - [x] K1.1 New `kensaku-daemon` binary/crate. It owns `IndexerManager`, SQLite,
   Tantivy, vectors, watcher, and the embedding queue.
-- [~] K1.2 IPC: newline JSON-RPC over a Unix socket (`$XDG_RUNTIME_DIR/kensaku.sock`,
+- [x] K1.2 IPC: newline JSON-RPC over a Unix socket (`$XDG_RUNTIME_DIR/kensaku.sock`,
   0600) and a Windows named pipe; optional loopback TCP for MCP clients later.
-  Version the protocol and include a token in the handshake. Unix is shipped;
-  the Windows named-pipe transport and release packaging are still pending.
+  Version the protocol and include a token in the handshake. Both transports use
+  `interprocess` local sockets; Windows packaging is release work in section F.
 - [x] K1.3 Clients: Tauri app connects instead of constructing `IndexerManager`;
   `kensaku-cli` and MCP connect; the app auto-spawns the daemon if missing; CLI
   falls back to read-only direct access if the daemon is absent.
@@ -179,8 +179,9 @@ default and offer the accurate path.
 - [x] K6.1 Add an OCR engine abstraction (`Tesseract`, `Paddle`, `Native`).
 - [x] K6.2 PaddleOCR PP-OCRv6 tiny detector + small recognizer via `ort`;
   models downloaded with SHA-256 (~1.7 MB + 4.3 MB + 27 KB).
-- [ ] K6.3 Native OCR where available: macOS Vision, Windows OCR; lower memory
-  than Paddle, best platform integration. (Deferred; platform-specific.)
+- [~] K6.3 Native OCR where available: macOS Vision, Windows OCR; lower memory
+  than Paddle, best platform integration. (Deferred to the platform-native OCR
+  backlog item; the Paddle pack is shipped.)
 - [x] K6.4 Setup/Settings pack: opt-in, checksum, disk estimate, fallback to
   Tesseract when missing.
 - [x] K6.5 Frozen 104-image UI-text fixture for recall and memory.

@@ -113,11 +113,11 @@ These are the highest-leverage gaps. None require a new model.
 
 ## C. Agent, LLM & runtime
 
-- [ ] **Warm daemon** — one process owns the index; GUI, CLI, and MCP attach.
+- [x] **Warm daemon** — one process owns the index; GUI, CLI, and MCP attach.
       Today the GUI backend is in-process and a one-shot CLI pays metadata load.
       This is the top architectural gap: see [ROADMAP K1](ROADMAP.md#k1-daemon-split-epic)
       for the IPC, lifecycle, client migration, and acceptance criteria. (ROADMAP K1;
-      Unix daemon and clients shipped, Windows named pipe/packaging pending.)
+      Unix socket + Windows named pipe, clients, metadata RPCs, snippets.)
 - [ ] **Local HTTP/SSE endpoint** — loopback only, token auth, read-only.
       Needed for web-capable MCP clients and long-lived agents. Follows K1.
       (ROADMAP K1)

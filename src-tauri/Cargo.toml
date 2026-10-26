@@ -42,6 +42,7 @@ zip = "9.1.0"
 ureq = { version = "2", features = ["tls"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff"] }
 paddleocr_rs_onnx = { version = "0.2.8", default-features = false, optional = true }
+interprocess = "2.4.7"
 
 [profile.release]
 codegen-units = 1

@@ -1,10 +1,11 @@
 use kensaku_lib::config::KensakuConfig;
 use kensaku_lib::indexer::IndexerManager;
 use serde_json::{Value, json};
+use interprocess::local_socket::prelude::*;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -14,6 +15,22 @@ fn socket_path(config_dir: &Path) -> PathBuf {
     } else {
         config_dir.join("kensaku.sock")
     }
+}
+
+#[cfg(unix)]
+fn socket_name(
+    config_dir: &Path,
+) -> std::io::Result<interprocess::local_socket::Name<'static>> {
+    use interprocess::local_socket::{GenericFilePath, ToFsName};
+    socket_path(config_dir).to_fs_name::<GenericFilePath>()
+}
+
+#[cfg(windows)]
+fn socket_name(
+    _config_dir: &Path,
+) -> std::io::Result<interprocess::local_socket::Name<'static>> {
+    use interprocess::local_socket::{GenericNamespaced, ToNsName};
+    "kensaku".to_ns_name::<GenericNamespaced>()
 }
 
 fn token_path(config_dir: &Path) -> PathBuf {
@@ -36,37 +53,66 @@ fn ensure_token(config_dir: &Path) -> std::io::Result<String> {
         .unwrap_or(0);
     let token = format!("{:x}-{:x}", std::process::id(), nanos);
     fs::write(&path, &token)?;
+    #[cfg(unix)]
     let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
     Ok(token)
 }
 
-use std::ffi::CString;
-use std::sync::OnceLock;
+#[cfg(unix)]
+mod unix_cleanup {
+    use std::ffi::CString;
+    use std::sync::OnceLock;
 
-static SOCKET_C: OnceLock<CString> = OnceLock::new();
-static PID_C: OnceLock<CString> = OnceLock::new();
+    static SOCKET_C: OnceLock<CString> = OnceLock::new();
+    static PID_C: OnceLock<CString> = OnceLock::new();
 
+    pub fn remember(socket: &std::path::Path, pid: &std::path::Path) {
+        if let Ok(c) = CString::new(socket.to_string_lossy().as_bytes()) {
+            let _ = SOCKET_C.set(c);
+        }
+        if let Ok(c) = CString::new(pid.to_string_lossy().as_bytes()) {
+            let _ = PID_C.set(c);
+        }
+    }
+
+    pub fn cleanup_paths() {
+        if let Some(path) = SOCKET_C.get() {
+            unsafe { libc::unlink(path.as_ptr()) };
+        }
+        if let Some(path) = PID_C.get() {
+            unsafe { libc::unlink(path.as_ptr()) };
+        }
+    }
+
+    extern "C" fn handle_term(_sig: libc::c_int) {
+        // `unlink` is async-signal-safe; paths were precomputed at startup.
+        cleanup_paths();
+        std::process::exit(0);
+    }
+
+    pub fn install_signal_handlers() {
+        unsafe {
+            libc::signal(libc::SIGTERM, handle_term as *const () as libc::sighandler_t);
+            libc::signal(libc::SIGINT, handle_term as *const () as libc::sighandler_t);
+        }
+    }
+}
+
+#[cfg(unix)]
 fn cleanup_paths() {
-    if let Some(path) = SOCKET_C.get() {
-        unsafe { libc::unlink(path.as_ptr()) };
-    }
-    if let Some(path) = PID_C.get() {
-        unsafe { libc::unlink(path.as_ptr()) };
-    }
+    unix_cleanup::cleanup_paths();
 }
 
-extern "C" fn handle_term(_sig: libc::c_int) {
-    // `unlink` is async-signal-safe; paths were precomputed at startup.
-    cleanup_paths();
-    std::process::exit(0);
-}
+#[cfg(not(unix))]
+fn cleanup_paths() {}
 
+#[cfg(unix)]
 fn install_signal_handlers() {
-    unsafe {
-        libc::signal(libc::SIGTERM, handle_term as *const () as libc::sighandler_t);
-        libc::signal(libc::SIGINT, handle_term as *const () as libc::sighandler_t);
-    }
+    unix_cleanup::install_signal_handlers();
 }
+
+#[cfg(not(unix))]
+fn install_signal_handlers() {}
 
 fn main() {
     install_signal_handlers();
@@ -104,25 +150,34 @@ fn main() {
         }
     }
 
+    #[cfg(unix)]
     let sock = socket_path(&config_dir);
+    #[cfg(unix)]
     let _ = fs::remove_file(&sock);
-    let listener = match UnixListener::bind(&sock) {
+    let name = match socket_name(&config_dir) {
+        Ok(name) => name,
+        Err(e) => {
+            eprintln!("kensaku-daemon: socket name: {}", e);
+            std::process::exit(1);
+        }
+    };
+    let listener = match interprocess::local_socket::ListenerOptions::new()
+        .name(name)
+        .create_sync()
+    {
         Ok(l) => l,
         Err(e) => {
             eprintln!("kensaku-daemon: bind: {}", e);
             std::process::exit(1);
         }
     };
+    #[cfg(unix)]
     let _ = fs::set_permissions(&sock, fs::Permissions::from_mode(0o600));
 
     let pid_path = config_dir.join("daemon.pid");
     let _ = fs::write(&pid_path, std::process::id().to_string());
-    if let Ok(c) = CString::new(sock.to_string_lossy().as_bytes()) {
-        let _ = SOCKET_C.set(c);
-    }
-    if let Ok(c) = CString::new(pid_path.to_string_lossy().as_bytes()) {
-        let _ = PID_C.set(c);
-    }
+    #[cfg(unix)]
+    unix_cleanup::remember(&sock, &pid_path);
 
     // Start indexer
     let cfg = KensakuConfig::load();
@@ -141,9 +196,9 @@ fn main() {
     }
 }
 
-fn handle_client(mut stream: UnixStream, token: &str, manager: &Arc<IndexerManager>) {
-    let reader = stream.try_clone().unwrap();
-    let buf = BufReader::new(reader);
+fn handle_client(stream: LocalSocketStream, token: &str, manager: &Arc<IndexerManager>) {
+    let buf = BufReader::new(&stream);
+    let mut writer = &stream;
     for line in buf.lines() {
         let Ok(line) = line else { break };
         let trimmed = line.trim();
@@ -153,7 +208,7 @@ fn handle_client(mut stream: UnixStream, token: &str, manager: &Arc<IndexerManag
         let req: Value = match serde_json::from_str(trimmed) {
             Ok(v) => v,
             Err(_) => {
-                let _ = writeln!(stream, "{}", json!({"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"parse error"}}));
+                let _ = writeln!(writer, "{}", json!({"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"parse error"}}));
                 continue;
             }
         };
@@ -168,7 +223,7 @@ fn handle_client(mut stream: UnixStream, token: &str, manager: &Arc<IndexerManag
             kensaku_lib::daemon::authenticate(token, provided, protocol_version)
         {
             let _ = writeln!(
-                stream,
+                writer,
                 "{}",
                 json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
             );
@@ -248,7 +303,7 @@ fn handle_client(mut stream: UnixStream, token: &str, manager: &Arc<IndexerManag
                     Ok(config) => config,
                     Err(e) => {
                         let _ = writeln!(
-                            stream,
+                            writer,
                             "{}",
                             serde_json::json!({"jsonrpc":"2.0","id":id,"error":{"code":-32000,"message":e.to_string()}})
                         );
@@ -342,6 +397,6 @@ fn handle_client(mut stream: UnixStream, token: &str, manager: &Arc<IndexerManag
             Ok(r) => json!({"jsonrpc":"2.0","id":id,"result":r}),
             Err(e) => json!({"jsonrpc":"2.0","id":id,"error":{"code":-32000,"message":e}}),
         };
-        let _ = writeln!(stream, "{}", resp);
+        let _ = writeln!(writer, "{}", resp);
     }
 }
