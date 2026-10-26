@@ -1173,6 +1173,32 @@ function AboutSection() {
         </div>
       </Card>
 
+      <Card title="Setup">
+        <div className="flex items-center justify-between gap-4 p-4">
+          <div className="min-w-0">
+            <p className="text-[13px] font-medium text-fg">Run setup again</p>
+            <p className="line-clamp-2 pt-0.5 text-[11px] leading-relaxed text-muted">
+              Re-run the guided first-run flow (folders, preferences, optional packs, first scan).
+              Your index and config are preserved; setup markers reset.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await invoke("run_setup_again");
+                window.location.reload();
+              } catch (e) {
+                console.error(e);
+              }
+            }}
+            className="h-8 shrink-0 rounded-[10px] border border-line px-3 text-[11px] font-medium text-fg transition-colors hover:border-line-strong"
+          >
+            Run setup again…
+          </button>
+        </div>
+      </Card>
+
       {/* Danger zone — visually distinct but calm: danger hairline, no fills. */}
       <div>
         <p className="pb-2 text-[10px] font-medium uppercase tracking-[0.08em] text-danger">
