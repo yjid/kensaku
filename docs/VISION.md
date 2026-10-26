@@ -137,7 +137,7 @@ Rules:
   duplicating the flow.
 - **The first scan completes before the main window opens.** Show real counts
   (files, folders, documents, images, OCR'd images, embedded units), the
-  current path, and a credible ETA. Finish with a clear **Done** state.
+  a progress bar, and a credible ETA. Finish with a clear **Done** state.
 - **No partial index is presented as complete.** If the scan is interrupted,
   it resumes from a cursor; the Done screen only appears when the first index
   is actually usable.
@@ -268,7 +268,7 @@ learning syntax.
 - A fresh install goes welcome → folders → preferences → optional packs → first
   scan → Done without opening Settings. No download is initiated anywhere else.
 - The scan shows files, folders, documents, images, OCR'd images, and embedded
-  units, plus the current path and a credible ETA. The Done screen only appears
+  units, plus a progress bar and a credible ETA. The Done screen only appears
   when the index is usable.
 - An interrupted first scan resumes; a partial index is never presented as
   complete.

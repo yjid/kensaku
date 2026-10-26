@@ -100,6 +100,30 @@ on a `v*` tag and uploads a draft release.
 
 ---
 
+## Development tasks
+
+A `Makefile` wraps the common commands:
+
+```bash
+make            # list tasks
+make install    # dependencies (bun, npm fallback)
+make dev        # Tauri dev app
+make build      # release bundles
+make cli        # agent CLI
+make test       # Rust tests
+make check      # tsc + cargo check
+make fmt        # Rust fmt
+make bench BENCH_DIR=~/Projects
+make data-dir   # where config/index live
+make reset-index# delete index, keep settings
+make reset      # delete all Kensaku data
+make clean      # remove build outputs
+```
+
+`reset` and `reset-index` delete immediately. Quit Kensaku first.
+
+---
+
 ## The agent CLI
 
 `kensaku-cli` is a separate binary that shares the same index.
@@ -139,8 +163,9 @@ artifact from the Actions run.
 ## OCR (optional)
 
 OCR needs the `tesseract` binary **and** language data. Kensaku can download
-`eng.traineddata` (~4 MB) into its own directory from **Settings → Search**, so
-you don't need root. If you prefer a system install:
+`eng.traineddata` (~4 MB) into its own directory from the guided setup flow
+(**About → Run setup again → Optional packs**), so you don't need root. If you
+prefer a system install:
 
 ```bash
 # Linux (Debian/Ubuntu)
@@ -154,7 +179,7 @@ winget install UB-Mannheim.TesseractOCR
 ```
 
 Settings → Search shows one of four states: ready (with languages), engine found
-but no language data (download button), engine missing (platform install command),
+but no language data (points to setup), engine missing (platform install command),
 or unknown. The OCR switch is disabled until OCR can actually work. Doctor repeats
 the same check.
 
@@ -164,10 +189,13 @@ the same check.
 
 1. Pick folders (Home, Projects, Documents, Downloads).
 2. Choose an exclusion preset (Developer / Creative / All-round).
-3. Set preferences (theme, global shortcut).
-4. Optionally download OCR language data and the semantic model.
-5. Start. The first scan shows live counts and ends with a Done summary; later
-   launches are search-first and instant. You can search while indexing runs.
+3. Set preferences (theme, global shortcut). Click the shortcut field and press
+   the key combo; Esc cancels.
+4. Optionally download OCR language data and the semantic model. Each button
+   shows live state (downloading, progress, ready, or the error).
+5. Start. The first scan shows live counts, a progress bar, and an ETA, then ends
+   with a Done summary; later launches are search-first and instant. You can
+   search while indexing runs.
 
 The index lives at:
 

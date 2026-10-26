@@ -145,10 +145,12 @@ Results are deterministic: score, then path.
 > stay search-first.
 
 - **General** — theme (`paper` / `void`), global shortcut, max results, start at login.
+  The shortcut field records a combo when you click it and press the keys (Esc cancels).
 - **Folders** — watched roots, add/remove, drag-and-drop.
 - **Exclusions** — presets (Developer, Creative, All-round), directories, extensions.
-- **Search** — semantic toggle, OCR, filter cheat sheet.
-- **AI & Semantic** — active model, embed queue, re-embed, optional model download.
+- **Search** — semantic toggle, OCR status, aliases, filter cheat sheet.
+- **AI & Semantic** — active model, embed queue, re-embed, model status (downloads
+  are acquired in setup; use **About → Run setup again**).
 - **Agents** — MCP config and CLI examples for external agents.
 - **Doctor** — nine checks: config writability, DB integrity, index size, semantic
   units, watched roots, watcher health, inotify limit, model files, crash log.
@@ -166,8 +168,10 @@ Results are deterministic: score, then path.
 - **Renames** are tracked by `(device, inode)`, so moves do not duplicate entries.
 - **Startup** is search-first: the snapshot loads, then a stat-only reconcile runs
   in the background. This applies **after the first completed scan**; the guided
-  first run waits for the initial scan and ends with a Done screen. Until it
-  finishes the app reports how old the index is.
+  first run waits for the initial scan and ends with a Done screen. The scanning
+  screen shows files, documents, embedded units, a progress bar, and an ETA
+  during metadata indexing and text extraction. Until it finishes the app reports
+  how old the index is.
 - **Unavailable roots** (unplugged drive, unmounted share) are preserved, not pruned.
 - **Documents** — PDF, DOCX/PPTX/XLSX, EPUB/ODT, RTF; malformed files are skipped
   after an 8-second timeout.

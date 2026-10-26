@@ -722,7 +722,7 @@ Scanning ── failed → actionable error + retry, never Done
   present + `first_scan_done == false` routes straight to Scanning, not Welcome.
 - **Show real progress.** The Scanning screen reads `get_indexing_status` and
   the metadata/content counts: files, folders, documents, images, OCR'd images,
-  and embedded units, plus the current path and an ETA. The Done screen shows
+  and embedded units, plus a progress bar and ETA. The Done screen shows
   the final summary and "Start searching".
 - **Optional means optional.** Declining packs leaves keyword + lexical search
   fully usable. The flow never blocks on a download the user did not choose.

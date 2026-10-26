@@ -75,8 +75,8 @@ These are the highest-leverage gaps. None require a new model.
       remain.
 - [x] **First-scan completion gate** — `first_scan_done` gates `is_setup_complete`;
       the scan shows live counts and a Done summary, resumes after interruption,
-      and later launches stay search-first. (Current path and ETA are not yet
-      shown.)
+      and later launches stay search-first. Progress bar and ETA are shown for
+      metadata indexing and extraction; the current file path is not.
 - [—] **Voice and microcopy pass** — intentionally skipped; not planned.
 
 ## B. Intelligence & vision
