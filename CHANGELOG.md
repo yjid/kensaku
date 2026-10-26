@@ -6,6 +6,9 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Compact metadata arena (`NodeArena`/`NameArena`): per-entry node is 64 bytes
+  (down from 128-byte `FileEntry`), full paths are reconstructed from parent
+  chains instead of being stored per entry.
 - Guided first-run setup: folders → exclusions → preferences → optional packs →
   first scan → Done. The first scan is gated by `first_scan_done`; interrupted
   scans resume. Settings → About offers **Run setup again**.

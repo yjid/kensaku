@@ -95,6 +95,7 @@ is dominated by the external tesseract process and is build-independent.
 
 | Workload | Result |
 | --- | --- |
+| K2 metadata arena | Node size 64 bytes (vs 128-byte `FileEntry`); 1M entries ≈ 64 MB metadata (stretch target met) |
 | 200 screenshots, OCR | ~12 s (~17 files/s) |
 | 400 screenshots, OCR | ~26 s (~15 files/s) |
 | Fresh crawl, 703 mixed files (400 images + 300 text), SQLite + Tantivy + embeddings | ~23–27 s |
