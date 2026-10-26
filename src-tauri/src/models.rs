@@ -113,6 +113,28 @@ pub const SMART_ARTIFACTS: [Artifact; 3] = [
     },
 ];
 
+/// Optional ONNX visual embedding pack (CLIP ViT-B/32 int8).
+pub const VISUAL_ARTIFACTS: [Artifact; 2] = [
+    Artifact {
+        name: "visual_image.onnx",
+        urls: &[
+            "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/onnx/model_quantized.onnx",
+            "https://hf-mirror.com/Xenova/clip-vit-base-patch32/resolve/main/onnx/model_quantized.onnx",
+        ],
+        bytes_expected: 151_223_344,
+        sha256: Some("f92ec768b556f874bc05658bdf0bb86214ec042e6bc82654f15d706a13242ea8"),
+    },
+    Artifact {
+        name: "config.json",
+        urls: &[
+            "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/config.json",
+            "https://hf-mirror.com/Xenova/clip-vit-base-patch32/resolve/main/config.json",
+        ],
+        bytes_expected: 4_338,
+        sha256: Some("5893ce7e4f9b89793540c49ba9c1e028b03e2c34cb35bc7329d91fbb9c2401f0"),
+    },
+];
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelArtifact {
     pub name: String,
@@ -225,6 +247,18 @@ pub fn smart_status() -> ModelsStatus {
     status_for(&smart_dir(), &SMART_ARTIFACTS)
 }
 
+pub fn visual_dir() -> PathBuf {
+    models_dir().join("visual")
+}
+
+pub fn visual_pack_present() -> bool {
+    visual_dir().join("visual_image.onnx").is_file() && visual_dir().join("config.json").is_file()
+}
+
+pub fn visual_status() -> ModelsStatus {
+    status_for(&visual_dir(), &VISUAL_ARTIFACTS)
+}
+
 fn status_for(dir: &Path, artifacts_list: &[Artifact]) -> ModelsStatus {
     let dir = dir.to_path_buf();
     let mut artifacts = Vec::with_capacity(artifacts_list.len());
@@ -292,6 +326,16 @@ pub fn download_smart_pack() {
         &SMART_ARTIFACTS,
         "kensaku-smart-download",
         "smart embedding pack",
+    );
+}
+
+/// Starts a background download of the optional ONNX visual embedding pack.
+pub fn download_visual_pack() {
+    start_download(
+        visual_dir(),
+        &VISUAL_ARTIFACTS,
+        "kensaku-visual-download",
+        "visual embedding pack",
     );
 }
 
@@ -588,6 +632,14 @@ mod tests {
         assert!(SMART_ARTIFACTS.iter().all(|a| a.sha256.is_some()));
         assert!(SMART_ARTIFACTS.iter().all(|a| a.bytes_expected > 0));
         assert!(SMART_ARTIFACTS.iter().all(|a| !a.urls.is_empty()));
+    }
+
+    #[test]
+    fn visual_artifacts_manifest_sanity() {
+        assert_eq!(VISUAL_ARTIFACTS.len(), 2);
+        assert!(VISUAL_ARTIFACTS.iter().all(|a| a.sha256.is_some()));
+        assert!(VISUAL_ARTIFACTS.iter().all(|a| a.bytes_expected > 0));
+        assert!(VISUAL_ARTIFACTS.iter().all(|a| !a.urls.is_empty()));
     }
 
     #[test]

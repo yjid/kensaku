@@ -141,6 +141,7 @@ static PHASH_BACKFILL_RUNNING: AtomicBool = AtomicBool::new(false);
 fn start_phash_backfill(
     metadata: Arc<RwLock<MetadataStore>>,
     content_index: Arc<RwLock<Option<ContentIndex>>>,
+    visual_store: Arc<RwLock<crate::embed::visual::VisualStore>>,
     crawl_running: Arc<AtomicBool>,
     query_in_flight: Arc<AtomicBool>,
 ) {
@@ -180,9 +181,36 @@ fn start_phash_backfill(
                     if crawl_running.load(Ordering::Relaxed) {
                         break;
                     }
+                    if query_in_flight.load(Ordering::Relaxed) {
+                        break;
+                    }
                     let hash = crate::indexer::extract::image::phash64_cached(&path, &thumbs_dir)
                         .unwrap_or(u64::MAX);
                     let _ = db.set_image_phash(&path, hash);
+
+                    if hash != u64::MAX {
+                        let thumb =
+                            crate::indexer::extract::image::thumbnail_path(&path, &thumbs_dir);
+                        if thumb.is_file()
+                            && let Ok(Some(node_id)) = db.get_node_id_by_path(&path)
+                        {
+                            let needs = visual_store.read().needs_embedding(node_id, hash);
+                            if needs {
+                                use crate::embed::visual::VisualEncoder;
+                                let encoder = crate::embed::visual::MockVisualEncoder;
+                                if let Some(vec) = encoder.embed_image_from_thumbnail(&thumb) {
+                                    visual_store.write().add_or_update(node_id, hash, &vec);
+                                    let _ = db.save_visual_unit(
+                                        node_id,
+                                        encoder.model_id(),
+                                        hash,
+                                        &vec,
+                                    );
+                                }
+                            }
+                        }
+                    }
+
                     crate::util::memory::release_memory();
                     // One decode at a time, with a small yield between images so
                     // typing stays responsive.
@@ -232,6 +260,7 @@ pub struct IndexerManager {
     pub metadata: Arc<RwLock<MetadataStore>>,
     pub content_index: Arc<RwLock<Option<ContentIndex>>>,
     pub unit_store: Arc<RwLock<UnitStore>>,
+    pub visual_store: Arc<RwLock<crate::embed::visual::VisualStore>>,
     pub embedding_queue: Arc<Mutex<Option<EmbeddingQueue>>>,
     pub query_in_flight: Arc<AtomicBool>,
     pub config: Arc<RwLock<KensakuConfig>>,
@@ -263,6 +292,10 @@ impl IndexerManager {
 
         let metadata_store = Arc::new(RwLock::new(MetadataStore::new()));
         let unit_store = Arc::new(RwLock::new(UnitStore::new(EMBEDDING_DIM)));
+        let visual_store = Arc::new(RwLock::new(crate::embed::visual::VisualStore::new(
+            crate::embed::visual::VISUAL_DIM,
+            crate::embed::visual::MOCK_VISUAL_MODEL_ID,
+        )));
         let query_in_flight = Arc::new(AtomicBool::new(false));
 
         // Semantic state (the ~30 MB embedding table and the persisted unit
@@ -318,6 +351,8 @@ impl IndexerManager {
                     eprintln!("[Kensaku] Failed to load semantic units: {}", e);
                 }
             }
+            let mut vstore = visual_store.write();
+            let _ = db.load_visual_units_into(&mut vstore);
         }
 
         if content_rebuilt {
@@ -332,6 +367,7 @@ impl IndexerManager {
             metadata: metadata_store,
             content_index: Arc::new(RwLock::new(content_index)),
             unit_store,
+            visual_store,
             embedding_queue: Arc::new(Mutex::new(None)),
             query_in_flight,
             config: Arc::new(RwLock::new(config)),
@@ -367,6 +403,10 @@ impl IndexerManager {
         let content_index = ContentIndex::open_read_only(&index_dir).ok();
         let metadata_store = Arc::new(RwLock::new(MetadataStore::new()));
         let unit_store = Arc::new(RwLock::new(UnitStore::new(EMBEDDING_DIM)));
+        let visual_store = Arc::new(RwLock::new(crate::embed::visual::VisualStore::new(
+            crate::embed::visual::VISUAL_DIM,
+            crate::embed::visual::MOCK_VISUAL_MODEL_ID,
+        )));
         let query_in_flight = Arc::new(AtomicBool::new(false));
 
         let mut units_count = 0;
@@ -375,12 +415,15 @@ impl IndexerManager {
             if let Ok(count) = db.load_units_into(&mut store) {
                 units_count = count;
             }
+            let mut vstore = visual_store.write();
+            let _ = db.load_visual_units_into(&mut vstore);
         }
 
         Self {
             metadata: metadata_store,
             content_index: Arc::new(RwLock::new(content_index)),
             unit_store,
+            visual_store,
             embedding_queue: Arc::new(Mutex::new(None)),
             query_in_flight,
             config: Arc::new(RwLock::new(config)),
@@ -513,6 +556,7 @@ impl IndexerManager {
         let metadata = Arc::clone(&self.metadata);
         let content_index = Arc::clone(&self.content_index);
         let unit_store = Arc::clone(&self.unit_store);
+        let visual_store = Arc::clone(&self.visual_store);
         let embedding_queue = Arc::clone(&self.embedding_queue);
         let query_in_flight = Arc::clone(&self.query_in_flight);
         let config_arc = Arc::clone(&self.config);
@@ -704,8 +748,12 @@ impl IndexerManager {
                     let id_vec: Vec<u64> = ids.iter().copied().collect();
                     if let Some(db) = metadata.read().db() {
                         let _ = db.delete_units_for_nodes(&id_vec);
+                        let _ = db.delete_visual_units_for_nodes(&id_vec);
                     }
                     unit_store.write().remove_units_for_nodes(&ids);
+                    for id in &ids {
+                        visual_store.write().remove_node(*id);
+                    }
                 }
             }
 
@@ -732,11 +780,7 @@ impl IndexerManager {
 
                 scope.spawn(move |_| {
                     to_extract.par_iter().for_each_with(tx, |tx, job| {
-                        Self::wait_while_paused(
-                            &producer_config,
-                            &producer_status,
-                            &producer_app,
-                        );
+                        Self::wait_while_paused(&producer_config, &producer_status, &producer_app);
                         Self::pace_on_battery(&producer_config, &battery_state, &pace_gate);
 
                         // Image dimensions come from the file header, which is
@@ -984,8 +1028,7 @@ impl IndexerManager {
                 (0..store.len())
                     .filter_map(|i| {
                         let e = store.materialize(i as u32);
-                        if !crawled_paths.contains(&e.path)
-                            && !belongs_to_unavailable_root(&e.path)
+                        if !crawled_paths.contains(&e.path) && !belongs_to_unavailable_root(&e.path)
                         {
                             Some(e.path)
                         } else {
@@ -1087,6 +1130,7 @@ impl IndexerManager {
             start_phash_backfill(
                 Arc::clone(&metadata),
                 Arc::clone(&content_index),
+                Arc::clone(&visual_store),
                 Arc::clone(&is_running),
                 Arc::clone(&query_in_flight),
             );
@@ -1229,7 +1273,11 @@ impl IndexerManager {
             let marked = self.metadata.write().mark_images_pending();
             eprintln!(
                 "[Kensaku] OCR {}: {} image(s) queued for re-scan",
-                if config.ocr_enabled { "enabled" } else { "disabled" },
+                if config.ocr_enabled {
+                    "enabled"
+                } else {
+                    "disabled"
+                },
                 marked
             );
             reindex = true;
@@ -1249,7 +1297,10 @@ impl IndexerManager {
                     .flat_map(|extractor| extractor.extensions.iter().cloned())
                     .collect();
                 let broad = active.iter().any(|extractor| {
-                    extractor.mime.iter().any(|selector| !selector.trim().is_empty())
+                    extractor
+                        .mime
+                        .iter()
+                        .any(|selector| !selector.trim().is_empty())
                         || extractor
                             .extensions
                             .iter()
@@ -1258,9 +1309,7 @@ impl IndexerManager {
                 let marked = if broad || extensions.is_empty() {
                     self.metadata.write().mark_all_content_pending()
                 } else {
-                    self.metadata
-                        .write()
-                        .mark_extensions_pending(&extensions)
+                    self.metadata.write().mark_extensions_pending(&extensions)
                 };
                 eprintln!(
                     "[Kensaku] External extractors changed; {} file(s) queued for re-scan",
@@ -1369,12 +1418,7 @@ mod tests {
         let order: Vec<&str> = jobs.iter().map(|job| job.path.to_str().unwrap()).collect();
         assert_eq!(
             order,
-            vec![
-                "/new-small-text",
-                "/new-text",
-                "/old-text",
-                "/old-image"
-            ]
+            vec!["/new-small-text", "/new-text", "/old-text", "/old-image"]
         );
     }
 

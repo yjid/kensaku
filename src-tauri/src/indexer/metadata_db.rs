@@ -168,6 +168,19 @@ impl MetadataDb {
             eprintln!("[Kensaku] Failed to create unembedded index: {}", e);
         }
 
+        // Dedicated storage for visual embeddings (K18).
+        if let Err(e) = conn.execute(
+            "CREATE TABLE IF NOT EXISTS visual_units (
+                node_id INTEGER PRIMARY KEY,
+                model_id INTEGER NOT NULL,
+                dhash INTEGER NOT NULL,
+                vec BLOB NOT NULL
+            )",
+            [],
+        ) {
+            eprintln!("[Kensaku] Failed to create visual_units table: {}", e);
+        }
+
         let db = Self {
             conn: Mutex::new(conn),
         };
@@ -630,6 +643,82 @@ impl MetadataDb {
         Ok(())
     }
 
+    pub fn save_visual_unit(
+        &self,
+        node_id: u64,
+        model_id: u32,
+        dhash: u64,
+        vec: &[i8],
+    ) -> Result<(), String> {
+        let conn = self.conn.lock();
+        let bytes: Vec<u8> = vec.iter().map(|&b| b as u8).collect();
+        conn.execute(
+            "INSERT OR REPLACE INTO visual_units (node_id, model_id, dhash, vec) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![node_id as i64, model_id as i64, dhash as i64, bytes],
+        )
+        .map_err(|e| format!("Failed to save visual unit: {}", e))?;
+        Ok(())
+    }
+
+    pub fn load_visual_units_into(
+        &self,
+        store: &mut crate::embed::visual::VisualStore,
+    ) -> Result<usize, String> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare("SELECT node_id, model_id, dhash, vec FROM visual_units")
+            .map_err(|e| format!("Failed to prepare visual units query: {}", e))?;
+
+        let mut rows = stmt
+            .query([])
+            .map_err(|e| format!("Failed to query visual units: {}", e))?;
+
+        let mut count = 0usize;
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| format!("Failed to read visual unit row: {}", e))?
+        {
+            let node_id = row.get::<_, i64>(0).map_err(|e| e.to_string())? as u64;
+            let dhash = row.get::<_, i64>(2).map_err(|e| e.to_string())? as u64;
+            let blob: Vec<u8> = row.get(3).map_err(|e| e.to_string())?;
+            let vector: Vec<i8> = blob.into_iter().map(|b| b as i8).collect();
+            store.add_or_update(node_id, dhash, &vector);
+            count += 1;
+        }
+
+        Ok(count)
+    }
+
+    pub fn delete_visual_units_for_nodes(&self, ids: &[u64]) -> Result<(), String> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let conn = self.conn.lock();
+        for chunk in ids.chunks(500) {
+            let placeholders = std::iter::repeat_n("?", chunk.len())
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql = format!(
+                "DELETE FROM visual_units WHERE node_id IN ({})",
+                placeholders
+            );
+            let mut stmt = conn
+                .prepare_cached(&sql)
+                .map_err(|e| format!("Failed to prepare visual unit delete: {}", e))?;
+            let params: Vec<i64> = chunk.iter().map(|id| *id as i64).collect();
+            stmt.execute(rusqlite::params_from_iter(params))
+                .map_err(|e| format!("Failed to delete visual units for nodes: {}", e))?;
+        }
+        Ok(())
+    }
+
+    pub fn reset_visual_index(&self) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute("DELETE FROM visual_units", [])
+            .map_err(|e| format!("Failed to reset visual units: {}", e))?;
+        Ok(())
+    }
+
     /// Model id stored on the first semantic unit, if any units exist.
     pub fn units_model_id(&self) -> Result<Option<u32>, String> {
         let conn = self.conn.lock();
@@ -830,12 +919,7 @@ impl MetadataDb {
     /// The crawl uses this: reading the header is cheap, whereas decoding the
     /// full image for a perceptual hash is not. The hash is filled in later by
     /// the background backfill so it never gates OCR or index commits.
-    pub fn set_image_dimensions(
-        &self,
-        path: &Path,
-        width: u32,
-        height: u32,
-    ) -> Result<(), String> {
+    pub fn set_image_dimensions(&self, path: &Path, width: u32, height: u32) -> Result<(), String> {
         let conn = self.conn.lock();
         conn.execute(
             "UPDATE nodes SET width = ?1, height = ?2 WHERE path = ?3",
@@ -1813,11 +1897,7 @@ mod tests {
         let updates = db.assign_burst_for_path(&c).expect("assign bridge");
         assert_eq!(
             updates,
-            vec![
-                (a.clone(), a_id),
-                (b.clone(), a_id),
-                (c.clone(), a_id)
-            ],
+            vec![(a.clone(), a_id), (b.clone(), a_id), (c.clone(), a_id)],
             "bridge merges both groups into the lowest id"
         );
         assert!(b_id > a_id && c_id > b_id);

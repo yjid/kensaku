@@ -6,6 +6,13 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- K18 image embedding extraction pipeline: dedicated `VisualStore` holding 512-dimensional
+  quantized i8 vectors per image node, backed by SQLite `visual_units` table with cascade delete.
+  224x224 RGB planar preprocessing with standard CLIP normalization (`CLIP_MEAN`, `CLIP_STD`).
+  VisualEncoder abstraction with deterministic `MockVisualEncoder` and pinned ONNX manifest in
+  `models.rs` (`models/visual/`, CLIP ViT-B/32 int8). Reuses 480 px thumbnails directly from K3
+  so source images are never decoded twice; skips unchanged images via thumbnail dHash comparison;
+  yields immediately when queries are in flight (`query_in_flight`). Surfaced `visual_units` in stats.
 - K17 optional ONNX smart embedding pack: `bge-small-en-v1.5` int8 text embedding model
   (MIT license, 33.4M parameters, 384 dimensions) behind the `smart-embeddings`
   Cargo feature using `ort`. Features zero cost when disabled. Pinned artifact manifest
