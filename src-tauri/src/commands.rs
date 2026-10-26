@@ -693,6 +693,19 @@ pub async fn download_ocr_pack() -> Result<crate::models::ModelsStatus, String> 
     Ok(crate::models::ocr_status())
 }
 
+/// Reports the optional smart embedding pack inventory.
+#[tauri::command]
+pub async fn get_smart_pack_status() -> Result<crate::models::ModelsStatus, String> {
+    Ok(crate::models::smart_status())
+}
+
+/// Starts the background download of the smart embedding pack.
+#[tauri::command]
+pub async fn download_smart_pack() -> Result<crate::models::ModelsStatus, String> {
+    crate::models::download_smart_pack();
+    Ok(crate::models::smart_status())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DuplicateGroup {
     /// `"content"` for exact extracted-content matches, `"image"` for

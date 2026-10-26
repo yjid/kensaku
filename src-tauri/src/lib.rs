@@ -226,6 +226,8 @@ pub fn run() {
             commands::download_ocr_language,
             commands::get_ocr_pack_status,
             commands::download_ocr_pack,
+            commands::get_smart_pack_status,
+            commands::download_smart_pack,
             commands::find_duplicates,
             commands::execute_command,
             commands::read_file_content,

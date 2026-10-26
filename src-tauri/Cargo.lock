@@ -2970,6 +2970,7 @@ dependencies = [
  "notify",
  "nucleo-matcher",
  "open",
+ "ort",
  "paddleocr_rs_onnx",
  "parking_lot 0.12.5",
  "quick-xml",

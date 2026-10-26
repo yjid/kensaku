@@ -10,6 +10,8 @@ pub const EMBEDDING_DIM: usize = 256;
 pub const DEFAULT_MODEL_ID: u32 = 1;
 /// Id of the real `potion-base-8M` static embedding table.
 pub const REAL_MODEL_ID: u32 = 2;
+/// Id of the optional ONNX smart embedding pack (`bge-small-en-v1.5`).
+pub const SMART_MODEL_ID: u32 = 3;
 
 static GLOBAL: OnceLock<ModelRegistry> = OnceLock::new();
 
@@ -25,6 +27,8 @@ pub struct ModelRegistry {
     /// hashing estimator is in use.
     #[serde(skip)]
     table: Option<Arc<StaticTable>>,
+    #[serde(skip)]
+    smart: Option<Arc<crate::embed::smart::SmartEmbedder>>,
 }
 
 impl Default for ModelRegistry {
@@ -45,6 +49,7 @@ impl ModelRegistry {
             normalize: true,
             fallback_reason: None,
             table: None,
+            smart: None,
         }
     }
 
@@ -58,6 +63,7 @@ impl ModelRegistry {
             normalize: false,
             fallback_reason: None,
             table: None,
+            smart: None,
         }
     }
 
@@ -80,6 +86,7 @@ impl ModelRegistry {
             normalize: table.normalize,
             fallback_reason: None,
             table: Some(Arc::new(table)),
+            smart: None,
         })
     }
 
@@ -105,18 +112,40 @@ impl ModelRegistry {
                 }
             }
             "smart" => {
-                let fallback_reason =
-                    "Smart ONNX pack is not available; falling back to static provider".to_string();
-                if let Some(mut registry) = Self::load_with_f32(dir, config.semantic_f32_table) {
-                    registry.fallback_reason = Some(fallback_reason);
-                    registry
-                } else {
-                    let mut reg = Self::new_static();
-                    reg.fallback_reason = Some(format!(
-                        "{}; artifacts missing in {}, using hashing fallback",
-                        fallback_reason,
-                        dir.display()
-                    ));
+                #[cfg(feature = "smart-embeddings")]
+                {
+                    let smart_dir = std::env::var_os("KENSAKU_SMART_MODEL_DIR")
+                        .map(std::path::PathBuf::from)
+                        .unwrap_or_else(crate::models::smart_dir);
+                    if let Some(smart) = crate::embed::smart::SmartEmbedder::load(&smart_dir) {
+                        Self {
+                            provider: EmbeddingProviderKind::Smart,
+                            model_id: SMART_MODEL_ID,
+                            name: "bge-small-en-v1.5".to_string(),
+                            dim: smart.dim,
+                            normalize: true,
+                            fallback_reason: None,
+                            table: None,
+                            smart: Some(Arc::new(smart)),
+                        }
+                    } else {
+                        let fallback_reason = format!(
+                            "Smart ONNX artifacts missing or invalid in {}; falling back to static provider",
+                            smart_dir.display()
+                        );
+                        let mut reg =
+                            Self::load_with_f32(dir, config.semantic_f32_table).unwrap_or_default();
+                        reg.fallback_reason = Some(fallback_reason);
+                        reg
+                    }
+                }
+                #[cfg(not(feature = "smart-embeddings"))]
+                {
+                    let fallback_reason =
+                        "Smart ONNX pack is not compiled in this build; falling back to static provider".to_string();
+                    let mut reg =
+                        Self::load_with_f32(dir, config.semantic_f32_table).unwrap_or_default();
+                    reg.fallback_reason = Some(fallback_reason);
                     reg
                 }
             }
@@ -209,6 +238,9 @@ impl ModelRegistry {
     pub fn embed(&self, text: &str) -> Vec<f32> {
         if !self.is_enabled() {
             return Vec::new();
+        }
+        if let Some(smart) = &self.smart {
+            return smart.embed_f32(text);
         }
         if let Some(table) = &self.table {
             return table.embed(text);
@@ -363,12 +395,36 @@ mod tests {
                 .contains("unknown-model-xyz")
         );
 
-        // 5. semantic_model = "smart" -> falls back to static in K16 with reason
+        // 5. semantic_model = "smart" -> falls back to static in K16/K17 when files missing
         cfg.semantic_model = "smart".to_string();
         let reg = ModelRegistry::from_config_and_dir(&cfg, &empty_dir);
         assert_eq!(reg.provider, EmbeddingProviderKind::Static);
-        assert!(reg.fallback_reason.as_ref().unwrap().contains("Smart"));
+        assert!(
+            reg.fallback_reason.as_ref().unwrap().contains("Smart")
+                || reg.fallback_reason.as_ref().unwrap().contains("smart")
+        );
 
         let _ = std::fs::remove_dir_all(&empty_dir);
+    }
+
+    #[test]
+    #[ignore = "requires real smart model artifacts; set KENSAKU_SMART_MODEL_DIR"]
+    fn real_smart_model_validation() {
+        let smart_dir = match std::env::var("KENSAKU_SMART_MODEL_DIR") {
+            Ok(d) => std::path::PathBuf::from(d),
+            Err(_) => return,
+        };
+        #[cfg(feature = "smart-embeddings")]
+        {
+            let embedder = crate::embed::smart::SmartEmbedder::load(&smart_dir)
+                .expect("failed to load real smart model");
+            let vec = embedder.embed("search query");
+            assert_eq!(vec.len(), 384);
+            assert!(vec.iter().any(|&v| v != 0));
+        }
+        #[cfg(not(feature = "smart-embeddings"))]
+        {
+            let _ = smart_dir;
+        }
     }
 }
