@@ -58,18 +58,23 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     if (!capturing) return;
     const onKey = (e: KeyboardEvent) => {
       e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat) return;
       if (e.key === "Escape") {
         setCapturing(false);
         return;
       }
+      // Wait for the non-modifier key: pressing Alt/Ctrl/Shift alone must not
+      // end capture or it would always keep the previous shortcut.
+      if (["Control", "Super", "Meta", "Alt", "Shift"].includes(e.key)) return;
       const parts: string[] = [];
       if (e.ctrlKey) parts.push("Control");
       if (e.metaKey) parts.push("Super");
       if (e.altKey) parts.push("Alt");
       if (e.shiftKey) parts.push("Shift");
       const key = e.key === " " ? "Space" : e.key.length === 1 ? e.key.toUpperCase() : e.key;
-      if (!["Control", "Super", "Alt", "Shift"].includes(e.key)) parts.push(key);
-      if (parts.length > 1) setShortcut(parts.join("+"));
+      parts.push(key);
+      setShortcut(parts.join("+"));
       setCapturing(false);
     };
     window.addEventListener("keydown", onKey);
