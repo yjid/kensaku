@@ -100,6 +100,23 @@ removable chip.
 matched set, not just the visible page. The response also carries language,
 place, time, and size counts for future facet UI.
 
+### Home, pins, and saved searches
+
+An empty search box shows pinned files, recent files, saved searches, and a few
+suggested queries. Pin a result from the home rows; save the current query with
+the bookmark button next to **Sort**. Saved searches store the query and sort and
+appear on the home screen.
+
+### Facets and pagination
+
+Category chips show server-side counts over the full matched set. Click a chip to
+include a category; **Alt-click** to exclude it. The selection is OR within the
+category row and AND against the text query. When more ranked results exist, a
+**Load more** control appends the next page.
+
+Version groups appear as one row with a `N versions` badge (for example
+`resume`, `resume_v2`, `resume_final` in the same folder).
+
 ### Scopes and sort
 
 - Type `@` to pick a folder from the index; the choice inserts `in:"<path>"`.

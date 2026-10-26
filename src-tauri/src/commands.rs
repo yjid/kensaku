@@ -142,6 +142,7 @@ pub async fn search(
     query: String,
     seq: Option<u64>,
     sort: Option<String>,
+    offset: Option<usize>,
     state: State<'_, AppState>,
 ) -> Result<SearchResponse, String> {
     let started = Instant::now();
@@ -175,6 +176,7 @@ pub async fn search(
         req_seq,
         sort,
         &aliases,
+        offset.unwrap_or(0),
     );
 
     indexer.query_in_flight.store(false, Ordering::SeqCst);
@@ -838,6 +840,91 @@ pub async fn complete_setup(
     state.indexer.start_indexing();
 
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HomeItem {
+    pub path: String,
+    pub filename: String,
+    pub size: u64,
+    pub modified: u64,
+    pub is_dir: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HomeData {
+    pub recent: Vec<HomeItem>,
+    pub pins: Vec<HomeItem>,
+    pub saved_searches: Vec<crate::config::SavedSearch>,
+}
+
+#[tauri::command]
+pub async fn get_home_data(state: State<'_, AppState>) -> Result<HomeData, String> {
+    let metadata = state.indexer.metadata.read();
+    let config = state.indexer.config.read().clone();
+    let mut recent: Vec<HomeItem> = metadata
+        .get_entries()
+        .iter()
+        .filter(|e| !e.is_dir)
+        .filter(|e| e.modified > 0)
+        .map(|e| HomeItem {
+            path: e.path.to_string_lossy().to_string(),
+            filename: e.name.clone(),
+            size: e.size,
+            modified: e.modified,
+            is_dir: e.is_dir,
+        })
+        .collect();
+    recent.sort_by(|a, b| b.modified.cmp(&a.modified));
+    recent.truncate(12);
+
+    let pins = config
+        .pins
+        .iter()
+        .map(|p| {
+            let path = std::path::PathBuf::from(p);
+            match metadata.get(&path) {
+                Some(e) => HomeItem {
+                    path: p.clone(),
+                    filename: e.name.clone(),
+                    size: e.size,
+                    modified: e.modified,
+                    is_dir: e.is_dir,
+                },
+                None => HomeItem {
+                    path: p.clone(),
+                    filename: path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| p.clone()),
+                    size: 0,
+                    modified: 0,
+                    is_dir: path.is_dir(),
+                },
+            }
+        })
+        .collect();
+
+    Ok(HomeData {
+        recent,
+        pins,
+        saved_searches: config.saved_searches,
+    })
+}
+
+#[tauri::command]
+pub async fn toggle_pin(path: String, state: State<'_, AppState>) -> Result<bool, String> {
+    let mut config = state.indexer.config.read().clone();
+    let pinned = if let Some(pos) = config.pins.iter().position(|p| p == &path) {
+        config.pins.remove(pos);
+        false
+    } else {
+        config.pins.push(path);
+        true
+    };
+    config.save()?;
+    *state.indexer.config.write() = config;
+    Ok(pinned)
 }
 
 /// Directory suggestions for the `@` scope menu, derived from indexed dirs.

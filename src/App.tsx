@@ -10,11 +10,14 @@ import {
   CommandOutput,
   InterpretationChip,
   Facets,
+  HomeData,
+  KensakuConfig,
 } from "./types";
 import { SetupModal } from "./components/SetupModal";
 import { DuplicatesModal } from "./components/DuplicatesModal";
 import { SlashMenu, SlashCommand } from "./components/SlashMenu";
 import { ScopeMenu } from "./components/ScopeMenu";
+import { HomeView } from "./components/HomeView";
 import { ResultItem, ResultView } from "./components/ResultItem";
 import { Settings } from "./components/SettingsModal";
 import { FilterChips } from "./components/FilterChips";
@@ -23,7 +26,7 @@ import { SearchBar } from "./components/SearchBar";
 import { CategoryChips } from "./components/CategoryChips";
 import { EmptyState } from "./components/EmptyState";
 import { useTheme } from "./hooks/useTheme";
-import { CategoryChip } from "./lib/categories";
+import { classify } from "./lib/categories";
 import {
   Settings as SettingsIcon,
   RefreshCw,
@@ -38,6 +41,7 @@ import {
   Terminal,
   Stethoscope,
   TriangleAlert,
+  Bookmark,
   X,
 } from "lucide-react";
 import "./App.css";
@@ -57,10 +61,17 @@ function App() {
   const [isSetupComplete, setIsSetupComplete] = useState<boolean | null>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [total, setTotal] = useState(0);
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
   const [hints, setHints] = useState<string[]>([]);
   const [interpretation, setInterpretation] = useState<InterpretationChip[]>([]);
   const [facets, setFacets] = useState<Facets | undefined>(undefined);
+  const [home, setHome] = useState<HomeData | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const [facetInclude, setFacetInclude] = useState<Set<string>>(new Set());
+  const [facetExclude, setFacetExclude] = useState<Set<string>>(new Set());
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [indexingStatus, setIndexingStatus] = useState<IndexingStatus | null>(null);
   const [isSearching, setIsSearching] = useState(false);
@@ -128,6 +139,20 @@ function App() {
     checkSetup();
   }, [checkSetup]);
 
+  /* ---------------- home data ---------------- */
+
+  const loadHome = useCallback(async () => {
+    try {
+      setHome(await invoke<HomeData>("get_home_data"));
+    } catch (err) {
+      console.error("Home data error:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isSetupComplete) loadHome();
+  }, [isSetupComplete, loadHome, indexingStatus?.is_indexing]);
+
   /* ---------------- indexing status (events, not polling) ---------------- */
 
   useEffect(() => {
@@ -149,6 +174,12 @@ function App() {
   }, [isSetupComplete]);
 
   /* ---------------- search (stale-while-revalidate) ---------------- */
+
+  useEffect(() => {
+    setFacetInclude(new Set());
+    setFacetExclude(new Set());
+    setSaveOpen(false);
+  }, [query]);
 
   useEffect(() => {
     if (!isSetupComplete) return;
@@ -200,6 +231,7 @@ function App() {
             }
           }
           setResults(merged);
+          setTotal(res.total ?? merged.length);
           setActiveFilters(res.active_filters);
           setHints(res.hints);
           setInterpretation(res.interpretation ?? []);
@@ -259,6 +291,27 @@ function App() {
 
     return () => clearTimeout(timer);
   }, [query, sort, isSetupComplete]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !query.trim()) return;
+    setLoadingMore(true);
+    try {
+      const res = await invoke<SearchResponse>("search", {
+        query,
+        sort,
+        offset: results.length,
+      });
+      setResults((prev) => {
+        const seen = new Set(prev.map((r) => r.path));
+        return [...prev, ...res.results.filter((r) => !seen.has(r.path))];
+      });
+      setTotal(res.total ?? 0);
+    } catch (err) {
+      console.error("Load more error:", err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [query, sort, results.length, loadingMore]);
 
   // Results never reorder while typing — sort is backend-provided and stable;
   // nothing needed here beyond identity-stable render keys.
@@ -349,19 +402,32 @@ function App() {
     inputRef.current?.focus();
   }, []);
 
-  /* Category chip → query token. */
-  const handleChip = useCallback((chip: CategoryChip) => {
-    setQuery((prev) => {
-      let next = prev
-        .replace(/\btype:[^\s]+/gi, "")
-        .replace(/\bmodified:<[^\s]+/gi, "")
-        .replace(/\s+/g, " ")
-        .trim();
-      if (chip.id === "all") return next;
-      next = next ? `${next} ${chip.token}` : chip.token!;
+  /* Category facet: click includes, Alt-click excludes, All clears. */
+  const handleFacetToggle = useCallback((id: string, alt: boolean) => {
+    if (id === "all") {
+      setFacetInclude(new Set());
+      setFacetExclude(new Set());
+      return;
+    }
+    setFacetInclude((prev) => {
+      const next = new Set(prev);
+      if (alt) {
+        next.delete(id);
+        setFacetExclude((ex) => {
+          const e = new Set(ex);
+          e.has(id) ? e.delete(id) : e.add(id);
+          return e;
+        });
+      } else {
+        next.has(id) ? next.delete(id) : next.add(id);
+        setFacetExclude((ex) => {
+          const e = new Set(ex);
+          e.delete(id);
+          return e;
+        });
+      }
       return next;
     });
-    inputRef.current?.focus();
   }, []);
 
   const openSettings = useCallback((section?: string) => {
@@ -591,12 +657,22 @@ function App() {
   );
 
   const hasQuery = query.trim() !== "";
-  const noResults = hasQuery && !isCommandMode && results.length === 0;
+  const displayResults = useMemo(
+    () =>
+      results.filter((r) => {
+        const cat = classify(r);
+        if (facetExclude.has(cat)) return false;
+        if (facetInclude.size > 0 && !facetInclude.has(cat)) return false;
+        return true;
+      }),
+    [results, facetInclude, facetExclude],
+  );
+  const noResults = hasQuery && !isCommandMode && displayResults.length === 0;
   const isIndexing = indexingStatus?.is_indexing ?? false;
   // The main page shows files only: preview pane appears when a query has results.
   const showPreview = !isCommandMode && previewOpen && hasQuery;
   // The list keyboard navigation operates over — search results or recent files.
-  const navList = hasQuery ? results : recent;
+  const navList = hasQuery ? displayResults : recent;
 
   return (
     <div
@@ -688,7 +764,13 @@ function App() {
 
               {/* Category chips */}
               {!isCommandMode && (
-                <CategoryChips query={query} results={results} facets={facets} onPick={handleChip} />
+                <CategoryChips
+                  results={results}
+                  facets={facets}
+                  selected={facetInclude}
+                  excluded={facetExclude}
+                  onToggle={handleFacetToggle}
+                />
               )}
 
               {!isCommandMode && interpretation.length > 0 && (
@@ -713,7 +795,7 @@ function App() {
                 </div>
               )}
 
-              {!isCommandMode && results.length > 0 && (
+              {!isCommandMode && displayResults.length > 0 && (
                 <div className="flex shrink-0 items-center justify-end gap-2 border-b border-line px-4 py-1.5">
                   <label htmlFor="sort" className="text-[10px] uppercase tracking-wider text-subtle">
                     Sort
@@ -730,6 +812,67 @@ function App() {
                     <option value="largest">Largest</option>
                     <option value="name">Name</option>
                   </select>
+                  <button
+                    type="button"
+                    title="Save this search"
+                    onClick={() => setSaveOpen((v) => !v)}
+                    className="flex h-7 w-7 items-center justify-center rounded-[8px] text-muted transition-colors hover:bg-sunken hover:text-fg"
+                  >
+                    <Bookmark className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {saveOpen && (
+                <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-1.5">
+                  <input
+                    autoFocus
+                    value={saveName}
+                    placeholder="Name this search"
+                    onChange={(e) => setSaveName(e.target.value)}
+                    onKeyDown={async (e) => {
+                      if (e.key !== "Enter") return;
+                      const name = saveName.trim();
+                      if (!name) return;
+                      try {
+                        const cfg = await invoke<KensakuConfig>("get_config");
+                        cfg.saved_searches = [
+                          ...(cfg.saved_searches ?? []),
+                          { name, query, sort },
+                        ];
+                        await invoke("save_config", { config: cfg });
+                        setSaveName("");
+                        setSaveOpen(false);
+                        loadHome();
+                      } catch (err) {
+                        console.error(err);
+                      }
+                    }}
+                    className="h-7 min-w-0 flex-1 rounded-[8px] border border-line bg-elevated px-2 text-[11px] text-fg outline-none focus:border-accent"
+                  />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const name = saveName.trim();
+                      if (!name) return;
+                      try {
+                        const cfg = await invoke<KensakuConfig>("get_config");
+                        cfg.saved_searches = [
+                          ...(cfg.saved_searches ?? []),
+                          { name, query, sort },
+                        ];
+                        await invoke("save_config", { config: cfg });
+                        setSaveName("");
+                        setSaveOpen(false);
+                        loadHome();
+                      } catch (err) {
+                        console.error(err);
+                      }
+                    }}
+                    className="h-7 rounded-[8px] bg-accent px-3 text-[11px] font-medium text-accent-fg"
+                  >
+                    Save
+                  </button>
                 </div>
               )}
 
@@ -796,9 +939,9 @@ function App() {
                         ))
                       )}
                     </div>
-                  ) : results.length > 0 ? (
+                  ) : displayResults.length > 0 ? (
                     view === "list" ? (
-                      results.map((res, idx) => (
+                      displayResults.map((res, idx) => (
                         <div key={res.path + idx} data-index={idx}>
                           <ResultItem
                             result={res}
@@ -814,7 +957,7 @@ function App() {
                         </div>
                       ))
                     ) : (
-                      results.map((res, idx) => (
+                      displayResults.map((res, idx) => (
                         <div key={res.path + idx} data-index={idx}>
                           <ResultItem
                             result={res}
@@ -853,56 +996,36 @@ function App() {
                       </div>
                     </EmptyState>
                   ) : (
-                    /* Empty query — plain recent-files list, same rows. */
-                    navList.length > 0 ? (
-                      view === "list" ? (
-                        <div>
-                          <p className="eyebrow px-3 pb-1.5 pt-1">Recent</p>
-                          {navList.map((res, idx) => (
-                            <div key={res.path + idx} data-index={idx}>
-                              <ResultItem
-                                result={res}
-                                query=""
-                                index={idx}
-                                isSelected={idx === selectedIndex}
-                                view="list"
-                                onSelect={() => setSelectedIndex(idx)}
-                                onOpen={() => handleOpenFile(res.path)}
-                                onReveal={() => handleOpenFolder(res.path)}
-                                onCopyPath={() => handleCopyPath(res.path)}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <>
-                          {/* Full-span label above the tiles; tiles themselves
-                              stay direct grid children so rows fill evenly. */}
-                          <p className="eyebrow col-span-full px-1 pb-1.5 pt-0.5">Recent</p>
-                          {navList.map((res, idx) => (
-                            <div key={res.path + idx} data-index={idx}>
-                              <ResultItem
-                                result={res}
-                                query=""
-                                index={idx}
-                                isSelected={idx === selectedIndex}
-                                view="grid"
-                                onSelect={() => setSelectedIndex(idx)}
-                                onOpen={() => handleOpenFile(res.path)}
-                                onReveal={() => handleOpenFolder(res.path)}
-                                onCopyPath={() => handleCopyPath(res.path)}
-                              />
-                            </div>
-                          ))}
-                        </>
-                      )
-                    ) : (
-                      <EmptyState variant="empty" caption="Nothing archived yet">
-                        <p className="text-[11px] text-subtle">
-                          Type to search across your files
-                        </p>
-                      </EmptyState>
-                    )
+                    <HomeView
+                      data={home}
+                      onOpen={(path) => handleOpenFile(path)}
+                      onTogglePin={async (path) => {
+                        try {
+                          await invoke("toggle_pin", { path });
+                          await loadHome();
+                        } catch (e) {
+                          console.error(e);
+                        }
+                      }}
+                      onSearch={(q, s) => {
+                        if (s) setSort(s);
+                        setQuery(q);
+                        inputRef.current?.focus();
+                      }}
+                    />
+                  )}
+
+                  {!isCommandMode && displayResults.length > 0 && results.length < total && (
+                    <div className="flex justify-center p-3">
+                      <button
+                        type="button"
+                        onClick={loadMore}
+                        disabled={loadingMore}
+                        className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line px-4 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                      >
+                        {loadingMore ? "Loading…" : `Load more (${results.length} of ${total})`}
+                      </button>
+                    </div>
                   )}
                 </div>
 

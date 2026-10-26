@@ -197,14 +197,14 @@ friend.
 | **P0** | ~~Aliases and personal vocabulary~~ ✅ shipped | The app learns that resume = cv = curriculum | S |
 | **P0** | ~~Explicit sort modes~~ ✅ shipped | "Latest", "biggest", "oldest" must actually sort | S |
 | **P0** | ~~Interpretation chips~~ ✅ shipped | Trust and discoverability; no silent AI | S |
-| **P0** | Version grouping | `resume_v1`, `resume_final`, `resume_final_final` become one row | S |
+| **P0** | ~~Version grouping~~ ✅ shipped | `resume_v1`, `resume_final`, `resume_final_final` become one row | S |
 | **P0** | ~~Facet bar with live counts~~ ✅ shipped | "Filter anything" feels instant | M |
-| **P0** | Saved searches / smart folders | Personal memory; repeatable intent | M |
+| **P0** | ~~Saved searches / smart folders~~ ✅ shipped | Personal memory; repeatable intent | M |
 | **P0** | Duplicate cleanup UI | Backend already exists; high perceived value | S |
 | **P0** | Guided first-run setup flow | One place for folders, preferences, downloads, and a completed first scan | M |
 | **P0** | Default-deny sensitive files | Must precede face and vision features | S |
 | **P0** | ~~`/` command menu and `@` scope mentions~~ ✅ shipped | Familiar LLM-style acceleration | S |
-| **P0** | New home and result states | Makes it feel personal before the first keystroke | M |
+| **P0** | ~~New home and result states~~ ✅ shipped | Makes it feel personal before the first keystroke | M |
 | **P1** | Visual embeddings (SigLIP/CLIP int8) | "red cap", "system design diagram", similar images | L |
 | **P1** | Native OCR (macOS Vision, Windows OCR) | Removes tesseract install friction | M |
 | **P1** | "This is me" face identity | "find me in a red cap" | L |
@@ -287,12 +287,12 @@ learning syntax.
 **Goal:** narrowing a million files feels like toggling, not querying.
 
 **Scope**
-- Server-side facet counts for type, language, place, time, size
-- Multi-select and exclude within facets
-- Filter pushdown into Tantivy fast fields
-- Saved searches and smart folders
-- Pagination / load-more for ranked results
-- 1M-file prefilter work needed to hold the latency gate
+- ✅ Server-side facet counts for type, language, place, time, size
+- ✅ Multi-select and exclude within facets
+- ~ Filter pushdown: scope prefixes are pushed into Tantivy; `ext`/`size` fast fields remain
+- ✅ Saved searches and smart folders
+- ✅ Pagination / load-more for ranked results
+- ☐ 1M-file prefilter work needed to hold the latency gate
 
 **Acceptance**
 - Facet counts are accurate for the whole result set, not the current page.

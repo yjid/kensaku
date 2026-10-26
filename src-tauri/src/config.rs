@@ -11,6 +11,14 @@ pub struct Alias {
     pub expansions: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedSearch {
+    pub name: String,
+    pub query: String,
+    #[serde(default)]
+    pub sort: Option<String>,
+}
+
 pub fn default_aliases() -> Vec<Alias> {
     [
         ("resume", &["cv", "curriculum vitae"][..]),
@@ -56,6 +64,12 @@ pub struct KensakuConfig {
     /// Personal vocabulary: `term` matches any of `expansions`.
     #[serde(default = "default_aliases")]
     pub aliases: Vec<Alias>,
+    /// Saved queries shown on the home screen.
+    #[serde(default)]
+    pub saved_searches: Vec<SavedSearch>,
+    /// Pinned file paths shown on the home screen.
+    #[serde(default)]
+    pub pins: Vec<String>,
     /// Config schema version, used for one-time migrations.
     #[serde(default)]
     pub config_version: u32,
@@ -144,6 +158,8 @@ impl Default for KensakuConfig {
             ocr_enabled: true,
             theme: default_theme(),
             aliases: default_aliases(),
+            saved_searches: Vec::new(),
+            pins: Vec::new(),
             config_version: 4,
         }
     }
