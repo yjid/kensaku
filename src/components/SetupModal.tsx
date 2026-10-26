@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, Plus, X, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon } from "lucide-react";
+import { Check, Plus, X, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download } from "lucide-react";
 import { EmptyState } from "./EmptyState";
 import { useTheme } from "../hooks/useTheme";
 import type { IndexingStatus } from "../types";
@@ -22,7 +22,7 @@ const PRESETS: Record<string, string[]> = {
 };
 
 export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void }) {
-  const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
+  const [step, setStep] = useState<0 | 1 | 2 | 3 | 4>(0);
   const [suggestedDirs, setSuggestedDirs] = useState<string[]>([]);
   const [selectedDirs, setSelectedDirs] = useState<string[]>([]);
   const [customDirInput, setCustomDirInput] = useState("");
@@ -159,7 +159,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
-            {[0, 1, 2, 3].map((s) => (
+            {[0, 1, 2, 3, 4].map((s) => (
               <span
                 key={s}
                 className={`h-1 w-6 rounded-full transition-colors duration-300 ${
@@ -345,6 +345,52 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
           </div>
         )}
 
+        {step === 4 && (
+          <div className="w-full max-w-lg space-y-4">
+            <div className="pb-1">
+              <h2 className="text-[16px] font-semibold tracking-tight text-fg">
+                Optional packs
+              </h2>
+              <p className="text-[12px] text-muted">
+                Downloads are optional. Skip any you don't need — keyword search
+                works without them.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between rounded-[14px] border border-line bg-elevated px-4 py-3">
+                <div>
+                  <span className="block text-[12px] font-medium text-fg">OCR language data</span>
+                  <span className="block text-[11px] text-muted">English tessdata, ~4 MB</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try { await invoke("download_ocr_language"); } catch (e) { console.error(e); }
+                  }}
+                  className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong"
+                >
+                  <Download className="h-3.5 w-3.5" /> Download
+                </button>
+              </div>
+              <div className="flex items-center justify-between rounded-[14px] border border-line bg-elevated px-4 py-3">
+                <div>
+                  <span className="block text-[12px] font-medium text-fg">Semantic model</span>
+                  <span className="block text-[11px] text-muted">Neural tier for better recall</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try { await invoke("download_models"); } catch (e) { console.error(e); }
+                  }}
+                  className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong"
+                >
+                  <Download className="h-3.5 w-3.5" /> Download
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </main>
 
       {/* Footer: step nav */}
@@ -369,16 +415,16 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
           {step > 0 && (
             <button
               type="button"
-              onClick={() => setStep((s) => (s - 1) as 0 | 1 | 2 | 3)}
+              onClick={() => setStep((s) => (s - 1) as 0 | 1 | 2 | 3 | 4)}
               className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-muted transition-colors hover:border-line-strong hover:text-fg"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Back
             </button>
           )}
-          {step < 3 ? (
+          {step < 4 ? (
             <button
               type="button"
-              onClick={() => setStep((s) => (s + 1) as 0 | 1 | 2 | 3)}
+              onClick={() => setStep((s) => (s + 1) as 0 | 1 | 2 | 3 | 4)}
               disabled={step === 1 && selectedDirs.length === 0}
               className="flex h-8 items-center gap-1.5 rounded-[10px] bg-accent px-4 text-[12px] font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
             >
