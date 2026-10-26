@@ -17,26 +17,30 @@ const CHUNK_BYTES: usize = 64 * 1024;
 
 struct Artifact {
     name: &'static str,
-    url: &'static str,
+    urls: &'static [&'static str],
     bytes_expected: u64,
+    sha256: Option<&'static str>,
 }
 
 /// Static manifest of the files required by the semantic model.
 const ARTIFACTS: [Artifact; 3] = [
     Artifact {
         name: "model.safetensors",
-        url: "https://huggingface.co/minishlab/potion-base-8M/resolve/main/model.safetensors",
+        urls: &["https://huggingface.co/minishlab/potion-base-8M/resolve/main/model.safetensors"],
         bytes_expected: 30_236_760,
+        sha256: None,
     },
     Artifact {
         name: "tokenizer.json",
-        url: "https://huggingface.co/minishlab/potion-base-8M/resolve/main/tokenizer.json",
+        urls: &["https://huggingface.co/minishlab/potion-base-8M/resolve/main/tokenizer.json"],
         bytes_expected: 683_666,
+        sha256: None,
     },
     Artifact {
         name: "config.json",
-        url: "https://huggingface.co/minishlab/potion-base-8M/resolve/main/config.json",
+        urls: &["https://huggingface.co/minishlab/potion-base-8M/resolve/main/config.json"],
         bytes_expected: 202,
+        sha256: None,
     },
 ];
 
@@ -150,7 +154,7 @@ pub fn status() -> ModelsStatus {
 
         artifacts.push(ModelArtifact {
             name: artifact.name.to_string(),
-            url: artifact.url.to_string(),
+            url: artifact.urls.first().copied().unwrap_or("").to_string(),
             bytes_expected: artifact.bytes_expected,
             bytes_on_disk,
             present: is_file,
@@ -232,50 +236,116 @@ fn download_missing() -> Result<(), String> {
 
 fn download_one(dir: &Path, artifact: &Artifact) -> Result<(), String> {
     let final_path = dir.join(artifact.name);
-    let part_path = dir.join(format!("{}.part", artifact.name));
+    if final_path.is_file() && sha256_matches(&final_path, artifact.sha256)? {
+        return Ok(());
+    }
+    if final_path.is_file() {
+        let _ = std::fs::remove_file(&final_path);
+    }
 
-    // A stale partial file from a previous attempt is never resumable.
-    let _ = std::fs::remove_file(&part_path);
+    let part_path = dir.join(format!("{}.part", artifact.name));
+    let mut downloaded = part_path
+        .metadata()
+        .map(|meta| meta.len())
+        .unwrap_or(0);
+    if downloaded > artifact.bytes_expected && artifact.bytes_expected > 0 {
+        let _ = std::fs::remove_file(&part_path);
+        downloaded = 0;
+    }
 
     set_progress(Some(ModelProgress {
         file: artifact.name.to_string(),
-        downloaded: 0,
+        downloaded,
         total: artifact.bytes_expected,
     }));
 
-    let result = write_artifact(artifact, &part_path);
-
-    if result.is_err() {
-        let _ = std::fs::remove_file(&part_path);
+    let mut last_error = None;
+    for url in artifact.urls {
+        match download_url(url, artifact, &part_path, &mut downloaded) {
+            Ok(()) => {
+                if sha256_matches(&part_path, artifact.sha256)? {
+                    std::fs::rename(&part_path, &final_path).map_err(|e| {
+                        format!("Failed to finalize {}: {}", final_path.display(), e)
+                    })?;
+                    set_progress(Some(ModelProgress {
+                        file: artifact.name.to_string(),
+                        downloaded: artifact.bytes_expected,
+                        total: artifact.bytes_expected,
+                    }));
+                    return Ok(());
+                }
+                let _ = std::fs::remove_file(&part_path);
+                downloaded = 0;
+                last_error = Some(format!("Checksum mismatch for {}", artifact.name));
+            }
+            Err(error) => {
+                last_error = Some(error);
+            }
+        }
     }
 
-    result?;
-
-    std::fs::rename(&part_path, &final_path)
-        .map_err(|e| format!("Failed to finalize {}: {}", final_path.display(), e))?;
-
-    Ok(())
+    Err(last_error.unwrap_or_else(|| format!("Download failed for {}", artifact.name)))
 }
 
-fn write_artifact(artifact: &Artifact, part_path: &Path) -> Result<(), String> {
-    let response = ureq::get(artifact.url)
-        .timeout(Duration::from_secs(600))
+fn download_url(
+    url: &str,
+    artifact: &Artifact,
+    part_path: &Path,
+    downloaded: &mut u64,
+) -> Result<(), String> {
+    let mut request = ureq::get(url).timeout(Duration::from_secs(600));
+    if *downloaded > 0 {
+        request = request.set("Range", &format!("bytes={}-", *downloaded));
+    }
+    let response = request
         .call()
         .map_err(|e| format!("Download failed for {}: {}", artifact.name, e))?;
 
-    let total = response
-        .header("Content-Length")
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(artifact.bytes_expected);
+    let status = response.status();
+    let (append, total) = match status {
+        206 => {
+            let total = response
+                .header("Content-Range")
+                .and_then(parse_content_range_total)
+                .or_else(|| {
+                    response
+                        .header("Content-Length")
+                        .and_then(|value| value.parse::<u64>().ok())
+                        .map(|len| len.saturating_add(*downloaded))
+                })
+                .unwrap_or(artifact.bytes_expected);
+            (true, total)
+        }
+        200 => {
+            let _ = std::fs::remove_file(part_path);
+            *downloaded = 0;
+            let total = response
+                .header("Content-Length")
+                .and_then(|value| value.parse::<u64>().ok())
+                .filter(|value| *value > 0)
+                .unwrap_or(artifact.bytes_expected);
+            (false, total)
+        }
+        other => {
+            return Err(format!(
+                "Unexpected HTTP status {} for {}",
+                other, artifact.name
+            ))
+        }
+    };
 
     let mut reader = response.into_reader();
-    let mut file = std::fs::File::create(part_path)
-        .map_err(|e| format!("Failed to create {}: {}", part_path.display(), e))?;
+    let mut file = if append {
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(part_path)
+            .map_err(|e| format!("Failed to reopen {}: {}", part_path.display(), e))?
+    } else {
+        std::fs::File::create(part_path)
+            .map_err(|e| format!("Failed to create {}: {}", part_path.display(), e))?
+    };
 
     let mut buffer = vec![0u8; CHUNK_BYTES];
-    let mut downloaded = 0u64;
-
     loop {
         let read = reader
             .read(&mut buffer)
@@ -283,28 +353,46 @@ fn write_artifact(artifact: &Artifact, part_path: &Path) -> Result<(), String> {
         if read == 0 {
             break;
         }
-
-        file.write_all(&buffer[..read])
+        file
+            .write_all(&buffer[..read])
             .map_err(|e| format!("Failed to write {}: {}", part_path.display(), e))?;
-
-        downloaded = downloaded.saturating_add(read as u64);
+        *downloaded = downloaded.saturating_add(read as u64);
         set_progress(Some(ModelProgress {
             file: artifact.name.to_string(),
-            downloaded,
+            downloaded: *downloaded,
             total,
         }));
     }
-
-    file.flush()
-        .map_err(|e| format!("Failed to flush {}: {}", part_path.display(), e))?;
-    file.sync_all()
-        .map_err(|e| format!("Failed to sync {}: {}", part_path.display(), e))?;
-
-    if total > 0 && downloaded == 0 {
-        return Err(format!("Downloaded 0 bytes for {}", artifact.name));
+    if total > 0 && *downloaded < total {
+        return Err(format!(
+            "Download interrupted for {}: expected {} bytes, got {}",
+            artifact.name, total, downloaded
+        ));
     }
-
+    file
+        .flush()
+        .map_err(|e| format!("Failed to flush {}: {}", part_path.display(), e))?;
     Ok(())
+}
+
+fn parse_content_range_total(value: &str) -> Option<u64> {
+    value.rsplit('/').next()?.parse::<u64>().ok()
+}
+
+fn sha256_matches(path: &Path, expected: Option<&str>) -> Result<bool, String> {
+    let Some(expected) = expected else {
+        return Ok(true);
+    };
+    let actual = sha256_file(path)?;
+    Ok(actual.eq_ignore_ascii_case(expected))
+}
+
+fn sha256_file(path: &Path) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let bytes = std::fs::read(path)
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+    let digest = Sha256::digest(bytes);
+    Ok(format!("{:x}", digest))
 }
 
 /// Removes every model artifact and resets progress/error state.
@@ -339,4 +427,164 @@ pub async fn download_models() -> Result<(), String> {
 #[tauri::command]
 pub async fn delete_models() -> Result<(), String> {
     delete_all()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sha256_matches_detects_corruption() {
+        let dir = std::env::temp_dir().join("kensaku-model-test-corrupt");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("artifact.bin");
+        std::fs::write(&path, b"hello").unwrap();
+        let digest = sha256_file(&path).unwrap();
+        assert!(sha256_matches(&path, Some(&digest)).unwrap());
+        assert!(!sha256_matches(&path, Some("0000000000000000000000000000000000000000000000000000000000000000")).unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sha256_matches_skips_missing_checksum() {
+        let dir = std::env::temp_dir().join("kensaku-model-test-skip");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("artifact.bin");
+        std::fs::write(&path, b"hello").unwrap();
+        assert!(sha256_matches(&path, None).unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+
+#[cfg(test)]
+mod download_tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+
+    fn spawn_server<F>(handler: F) -> String
+    where
+        F: Fn(std::net::TcpStream) + Send + 'static,
+    {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                if let Ok(stream) = stream {
+                    handler(stream);
+                }
+            }
+        });
+        format!("http://{}", addr)
+    }
+
+    #[test]
+    fn download_resumes_from_partial_file() {
+        let full = b"hello world";
+        let url = spawn_server(move |mut stream| {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let request = String::from_utf8_lossy(&buf);
+            let start = request
+                .lines()
+                .find_map(|line| line.strip_prefix("Range: bytes="))
+                .and_then(|value| value.trim_end_matches('-').parse::<usize>().ok())
+                .unwrap_or(0);
+            let body = &full[start..];
+            let response = format!(
+                "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {}-{}/{}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                start,
+                full.len() - 1,
+                full.len(),
+                body.len()
+            );
+            let _ = stream.write_all(response.as_bytes());
+            let _ = stream.write_all(body);
+        });
+
+        let dir = std::env::temp_dir().join("kensaku-download-resume");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let part = dir.join("artifact.bin.part");
+        std::fs::write(&part, b"hello ").unwrap();
+
+        let url_static: &'static str = Box::leak(url.into_boxed_str());
+        let artifact = Artifact {
+            name: "artifact.bin",
+            urls: Box::leak(vec![url_static].into_boxed_slice()),
+            bytes_expected: full.len() as u64,
+            sha256: None,
+        };
+        download_one(&dir, &artifact).unwrap();
+        assert_eq!(std::fs::read(dir.join("artifact.bin")).unwrap(), full);
+        assert!(!part.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn download_falls_back_to_mirror() {
+        let full = b"payload";
+        let bad = spawn_server(|mut stream| {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        });
+        let good = spawn_server(move |mut stream| {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                full.len()
+            );
+            let _ = stream.write_all(response.as_bytes());
+            let _ = stream.write_all(full);
+        });
+
+        let dir = std::env::temp_dir().join("kensaku-download-mirror");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bad_static: &'static str = Box::leak(bad.into_boxed_str());
+        let good_static: &'static str = Box::leak(good.into_boxed_str());
+        let artifact = Artifact {
+            name: "artifact.bin",
+            urls: Box::leak(vec![bad_static, good_static].into_boxed_slice()),
+            bytes_expected: full.len() as u64,
+            sha256: None,
+        };
+        download_one(&dir, &artifact).unwrap();
+        assert_eq!(std::fs::read(dir.join("artifact.bin")).unwrap(), full);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn interrupted_download_keeps_partial_file() {
+        let full = b"hello world";
+        let url = spawn_server(move |mut stream| {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                full.len()
+            );
+            let _ = stream.write_all(response.as_bytes());
+            let _ = stream.write_all(&full[..5]);
+        });
+
+        let dir = std::env::temp_dir().join("kensaku-download-interrupted");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let url_static: &'static str = Box::leak(url.into_boxed_str());
+        let artifact = Artifact {
+            name: "artifact.bin",
+            urls: Box::leak(vec![url_static].into_boxed_slice()),
+            bytes_expected: full.len() as u64,
+            sha256: None,
+        };
+        let result = download_one(&dir, &artifact);
+        assert!(result.is_err());
+        assert!(dir.join("artifact.bin.part").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

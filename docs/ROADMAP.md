@@ -213,9 +213,12 @@ read-only guarantees preserved.
 
 ### K9. Model and download hygiene
 
-- [ ] SHA-256 pinning for every model/OCR/ORT download, mirrors, resume,
-  progress, checksum-failure messaging, disk precheck.
-- [ ] One pack manifest shared by setup, Settings, and Doctor.
+- [~] SHA-256 pinning framework for model/OCR/ORT downloads: `.part` files,
+  HTTP Range resume, mirror fallback, atomic rename, and checksum verification
+  are implemented and tested. Production artifact checksums still need to be
+  pinned from a trusted source.
+- [~] One pack manifest shared by setup, Settings, and Doctor: the semantic
+  pack manifest exists; OCR/ORT packs still need manifests.
 
 **Acceptance:** corrupt download fails loudly and retries; interrupted download
 resumes; no unverified artifact is loaded.
