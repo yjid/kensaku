@@ -194,7 +194,15 @@ fn fallback_tesseract_paths() -> Vec<PathBuf> {
 }
 
 fn tesseract_command() -> Command {
-    Command::new(tesseract_program())
+    let mut command = Command::new(tesseract_program());
+    // Tesseract links OpenMP and, left alone, starts one thread per core in
+    // every process. Kensaku already runs several OCR processes concurrently,
+    // so that oversubscribes the CPU badly (a crawl with 8 workers behaved as
+    // if it had one). Pin each child to a single thread; the outer worker pool
+    // provides the parallelism instead.
+    command.env("OMP_THREAD_LIMIT", "1");
+    command.env("OMP_NUM_THREADS", "1");
+    command
 }
 
 /// Inspects the tesseract binary and its language data. Never panics.

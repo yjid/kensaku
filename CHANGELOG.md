@@ -31,6 +31,25 @@ versioning: [SemVer](https://semver.org/).
 - First-run scanning shows live counts, a progress bar, and an ETA for metadata
   indexing and extraction.
 
+### Performance
+- **One extraction pass.** The crawl now feeds the lexical (Tantivy) and
+  semantic indexes from the same extraction instead of re-reading and
+  re-extracting every file for embeddings. Images are OCR'd once, not twice.
+- **OCR no longer thrashes the CPU.** Each tesseract child is pinned to one
+  thread (`OMP_THREAD_LIMIT=1`) while Kensaku runs several OCR processes in
+  parallel; previously every child spawned one OpenMP thread per core, which
+  made concurrent OCR slower than sequential.
+- **No unbounded timeout backlog.** Extraction slots are bounded, so slow
+  documents can no longer queue detached work faster than it completes (which
+  used to turn a crawl into hundreds of spurious 8-second timeouts).
+- **Streaming index commit.** Extracted text is written through a bounded
+  channel instead of accumulating every document in memory until the end.
+- **No full index purge per crawl.** Disappeared files are removed by path
+  directly instead of scanning every stored document.
+- **Smaller steady-state footprint.** Tantivy's writer arena is 16 MB (down from
+  50 MB), extraction/snippet caches are bounded, semantic units load without a
+  duplicate copy, and image hashing decodes at most two images at a time.
+
 ### Fixed
 - Shortcut recording now captures a real key combo (modifiers accumulate across
   key presses) instead of staying on the default.

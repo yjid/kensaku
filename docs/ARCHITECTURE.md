@@ -394,7 +394,7 @@ Design rules:
 | **first paint** | **≈ 8–18 ms** |
 | snippet fetch (post-paint, top 20) | 5–20 ms |
 
-Gates: p50 < 15 ms, p95 < 40 ms, p99 < 60 ms. Idle RSS < 60 MB at 1M. Indexing throughput > 2,000 files/s metadata, > 150 files/s content. Semantic embedding > 2,000 docs/s.
+Gates: p50 < 15 ms, p95 < 40 ms, p99 < 60 ms. Idle RSS < 60 MB at 1M (budget; the current in-memory entry list is ~128 B/file before the path index, so this needs an on-disk metadata tier). Indexing throughput > 2,000 files/s metadata, > 150 files/s text content (OCR-bound image content is limited by tesseract; see [BENCHMARKS.md](BENCHMARKS.md#indexing-and-extraction-reference)). Semantic embedding > 2,000 docs/s.
 
 ---
 

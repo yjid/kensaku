@@ -83,7 +83,7 @@ No telemetry. No account. No hosted search service. Indexes and configuration li
 
 ### It is genuinely fast
 
-Measured warm-cache on a ~100,000-file corpus, Kensaku's keystroke hot path (walk + fuzzy filename search) averages around **2.8 ms per query**. That is not a marketing number — the benchmark harness ships in the repository, and the methodology is documented.
+Measured warm-cache on a ~100,000-file corpus, Kensaku's keystroke hot path (walk + fuzzy filename search) averages around **2.8 ms per query**. Indexing is a single extraction pass: each file is read once and feeds both the lexical and semantic indexes, images are OCR'd once, and the crawl keeps a bounded queue instead of holding every extracted document in memory. The benchmark harnesses ship in the repository, and the methodology is documented.
 
 ### It speaks your language
 
@@ -159,15 +159,25 @@ Warm page cache, release build, Linux, local SSD, ~100,000-file synthetic corpus
 |---|---|
 | Walk | ~190 ms per 100k files (~525k files/s) |
 | Fuzzy filename search | ~2.8 ms average per query (p50) |
-| Memory | 128 B per entry (~12.8 MB per 100k files) |
+| Metadata footprint | 128 B per entry (~12.8 MB per 100k files) |
 
-Reference values, not guarantees. The benchmark isolates the keystroke hot path and deliberately skips index writes, so it is not end-to-end indexing latency. Full methodology: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+Indexing reference on the development machine (in-tree `index_bench` harness and a throwaway index for the full crawl). These runs used a debug build, so they are **conservative — release builds are faster**; OCR time itself is bound by the external tesseract process and is build-independent:
+
+| Workload | Result |
+|---|---|
+| 200 screenshots, OCR + image hash | ~15 s (~13 files/s) |
+| 400 screenshots, OCR | ~23 s (~16 files/s) |
+| Fresh crawl, 243 mixed files (40 images + 200 text) | ~7 s |
+| Warm re-crawl, same tree | ~0.2 s |
+| Indexer process peak RSS, text-only / mixed | ~73 MB / ~153 MB |
+
+Reference values, not guarantees. The query-path benchmark isolates the keystroke hot path and deliberately skips index writes, so it is not end-to-end indexing latency. Indexer RSS excludes the ~30 MB static embedding table downloaded by the semantic pack. Full methodology: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ## Privacy and security
 
 - **Local by default.** No telemetry, no account, no cloud search.
 - **You choose what is indexed.** Watched folders and exclusions are yours to set. Hidden files and common junk directories are skipped; common credential extensions (`.pem`, `.key`, `.pfx`, …) are excluded by default. Add `.ssh`, browser profiles, and password-manager folders to exclusions.
-- **Bounded extraction.** 8-second timeout per file, 1 MB indexed content cap, 20 MB extraction ceiling, 50 MP image cap.
+- **Bounded extraction.** 8-second timeout per file with a bounded pool of extraction slots, 1 MB indexed content cap, 20 MB extraction ceiling, 50 MP image cap.
 - **Read-only agent access.** The CLI and MCP server open the index without the writer lock and expose no write, shell, or network tools.
 - **Treat the index as sensitive.** It contains filenames and extracted text; don't sync it to a shared location.
 
@@ -175,7 +185,7 @@ Full threat model: [SECURITY.md](SECURITY.md).
 
 ## Project status
 
-**Available today:** desktop app, CLI, MCP, semantic + lexical hybrid search, full query grammar, PDF/Office/EPUB/ODT/RTF extraction, tesseract OCR, image thumbnails and near-duplicate grouping, incremental indexing, rename/delete tracking, two themes, Doctor, factory reset, guided first-run setup, and 95+ Rust tests.
+**Available today:** desktop app, CLI, MCP, semantic + lexical hybrid search, full query grammar, PDF/Office/EPUB/ODT/RTF extraction, tesseract OCR, image thumbnails and near-duplicate grouping, incremental indexing, rename/delete tracking, two themes, Doctor, factory reset, guided first-run setup, and 102 Rust tests.
 
 **Planned:** natural-language intent without syntax, `/` commands and `@` scopes, facet counts, saved searches, CLIP/SigLIP visual search, face identity, native platform OCR, warm shared daemon, 1M-file prefilter, signing/notarization, auto-update. See [docs/REMAINING.md](docs/REMAINING.md) and [docs/VISION.md](docs/VISION.md).
 

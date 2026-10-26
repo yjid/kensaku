@@ -36,7 +36,7 @@ impl SnippetCache {
                 .map(|(orig, lower)| (orig.as_str(), lower.as_str()));
         }
 
-        let content = read_text_content(path, 64_000)?;
+        let content = read_text_content(path, 32_000)?;
         let lower = content.to_lowercase();
         if self.map.len() >= self.capacity
             && let Some(oldest) = self.order.pop_front()
@@ -112,8 +112,13 @@ impl ContentIndex {
             Index::create_in_dir(index_dir, schema.clone()).map_err(|e| e.to_string())?
         };
 
-        // 50MB writer buffer
-        let writer = index.writer(50_000_000).map_err(|e| e.to_string())?;
+        // A desktop daemon should not reserve a large indexing arena. Tantivy
+        // requires ~15 MB per writer thread; one thread with a 16 MB arena keeps
+        // the resident footprint small. Indexing is I/O-bound for a personal
+        // corpus and extraction, not document insertion, is the real cost.
+        let writer = index
+            .writer_with_num_threads(1, 16_000_000)
+            .map_err(|e| e.to_string())?;
 
         let reader = index
             .reader_builder()
@@ -129,7 +134,7 @@ impl ContentIndex {
             filename_field,
             content_field,
             modified_field,
-            snippet_cache: Mutex::new(SnippetCache::new(200)),
+            snippet_cache: Mutex::new(SnippetCache::new(32)),
         })
     }
 
@@ -140,10 +145,7 @@ impl ContentIndex {
     /// live index without taking the exclusive writer lock.
     pub fn open_read_only(index_dir: &Path) -> Result<Self, String> {
         if !index_dir.join("meta.json").exists() {
-            return Err(format!(
-                "No content index at {}",
-                index_dir.display()
-            ));
+            return Err(format!("No content index at {}", index_dir.display()));
         }
 
         let index = Index::open_in_dir(index_dir).map_err(|e| e.to_string())?;
@@ -175,7 +177,7 @@ impl ContentIndex {
             filename_field,
             content_field,
             modified_field,
-            snippet_cache: Mutex::new(SnippetCache::new(200)),
+            snippet_cache: Mutex::new(SnippetCache::new(32)),
         })
     }
 
@@ -224,6 +226,23 @@ impl ContentIndex {
         let term = Term::from_field_text(self.path_field, &path_str);
         let writer = self.writer()?.write();
         writer.delete_term(term);
+        Ok(())
+    }
+
+    /// Queues deletion of many documents before the next commit.
+    ///
+    /// Used by the crawl to drop documents for files that disappeared from
+    /// disk. Unlike [`Self::purge_stale`] this never scans the whole index.
+    pub fn remove_many(&self, paths: &[PathBuf]) -> Result<(), String> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let writer = self.writer()?.write();
+        for path in paths {
+            let path_str = path.to_string_lossy();
+            let term = Term::from_field_text(self.path_field, &path_str);
+            writer.delete_term(term);
+        }
         Ok(())
     }
 
@@ -918,9 +937,7 @@ mod tests {
         assert_eq!(err, "index is read-only");
         assert_eq!(reader.commit().unwrap_err(), "index is read-only");
         assert_eq!(
-            reader
-                .purge_stale(&HashSet::new(), &[])
-                .unwrap_err(),
+            reader.purge_stale(&HashSet::new(), &[]).unwrap_err(),
             "index is read-only"
         );
     }

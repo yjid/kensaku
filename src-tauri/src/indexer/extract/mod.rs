@@ -3,12 +3,12 @@ pub mod office;
 pub mod pdf;
 pub mod text;
 
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::Duration;
 
 /// Process-wide OCR setting, mirroring [`crate::config::KensakuConfig::ocr_enabled`].
@@ -69,8 +69,10 @@ pub fn sniff_format(path: &Path) -> DocumentFormat {
             return DocumentFormat::Rtf;
         }
         // Image magic bytes
-        if header.starts_with(b"\x89PNG") || header.starts_with(b"\xff\xd8\xff")
-            || header.starts_with(b"GIF8") || header.starts_with(b"RIFF")
+        if header.starts_with(b"\x89PNG")
+            || header.starts_with(b"\xff\xd8\xff")
+            || header.starts_with(b"GIF8")
+            || header.starts_with(b"RIFF")
             || header.starts_with(b"BM")
         {
             return DocumentFormat::Image;
@@ -113,10 +115,12 @@ pub fn sniff_format(path: &Path) -> DocumentFormat {
         "ods" => DocumentFormat::Ods,
         "odp" => DocumentFormat::Odp,
         "rtf" => DocumentFormat::Rtf,
-        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "tiff" | "tif" | "heic" | "heif" => DocumentFormat::Image,
+        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "tiff" | "tif" | "heic" | "heif" => {
+            DocumentFormat::Image
+        }
         "txt" | "md" | "markdown" | "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "json"
-        | "toml" | "yaml" | "yml" | "xml" | "html" | "htm" | "css" | "c" | "cpp" | "h"
-        | "java" | "sh" | "log" | "csv" | "sql" => DocumentFormat::PlainText,
+        | "toml" | "yaml" | "yml" | "xml" | "html" | "htm" | "css" | "c" | "cpp" | "h" | "java"
+        | "sh" | "log" | "csv" | "sql" => DocumentFormat::PlainText,
         _ => DocumentFormat::Unknown,
     }
 }
@@ -168,7 +172,11 @@ impl ExtractionCache {
 }
 
 fn get_extraction_cache() -> &'static Mutex<ExtractionCache> {
-    EXTRACTION_CACHE.get_or_init(|| Mutex::new(ExtractionCache::new(64)))
+    // A small cache is deliberate: each entry can hold up to a megabyte of
+    // text, and the crawl no longer depends on cache hits (it extracts once and
+    // feeds both the lexical and semantic index). Keeping 16 entries bounds
+    // this at a few megabytes instead of tens of megabytes.
+    EXTRACTION_CACHE.get_or_init(|| Mutex::new(ExtractionCache::new(16)))
 }
 
 /// Cache key for a path: `(path, size, mtime)`.
@@ -215,27 +223,113 @@ pub fn insert_cached_document(path: &Path, document: DocumentExtract) {
 /// network/FUSE filesystem) must not block indexing forever.
 const EXTRACTION_TIMEOUT: Duration = Duration::from_secs(8);
 
-/// Dedicated pool for extraction work.
+/// How long a caller waits for a free extraction slot before giving up on the
+/// file for this crawl. This is backpressure, not a work timeout: without it a
+/// stalled document could permanently consume every slot.
+const SLOT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Number of concurrent extractions (and therefore concurrent OCR processes).
+fn extraction_concurrency() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .clamp(2, 8)
+}
+
+/// Bounded slot pool paired with the extraction thread pool.
 ///
-/// A hung extraction permanently loses one worker, but the pool can never grow
-/// past four threads, so a pile of pathological documents cannot spawn an
-/// unbounded number of detached threads.
+/// A timeout cannot cancel work that has already started (a tesseract process
+/// or a parser loop keeps running). Without a permit, every timed-out file
+/// would queue another detached task while callers kept timing out behind an
+/// ever-growing backlog — which is exactly what made image-heavy crawls
+/// collapse into hundreds of spurious 8-second timeouts. A permit is held by
+/// the task itself and returned when it genuinely finishes, so at most
+/// `extraction_concurrency()` extractions are ever detached.
+struct SlotPool {
+    available: Mutex<std::sync::mpsc::Receiver<()>>,
+    release: std::sync::mpsc::SyncSender<()>,
+}
+
+impl SlotPool {
+    fn new(slots: usize) -> Self {
+        let (release, available) = std::sync::mpsc::sync_channel(slots);
+        for _ in 0..slots {
+            release.send(()).expect("slot pool has capacity");
+        }
+        Self {
+            available: Mutex::new(available),
+            release,
+        }
+    }
+
+    fn acquire(&'static self) -> Option<ExtractionSlot> {
+        self.acquire_timeout(SLOT_WAIT_TIMEOUT)
+    }
+
+    fn acquire_timeout(&'static self, timeout: Duration) -> Option<ExtractionSlot> {
+        // The receiver is behind a mutex because `Receiver` is not `Sync`. A
+        // waiting caller holds it while blocked, which is fine: it only becomes
+        // contended when the pool is saturated, and at that point callers are
+        // meant to queue for backpressure anyway.
+        let permit = self.available.lock().ok()?.recv_timeout(timeout).ok()?;
+        let _ = permit;
+        Some(ExtractionSlot { pool: self })
+    }
+}
+
+struct ExtractionSlot {
+    pool: &'static SlotPool,
+}
+
+impl Drop for ExtractionSlot {
+    fn drop(&mut self) {
+        // If the receiver is gone the process is shutting down.
+        let _ = self.pool.release.try_send(());
+    }
+}
+
+static SLOT_POOL: std::sync::OnceLock<SlotPool> = std::sync::OnceLock::new();
+
+fn slot_pool() -> &'static SlotPool {
+    SLOT_POOL.get_or_init(|| SlotPool::new(extraction_concurrency()))
+}
+
+/// Caps concurrent full-image decodes (perceptual hashing).
+///
+/// A single decode of a 50 MP photo can touch ~200 MB, and the crawler runs
+/// several files at once; decoding two at a time keeps that peak bounded while
+/// still overlapping with OCR on other files.
+static IMAGE_DECODE_POOL: std::sync::OnceLock<SlotPool> = std::sync::OnceLock::new();
+
+pub(crate) fn acquire_image_decode_slot() -> Option<impl Drop> {
+    IMAGE_DECODE_POOL
+        .get_or_init(|| SlotPool::new(2))
+        .acquire_timeout(Duration::from_secs(5))
+}
+
+/// Dedicated pool for extraction work.
 static EXTRACTION_POOL: std::sync::OnceLock<Option<rayon::ThreadPool>> = std::sync::OnceLock::new();
 
 fn extraction_pool() -> Option<&'static rayon::ThreadPool> {
     EXTRACTION_POOL
-        .get_or_init(|| match rayon::ThreadPoolBuilder::new()
-            .num_threads(4)
-            .thread_name(|index| format!("kensaku-extract-{}", index))
-            .build()
-        {
-            Ok(pool) => Some(pool),
-            Err(e) => {
-                eprintln!(
-                    "[Kensaku] Could not create extraction thread pool ({}); extraction runs inline without a timeout",
-                    e
-                );
-                None
+        .get_or_init(|| {
+            // Extraction (notably OCR) is the crawl bottleneck. Tesseract runs
+            // as a child process, so a few extra workers use the cores without
+            // pinning much memory. Capped at 8 to keep the number of concurrent
+            // OCR processes (and their RSS) bounded on a desktop.
+            match rayon::ThreadPoolBuilder::new()
+                .num_threads(extraction_concurrency())
+                .thread_name(|index| format!("kensaku-extract-{}", index))
+                .build()
+            {
+                Ok(pool) => Some(pool),
+                Err(e) => {
+                    eprintln!(
+                        "[Kensaku] Could not create extraction thread pool ({}); extraction runs inline without a timeout",
+                        e
+                    );
+                    None
+                }
             }
         })
         .as_ref()
@@ -261,10 +355,29 @@ fn warn_extraction_timeout(path: &Path) {
     }
 }
 
+/// Reported at most a handful of times so a saturated crawl does not flood the
+/// log once per file.
+fn warn_slot_saturation(path: &Path) {
+    use std::sync::atomic::AtomicUsize;
+    static WARNED: AtomicUsize = AtomicUsize::new(0);
+    let count = WARNED.fetch_add(1, Ordering::Relaxed);
+    if count < 5 {
+        eprintln!(
+            "[Kensaku] Extraction slots saturated; leaving pending: {}",
+            path.display()
+        );
+    }
+}
+
 pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> {
     let meta = std::fs::metadata(path).ok()?;
     let file_size = meta.len();
-    let mtime = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+    let mtime = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
 
     // Content policy: metadata-only above 20 MB
     if file_size > 20_000_000 {
@@ -294,11 +407,17 @@ pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> 
     // Run the extraction on the dedicated pool and time it out. On timeout the
     // file stays pending (or skipped) and is retried on a later crawl; nothing
     // is cached, so a transient stall is not sticky.
-    let result = match extraction_pool() {
-        Some(pool) => {
+    //
+    // A slot is acquired first and moved into the task, so timed-out work can
+    // never pile up beyond the pool size (see `SlotPool`).
+    let result = match (extraction_pool(), slot_pool().acquire()) {
+        (Some(pool), Some(slot)) => {
             let (tx, rx) = std::sync::mpsc::channel();
             let worker_path = path.to_path_buf();
             pool.spawn(move || {
+                // Keep the slot alive for the real duration of the work, even
+                // if the caller stopped waiting.
+                let _slot = slot;
                 // Catch panics here: a panic escaping a `rayon::spawn` task
                 // reaches rayon's panic handler (which aborts by default), and
                 // a malformed document must never take the app down.
@@ -331,12 +450,22 @@ pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> 
                 }
             }
         }
+        // Every slot stayed busy for the whole wait: leave the file pending
+        // rather than adding to an unbounded queue.
+        (Some(_), None) => {
+            warn_slot_saturation(path);
+            None
+        }
         // Pool creation failed (rare); fall back to inline extraction.
-        None => extract_document_inner(path, capped_bytes, format, file_size),
+        (None, _) => extract_document_inner(path, capped_bytes, format, file_size),
     };
 
-    // Cache the result
-    if let Some(ref res) = result {
+    // Cache the result. Very large documents are skipped: the cache exists for
+    // query-time snippets and repeated small extractions, not to pin megabytes
+    // of text per entry.
+    if let Some(ref res) = result
+        && res.text.len() <= 256 * 1024
+    {
         let mut cache = get_extraction_cache().lock().unwrap();
         cache.insert(cache_key, res.clone());
     }
@@ -344,7 +473,12 @@ pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> 
     result
 }
 
-fn extract_document_inner(path: &Path, capped_bytes: usize, format: DocumentFormat, file_size: u64) -> Option<DocumentExtract> {
+fn extract_document_inner(
+    path: &Path,
+    capped_bytes: usize,
+    format: DocumentFormat,
+    file_size: u64,
+) -> Option<DocumentExtract> {
     match format {
         DocumentFormat::Pdf => {
             let res = pdf::extract_pdf(path, capped_bytes)?;
@@ -528,7 +662,10 @@ mod tests {
         let file = TempFile::new("pdf", b"this is definitely not a pdf\n\x00\x01\x02\xff");
         let (result, elapsed) = extract(&file.path);
 
-        assert!(result.is_none(), "garbage PDF should not extract: {result:?}");
+        assert!(
+            result.is_none(),
+            "garbage PDF should not extract: {result:?}"
+        );
         assert!(elapsed < Duration::from_secs(2), "took {elapsed:?}");
     }
 
@@ -573,7 +710,10 @@ mod tests {
         let file = TempFile::empty("txt");
         let (result, elapsed) = extract(&file.path);
 
-        assert!(result.is_none(), "empty file should not extract: {result:?}");
+        assert!(
+            result.is_none(),
+            "empty file should not extract: {result:?}"
+        );
         assert!(elapsed < Duration::from_secs(2), "took {elapsed:?}");
     }
 
