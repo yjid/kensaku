@@ -1,6 +1,6 @@
 import React from "react";
 import { CATEGORY_CHIPS, CategoryChip, categoryCounts } from "../lib/categories";
-import { SearchResult } from "../types";
+import { Facets, SearchResult } from "../types";
 import { formatComma } from "../lib/format";
 
 /* Category pill row. Active = inverted (fg on bg). Counts in a muted badge.
@@ -9,6 +9,7 @@ import { formatComma } from "../lib/format";
 interface CategoryChipsProps {
   query: string;
   results: SearchResult[];
+  facets?: Facets;
   onPick: (chip: CategoryChip) => void;
 }
 
@@ -17,8 +18,10 @@ function chipActive(query: string, chip: CategoryChip): boolean {
   return query.toLowerCase().includes(chip.token.toLowerCase());
 }
 
-export const CategoryChips: React.FC<CategoryChipsProps> = ({ query, results, onPick }) => {
-  const counts = categoryCounts(results);
+export const CategoryChips: React.FC<CategoryChipsProps> = ({ query, results, facets, onPick }) => {
+  const counts = facets
+    ? { all: facets.all, recent: facets.recent, ...facets.types }
+    : categoryCounts(results);
   return (
     <div className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto px-4 pb-2">
       {CATEGORY_CHIPS.map((chip) => {
@@ -36,7 +39,7 @@ export const CategoryChips: React.FC<CategoryChipsProps> = ({ query, results, on
             }`}
           >
             <span>{chip.label}</span>
-            {count != null && count > 0 && chip.id === "all" && (
+            {count != null && count > 0 && (
               <span
                 className={`font-mono text-[10px] ${active ? "opacity-70" : "text-subtle"}`}
               >

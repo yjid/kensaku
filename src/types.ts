@@ -32,9 +32,25 @@ export interface InterpretationChip {
   source: string;
 }
 
+export interface Facets {
+  all: number;
+  types: Record<string, number>;
+  languages: Record<string, number>;
+  places: Record<string, number>;
+  time: Record<string, number>;
+  size: Record<string, number>;
+  recent: number;
+}
+
+export interface Alias {
+  term: string;
+  expansions: string[];
+}
+
 export interface SearchResponse {
   results: SearchResult[];
   interpretation?: InterpretationChip[];
+  facets?: Facets;
   seq: number;
   active_filters: ActiveFilter[];
   hints: string[];
@@ -94,6 +110,7 @@ export interface KensakuConfig {
   skip_hidden?: boolean;
   ocr_enabled?: boolean;
   theme?: "paper" | "void";
+  aliases?: Alias[];
   config_version?: number;
 }
 

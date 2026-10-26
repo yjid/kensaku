@@ -4,6 +4,31 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Alias {
+    /// Word the user types.
+    pub term: String,
+    /// Other spellings that should match the same thing.
+    pub expansions: Vec<String>,
+}
+
+pub fn default_aliases() -> Vec<Alias> {
+    [
+        ("resume", &["cv", "curriculum vitae"][..]),
+        ("invoice", &["receipt", "bill"][..]),
+        ("receipt", &["invoice", "bill"][..]),
+        ("screenshot", &["screen shot", "capture"][..]),
+        ("contract", &["agreement"][..]),
+        ("photo", &["image", "picture"][..]),
+    ]
+    .into_iter()
+    .map(|(term, expansions)| Alias {
+        term: term.to_string(),
+        expansions: expansions.iter().map(|s| s.to_string()).collect(),
+    })
+    .collect()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KensakuConfig {
     pub watched_dirs: Vec<PathBuf>,
     pub excluded_dirs: Vec<String>,
@@ -28,6 +53,9 @@ pub struct KensakuConfig {
     /// Persisted UI theme ("paper" or "void").
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// Personal vocabulary: `term` matches any of `expansions`.
+    #[serde(default = "default_aliases")]
+    pub aliases: Vec<Alias>,
     /// Config schema version, used for one-time migrations.
     #[serde(default)]
     pub config_version: u32,
@@ -115,6 +143,7 @@ impl Default for KensakuConfig {
             semantic_model: "static".to_string(),
             ocr_enabled: true,
             theme: default_theme(),
+            aliases: default_aliases(),
             config_version: 4,
         }
     }
@@ -299,6 +328,15 @@ impl KensakuConfig {
     pub fn is_setup_done() -> bool {
         let cfg = Self::load();
         cfg.is_setup_complete && cfg.first_scan_done
+    }
+
+    /// Alias table for the intent compiler: (term, expansions).
+    pub fn alias_pairs(&self) -> Vec<(String, Vec<String>)> {
+        self.aliases
+            .iter()
+            .filter(|a| !a.term.trim().is_empty() && !a.expansions.is_empty())
+            .map(|a| (a.term.trim().to_lowercase(), a.expansions.clone()))
+            .collect()
     }
 
     pub fn is_dir_excluded(&self, dir_name: &str) -> bool {

@@ -36,9 +36,9 @@ These are the highest-leverage gaps. None require a new model.
       time windows ("today", "last week", "last month", "last year"), place
       phrases ("in Projects"), and media/document nouns. Emits the existing
       `Query` AST plus `Sort`. Month names and aliases remain.
-- [ ] **Aliases and personal vocabulary** — `resume → resume, cv, curriculum`;
-      `invoice → invoice, receipt, bill`; user-editable; seeded by use-case
-      preset. Suggestions from behavior, never silent rewrites.
+- [x] **Aliases and personal vocabulary** — `resume → resume, cv, curriculum`;
+      `invoice → invoice, receipt, bill`; user-editable in Settings → Search;
+      seeded defaults; compiled to an OR-regex and shown as a removable chip.
 - [x] **First-class sort** — `Best match | Newest | Oldest | Largest | Name`,
       applied server-side before the result limit.
 - [x] **Interpretation chips** — every natural-language inference is shown as a
@@ -47,9 +47,8 @@ These are the highest-leverage gaps. None require a new model.
 - [ ] **Version grouping** — collapse `resume_v1`, `resume_final`,
       `resume_final_final` into one row with a version count. False grouping is
       worse than none; ship conservative heuristics.
-- [ ] **Facet counts** — server-side counts for type, language, place, time,
-      and size. The current `categoryCounts()` is client-side over the returned
-      page only.
+- [x] **Facet counts** — server-side counts over the full matched set for type,
+      language, place, time, size, and recent; category chips consume them.
 - [ ] **Multi-select and exclude facets** — OR within a facet, AND across
       facets, alt-click to exclude. Filters must never silently zero results.
 - [ ] **Saved searches / smart folders** — "My screenshots", "Work invoices",

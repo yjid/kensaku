@@ -157,6 +157,7 @@ pub async fn search(
     let cfg = indexer.config.read();
     let max_results = cfg.max_results;
     let semantic_enabled = cfg.semantic_enabled;
+    let aliases = cfg.alias_pairs();
 
     // The UI asks for snippets separately (`get_snippets`) so the search
     // itself never touches file contents.
@@ -173,6 +174,7 @@ pub async fn search(
         max_results,
         req_seq,
         sort,
+        &aliases,
     );
 
     indexer.query_in_flight.store(false, Ordering::SeqCst);

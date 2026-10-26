@@ -53,6 +53,12 @@ fn take(
 
 /// Compiles natural language into the existing query grammar.
 pub fn compile(raw: &str) -> Intent {
+    compile_with_aliases(raw, &[])
+}
+
+/// Compiles natural language, expanding personal vocabulary aliases into an
+/// OR-regex term (e.g. `resume` → `re:"(?i)(resume|cv)"`).
+pub fn compile_with_aliases(raw: &str, aliases: &[(String, Vec<String>)]) -> Intent {
     // Explicit grammar is authoritative: never reinterpret a query that
     // already contains a filter token.
     let has_explicit_filter = raw.split_whitespace().any(|t| {
@@ -166,6 +172,40 @@ pub fn compile(raw: &str) -> Intent {
         if let Ok(re) = Regex::new(
             r"(?i)\bin\s+(?:my\s+)?(projects|downloads|documents|desktop|pictures|videos|music|work)\b",
         ) {
+            // --- Personal vocabulary ----------------------------------
+            for (term, expansions) in aliases {
+                let term = term.trim();
+                if term.is_empty() {
+                    continue;
+                }
+                let Ok(re) = Regex::new(&format!(r"(?i)\b{}\b", regex::escape(term))) else {
+                    continue;
+                };
+                if !re.is_match(&work) {
+                    continue;
+                }
+                let mut words = vec![term.to_lowercase()];
+                for exp in expansions {
+                    let exp = exp.trim().to_lowercase();
+                    if !exp.is_empty() && !words.contains(&exp) {
+                        words.push(exp);
+                    }
+                }
+                let alternation = words
+                    .iter()
+                    .map(|w| regex::escape(w))
+                    .collect::<Vec<_>>()
+                    .join("|");
+                let raw = format!("re:\"(?i)({})\"", alternation);
+                work = re.replace(&work, " ").to_string();
+                appends.push(raw.clone());
+                chips.push(InterpretationChip {
+                    kind: "alias".to_string(),
+                    label: format!("Alias: {}", term),
+                    raw,
+                    source: term.to_string(),
+                });
+            }
             if let Some(c) = re.captures(&work) {
                 let place = c[1].to_string();
                 let raw = format!("in:{}", place);
@@ -250,6 +290,14 @@ mod tests {
         let intent = compile("type:pdf latest");
         assert!(intent.chips.is_empty());
         assert_eq!(intent.query, "type:pdf latest");
+    }
+
+    #[test]
+    fn alias_expands_into_or_regex() {
+        let aliases = vec![("resume".to_string(), vec!["cv".to_string()])];
+        let intent = compile_with_aliases("resume", &aliases);
+        assert!(intent.query.contains("re:\"(?i)(resume|cv)\""));
+        assert!(intent.chips.iter().any(|c| c.kind == "alias"));
     }
 
     #[test]
