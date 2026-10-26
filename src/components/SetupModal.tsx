@@ -232,9 +232,13 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     const units = st?.units_indexed ?? 0;
     const phase = st?.phase ?? "walking";
 
-    // ETA from the observed throughput of the current phase.
-    const done = phase === "extracting" ? (st?.extract_done ?? 0) : files;
-    const total = phase === "extracting" ? (st?.extract_total ?? 0) : (st?.total_files ?? 0);
+    // ETA from the observed throughput of the current phase. Fall back to the
+    // metadata counters when an older backend reports `extracting` before the
+    // extraction queue is populated (extract_total == 0).
+    const extractTotal = st?.extract_total ?? 0;
+    const extracting = phase === "extracting" && extractTotal > 0;
+    const done = extracting ? (st?.extract_done ?? 0) : files;
+    const total = extracting ? extractTotal : (st?.total_files ?? 0);
     let eta = "";
     let pct = 0;
     if (total > 0) {
