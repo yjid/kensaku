@@ -66,7 +66,7 @@ export function HomeView({
   const pinned = new Set(data.pins.map((p) => p.path));
 
   return (
-    <div className="mx-auto grid max-w-4xl gap-5 p-6 md:grid-cols-2">
+    <div className="mx-auto grid w-full max-w-4xl gap-5 p-6 md:grid-cols-2">
       <section>
         <h2 className="eyebrow pb-2">Pinned</h2>
         {data.pins.length === 0 ? (

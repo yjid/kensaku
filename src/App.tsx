@@ -889,9 +889,11 @@ function App() {
                 <div
                   ref={resultsContainerRef}
                   className={`min-w-0 flex-1 overflow-y-auto ${
-                    view === "grid"
-                      ? "grid grid-cols-[repeat(auto-fill,minmax(156px,1fr))] content-start gap-3 p-4"
-                      : "px-2 py-1"
+                    !hasQuery
+                      ? "block"
+                      : view === "grid"
+                        ? "grid grid-cols-[repeat(auto-fill,minmax(156px,1fr))] content-start gap-3 p-4"
+                        : "px-2 py-1"
                   }`}
                 >
                   {displayResults.length > 0 ? (
