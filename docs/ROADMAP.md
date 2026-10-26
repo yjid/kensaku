@@ -18,6 +18,25 @@
    letting weak matches pollute results.
 5. **Measure on a frozen corpus.** Every task below has an acceptance number.
 
+## Status (current)
+
+| Task | Status |
+|---|---|
+| K1 | Partial — daemon binary/IPC/CLI/MCP done; GUI client partial; Windows pipe/packaging/read_snippet RPC pending |
+| K2 | Shipped — 92.8 MB at 1M (target ≤ 100 MB) |
+| K3 | Mostly shipped — legacy 320 px fix + thumbnail hashing; backfill/thumbnail-only hashing pending |
+| K4 | Partial — visible-only snippets shipped; line boxes/LRU pending |
+| K5 | Shipped — folded tier + verification; verification tightening pending |
+| K6 | Not started — blocked on K9 |
+| K7 | Shipped — default mode now `full`; measurement pending |
+| K8 | Shipped |
+| K9 | Partial — framework shipped; checksums/mirrors/manifest pending |
+| K10 | Shipped |
+| K11 | Shipped |
+| K12 | Shipped |
+| K13 | Not started — depends on K1 |
+| K14 | Shipped — validation on real model/golden set pending |
+
 ## P0 — foundation
 
 ### K1. Daemon split (epic)

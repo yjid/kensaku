@@ -80,7 +80,7 @@ These are the highest-leverage gaps. None require a new model.
 - [x] **Setup-owned downloads and configuration** — folders, exclusions, theme,
       and shortcut are asked in setup; OCR/model downloads are offered there.
       Settings shows status only and links to **Run setup again**. Vision Packs
-      remain.
+      remain (ROADMAP K9, K6).
 - [x] **First-scan completion gate** — `first_scan_done` gates `is_setup_complete`;
       the scan shows live counts and a Done summary, resumes after interruption,
       and later launches stay search-first. Progress bar and ETA are shown for
@@ -91,15 +91,16 @@ These are the highest-leverage gaps. None require a new model.
 
 - [ ] **ONNX "smart pack"** — `fastembed`/`ort` with `load-dynamic`,
       bge-small or EmbeddingGemma-Q4, activation after download. The potion
-      table is already used; this is the quality tier above it.
+      table is already used; this is the quality tier above it. (ROADMAP K9)
 - [ ] **Image embeddings** — SigLIP or CLIP ViT-B/32 int8 for "red cap",
       "system design diagram", "whiteboard". Today images are searchable through
       OCR text and filename only. Wire as a fourth retrieval tier into RRF.
+      (ROADMAP K6, K9)
 - [ ] **Similar images** — image-to-image query from a selected result; reuse
-      the same visual index and the related-file response shape.
+      the same visual index and the related-file response shape. (ROADMAP K3, K6)
 - [ ] **Native OCR** — macOS Vision (`objc2-vision`) and Windows OCR (`windows`
       crate). Today it shells out to `tesseract`, which may not be installed.
-      Scanned PDFs need the same path.
+      Scanned PDFs need the same path. (ROADMAP K6)
 - [-] **"This is me" identity** —  skip for now will think and appy it later , local face embeddings + clustering, opt-in
       enrollment with 3–5 photos, explainable matches, delete-all. Sensitive
       data: local only, never uploaded; ship after the sensitive-path policy.
@@ -108,16 +109,17 @@ These are the highest-leverage gaps. None require a new model.
       queries are weak.
 - [ ] **Multilingual embeddings + CJK tokenization** — the default model is
       English-centric and Tantivy's default tokenizer fails on no-space
-      languages. Both are correctness gaps for a global product.
+      languages. Both are correctness gaps for a global product. (ROADMAP K14)
 
 ## C. Agent, LLM & runtime
 
 - [ ] **Warm daemon** — one process owns the index; GUI, CLI, and MCP attach.
       Today the GUI backend is in-process and a one-shot CLI pays metadata load.
       This is the top architectural gap: see [ROADMAP K1](ROADMAP.md#k1-daemon-split-epic)
-      for the IPC, lifecycle, client migration, and acceptance criteria.
+      for the IPC, lifecycle, client migration, and acceptance criteria. (ROADMAP K1)
 - [ ] **Local HTTP/SSE endpoint** — loopback only, token auth, read-only.
       Needed for web-capable MCP clients and long-lived agents. Follows K1.
+      (ROADMAP K1)
 - [ ] **One-click agent connect** — generated configs and live status for
       Claude Desktop/Code, Cursor, and other MCP clients. Keep a manual JSON
       fallback in Settings → Agents.
