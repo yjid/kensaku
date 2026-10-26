@@ -240,18 +240,12 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     if (total > 0) {
       pct = Math.min(100, Math.round((done / total) * 100));
       if (etaRef.current.phase !== phase || etaRef.current.total !== total) {
-        etaRef.current = { phase, done, at: Date.now(), total };
+        etaRef.current = { phase, done: 0, at: Date.now(), total };
       }
-      const dt = (Date.now() - etaRef.current.at) / 1000;
-      const dd = done - etaRef.current.done;
-      if (dt >= 1 && dd > 0) {
-        const rate = dd / dt;
-        eta = formatEta((total - done) / rate);
-        etaRef.current = { phase, done, at: Date.now(), total };
-      } else if (done > 0 && total > done) {
-        // Not enough sample yet — estimate from the phase start.
-        const elapsed = (Date.now() - etaRef.current.at) / 1000;
-        if (elapsed > 1) eta = formatEta((elapsed * (total - done)) / done);
+      const elapsed = Math.max(0, (Date.now() - etaRef.current.at) / 1000);
+      if (done > 0 && total > done && elapsed >= 1) {
+        // Average throughput for the phase: stable, no per-tick flicker.
+        eta = formatEta((elapsed * (total - done)) / done);
       }
     }
 
