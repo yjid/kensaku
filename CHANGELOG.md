@@ -11,7 +11,8 @@ versioning: [SemVer](https://semver.org/).
   locking, writes `daemon.pid`, and serves token-authenticated JSON-RPC
   `health`/`index_state`/`shutdown`. CLI/MCP `state`/`index_state` now prefer
   the daemon and fall back to direct read-only access when it is absent.
-  Search remains local until the daemon search method lands.
+  Search remains local until the daemon search method lands. The daemon also
+  exposes `get_status` and `reindex`.
 - Compact metadata arena (`NodeArena`/`NameArena`): per-entry node is 64 bytes
   (down from 128-byte `FileEntry`), full paths are reconstructed from parent
   chains instead of being stored per entry.
