@@ -625,6 +625,16 @@ function App() {
 
   /* ---------------- render ---------------- */
 
+  const displayResults = useMemo(
+    () =>
+      results.filter((r) => {
+        const cat = classify(r);
+        if (facetExclude.has(cat)) return false;
+        if (facetInclude.size > 0 && !facetInclude.has(cat)) return false;
+        return true;
+      }),
+    [results, facetInclude, facetExclude],
+  );
   if (isSetupComplete === null) {
     return (
       <div className="flex h-screen items-center justify-center bg-bg">
@@ -636,16 +646,6 @@ function App() {
   const isCommandMode = query.startsWith("/");
 
   const hasQuery = query.trim() !== "";
-  const displayResults = useMemo(
-    () =>
-      results.filter((r) => {
-        const cat = classify(r);
-        if (facetExclude.has(cat)) return false;
-        if (facetInclude.size > 0 && !facetInclude.has(cat)) return false;
-        return true;
-      }),
-    [results, facetInclude, facetExclude],
-  );
   const noResults = hasQuery && !isCommandMode && displayResults.length === 0;
   const isIndexing = indexingStatus?.is_indexing ?? false;
   // The main page shows files only: preview pane appears when a query has results.
