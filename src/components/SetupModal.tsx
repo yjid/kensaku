@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Check, Plus, X, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download } from "lucide-react";
 import { EmptyState } from "./EmptyState";
 import { useTheme } from "../hooks/useTheme";
-import type { IndexingStatus } from "../types";
+import type { IndexingStatus, ModelsStatus, OcrStatus } from "../types";
 
 /* First run: three screens, one decision each.
    1 Welcome → 2 Pick folders → 3 Exclusions + start. */
@@ -34,6 +34,10 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const [scanning, setScanning] = useState(false);
   const [scanStatus, setScanStatus] = useState<IndexingStatus | null>(null);
   const [done, setDone] = useState(false);
+  const [modelsStatus, setModelsStatus] = useState<ModelsStatus | null>(null);
+  const [ocrStatus, setOcrStatus] = useState<OcrStatus | null>(null);
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [packError, setPackError] = useState<string | null>(null);
   const { theme, setTheme } = useTheme();
 
   useEffect(() => {
@@ -87,6 +91,21 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [capturing]);
+
+  // Optional packs: load state when the step opens and poll while downloading.
+  useEffect(() => {
+    if (step !== 4) return;
+    invoke<ModelsStatus>("get_models_status").then(setModelsStatus).catch(() => {});
+    invoke<OcrStatus>("get_ocr_status").then(setOcrStatus).catch(() => {});
+  }, [step]);
+
+  useEffect(() => {
+    if (step !== 4 || !modelsStatus?.downloading) return;
+    const id = window.setInterval(() => {
+      invoke<ModelsStatus>("get_models_status").then(setModelsStatus).catch(() => {});
+    }, 600);
+    return () => window.clearInterval(id);
+  }, [step, modelsStatus?.downloading]);
 
   // Poll indexing status while scanning; finish when the crawl completes.
   useEffect(() => {
@@ -445,37 +464,134 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               </p>
             </div>
             <div className="space-y-2">
-              <div className="flex items-center justify-between rounded-[14px] border border-line bg-elevated px-4 py-3">
-                <div>
-                  <span className="block text-[12px] font-medium text-fg">OCR language data</span>
-                  <span className="block text-[11px] text-muted">English tessdata, ~4 MB</span>
+              <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <span className="block text-[12px] font-medium text-fg">OCR language data</span>
+                    <span className="block text-[11px] text-muted">English tessdata, ~4 MB</span>
+                  </div>
+                  {ocrStatus?.available ? (
+                    <span className="flex h-8 items-center gap-1.5 rounded-[10px] px-2 text-[11px] text-success">
+                      <Check className="h-3.5 w-3.5" /> Ready
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={ocrBusy}
+                      onClick={async () => {
+                        setPackError(null);
+                        setOcrBusy(true);
+                        try {
+                          const status = await invoke<OcrStatus>("download_ocr_language");
+                          setOcrStatus(status);
+                        } catch (e) {
+                          setPackError(`OCR download failed: ${String(e)}`);
+                        } finally {
+                          setOcrBusy(false);
+                        }
+                      }}
+                      className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                    >
+                      {ocrBusy ? (
+                        <>
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> Downloading…
+                        </>
+                      ) : (
+                        <>
+                          <Download className="h-3.5 w-3.5" /> Download
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try { await invoke("download_ocr_language"); } catch (e) { console.error(e); }
-                  }}
-                  className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong"
-                >
-                  <Download className="h-3.5 w-3.5" /> Download
-                </button>
+                {ocrStatus && !ocrStatus.available && !ocrBusy && (
+                  <p className="pt-1.5 text-[11px] text-muted">
+                    {ocrStatus.engine_present
+                      ? "Tesseract found; language data is still missing."
+                      : "Tesseract is not installed; language data alone will not enable OCR."}
+                  </p>
+                )}
               </div>
-              <div className="flex items-center justify-between rounded-[14px] border border-line bg-elevated px-4 py-3">
-                <div>
-                  <span className="block text-[12px] font-medium text-fg">Semantic model</span>
-                  <span className="block text-[11px] text-muted">Neural tier for better recall</span>
+
+              <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <span className="block text-[12px] font-medium text-fg">Semantic model</span>
+                    <span className="block text-[11px] text-muted">
+                      Optional neural tier for better recall
+                    </span>
+                  </div>
+                  {modelsStatus?.ready ? (
+                    <span className="flex h-8 items-center gap-1.5 rounded-[10px] px-2 text-[11px] text-success">
+                      <Check className="h-3.5 w-3.5" /> Ready
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={modelsStatus?.downloading}
+                      onClick={async () => {
+                        setPackError(null);
+                        try {
+                          await invoke("download_models");
+                          const status = await invoke<ModelsStatus>("get_models_status");
+                          setModelsStatus(status);
+                        } catch (e) {
+                          setPackError(`Model download failed: ${String(e)}`);
+                        }
+                      }}
+                      className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                    >
+                      {modelsStatus?.downloading ? (
+                        <>
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> Downloading…
+                        </>
+                      ) : (
+                        <>
+                          <Download className="h-3.5 w-3.5" /> Download
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try { await invoke("download_models"); } catch (e) { console.error(e); }
-                  }}
-                  className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong"
-                >
-                  <Download className="h-3.5 w-3.5" /> Download
-                </button>
+                {modelsStatus?.downloading && modelsStatus.progress && (
+                  <div className="space-y-1 pt-2">
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-sunken">
+                      <div
+                        className="h-full rounded-full bg-accent transition-[width] duration-300"
+                        style={{
+                          width: `${Math.max(
+                            4,
+                            modelsStatus.progress.total > 0
+                              ? Math.round(
+                                  (modelsStatus.progress.downloaded / modelsStatus.progress.total) * 100,
+                                )
+                              : 0,
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-[10px] text-subtle">
+                      <code className="min-w-0 truncate font-mono">
+                        {modelsStatus.progress.file || "downloading…"}
+                      </code>
+                      <span className="shrink-0 font-mono">
+                        {(modelsStatus.progress.downloaded / 1048576).toFixed(1)} /{" "}
+                        {(modelsStatus.progress.total / 1048576).toFixed(1)} MB
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {modelsStatus?.error && !modelsStatus.downloading && (
+                  <p className="pt-1.5 text-[11px] text-danger">{modelsStatus.error}</p>
+                )}
               </div>
             </div>
+
+            {packError && (
+              <p className="break-words rounded-[10px] border border-danger/30 bg-danger/5 px-3 py-2 font-mono text-[10px] text-danger">
+                {packError}
+              </p>
+            )}
           </div>
         )}
 
