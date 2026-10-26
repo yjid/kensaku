@@ -22,7 +22,7 @@ const PRESETS: Record<string, string[]> = {
 };
 
 export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void }) {
-  const [step, setStep] = useState<0 | 1 | 2>(0);
+  const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
   const [suggestedDirs, setSuggestedDirs] = useState<string[]>([]);
   const [selectedDirs, setSelectedDirs] = useState<string[]>([]);
   const [customDirInput, setCustomDirInput] = useState("");
@@ -159,7 +159,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
-            {[0, 1, 2].map((s) => (
+            {[0, 1, 2, 3].map((s) => (
               <span
                 key={s}
                 className={`h-1 w-6 rounded-full transition-colors duration-300 ${
@@ -308,13 +308,51 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             />
           </div>
         )}
+        {step === 3 && (
+          <div className="w-full max-w-lg space-y-4">
+            <div className="pb-1">
+              <h2 className="text-[16px] font-semibold tracking-tight text-fg">
+                Preferences
+              </h2>
+              <p className="text-[12px] text-muted">
+                Theme and global shortcut. Everything else stays in Settings.
+              </p>
+            </div>
+            <div className="flex items-center justify-between rounded-[14px] border border-line bg-elevated px-4 py-3">
+              <div>
+                <span className="block text-[12px] font-medium text-fg">Theme</span>
+                <span className="block text-[11px] text-muted">paper or void</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTheme(theme === "paper" ? "void" : "paper")}
+                className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong"
+              >
+                {theme === "paper" ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
+                {theme}
+              </button>
+            </div>
+            <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+              <span className="block text-[12px] font-medium text-fg">Global shortcut</span>
+              <span className="block text-[11px] text-muted">Toggles the window anywhere.</span>
+              <input
+                type="text"
+                value={shortcut}
+                onChange={(e) => setShortcut(e.target.value)}
+                className="mt-2 h-9 w-40 rounded-[10px] border border-line bg-bg px-3 font-mono text-[11px] text-fg outline-none transition-colors focus:border-accent"
+              />
+            </div>
+          </div>
+        )}
+
       </main>
 
       {/* Footer: step nav */}
       <footer className="flex h-16 shrink-0 items-center justify-between border-t border-line px-5">
         <div className="min-w-0 text-[11px] text-subtle">
           {step === 1 && `${selectedDirs.length} folder${selectedDirs.length === 1 ? "" : "s"} selected`}
-          {step === 2 && (
+          {step === 2 && `${excludedDirs.length} ignored names`}
+          {step === 3 && (
             <span className="font-mono">
               shortcut{" "}
               <input
@@ -331,16 +369,16 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
           {step > 0 && (
             <button
               type="button"
-              onClick={() => setStep((s) => (s - 1) as 0 | 1 | 2)}
+              onClick={() => setStep((s) => (s - 1) as 0 | 1 | 2 | 3)}
               className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-muted transition-colors hover:border-line-strong hover:text-fg"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Back
             </button>
           )}
-          {step < 2 ? (
+          {step < 3 ? (
             <button
               type="button"
-              onClick={() => setStep((s) => (s + 1) as 0 | 1 | 2)}
+              onClick={() => setStep((s) => (s + 1) as 0 | 1 | 2 | 3)}
               disabled={step === 1 && selectedDirs.length === 0}
               className="flex h-8 items-center gap-1.5 rounded-[10px] bg-accent px-4 text-[12px] font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
             >
