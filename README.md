@@ -196,7 +196,7 @@ network. Full contract: [docs/AGENTS.md](docs/AGENTS.md).
 
 ## Status
 
-`v0.3.0` — usable daily. Working: durable incremental index, full query language,
+`v0.3.3` — usable daily. Working: durable incremental index, full query language,
 hybrid ranking, documents + OCR, image thumbnails and near-duplicates, agent
 CLI/MCP, two themes, Doctor, Stats for Nerds, factory reset, tests and CI.
 
