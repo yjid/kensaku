@@ -212,6 +212,7 @@ pub fn run() {
             commands::get_config,
             commands::save_config,
             commands::is_setup_complete,
+            commands::is_setup_configured,
             commands::complete_setup,
             commands::get_suggested_directories,
             commands::hide_window,

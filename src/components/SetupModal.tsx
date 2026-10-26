@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Check, Plus, X, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon } from "lucide-react";
 import { EmptyState } from "./EmptyState";
 import { useTheme } from "../hooks/useTheme";
+import type { IndexingStatus } from "../types";
 
 /* First run: three screens, one decision each.
    1 Welcome → 2 Pick folders → 3 Exclusions + start. */
@@ -29,6 +30,8 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const [customExcludeInput, setCustomExcludeInput] = useState("");
   const [shortcut, setShortcut] = useState("Alt+Space");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanStatus, setScanStatus] = useState<IndexingStatus | null>(null);
   const { theme, setTheme } = useTheme();
 
   useEffect(() => {
@@ -38,7 +41,40 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         if (dirs.length > 0) setSelectedDirs(dirs.slice(0, 3));
       })
       .catch((err) => console.error("Failed to load suggested dirs:", err));
+
+    // Resume an interrupted first scan: if setup is already configured but the
+    // first scan never finished, skip straight to the scanning state.
+    invoke<boolean>("is_setup_configured")
+      .then((configured) => {
+        if (configured) setScanning(true);
+      })
+      .catch(() => {});
   }, []);
+
+  // Poll indexing status while scanning; finish when the crawl completes.
+  useEffect(() => {
+    if (!scanning) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const st = await invoke<IndexingStatus>("get_indexing_status");
+        if (cancelled) return;
+        setScanStatus(st);
+        const done = await invoke<boolean>("is_setup_complete");
+        if (done) {
+          if (!cancelled) onSetupCompleted();
+        }
+      } catch (err) {
+        console.error("Scan status error:", err);
+      }
+    };
+    tick();
+    const interval = setInterval(tick, 800);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [scanning, onSetupCompleted]);
 
   const toggleDir = (dir: string) =>
     setSelectedDirs((prev) =>
@@ -62,7 +98,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         excludedDirs: excludedDirs,
         shortcut: shortcut,
       });
-      onSetupCompleted();
+      setScanning(true);
     } catch (err) {
       console.error("Setup failed:", err);
       alert("Setup failed: " + err);
@@ -70,6 +106,48 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
       setIsSubmitting(false);
     }
   };
+
+  if (scanning) {
+    const st = scanStatus;
+    const files = st?.files_indexed ?? 0;
+    const content = st?.content_indexed ?? 0;
+    const units = st?.units_indexed ?? 0;
+    const phase = st?.phase ?? "walking";
+    return (
+      <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-bg px-8 text-center">
+        <div className="flex flex-col items-center gap-2">
+          <span className="text-[15px] font-semibold tracking-tight text-fg">Kensaku</span>
+          <span className="font-serif text-[13px] italic text-subtle">検索 — to search</span>
+        </div>
+        <LoaderCircle className="h-8 w-8 animate-spin text-accent" />
+        <div className="space-y-1">
+          <h1 className="text-[18px] font-semibold tracking-tight text-fg">
+            Indexing your files…
+          </h1>
+          <p className="text-[12px] text-muted">
+            {st?.current_status ?? "Starting scan…"}
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-6 text-center">
+          <div>
+            <div className="font-mono text-[20px] font-semibold text-fg">{files.toLocaleString()}</div>
+            <div className="text-[10px] uppercase tracking-wider text-subtle">files</div>
+          </div>
+          <div>
+            <div className="font-mono text-[20px] font-semibold text-fg">{content.toLocaleString()}</div>
+            <div className="text-[10px] uppercase tracking-wider text-subtle">documents</div>
+          </div>
+          <div>
+            <div className="font-mono text-[20px] font-semibold text-fg">{units.toLocaleString()}</div>
+            <div className="text-[10px] uppercase tracking-wider text-subtle">embedded</div>
+          </div>
+        </div>
+        <p className="max-w-sm text-[11px] text-subtle">
+          Phase: {phase}. This only happens on the first run. Later launches are instant.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="absolute inset-0 z-50 flex flex-col bg-bg">
