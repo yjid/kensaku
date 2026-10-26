@@ -437,6 +437,7 @@ impl SearchDispatcher {
             SortOrder::Best,
             &[],
             0,
+            None,
         )
     }
 
@@ -465,6 +466,7 @@ impl SearchDispatcher {
             SortOrder::Best,
             &[],
             0,
+            None,
         )
     }
 
@@ -493,6 +495,7 @@ impl SearchDispatcher {
             SortOrder::Best,
             aliases,
             0,
+            None,
         )
     }
 
@@ -523,6 +526,7 @@ impl SearchDispatcher {
             SortOrder::Best,
             &[],
             0,
+            None,
         )
     }
 
@@ -584,6 +588,43 @@ impl SearchDispatcher {
             sort,
             aliases,
             offset,
+            None,
+        )
+    }
+
+    /// Exhaustive keyset pagination: like
+    /// [`Self::search_response_fast_sorted_with_snippets`] but only returning
+    /// matches strictly after `start_after` (a path keyset cursor). Used by
+    /// the agent surfaces to page past the 10k exhaustive cap without
+    /// materialising more than one window at a time. Sort is forced to path
+    /// order: keyset pagination is only meaningful over a stable order.
+    #[allow(clippy::too_many_arguments)]
+    pub fn search_response_exhaustive_after(
+        raw_query: &str,
+        metadata: &MetadataStore,
+        content_index: &Option<ContentIndex>,
+        unit_store: Option<&UnitStore>,
+        semantic_enabled: bool,
+        limit: usize,
+        seq: u64,
+        aliases: &[(String, Vec<String>)],
+        start_after: &str,
+        with_snippets: bool,
+    ) -> SearchResponse {
+        Self::search_response_with_snippets(
+            raw_query,
+            metadata,
+            content_index,
+            unit_store,
+            None,
+            semantic_enabled,
+            limit,
+            seq,
+            with_snippets,
+            SortOrder::Best,
+            aliases,
+            0,
+            Some(start_after),
         )
     }
 
@@ -616,6 +657,7 @@ impl SearchDispatcher {
             sort,
             aliases,
             offset,
+            None,
         )
     }
 
@@ -633,6 +675,7 @@ impl SearchDispatcher {
         sort: SortOrder,
         aliases: &[(String, Vec<String>)],
         offset: usize,
+        start_after: Option<&str>,
     ) -> SearchResponse {
         let start_time = SystemTime::now();
         let trimmed = raw_query.trim();
@@ -820,8 +863,13 @@ impl SearchDispatcher {
                 &regex_patterns,
                 EXHAUSTIVE_LIMIT,
                 &mut hints,
+                start_after,
             );
-            apply_sort(&mut results, sort);
+            // Keyset pages must stay path-ordered for the cursor to work;
+            // user sorts only apply to offset-based pages.
+            if start_after.is_none() {
+                apply_sort(&mut results, sort);
+            }
             let total = results.len();
             let facets = compute_facets(&results, now_sec);
             if results.len() > EXHAUSTIVE_LIMIT {
@@ -1366,12 +1414,23 @@ fn exhaustive_results(
     regex_patterns: &[&str],
     cap: usize,
     hints: &mut Vec<String>,
+    start_after: Option<&str>,
 ) -> Vec<SearchResult> {
     let mut results = Vec::new();
+
+    let after_keyset = |path: &std::path::Path| -> bool {
+        match start_after {
+            Some(start) => path.as_os_str() > std::ffi::OsStr::new(start),
+            None => true,
+        }
+    };
 
     if groups.is_empty() && regex_patterns.is_empty() {
         for &idx in candidate_indices {
             if let Some(entry) = entries.get(idx) {
+                if !after_keyset(&entry.path) {
+                    continue;
+                }
                 results.push(SearchResult {
                     path: entry.path.to_string_lossy().to_string(),
                     filename: entry.name.clone(),
@@ -1391,6 +1450,9 @@ fn exhaustive_results(
         let outcome = c_index.search_groups_with_regex(groups, regex_patterns, cap, None);
         hints.extend(outcome.hints);
         for cm in outcome.matches {
+            if !after_keyset(&cm.path) {
+                continue;
+            }
             let Some(&idx) = path_index.get(&cm.path) else {
                 continue;
             };
@@ -1885,6 +1947,7 @@ mod tests {
             &[],
             EXHAUSTIVE_LIMIT,
             &mut hints,
+            None,
         );
 
         // A normal display limit (e.g. 5) must not apply here.

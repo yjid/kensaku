@@ -12,9 +12,11 @@ import {
   Facets,
   HomeData,
   KensakuConfig,
+  LlmCompileOutcome,
 } from "./types";
 import { SetupModal } from "./components/SetupModal";
 import { DuplicatesModal } from "./components/DuplicatesModal";
+import { AskPanel } from "./components/AskPanel";
 import { SlashMenu, SlashCommand } from "./components/SlashMenu";
 import { ScopeMenu } from "./components/ScopeMenu";
 import { HomeView } from "./components/HomeView";
@@ -31,6 +33,7 @@ import {
   RefreshCw,
   Copy,
   FileText,
+  Sparkles,
   Sun,
   Moon,
   Image as ImageIcon,
@@ -85,6 +88,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<string | undefined>(undefined);
   const [showDuplicates, setShowDuplicates] = useState(false);
+  const [showAsk, setShowAsk] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
   const [scopeItems, setScopeItems] = useState<string[]>([]);
   const [scopeIndex, setScopeIndex] = useState(0);
@@ -184,6 +188,50 @@ function App() {
 
   /* ---------------- search (stale-while-revalidate) ---------------- */
 
+  /**
+   * Optional LLM refinement (Settings → Agents → Local AI). Deterministic
+   * results are already on screen; when the local model produces a *valid
+   * compiled* refinement that differs from the raw text, its results replace
+   * them and its chips are shown. Best-effort: any failure keeps the
+   * deterministic results.
+   */
+  const refineWithLlm = useCallback(async (seq: number, raw: string, currentSort: string) => {
+    const trimmed = raw.trim();
+    if (
+      !trimmed ||
+      trimmed.startsWith("/") ||
+      trimmed.split(/\s+/).some((t) => t.includes(":") && !t.startsWith("http"))
+    ) {
+      return;
+    }
+    try {
+      const outcome = await invoke<LlmCompileOutcome>("llm_compile_query", { query: raw });
+      if (seq < currentSeqRef.current || queryRef.current !== raw) return;
+      if (outcome.status !== "compiled" || !outcome.compiled) return;
+      const compiled = outcome.compiled;
+      if (compiled.query.trim() === trimmed) {
+        if (compiled.chips.length > 0) setInterpretation(compiled.chips);
+        return;
+      }
+      const res = await invoke<SearchResponse>("search", {
+        query: compiled.query,
+        sort: compiled.sort ?? currentSort,
+        seq,
+      });
+      if (seq >= currentSeqRef.current && queryRef.current === raw) {
+        setResults(res.results);
+        setTotal(res.total ?? res.results.length);
+        setActiveFilters(res.active_filters);
+        setHints(res.hints);
+        setInterpretation(compiled.chips.length > 0 ? compiled.chips : (res.interpretation ?? []));
+        setFacets(res.facets);
+        setSelectedIndex(0);
+      }
+    } catch {
+      // Refinement is best-effort; deterministic results stay.
+    }
+  }, []);
+
   useEffect(() => {
     setFacetInclude(new Set());
     setFacetExclude(new Set());
@@ -258,6 +306,8 @@ function App() {
           // no-IntersectionObserver fallback) so off-screen rows never pay
           // for content reads.
         }
+        // Best-effort LLM refinement runs after deterministic results land.
+        void refineWithLlm(seq, query, sort);
       } catch (err) {
         console.error("Search error:", err);
       } finally {
@@ -266,7 +316,7 @@ function App() {
     }, 40);
 
     return () => clearTimeout(timer);
-  }, [query, sort, isSetupComplete]);
+  }, [query, sort, isSetupComplete, refineWithLlm]);
 
   // Fetch snippets only for rows that are actually visible (or the first 20
   // when IntersectionObserver is unavailable). Results are patched by path
@@ -524,6 +574,7 @@ function App() {
       { id: "errors", name: "errors", label: "error", description: "Search for error text", icon: TriangleAlert, run: () => focus("error ") },
       { id: "diagrams", name: "diagrams", label: "diagram", description: "Search for diagrams", icon: FileCode, run: () => focus("diagram ") },
       { id: "dupes", name: "dupes", label: "review", description: "Find duplicate files and images", icon: Copy, run: () => { setQuery(""); setShowDuplicates(true); } },
+      { id: "ask", name: "ask", label: "answers", description: "Ask your files (local model, cited)", icon: Sparkles, run: () => { setQuery(""); setShowAsk(true); } },
       { id: "reindex", name: "reindex", label: "action", description: "Re-scan watched folders", icon: RefreshCw, run: () => { setQuery(""); handleRunCommand("/reindex"); } },
       { id: "doctor", name: "doctor", label: "action", description: "Index health report", icon: Stethoscope, run: () => { setQuery(""); handleRunCommand("/doctor"); } },
       { id: "settings", name: "settings", label: "⌘,", description: "Open Settings", icon: SettingsIcon, run: () => { setQuery(""); openSettings(); } },
@@ -700,7 +751,9 @@ function App() {
         }
       } else if (e.key === "Escape") {
         e.preventDefault();
-        if (commandOutput) {
+        if (showAsk) {
+          setShowAsk(false);
+        } else if (commandOutput) {
           setCommandOutput(null);
         } else if (query) {
           setQuery("");
@@ -710,7 +763,7 @@ function App() {
         }
       }
     },
-    [showSettings, showDuplicates, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope],
+    [showSettings, showDuplicates, showAsk, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope],
   );
 
   /* ---------------- render ---------------- */
@@ -760,6 +813,11 @@ function App() {
       {isSetupComplete === true && (
         <>
           {showDuplicates && <DuplicatesModal onClose={() => setShowDuplicates(false)} />}
+          <AskPanel
+            open={showAsk}
+            onClose={() => setShowAsk(false)}
+            onOpenFile={(path) => void handleOpenFile(path)}
+          />
 
           {/* Search bar */}
           {showSettings && (

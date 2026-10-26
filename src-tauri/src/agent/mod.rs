@@ -4,7 +4,10 @@
 //! reads the index built by the GUI: there is no in-app AI, no LLM call and no
 //! network access anywhere on this path.
 
+pub mod connect;
+pub mod http;
 pub mod mcp;
+pub mod symbols;
 
 use crate::config::KensakuConfig;
 use crate::embed::{ModelRegistry, UnitStore};
@@ -356,6 +359,20 @@ impl AgentSession<'_> {
         matches!(self, Self::Daemon)
     }
 
+    /// Configured agent-scope roots, fetched once per call. Empty means the
+    /// whole index is visible to agents.
+    pub fn scoped_roots(&self) -> Vec<String> {
+        match self {
+            Self::Daemon => crate::daemon::request("get_config", json!({}))
+                .ok()
+                .and_then(|value| serde_json::from_value::<KensakuConfig>(value).ok())
+                .map(|config| config.agent_scoped_roots)
+                .unwrap_or_default(),
+            Self::Local(index) => index.config.agent_scoped_roots.clone(),
+            Self::None => Vec::new(),
+        }
+    }
+
     pub fn search_page(
         &self,
         query: &str,
@@ -376,6 +393,49 @@ impl AgentSession<'_> {
                 serde_json::from_value(value).map_err(|e| e.to_string())
             }
             Self::Local(index) => index.search_local_page(query, limit, offset),
+            Self::None => Err(NO_INDEX_MESSAGE.to_string()),
+        }
+    }
+
+    /// Keyset-paginated exhaustive search: matches strictly after
+    /// `start_after` (a path), for pagination past the 10k exhaustive cap.
+    pub fn search_page_after(
+        &self,
+        query: &str,
+        limit: usize,
+        start_after: &str,
+    ) -> Result<SearchResponse, String> {
+        match self {
+            Self::Daemon => {
+                let value = crate::daemon::request(
+                    "search",
+                    json!({
+                        "query": query,
+                        "limit": limit,
+                        "offset": 0,
+                        "snippets": false,
+                        "start_after": start_after,
+                        "mode": "exhaustive",
+                    }),
+                )?;
+                serde_json::from_value(value).map_err(|e| e.to_string())
+            }
+            Self::Local(index) => {
+                // Callers pass a composed query that already carries
+                // `mode:exhaustive`; the keyset filter does the rest.
+                Ok(SearchDispatcher::search_response_exhaustive_after(
+                    query.trim(),
+                    &index.metadata,
+                    &index.content,
+                    Some(&index.units),
+                    index.config.semantic_enabled,
+                    limit,
+                    0,
+                    &index.config.alias_pairs(),
+                    start_after,
+                    false,
+                ))
+            }
             Self::None => Err(NO_INDEX_MESSAGE.to_string()),
         }
     }
@@ -452,6 +512,103 @@ impl AgentSession<'_> {
     }
 }
 
+/// Applies the configured agent-scope roots to an optional requested path.
+///
+/// - No roots configured: pass the request through unchanged.
+/// - Roots configured: a requested path must live under one of them (else
+///   the request is rejected); an absent path defaults to the union of the
+///   roots.
+///
+/// Returns the scope paths to append as `in:"..."` tokens, or an error for
+/// out-of-scope requests.
+pub fn agent_scope_paths(
+    roots: &[String],
+    requested: Option<&str>,
+) -> Result<Vec<String>, String> {
+    if roots.is_empty() {
+        return Ok(requested
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+            .map(|path| vec![path.to_string()])
+            .unwrap_or_default());
+    }
+
+    let requested = requested.map(str::trim).filter(|path| !path.is_empty());
+    if let Some(path) = requested {
+        let normalized = normalize_scope_path(path);
+        for root in roots {
+            let root_norm = normalize_scope_path(root);
+            if normalized == root_norm
+                || normalized.starts_with(&format!("{}/", root_norm.trim_end_matches('/')))
+            {
+                return Ok(vec![path.to_string()]);
+            }
+        }
+        return Err(format!(
+            "path is outside the configured agent scope: {}",
+            path
+        ));
+    }
+    Ok(roots.to_vec())
+}
+
+/// Expands a leading `~` so scope comparisons work for `~/Projects` style
+/// roots; everything else is compared as given.
+fn normalize_scope_path(path: &str) -> String {
+    let path = path.trim();
+    if let Some(rest) = path.strip_prefix('~')
+        && let Some(home) =
+            std::env::var_os("HOME").or_else(|| dirs::home_dir().map(|p| p.into_os_string()))
+    {
+        let mut expanded = home.to_string_lossy().into_owned();
+        if !expanded.ends_with('/') && !rest.starts_with('/') {
+            expanded.push('/');
+        }
+        expanded.push_str(rest);
+        return expanded.trim_end_matches('/').to_string();
+    }
+    path.trim_end_matches('/').to_string()
+}
+
+/// True when `path` is within the configured agent-scope roots (or no roots
+/// are configured). Used to gate `read_snippet`-style single-path reads.
+pub fn agent_path_allowed(roots: &[String], path: &str) -> bool {
+    if roots.is_empty() {
+        return true;
+    }
+    let normalized = normalize_scope_path(path);
+    roots.iter().any(|root| {
+        let root_norm = normalize_scope_path(root);
+        normalized == root_norm
+            || normalized.starts_with(&format!("{}/", root_norm.trim_end_matches('/')))
+    })
+}
+
+/// Composes a Kensaku query from a base query plus one or more scope paths.
+///
+/// Like [`compose_query`], but every scope path becomes an `in:"..."` token
+/// (multiple include scopes are OR'd by the parser — the agent-scope union).
+pub fn compose_query_scoped(
+    base: &str,
+    scope_paths: &[String],
+    ext: Option<&str>,
+    modified_after: Option<&str>,
+    exhaustive: bool,
+) -> String {
+    let (first, rest) = match scope_paths.split_first() {
+        Some((first, rest)) => (Some(first.as_str()), rest),
+        None => (None, &[][..]),
+    };
+    let mut composed = compose_query(base, first, ext, modified_after, exhaustive);
+    for path in rest {
+        if !composed.is_empty() {
+            composed.push(' ');
+        }
+        composed.push_str(&format!("in:\"{}\"", escape_query_value(path)));
+    }
+    composed
+}
+
 /// Composes a Kensaku query from a base query plus optional agent filters.
 ///
 /// Paths are quoted so a path containing spaces (or a `:` / `"`) survives the
@@ -509,6 +666,19 @@ pub fn truncate_chars(text: &str, max_chars: usize) -> String {
         return text.to_string();
     }
     text.chars().take(max_chars).collect()
+}
+
+/// Random-enough token for a loopback-only local socket or HTTP endpoint.
+///
+/// Not cryptographic: the threat model is other local processes, and the
+/// token file is 0600. Same scheme the daemon uses for its socket token.
+pub fn new_connection_token() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{:x}-{:x}", std::process::id(), nanos)
 }
 
 /// Unix timestamp (seconds) used for `as_of` / freshness fields.

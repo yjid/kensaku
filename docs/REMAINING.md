@@ -137,25 +137,39 @@ These are the highest-leverage gaps. None require a new model.
       socket or Windows named pipe and fall back read-only when it is absent.
       See [ROADMAP K1](ROADMAP.md#k1-daemon-split-epic). (ROADMAP K1; release
       packaging of the daemon sidecar remains in section F.)
-- [ ] **Local HTTP/SSE endpoint** — loopback only, token auth, read-only.
-      Needed for web-capable MCP clients and long-lived agents. Follows K1.
-      (ROADMAP K1)
-- [ ] **One-click agent connect** — generated configs and live status for
-      Claude Desktop/Code, Cursor, and other MCP clients. Keep a manual JSON
-      fallback in Settings → Agents. (ROADMAP K1, K8)
-- [ ] **Local LLM query compiler** — optional Ollama/LM Studio. Natural
-      language → strict JSON AST, validated, cached, shown as chips. The LLM
-      never retrieves on its own.
-- [ ] **`/ask` with citations** — local model answers from retrieval results,
-      with path and line citations. No retrieval, no answer. No cloud by
-      default; per-use consent if a cloud provider is configured.
-- [ ] **Agent surface v2** — `find_symbol` (tree-sitter), `.gitignore` /
-      `.cursorignore` parity, pagination beyond the 10k exhaustive cap,
-      optional read-only scoping per root, daemon-backed MCP. Add `reindex`,
-      `health_check`, pagination cursors, and per-tool token budgets; see
-      [ROADMAP K8](ROADMAP.md#k8-mcp-v2). (ROADMAP K8, K1, K10)
-- [ ] **Image/agent tools** — expose visual search and similar-image lookup
-      once the visual tier exists; keep snippets token-budgeted. (ROADMAP K6, K3)
+- [x] **Local HTTP/SSE endpoint** — `kensaku-cli serve`: loopback-only HTTP
+      with bearer-token auth (token in `<config>/http.token`, 0600). MCP
+      Streamable HTTP on `POST /mcp` (JSON, or SSE with `Accept:
+      text/event-stream`), plus read-only `GET /health`, `GET /search`, and
+      `GET /events` keepalive. Stateless: `reindex` is never enabled on this
+      transport. Hand-rolled on `std::net`, no HTTP framework.
+- [x] **One-click agent connect** — detected status and one-click merge for
+      Claude Desktop, Claude Code, and Cursor in Settings → Agents, with a
+      `.bak` backup and a manual JSON fallback; `kensaku-cli connect
+      <client> [--write]` does the same from the shell.
+- [x] **Local LLM query compiler** — optional Ollama / LM Studio /
+      OpenAI-compatible endpoint. Natural language → strict JSON, validated
+      token-by-token against the query grammar (regex and unknown keys are
+      rejected), LRU-cached, shown as removable chips. The deterministic
+      compiler is authoritative: when it already produced chips or a sort, no
+      model call happens. The LLM never retrieves on its own.
+- [x] **`/ask` with citations** — local model answers strictly from retrieval
+      results, with path + line citations; uncited context stays listed,
+      invalid citation markers are stripped, and zero results return "no
+      answer" rather than a guess. No retrieval, no answer. No cloud by
+      default; per-use consent for non-loopback endpoints. Available as
+      `/ask` in the app and `kensaku-cli ask`.
+- [x] **Agent surface v2** — `find_symbol` (tree-sitter: Rust, Python,
+      JavaScript, TypeScript; content-index prefilter, bounded parse), 
+      `.gitignore` / `.cursorignore` parity (common pattern syntax, honoring
+      ignore files by default; `include_ignored` opts out), keyset
+      pagination past the 10k exhaustive cap (`k2-` path cursors), and
+      read-only scoping per root (`agent_scoped_roots` enforced on search
+      and snippet reads). `reindex`, `health_check`, pagination cursors, and
+      per-tool token budgets shipped in K8.
+- [-] **Image/agent tools** — skipped while the vision logic is beta. The
+      `similar_images` tool exists and self-hides until the visual tier is
+      wired into search; expose visual search alongside it later. (ROADMAP K6, K3)
 
 ## D. Search quality & performance
 
