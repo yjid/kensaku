@@ -122,7 +122,7 @@ These are the highest-leverage gaps. None require a new model.
       (ROADMAP K1)
 - [ ] **One-click agent connect** — generated configs and live status for
       Claude Desktop/Code, Cursor, and other MCP clients. Keep a manual JSON
-      fallback in Settings → Agents.
+      fallback in Settings → Agents. (ROADMAP K1, K8)
 - [ ] **Local LLM query compiler** — optional Ollama/LM Studio. Natural
       language → strict JSON AST, validated, cached, shown as chips. The LLM
       never retrieves on its own.
@@ -133,57 +133,63 @@ These are the highest-leverage gaps. None require a new model.
       `.cursorignore` parity, pagination beyond the 10k exhaustive cap,
       optional read-only scoping per root, daemon-backed MCP. Add `reindex`,
       `health_check`, pagination cursors, and per-tool token budgets; see
-      [ROADMAP K8](ROADMAP.md#k8-mcp-v2).
+      [ROADMAP K8](ROADMAP.md#k8-mcp-v2). (ROADMAP K8, K1, K10)
 - [ ] **Image/agent tools** — expose visual search and similar-image lookup
-      once the visual tier exists; keep snippets token-budgeted.
+      once the visual tier exists; keep snippets token-budgeted. (ROADMAP K6, K3)
 
 ## D. Search quality & performance
 
 - [ ] **E2 extension interning** — `FileEntry.extension: Option<String>` is
       128 B per entry. A `u16` intern table saves ~6–12 MB per 1M files.
-      Part of [ROADMAP K2](ROADMAP.md#k2-compact-metadata-arena).
+      Part of [ROADMAP K2](ROADMAP.md#k2-compact-metadata-arena). (ROADMAP K2)
 - [~] **B4 full pushdown** — scope paths are now pushed into the Tantivy query
       as a path-prefix clause. `ext` / `size` fast fields still need schema work
-      and a rebuild before those filters can be pushed too.
+      and a rebuild before those filters can be pushed too. (ROADMAP K12)
 - [ ] **1M-file prefilter** — K12 measured the content-tier alternatives at
       1M synthetic documents. FTS5 trigram used 918 MB and was ~900× slower on
       broad BM25, so keep Tantivy + folded; a separate bounded prefilter is
       still the next option if filename search exceeds the <15 ms budget. See
-      [the decision memo](decisions/index-format.md).
+      [the decision memo](decisions/index-format.md). (ROADMAP K12)
 - [ ] **Metadata arena** — still `Vec<FileEntry>` + `HashMap<PathBuf, usize>`.
       A compact arena (name bytes + parent id + attrs ≈ 40–50 B/entry) cuts the
       footprint ~3×. Target: 1M entries ≤ 100 MB (stretch 64 MB). Full task:
-      [ROADMAP K2](ROADMAP.md#k2-compact-metadata-arena).
+      [ROADMAP K2](ROADMAP.md#k2-compact-metadata-arena). (ROADMAP K2)
 - [ ] **Embedding table quantization** — the static table is ~30 MB f32 today;
       i8 with scales targets ~8 MB with a golden-set quality check. Task:
       [ROADMAP K14](ROADMAP.md#k14-quantize-the-static-embedding-table-to-i8).
+      (ROADMAP K14)
 - [ ] **Thumbnail-based image hashing + memory release** — generate the 480 px
       thumbnail once, hash it (~2.4 ms), reuse it for the grid, and return freed
       pages after each image/PDF (`malloc_trim`, `malloc_zone_pressure_relief`,
       `EmptyWorkingSet`). Task: [ROADMAP K3](ROADMAP.md#k3-thumbnail-based-hashing--memory-release).
+      (ROADMAP K3)
 - [ ] **Lazy snippets and line highlighting** — return result metadata only;
       fetch snippets for visible rows. This is the difference between 60–90 ms
       and 1–10 ms on broad queries. Task: [ROADMAP K4](ROADMAP.md#k4-lazy-snippets-and-line-highlighting).
+      (ROADMAP K4)
 - [ ] **Folded / trigram content tier** — substring and OCR-error tolerance
       (`nutsmp` → `donutsmp.net`, `0RDER` → `ORDER`), ranked after exact matches
       with raw-text verification. Task: [ROADMAP K5](ROADMAP.md#k5-folded--trigram-content-tier).
+      (ROADMAP K5)
 - [ ] **Optional high-accuracy OCR pack** — PaddleOCR PP-OCRv6 or native
       macOS/Windows OCR for UI screenshots; Tesseract stays the fast default.
-      Task: [ROADMAP K6](ROADMAP.md#k6-optional-high-accuracy-ocr-pack).
+      Task: [ROADMAP K6](ROADMAP.md#k6-optional-high-accuracy-ocr-pack). (ROADMAP K6)
 - [ ] **Idle/battery scheduling + watcher robustness** — `SCHED_IDLE`/ioprio,
       `PRIO_DARWIN_BG`, battery pacing, pause, 400 ms settle, still-writing
       retry, newest-first fresh files. Task: [ROADMAP K7](ROADMAP.md#k7-scheduling-and-watcher-robustness).
+      (ROADMAP K7)
 - [ ] **Search-result grouping** — collapse near-identical screenshots/versions
       at write time (text overlap + thumbnail dHash), like screenshot bursts.
-      Task: [ROADMAP K11](ROADMAP.md#k11-search-result-grouping).
+      Task: [ROADMAP K11](ROADMAP.md#k11-search-result-grouping). (ROADMAP K11)
 - [ ] **Tantivy writer pipeline** — extraction is parallel; `add_document` and
       commits are still single-threaded. Benchmark before changing; see K12.
+      (ROADMAP K12)
 - [ ] **Golden query set in CI** — a frozen set of 40–50 labelled queries with
       recall@5, MRR, NDCG, and latency thresholds. Include intent queries
       ("latest resume", "screenshots from last week", "docker error in
-      Projects") alongside lexical and semantic ones.
+      Projects") alongside lexical and semantic ones. (ROADMAP K4, K5, K14)
 - [ ] **Facet latency tests** — counts and toggles must hold their budgets at
-      100k and 1M files.
+      100k and 1M files. (ROADMAP K4)
 
 ## E. Correctness, privacy & robustness
 
@@ -198,6 +204,7 @@ These are the highest-leverage gaps. None require a new model.
       `sinceWhen` replay. Today only generic notify events + reconcile.
 - [ ] **Reset smoke test** — the marker/restart path is verified by inspection.
 - [ ] **Doctor depth** — disk-space headroom and per-root permission checks.
+      (ROADMAP K9)
 - [ ] **Face-data controls** — explicit delete-all, storage location, and an
       audit trail before the feature ships.
 - [ ] **Cloud-consent UX** — a visible indicator whenever a query or snippet
@@ -210,7 +217,7 @@ These are the highest-leverage gaps. None require a new model.
 - [ ] **Auto-updater** — Tauri updater plugin + signing keys + release channel.
 - [ ] **Icons / tray artwork** — still placeholder Tauri icons.
 - [ ] **Demo GIF + published benchmark post** — the numbers and methodology
-      exist in `docs/BENCHMARKS.md`; the artifacts do not.
+      exist in `docs/BENCHMARKS.md`; the artifacts do not. (ROADMAP K12)
 - [ ] **Release workflow assets** — CLI binaries currently upload as workflow
       artifacts; moving them to the draft release needs `needs:` + `gh release
       upload` plumbing.
