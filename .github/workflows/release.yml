@@ -144,6 +144,7 @@ jobs:
       - name: Build universal macOS CLI
         if: matrix.platform == 'macos-latest'
         run: |
+          rustup target add x86_64-apple-darwin
           cargo build --release --manifest-path cli/Cargo.toml --target x86_64-apple-darwin
           mkdir -p dist
           lipo -create \
