@@ -794,6 +794,15 @@ pub async fn is_setup_configured() -> Result<bool, String> {
 }
 
 #[tauri::command]
+pub async fn run_setup_again() -> Result<(), String> {
+    let mut config = KensakuConfig::load();
+    config.is_setup_complete = false;
+    config.first_scan_done = false;
+    config.save()?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn complete_setup(
     watched_dirs: Vec<String>,
     excluded_dirs: Vec<String>,
