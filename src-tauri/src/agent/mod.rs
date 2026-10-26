@@ -102,6 +102,17 @@ impl HeadlessIndex {
 
     /// Runs a query against the loaded index.
     pub fn search(&self, query: &str, limit: usize) -> Result<SearchResponse, String> {
+        if let Ok(value) = crate::daemon::request(
+            "search",
+            serde_json::json!({"query": query, "limit": limit}),
+        ) && let Ok(response) = serde_json::from_value::<SearchResponse>(value)
+        {
+            return Ok(response);
+        }
+        self.search_local(query, limit)
+    }
+
+    pub fn search_local(&self, query: &str, limit: usize) -> Result<SearchResponse, String> {
         let aliases = self.config.alias_pairs();
         Ok(SearchDispatcher::search_response_with_aliases(
             query,
