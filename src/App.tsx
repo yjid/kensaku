@@ -46,14 +46,6 @@ import {
 } from "lucide-react";
 import "./App.css";
 
-const COMMAND_SUGGESTIONS = [
-  { cmd: ">reindex", desc: "Rebuild and re-scan index for watched folders" },
-  { cmd: ">doctor", desc: "Run health diagnostics and check database state" },
-  { cmd: ">model", desc: "View embedding model specification and status" },
-  { cmd: ">add folder", desc: "Configure a new folder path to index" },
-  { cmd: ">settings", desc: "Open the application settings dialog" },
-];
-
 const VIEW_KEY = "kensaku.view";
 const PREVIEW_KEY = "kensaku.preview";
 
@@ -315,16 +307,6 @@ function App() {
 
   // Results never reorder while typing — sort is backend-provided and stable;
   // nothing needed here beyond identity-stable render keys.
-
-  /* ---------------- recent files for the home bento ---------------- */
-
-  const [recent, setRecent] = useState<SearchResult[]>([]);
-  useEffect(() => {
-    if (!isSetupComplete) return;
-    invoke<SearchResponse>("search", { query: "modified:<7d" })
-      .then((res) => setRecent(res.results))
-      .catch(() => setRecent([]));
-  }, [isSetupComplete]);
 
   /* ---------------- focus + persistence ---------------- */
 
@@ -638,7 +620,7 @@ function App() {
         }
       }
     },
-    [showSettings, showDuplicates, query, results, recent, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope],
+    [showSettings, showDuplicates, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope],
   );
 
   /* ---------------- render ---------------- */
@@ -652,9 +634,6 @@ function App() {
   }
 
   const isCommandMode = query.startsWith("/");
-  const filteredCommands = COMMAND_SUGGESTIONS.filter((s) =>
-    s.cmd.toLowerCase().includes(query.toLowerCase()),
-  );
 
   const hasQuery = query.trim() !== "";
   const displayResults = useMemo(
@@ -672,7 +651,7 @@ function App() {
   // The main page shows files only: preview pane appears when a query has results.
   const showPreview = !isCommandMode && previewOpen && hasQuery;
   // The list keyboard navigation operates over — search results or recent files.
-  const navList = hasQuery ? displayResults : recent;
+  const navList = displayResults;
 
   return (
     <div
@@ -915,31 +894,7 @@ function App() {
                       : "px-2 py-1"
                   }`}
                 >
-                  {isCommandMode ? (
-                    <div className="p-1.5">
-                      <p className="eyebrow pb-2 pt-1">commands — Enter executes</p>
-                      {filteredCommands.length === 0 ? (
-                        <p className="px-2 py-4 text-[12px] text-subtle">Unknown command</p>
-                      ) : (
-                        filteredCommands.map((c) => (
-                          <button
-                            key={c.cmd}
-                            type="button"
-                            onClick={() => {
-                              setQuery(c.cmd);
-                              handleRunCommand(c.cmd);
-                            }}
-                            className="flex h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 text-left transition-colors duration-150 hover:bg-sunken"
-                          >
-                            <Terminal className="h-4 w-4 shrink-0 text-warning" />
-                            <span className="font-mono text-[12px] font-medium text-fg">{c.cmd}</span>
-                            <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{c.desc}</span>
-                            <kbd className="kbd">↵</kbd>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  ) : displayResults.length > 0 ? (
+                  {displayResults.length > 0 ? (
                     view === "list" ? (
                       displayResults.map((res, idx) => (
                         <div key={res.path + idx} data-index={idx}>
