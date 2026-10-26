@@ -24,7 +24,7 @@
 |---|---|
 | K1 | Partial — daemon binary/IPC/CLI/MCP done; GUI client partial; Windows pipe/packaging/read_snippet RPC pending |
 | K2 | Shipped — 92.8 MB at 1M (target ≤ 100 MB) |
-| K3 | Mostly shipped — legacy 320 px fix + thumbnail hashing; backfill/thumbnail-only hashing pending |
+| K3 | Shipped — legacy 320 px fix, thumbnail hashing, one-decode backfill, thumbnail-only hashing |
 | K4 | Partial — visible-only snippets shipped; line boxes/LRU pending |
 | K5 | Shipped — folded tier + verification; verification tightening pending |
 | K6 | Not started — blocked on K9 |
@@ -110,8 +110,8 @@ returns pages between images.
   (Windows).
 - [x] K3.4 Reject legacy 320 px thumbnails for hashing and regenerate them;
   bump `image_hash_version` to 2 so mixed hash spaces cannot occur.
-- [ ] K3.4 Keep the backfill one-decode-at-a-time and pausable.
-- [ ] K3.5 If a thumbnail already exists, hash it without decoding the original.
+- [x] K3.4 Keep the backfill one-decode-at-a-time and pausable.
+- [x] K3.5 If a thumbnail already exists, hash it without decoding the original.
 
 **Acceptance**
 - 1,400 images: hashes complete without any full-resolution decode; peak
