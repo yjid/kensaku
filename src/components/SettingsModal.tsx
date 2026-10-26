@@ -710,6 +710,74 @@ function SearchSection({
         <OcrField config={config} setConfig={setConfig} />
       </Card>
 
+      <Card title="Aliases">
+        <div className="space-y-2 p-4">
+          <p className="text-[11px] leading-relaxed text-muted">
+            Personal vocabulary: typing the term also matches any of its expansions
+            (case-insensitive, OR semantics).
+          </p>
+          {(config.aliases ?? []).map((alias, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input
+                type="text"
+                value={alias.term}
+                placeholder="term"
+                onChange={(e) =>
+                  setConfig((c) => {
+                    if (!c) return c;
+                    const aliases = [...(c.aliases ?? [])];
+                    aliases[i] = { ...aliases[i], term: e.target.value };
+                    return { ...c, aliases };
+                  })
+                }
+                className="h-8 w-28 shrink-0 rounded-[8px] border border-line bg-elevated px-2 font-mono text-[11px] text-fg outline-none focus:border-accent"
+              />
+              <span className="text-subtle">→</span>
+              <input
+                type="text"
+                value={alias.expansions.join(", ")}
+                placeholder="cv, curriculum"
+                onChange={(e) =>
+                  setConfig((c) => {
+                    if (!c) return c;
+                    const aliases = [...(c.aliases ?? [])];
+                    aliases[i] = {
+                      ...aliases[i],
+                      expansions: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
+                    };
+                    return { ...c, aliases };
+                  })
+                }
+                className="h-8 min-w-0 flex-1 rounded-[8px] border border-line bg-elevated px-2 font-mono text-[11px] text-fg outline-none focus:border-accent"
+              />
+              <button
+                type="button"
+                title="Remove alias"
+                onClick={() =>
+                  setConfig((c) =>
+                    c ? { ...c, aliases: (c.aliases ?? []).filter((_, j) => j !== i) } : c,
+                  )
+                }
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-sunken hover:text-danger"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              setConfig((c) =>
+                c ? { ...c, aliases: [...(c.aliases ?? []), { term: "", expansions: [] }] } : c,
+              )
+            }
+            className="flex h-7 items-center gap-1 rounded-[8px] border border-line px-2.5 text-[11px] text-muted transition-colors hover:border-line-strong hover:text-fg"
+          >
+            <Plus className="h-3 w-3" /> Add alias
+          </button>
+        </div>
+      </Card>
+
       <Card title="Query language">
         <div className="grid grid-cols-2 gap-x-8 px-4 py-2.5">
           {CHEATSHEET.map(([token, desc], idx) => (

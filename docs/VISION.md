@@ -49,7 +49,7 @@ sensitive paths); "planned" means it lives in this document.
 | **Content** | Text, code, configs, logs; PDF, DOCX/PPTX/XLSX, EPUB/ODT/RTF; image OCR via tesseract | Native OCR; scanned-PDF OCR; video/audio content |
 | **Images** | Filename, OCR text, dimensions, thumbnails, perceptual hashes, near-duplicate groups | CLIP/SigLIP visual search; similar images; face identity; captions |
 | **Surfaces** | Desktop GUI; CLI; MCP over stdio | Warm shared daemon; local HTTP; one-click agent connect |
-| **Interaction** | Search-as-you-type, category chips, list/grid, preview, `/` command menu, `@` scope picker, explicit sort, deterministic plain-language compiler with removable interpretation chips, full filter grammar, guided first-run setup with first-scan gate | Aliases; facets; saved searches; month-name windows |
+| **Interaction** | Search-as-you-type, category chips, list/grid, preview, `/` command menu, `@` scope picker, explicit sort, deterministic plain-language compiler with removable interpretation chips, personal aliases, server-side facet counts, full filter grammar, guided first-run setup with first-scan gate | Saved searches; month-name windows; multi-select facet UI |
 | **Intelligence** | Semantic tier; frecency; recency boost | Explicit "latest" sort; version grouping; personal vocabulary; optional local LLM query compiler; `/ask` with citations |
 | **Trust** | Local-only, no telemetry, atomic config, crash log, Doctor, default-deny sensitive paths and credential extensions | Face-data controls; cloud-consent UX |
 
@@ -194,11 +194,11 @@ friend.
 | Priority | Capability | Why it matters | Effort |
 |---|---|---|---|
 | **P0** | ~~Natural-language intent compiler (local rules)~~ ✅ shipped | Makes "latest resume" work without syntax | M |
-| **P0** | Aliases and personal vocabulary | The app learns that resume = cv = curriculum | S |
+| **P0** | ~~Aliases and personal vocabulary~~ ✅ shipped | The app learns that resume = cv = curriculum | S |
 | **P0** | ~~Explicit sort modes~~ ✅ shipped | "Latest", "biggest", "oldest" must actually sort | S |
 | **P0** | ~~Interpretation chips~~ ✅ shipped | Trust and discoverability; no silent AI | S |
 | **P0** | Version grouping | `resume_v1`, `resume_final`, `resume_final_final` become one row | S |
-| **P0** | Facet bar with live counts | "Filter anything" feels instant | M |
+| **P0** | ~~Facet bar with live counts~~ ✅ shipped | "Filter anything" feels instant | M |
 | **P0** | Saved searches / smart folders | Personal memory; repeatable intent | M |
 | **P0** | Duplicate cleanup UI | Backend already exists; high perceived value | S |
 | **P0** | Guided first-run setup flow | One place for folders, preferences, downloads, and a completed first scan | M |

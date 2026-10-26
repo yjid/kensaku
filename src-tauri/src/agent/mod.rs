@@ -102,7 +102,8 @@ impl HeadlessIndex {
 
     /// Runs a query against the loaded index.
     pub fn search(&self, query: &str, limit: usize) -> Result<SearchResponse, String> {
-        Ok(SearchDispatcher::search_response(
+        let aliases = self.config.alias_pairs();
+        Ok(SearchDispatcher::search_response_with_aliases(
             query,
             &self.metadata,
             &self.content,
@@ -110,6 +111,7 @@ impl HeadlessIndex {
             self.config.semantic_enabled,
             limit,
             0,
+            &aliases,
         ))
     }
 

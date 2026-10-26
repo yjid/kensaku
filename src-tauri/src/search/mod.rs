@@ -36,6 +36,109 @@ pub struct SearchResult {
     pub best_range: Option<(usize, usize)>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Facets {
+    pub all: usize,
+    /// Category counts: file/folder/image/doc/code/media/archive.
+    pub types: HashMap<String, usize>,
+    /// Language family counts keyed by common extensions.
+    pub languages: HashMap<String, usize>,
+    /// Parent-directory name counts.
+    pub places: HashMap<String, usize>,
+    /// today / week / month / year / older.
+    pub time: HashMap<String, usize>,
+    /// tiny (<1 MB) / small (<10 MB) / medium (<100 MB) / large (>=100 MB).
+    pub size: HashMap<String, usize>,
+    /// Anything modified in the last 7 days.
+    pub recent: usize,
+}
+
+fn classify_extension(ext: &str) -> &'static str {
+    const IMAGE: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "tiff", "tif", "heic", "avif"];
+    const DOC: &[&str] = &["pdf", "md", "txt", "doc", "docx", "ppt", "pptx", "odp", "key", "xls", "xlsx", "csv", "tsv", "ods", "rtf", "odt", "pages", "epub", "log"];
+    const CODE: &[&str] = &["rs", "ts", "tsx", "js", "jsx", "py", "go", "c", "cpp", "h", "hpp", "java", "kt", "swift", "rb", "php", "lua", "zig", "nim", "html", "css", "scss", "json", "toml", "yaml", "yml", "xml", "sql", "sh", "bash", "fish", "conf"];
+    const MEDIA: &[&str] = &["mp4", "mov", "avi", "mkv", "webm", "m4v", "mp3", "flac", "wav", "ogg", "m4a", "aac", "opus"];
+    const ARCHIVE: &[&str] = &["zip", "tar", "gz", "rar", "7z", "bz2", "xz", "dmg", "iso"];
+    if IMAGE.contains(&ext) { "image" }
+    else if DOC.contains(&ext) { "doc" }
+    else if CODE.contains(&ext) { "code" }
+    else if MEDIA.contains(&ext) { "media" }
+    else if ARCHIVE.contains(&ext) { "archive" }
+    else { "file" }
+}
+
+fn language_of(ext: &str) -> Option<&'static str> {
+    Some(match ext {
+        "rs" => "rust",
+        "ts" | "tsx" => "typescript",
+        "js" | "jsx" => "javascript",
+        "py" => "python",
+        "go" => "go",
+        "java" => "java",
+        "c" => "c",
+        "cpp" | "h" | "hpp" => "cpp",
+        "rb" => "ruby",
+        "php" => "php",
+        "swift" => "swift",
+        "kt" => "kotlin",
+        "sh" | "bash" | "fish" => "shell",
+        "md" => "markdown",
+        "json" | "yaml" | "yml" | "toml" => "config",
+        _ => return None,
+    })
+}
+
+fn compute_facets(results: &[SearchResult], now_sec: u64) -> Facets {
+    let mut facets = Facets {
+        all: results.len(),
+        ..Default::default()
+    };
+    for r in results {
+        let ext = r
+            .filename
+            .rsplit_once('.')
+            .map(|(_, e)| e.to_lowercase())
+            .unwrap_or_default();
+        let category = if r.is_dir { "folder" } else { classify_extension(&ext) };
+        *facets.types.entry(category.to_string()).or_insert(0) += 1;
+        if let Some(lang) = language_of(&ext) {
+            *facets.languages.entry(lang.to_string()).or_insert(0) += 1;
+        }
+        if let Some(parent) = std::path::Path::new(&r.path).parent() {
+            if let Some(name) = parent.file_name().and_then(|n| n.to_str()) {
+                *facets.places.entry(name.to_string()).or_insert(0) += 1;
+            }
+        }
+        let age = now_sec.saturating_sub(r.modified);
+        let bucket = if age < 86_400 {
+            "today"
+        } else if age < 7 * 86_400 {
+            "week"
+        } else if age < 30 * 86_400 {
+            "month"
+        } else if age < 365 * 86_400 {
+            "year"
+        } else {
+            "older"
+        };
+        *facets.time.entry(bucket.to_string()).or_insert(0) += 1;
+        if age < 7 * 86_400 {
+            facets.recent += 1;
+        }
+        let size_bucket = if r.file_size < 1_048_576 {
+            "tiny"
+        } else if r.file_size < 10 * 1_048_576 {
+            "small"
+        } else if r.file_size < 100 * 1_048_576 {
+            "medium"
+        } else {
+            "large"
+        };
+        *facets.size.entry(size_bucket.to_string()).or_insert(0) += 1;
+    }
+    facets
+}
+
 /// Result ordering. `Best` preserves the fused relevance ranking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SortOrder {
@@ -109,6 +212,9 @@ pub struct SearchResponse {
     /// Natural-language interpretations applied to this query.
     #[serde(default)]
     pub interpretation: Vec<crate::query::intent::InterpretationChip>,
+    /// Server-side counts over the full matched set (before the display limit).
+    #[serde(default)]
+    pub facets: Facets,
 }
 
 pub struct SearchDispatcher;
@@ -157,6 +263,33 @@ impl SearchDispatcher {
             seq,
             true,
             SortOrder::Best,
+            &[],
+        )
+    }
+
+    /// Runs a query with personal-vocabulary aliases applied.
+    #[allow(clippy::too_many_arguments)]
+    pub fn search_response_with_aliases(
+        raw_query: &str,
+        metadata: &MetadataStore,
+        content_index: &Option<ContentIndex>,
+        unit_store: Option<&UnitStore>,
+        semantic_enabled: bool,
+        limit: usize,
+        seq: u64,
+        aliases: &[(String, Vec<String>)],
+    ) -> SearchResponse {
+        Self::search_response_with_snippets(
+            raw_query,
+            metadata,
+            content_index,
+            unit_store,
+            semantic_enabled,
+            limit,
+            seq,
+            true,
+            SortOrder::Best,
+            aliases,
         )
     }
 
@@ -184,6 +317,7 @@ impl SearchDispatcher {
             seq,
             false,
             SortOrder::Best,
+            &[],
         )
     }
 
@@ -198,6 +332,7 @@ impl SearchDispatcher {
         limit: usize,
         seq: u64,
         sort: SortOrder,
+        aliases: &[(String, Vec<String>)],
     ) -> SearchResponse {
         Self::search_response_with_snippets(
             raw_query,
@@ -209,6 +344,7 @@ impl SearchDispatcher {
             seq,
             false,
             sort,
+            aliases,
         )
     }
 
@@ -223,6 +359,7 @@ impl SearchDispatcher {
         seq: u64,
         with_snippets: bool,
         sort: SortOrder,
+        aliases: &[(String, Vec<String>)],
     ) -> SearchResponse {
         let start_time = SystemTime::now();
         let trimmed = raw_query.trim();
@@ -236,11 +373,12 @@ impl SearchDispatcher {
                 total: 0,
                 mode: "ranked",
                 interpretation: Vec::new(),
+                facets: Facets::default(),
             };
         }
 
         // Deterministic natural-language pass. Explicit grammar is left alone.
-        let intent = crate::query::intent::compile(raw_query);
+        let intent = crate::query::intent::compile_with_aliases(raw_query, aliases);
         let effective_query = intent.query.as_str();
         let sort = if sort == SortOrder::Best {
             intent
@@ -400,6 +538,7 @@ impl SearchDispatcher {
             );
             apply_sort(&mut results, sort);
             let total = results.len();
+            let facets = compute_facets(&results, now_sec);
             if results.len() > EXHAUSTIVE_LIMIT {
                 results.truncate(EXHAUSTIVE_LIMIT);
             }
@@ -419,6 +558,7 @@ impl SearchDispatcher {
                 total,
                 mode: "exhaustive",
                 interpretation: intent.chips.clone(),
+                facets,
             };
         }
 
@@ -659,6 +799,7 @@ impl SearchDispatcher {
         apply_sort(&mut results, sort);
 
         let total = results.len();
+        let facets = compute_facets(&results, now_sec);
 
         if results.len() > limit {
             results.truncate(limit);
@@ -702,6 +843,7 @@ impl SearchDispatcher {
             total,
             mode: "ranked",
             interpretation: intent.chips,
+            facets,
         }
     }
 }

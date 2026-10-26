@@ -9,6 +9,7 @@ import {
   IndexingStatus,
   CommandOutput,
   InterpretationChip,
+  Facets,
 } from "./types";
 import { SetupModal } from "./components/SetupModal";
 import { DuplicatesModal } from "./components/DuplicatesModal";
@@ -59,6 +60,7 @@ function App() {
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
   const [hints, setHints] = useState<string[]>([]);
   const [interpretation, setInterpretation] = useState<InterpretationChip[]>([]);
+  const [facets, setFacets] = useState<Facets | undefined>(undefined);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [indexingStatus, setIndexingStatus] = useState<IndexingStatus | null>(null);
   const [isSearching, setIsSearching] = useState(false);
@@ -157,6 +159,7 @@ function App() {
       setActiveFilters([]);
       setHints([]);
       setInterpretation([]);
+      setFacets(undefined);
       setSelectedIndex(0);
       setIsSearching(false);
       return;
@@ -167,6 +170,7 @@ function App() {
       setActiveFilters([]);
       setHints([]);
       setInterpretation([]);
+      setFacets(undefined);
       setIsSearching(false);
       return;
     }
@@ -199,6 +203,7 @@ function App() {
           setActiveFilters(res.active_filters);
           setHints(res.hints);
           setInterpretation(res.interpretation ?? []);
+          setFacets(res.facets);
           setSelectedIndex(0);
 
           /* Phase 2 — the fast results are on screen; content snippets
@@ -683,7 +688,7 @@ function App() {
 
               {/* Category chips */}
               {!isCommandMode && (
-                <CategoryChips query={query} results={results} onPick={handleChip} />
+                <CategoryChips query={query} results={results} facets={facets} onPick={handleChip} />
               )}
 
               {!isCommandMode && interpretation.length > 0 && (

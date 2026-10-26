@@ -91,6 +91,15 @@ Time words: `today`, `yesterday`, `last week`, `last month`, `last year`.
 Size words: `big`/`large`/`huge` (>100 MB), `small`/`tiny` (<1 MB), and
 `under 5 MB` / `over 10 MB`.
 
+**Aliases.** Personal vocabulary lives in Settings → Search → Aliases. The
+defaults include `resume → cv`, `invoice → receipt, bill`, and
+`screenshot → capture`; aliases compile to a case-insensitive OR and appear as a
+removable chip.
+
+**Facet counts.** Category chips show counts from the server over the full
+matched set, not just the visible page. The response also carries language,
+place, time, and size counts for future facet UI.
+
 ### Scopes and sort
 
 - Type `@` to pick a folder from the index; the choice inserts `in:"<path>"`.
