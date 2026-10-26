@@ -114,6 +114,8 @@ function App() {
    *  null = fetched and none exists"). Kept so the same path never pays for
    *  extraction twice within a session; pruned when it grows past 200. */
   const fetchedSnippetsRef = useRef(new Map<string, string | null>()).current;
+  /** Cache keyed by path + mtime + query so a changed file or query refetches. */
+  const snippetCacheRef = useRef(new Map<string, string | null>()).current;
 
   /* ---------------- setup gating ---------------- */
 
@@ -212,6 +214,12 @@ function App() {
           const seen = new Set<string>();
           const merged = res.results.map((r) => {
             seen.add(r.path);
+            const cacheKey = `${r.path}\u0000${r.modified}\u0000${query}`;
+            if (r.snippet == null && snippetCacheRef.has(cacheKey)) {
+              const cached = snippetCacheRef.get(cacheKey) ?? null;
+              fetchedSnippetsRef.set(r.path, cached);
+              return { ...r, snippet: cached };
+            }
             if (r.snippet == null && fetchedSnippetsRef.has(r.path)) {
               return { ...r, snippet: fetchedSnippetsRef.get(r.path) ?? null };
             }
@@ -230,49 +238,9 @@ function App() {
           setFacets(res.facets);
           setSelectedIndex(0);
 
-          /* Phase 2 — the fast results are on screen; content snippets
-             stream in afterwards and patch rows by path. Fails silently:
-             rows simply keep their meta sub-lines. */
-          const want: string[] = [];
-          for (const r of merged) {
-            if (r.snippet != null) continue;
-            if (fetchedSnippetsRef.has(r.path)) continue;
-            want.push(r.path);
-            if (want.length >= 20) break;
-          }
-          if (want.length > 0) {
-            invoke<SnippetDto[]>("get_snippets", { paths: want, query })
-              .then((dtos) => {
-                // Discard if a newer search superseded this one or the
-                // query text changed while we were fetching.
-                if (seq !== currentSeqRef.current || queryRef.current !== query) return;
-                if (!Array.isArray(dtos)) return;
-                let changed = false;
-                const patch = new Set<string>();
-                for (const dto of dtos) {
-                  if (dto && typeof dto.path === "string") {
-                    fetchedSnippetsRef.set(
-                      dto.path,
-                      typeof dto.snippet === "string" ? dto.snippet : null,
-                    );
-                    if (dto.snippet) patch.add(dto.path);
-                  }
-                }
-                setResults((prev) => {
-                  if (seq !== currentSeqRef.current || queryRef.current !== query) return prev;
-                  const next = prev.map((r) => {
-                    if (r.snippet != null || !patch.has(r.path)) return r;
-                    changed = true;
-                    return { ...r, snippet: fetchedSnippetsRef.get(r.path) ?? null };
-                  });
-                  // Avoid an identical state swap when nothing matched.
-                  return changed ? next : prev;
-                });
-              })
-              .catch(() => {
-                /* snippets are optional decoration — never surface errors */
-              });
-          }
+          // Snippets are fetched by the visibility observer below (or the
+          // no-IntersectionObserver fallback) so off-screen rows never pay
+          // for content reads.
         }
       } catch (err) {
         console.error("Search error:", err);
@@ -283,6 +251,102 @@ function App() {
 
     return () => clearTimeout(timer);
   }, [query, sort, isSetupComplete]);
+
+  // Fetch snippets only for rows that are actually visible (or the first 20
+  // when IntersectionObserver is unavailable). Results are patched by path
+  // and stale responses for superseded queries are discarded.
+  useEffect(() => {
+    if (!isSetupComplete || results.length === 0) return;
+    const container = resultsContainerRef.current;
+    if (!container) return;
+
+    const seq = currentSeqRef.current;
+    const q = query;
+    const pending = new Set<string>();
+
+    const flush = () => {
+      const paths = Array.from(pending).slice(0, 20);
+      pending.clear();
+      if (paths.length === 0) return;
+      invoke<SnippetDto[]>("get_snippets", { paths, query: q })
+        .then((dtos) => {
+          if (seq !== currentSeqRef.current || queryRef.current !== q) return;
+          if (!Array.isArray(dtos)) return;
+          const patch = new Set<string>();
+          for (const dto of dtos) {
+            if (dto && typeof dto.path === "string") {
+              const result = results.find((r) => r.path === dto.path);
+              const key = `${dto.path}\u0000${result?.modified ?? 0}\u0000${q}`;
+              snippetCacheRef.set(key, typeof dto.snippet === "string" ? dto.snippet : null);
+              fetchedSnippetsRef.set(
+                dto.path,
+                typeof dto.snippet === "string" ? dto.snippet : null,
+              );
+              if (dto.snippet) patch.add(dto.path);
+            }
+          }
+          setResults((prev) => {
+            if (seq !== currentSeqRef.current || queryRef.current !== q) return prev;
+            let changed = false;
+            const next = prev.map((r) => {
+              if (r.snippet != null || !patch.has(r.path)) return r;
+              changed = true;
+              return { ...r, snippet: fetchedSnippetsRef.get(r.path) ?? null };
+            });
+            return changed ? next : prev;
+          });
+        })
+        .catch(() => {
+          /* snippets are optional decoration */
+        });
+    };
+
+    if (typeof IntersectionObserver === "undefined") {
+      const want: string[] = [];
+      for (const r of results) {
+        if (r.snippet != null) continue;
+        const key = `${r.path}\u0000${r.modified}\u0000${q}`;
+        if (snippetCacheRef.has(key)) continue;
+        want.push(r.path);
+        if (want.length >= 20) break;
+      }
+      if (want.length > 0) {
+        for (const path of want) pending.add(path);
+        flush();
+      }
+      return;
+    }
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(flush, 80);
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const index = Number((entry.target as HTMLElement).getAttribute("data-index"));
+          const result = results[index];
+          if (!result || result.snippet != null) continue;
+          const key = `${result.path}\u0000${result.modified}\u0000${q}`;
+          if (snippetCacheRef.has(key)) continue;
+          if (pending.has(result.path)) continue;
+          pending.add(result.path);
+        }
+        if (pending.size > 0) schedule();
+      },
+      { root: container, threshold: 0.01 },
+    );
+
+    container.querySelectorAll("[data-index]").forEach((el) => observer.observe(el));
+
+    return () => {
+      observer.disconnect();
+      if (timer) clearTimeout(timer);
+    };
+  }, [results, query, isSetupComplete]);
 
   const loadMore = useCallback(async () => {
     if (loadingMore || !query.trim()) return;
