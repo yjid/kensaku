@@ -471,10 +471,8 @@ mod download_tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         thread::spawn(move || {
-            for stream in listener.incoming() {
-                if let Ok(stream) = stream {
-                    handler(stream);
-                }
+            for stream in listener.incoming().flatten() {
+                handler(stream);
             }
         });
         format!("http://{}", addr)
