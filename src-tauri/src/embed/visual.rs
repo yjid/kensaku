@@ -26,6 +26,15 @@ pub struct VisualUnit {
     pub dhash: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SimilarImageResult {
+    pub path: String,
+    pub filename: String,
+    pub similarity: f32,
+    pub file_size: u64,
+    pub modified: u64,
+}
+
 /// Contiguous in-memory store for image visual embeddings.
 #[derive(Debug, Clone)]
 pub struct VisualStore {
@@ -149,6 +158,42 @@ impl VisualStore {
             }
             if let Some(allowed) = allowed_nodes
                 && !allowed.contains(&unit.node_id)
+            {
+                continue;
+            }
+            let start = idx * self.dim;
+            let end = start + self.dim;
+            let sim = ModelRegistry::cosine_similarity_i8(query_vec, &self.vectors[start..end]);
+            if sim >= floor {
+                hits.push((unit.node_id, sim));
+            }
+        }
+
+        hits.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        if hits.len() > limit {
+            hits.truncate(limit);
+        }
+        hits
+    }
+
+    pub fn find_similar(
+        &self,
+        query_vec: &[i8],
+        exclude_node_id: Option<u64>,
+        floor: f32,
+        limit: usize,
+    ) -> Vec<(u64, f32)> {
+        if query_vec.len() != self.dim || self.units.is_empty() {
+            return Vec::new();
+        }
+
+        let mut hits = Vec::new();
+        for (idx, unit) in self.units.iter().enumerate() {
+            if unit.model_id != self.model_id {
+                continue;
+            }
+            if let Some(exclude) = exclude_node_id
+                && unit.node_id == exclude
             {
                 continue;
             }
@@ -364,5 +409,45 @@ mod tests {
 
         cancel.store(true, Ordering::Relaxed);
         assert!(is_cancelled(Some(&cancel)));
+    }
+
+    #[test]
+    fn find_similar_excludes_self_and_ranks_by_similarity() {
+        let encoder = MockVisualEncoder;
+        let mut store = VisualStore::new(VISUAL_DIM, MOCK_VISUAL_MODEL_ID);
+
+        let img_base = make_test_image(200, 100, 50);
+        let vec_base = encoder.embed_image(&img_base);
+
+        // Near-duplicate: slight variation
+        let img_near = make_test_image(200, 102, 50);
+        let vec_near = encoder.embed_image(&img_near);
+
+        // Unrelated: inverted/different
+        let img_diff = make_test_image(10, 20, 200);
+        let vec_diff = encoder.embed_image(&img_diff);
+
+        store.add_or_update(1, 0x1111, &vec_base);
+        store.add_or_update(2, 0x2222, &vec_near);
+        store.add_or_update(3, 0x3333, &vec_diff);
+
+        // 1. Querying with vec_base excluding self (node 1):
+        let results = store.find_similar(&vec_base, Some(1), 0.30, 10);
+
+        // Self (node 1) must be excluded
+        assert!(results.iter().all(|&(id, _)| id != 1));
+
+        // Near duplicate (node 2) should be ranked first with high similarity
+        assert!(!results.is_empty());
+        assert_eq!(results[0].0, 2);
+        assert!(
+            results[0].1 >= 0.50,
+            "near-duplicate should have high similarity: {}",
+            results[0].1
+        );
+
+        // If similarity floor is set high, unrelated image (node 3) must be dropped
+        let strict_results = store.find_similar(&vec_base, Some(1), 0.80, 10);
+        assert!(strict_results.iter().all(|&(id, _)| id != 3));
     }
 }

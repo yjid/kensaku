@@ -1803,6 +1803,7 @@ mod tests {
         let marker = fs::read_to_string(index_dir.join(SCHEMA_MARKER_FILE)).unwrap();
         assert_eq!(marker.trim(), "2");
         drop(migrated);
+        std::thread::sleep(std::time::Duration::from_millis(20));
 
         // Second open: marker exists, no rebuild triggered
         let second_open = ContentIndex::new(&index_dir).expect("open already-migrated index");

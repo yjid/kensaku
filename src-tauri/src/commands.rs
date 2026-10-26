@@ -789,6 +789,20 @@ pub async fn find_duplicates(
     duplicates_for(&state.indexer, max_distance, limit)
 }
 
+#[tauri::command]
+pub async fn find_similar_images(
+    state: State<'_, AppState>,
+    path: String,
+    limit: Option<usize>,
+) -> Result<Vec<crate::embed::visual::SimilarImageResult>, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.find_similar_images(&path, limit);
+    }
+    state
+        .indexer
+        .find_similar_images(Path::new(&path), limit.unwrap_or(20))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandOutput {
     pub success: bool,

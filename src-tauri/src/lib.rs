@@ -229,6 +229,7 @@ pub fn run() {
             commands::get_smart_pack_status,
             commands::download_smart_pack,
             commands::find_duplicates,
+            commands::find_similar_images,
             commands::execute_command,
             commands::read_file_content,
             commands::get_config,

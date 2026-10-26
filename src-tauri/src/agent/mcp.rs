@@ -273,6 +273,28 @@ fn tool_definitions(reindex_enabled: bool) -> Vec<Value> {
             }
         }),
         json!({
+            "name": "similar_images",
+            "description": "Find visually similar images to a given indexed image path using 512-dimensional visual vector embeddings.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path of the source image to compare."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50,
+                        "default": 10,
+                        "description": "Maximum number of similar images to return."
+                    }
+                },
+                "required": ["path"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
             "name": "regex_search",
             "description": "Bounded regular-expression search over indexed content. Read-only; returns the same pagination and snippet budget as search.",
             "inputSchema": {
@@ -362,6 +384,7 @@ fn call_tool(
         "search" => tool_search(session, &arguments),
         "read_snippet" => tool_read_snippet(&arguments),
         "index_state" => tool_index_state(session),
+        "similar_images" => tool_similar_images(session, &arguments),
         "regex_search" => tool_regex_search(session, &arguments),
         "reindex" => {
             if !reindex_enabled {
@@ -667,6 +690,23 @@ fn tool_index_state(session: &AgentSession<'_>) -> Result<Value, ToolFailure> {
     }))
 }
 
+fn tool_similar_images(session: &AgentSession<'_>, args: &Value) -> Result<Value, ToolFailure> {
+    let path = args
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ToolFailure::Invalid("Invalid params: 'path' is required".to_string()))?;
+    let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+
+    let results = session
+        .find_similar_images(path, limit)
+        .map_err(ToolFailure::Execution)?;
+
+    Ok(json!({
+        "path": path,
+        "results": results,
+    }))
+}
+
 fn parse_mode(args: &Value) -> Result<String, ToolFailure> {
     match args.get("mode") {
         None | Some(Value::Null) => Ok("ranked".to_string()),
@@ -946,7 +986,7 @@ mod tests {
         .expect("tools/list must reply");
 
         let tools = response["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 5);
+        assert_eq!(tools.len(), 6);
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert_eq!(
             names,
@@ -955,6 +995,7 @@ mod tests {
                 "search",
                 "read_snippet",
                 "index_state",
+                "similar_images",
                 "regex_search"
             ]
         );
@@ -1382,5 +1423,31 @@ mod tests {
         assert_eq!(line_end, 3);
         assert_eq!(window, text);
         assert!(!truncated);
+    }
+
+    #[test]
+    fn similar_images_tool_registered_and_handles_missing_path() {
+        let fixture = fixture("similar-tool");
+        let tools_resp = handle_request(
+            fixture.index.as_ref(),
+            &request(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list",
+            })),
+        )
+        .expect("tools/list must reply");
+
+        let tools = tools_resp["result"]["tools"]
+            .as_array()
+            .expect("tools array");
+        assert!(
+            tools.iter().any(|t| t["name"] == "similar_images"),
+            "similar_images must be listed in tools/list"
+        );
+
+        // Missing required 'path' parameter returns INVALID_PARAMS
+        let call_resp = call(&fixture, "similar_images", json!({}));
+        assert_eq!(call_resp["error"]["code"], INVALID_PARAMS);
     }
 }

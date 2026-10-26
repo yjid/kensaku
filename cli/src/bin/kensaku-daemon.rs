@@ -1,7 +1,7 @@
+use interprocess::local_socket::prelude::*;
 use kensaku_lib::config::KensakuConfig;
 use kensaku_lib::indexer::IndexerManager;
 use serde_json::{Value, json};
-use interprocess::local_socket::prelude::*;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 #[cfg(unix)]
@@ -18,17 +18,13 @@ fn socket_path(config_dir: &Path) -> PathBuf {
 }
 
 #[cfg(unix)]
-fn socket_name(
-    config_dir: &Path,
-) -> std::io::Result<interprocess::local_socket::Name<'static>> {
+fn socket_name(config_dir: &Path) -> std::io::Result<interprocess::local_socket::Name<'static>> {
     use interprocess::local_socket::{GenericFilePath, ToFsName};
     socket_path(config_dir).to_fs_name::<GenericFilePath>()
 }
 
 #[cfg(windows)]
-fn socket_name(
-    _config_dir: &Path,
-) -> std::io::Result<interprocess::local_socket::Name<'static>> {
+fn socket_name(_config_dir: &Path) -> std::io::Result<interprocess::local_socket::Name<'static>> {
     use interprocess::local_socket::{GenericNamespaced, ToNsName};
     "kensaku".to_ns_name::<GenericNamespaced>()
 }
@@ -92,7 +88,10 @@ mod unix_cleanup {
 
     pub fn install_signal_handlers() {
         unsafe {
-            libc::signal(libc::SIGTERM, handle_term as *const () as libc::sighandler_t);
+            libc::signal(
+                libc::SIGTERM,
+                handle_term as *const () as libc::sighandler_t,
+            );
             libc::signal(libc::SIGINT, handle_term as *const () as libc::sighandler_t);
         }
     }
@@ -208,7 +207,11 @@ fn handle_client(stream: LocalSocketStream, token: &str, manager: &Arc<IndexerMa
         let req: Value = match serde_json::from_str(trimmed) {
             Ok(v) => v,
             Err(_) => {
-                let _ = writeln!(writer, "{}", json!({"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"parse error"}}));
+                let _ = writeln!(
+                    writer,
+                    "{}",
+                    json!({"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"parse error"}})
+                );
                 continue;
             }
         };
@@ -292,13 +295,27 @@ fn handle_client(stream: LocalSocketStream, token: &str, manager: &Arc<IndexerMa
                 kensaku_lib::commands::duplicates_for(manager, max_distance, limit)
                     .and_then(|groups| serde_json::to_value(groups).map_err(|e| e.to_string()))
             }
-            "get_status" => serde_json::to_value(manager.get_status())
-                .map_err(|e| e.to_string()),
-            "get_config" => serde_json::to_value(manager.config.read().clone())
-                .map_err(|e| e.to_string()),
+            "find_similar_images" => {
+                let path = params.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+                if path.is_empty() {
+                    Err("find_similar_images requires a path".to_string())
+                } else {
+                    manager
+                        .find_similar_images(std::path::Path::new(path), limit)
+                        .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string()))
+                }
+            }
+            "get_status" => serde_json::to_value(manager.get_status()).map_err(|e| e.to_string()),
+            "get_config" => {
+                serde_json::to_value(manager.config.read().clone()).map_err(|e| e.to_string())
+            }
             "save_config" => {
                 let config: KensakuConfig = match serde_json::from_value(
-                    params.get("config").cloned().unwrap_or(serde_json::Value::Null),
+                    params
+                        .get("config")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null),
                 ) {
                     Ok(config) => config,
                     Err(e) => {
@@ -325,14 +342,8 @@ fn handle_client(stream: LocalSocketStream, token: &str, manager: &Arc<IndexerMa
             }
             "search" => {
                 let query = params.get("query").and_then(|v| v.as_str()).unwrap_or("");
-                let limit = params
-                    .get("limit")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(10) as usize;
-                let offset = params
-                    .get("offset")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0) as usize;
+                let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+                let offset = params.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
                 let with_snippets = params
                     .get("snippets")
                     .and_then(Value::as_bool)

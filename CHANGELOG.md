@@ -6,6 +6,11 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- K20 similar-image lookup: nearest-neighbor image-to-image search using cosine distance
+  over 512-dimensional visual vector embeddings in `VisualStore`. Excludes the query image node,
+  applies a cosine floor (0.30) to reject weak or unrelated candidates, and returns ranked
+  matches with similarity scores and file metadata. Exposed via Tauri command `find_similar_images`,
+  daemon IPC method `find_similar_images`, and read-only MCP agent tool `similar_images`.
 - K19 visual search tier fused into RRF: 4-tier reciprocal rank fusion integrating
   visual vector retrieval alongside fuzzy filename, Tantivy BM25 content, and static/smart
   text semantics. Text-to-image queries encode text via `VisualEncoder::embed_text`, scanning
