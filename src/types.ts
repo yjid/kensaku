@@ -14,10 +14,18 @@ export interface SearchResult {
   file_size: number;
   modified: number;
   is_dir: boolean;
-  match_type: "FileName" | "Content" | "Semantic" | "Both";
+  match_type: "FileName" | "Content" | "ContentFolded" | "Semantic" | "Visual" | "Both";
   best_range?: [number, number] | null;
   group_count?: number;
   group_paths?: string[];
+}
+
+export interface SimilarImageResult {
+  path: string;
+  filename: string;
+  similarity: number;
+  file_size: number;
+  modified: number;
 }
 
 export interface HomeItem {
@@ -26,6 +34,17 @@ export interface HomeItem {
   size: number;
   modified: number;
   is_dir: boolean;
+}
+
+export interface ExternalExtractor {
+  name: string;
+  extensions?: string[];
+  mime?: string[];
+  command: string;
+  args?: string[];
+  timeout_ms?: number;
+  max_output_bytes?: number;
+  enabled?: boolean;
 }
 
 export interface SavedSearch {
@@ -99,7 +118,7 @@ export interface FilePreview {
 }
 
 export interface DuplicateGroup {
-  kind: "content" | "image" | string;
+  kind: "content" | "burst" | "image";
   hash: string;
   paths: string[];
 }
@@ -117,10 +136,17 @@ export interface IndexingStatus {
   is_embedding?: boolean;
   units_indexed?: number;
   semantic_ready?: boolean;
-  phase?: "idle" | "walking" | "extracting" | "embedding" | "committing";
+  phase?:
+    | "idle"
+    | "walking"
+    | "extracting"
+    | "embedding"
+    | "committing"
+    | "paused";
   total_files?: number;
   extract_done?: number;
   extract_total?: number;
+  paused?: boolean;
 }
 
 export interface KensakuConfig {
@@ -132,8 +158,15 @@ export interface KensakuConfig {
   is_setup_complete: boolean;
   semantic_enabled?: boolean;
   semantic_model?: string;
+  semantic_f32_table?: boolean;
+  visual_search_beta_enabled?: boolean;
+  crawl_mode?: "full" | "balanced" | "eco";
+  pause_indexing?: boolean;
+  mcp_allow_reindex?: boolean;
+  extractors?: ExternalExtractor[];
   skip_hidden?: boolean;
   ocr_enabled?: boolean;
+  ocr_engine?: "tesseract" | "accurate";
   theme?: "paper" | "void";
   aliases?: Alias[];
   saved_searches?: SavedSearch[];
@@ -151,6 +184,9 @@ export interface OcrStatus {
   available: boolean;
   tessdata_dir: string;
   error: string | null;
+  engine?: "tesseract" | "accurate";
+  accurate_available?: boolean;
+  accurate_compiled?: boolean;
 }
 
 /* ---- SystemStats (get_stats). The backend may not expose this yet; ---- */

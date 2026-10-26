@@ -10,11 +10,28 @@ publish = false
 name = "kensaku-cli"
 path = "src/main.rs"
 
+[[bin]]
+name = "kensaku-daemon"
+path = "src/bin/kensaku-daemon.rs"
+
+[[bin]]
+name = "kensaku-quick"
+path = "src/bin/kensaku-quick.rs"
+required-features = ["quick-ui"]
+
 [dependencies]
 kensaku = { path = "../src-tauri" }
+serde_json = "1"
+fs4 = "0.13"
+libc = "0.2"
+eframe = { version = "0.37.0", default-features = false, features = ["glow", "x11", "wayland"], optional = true }
+interprocess = "2.4.7"
 
 [profile.release]
 codegen-units = 1
 lto = true
 opt-level = 3
 strip = true
+
+[features]
+quick-ui = ["dep:eframe"]

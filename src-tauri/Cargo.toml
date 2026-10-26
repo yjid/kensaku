@@ -30,18 +30,36 @@ dirs = "6"
 log = "0.4"
 auto-launch = "0.5"
 parking_lot = "0.12"
+libc = "0.2"
 open = "5"
 rusqlite = { version = "0.32", features = ["bundled"] }
 regex = "1"
+sha2 = "0.10"
 rayon = "1.10"
 lopdf = "0.46.0"
 quick-xml = "0.42.0"
 zip = "9.1.0"
 ureq = { version = "2", features = ["tls"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff"] }
+paddleocr_rs_onnx = { version = "0.2.8", default-features = false, optional = true }
+ort = { version = "2.0.0-rc.15", optional = true }
+interprocess = "2.4.7"
 
 [profile.release]
 codegen-units = 1
 lto = true
 opt-level = 3
 strip = true
+
+# `make dev` / `tauri dev` should not be 10-50x slower than release for the
+# heavy dependencies. Optimizing dependency code (image decode, Tantivy, PDF
+# parsing) while leaving Kensaku's own code at debug speed keeps incremental
+# rebuilds fast and makes first-scan/profile work realistic. Dropping dependency
+# debug info also cuts several GB from target/debug.
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+
+[features]
+accurate-ocr = ["dep:paddleocr_rs_onnx"]
+smart-embeddings = ["dep:ort"]

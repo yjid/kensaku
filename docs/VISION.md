@@ -56,8 +56,9 @@ sensitive paths); "planned" means it lives in this document.
 Two facts worth stating plainly, because older design docs can read as if they
 already shipped:
 
-- The GUI backend is **in-process**. The daemon topology in
-  [ARCHITECTURE.md](ARCHITECTURE.md) is the target, not the current state.
+- The daemon topology is **shipped**: the GUI, CLI, and MCP are clients of
+  `kensaku-daemon` over a Unix socket or Windows named pipe, with a read-only
+  fallback. Loopback HTTP/SSE and installer packaging remain planned.
 - `find_duplicates` is reachable through `/dupes`, which opens a review view
   (open/copy/reveal). Destructive deletion is intentionally not automated.
 
@@ -186,7 +187,7 @@ friend.
 | **Setup** | Guided first-run flow (folders → exclusions → preferences → optional packs → first scan → Done); downloads live in setup; Settings shows status and **Run setup again** | Vision Packs; setup-owned initial configuration refinements |
 | **Images** | OCR and filenames only | Visual search, similar images, diagrams, optional identity |
 | **LLM** | MCP config snippet | One-click connect; optional local intent compiler; cited `/ask` |
-| **Architecture** | In-process backend + per-call CLI | Warm daemon shared by GUI, CLI, and agents |
+| **Architecture** | Warm daemon shared by GUI, CLI, and agents | Loopback HTTP/SSE, installer-packaged daemon, native quick window |
 | **Voice** | Functional, editorial | Human, anticipatory, quiet; no chat assistant persona |
 
 ## What to add, prioritized
@@ -382,6 +383,10 @@ gets there without refining.
 | First scan completion | Counts shown; resumes after interruption; no partial index marked complete |
 | First run decisions | Folders + optional packs, all inside the guided flow |
 | MCP search p95, warm | < 50 ms |
+| MCP session startup | no per-session metadata/vector load (daemon-backed) |
+| Daemon idle RSS at 1M files | ≤ 150 MB interim; ≤ 60 MB target |
+| Indexer peak RSS, image-heavy backfill | ≤ 100 MB |
+| First scan, 700 mixed files (400 images + 300 text) | ≤ 30 s (measured ~23–27 s) |
 | Network calls in default configuration | 0 |
 | Facet toggle → repaint at 100k files | < 50 ms |
 
@@ -429,9 +434,13 @@ existing latency gates. Product quality that is not measured will regress.
 2. **Cloud LLM boundary.** Query-only compilation, or snippets too? What does
    per-use consent look like without nagging?
 3. **Daemon timing.** Build before vision (agent value sooner) or after
-   Milestone 2 (less migration churn)? Current recommendation: Milestone 4.
+   Milestone 2 (less migration churn)? Current recommendation: **now** — before
+   vision, a native UI, or heavier OCR packs. The daemon owns the index and the
+   GUI becomes a client; see [ROADMAP K1](ROADMAP.md#k1-daemon-split-epic).
 4. **Vision Pack model.** SigLIP vs CLIP; size, license, and int8 quality on
-   desktop CPUs. Native OCR order: macOS first or Windows first?
+   desktop CPUs. Native OCR order: macOS first or Windows first? Also choose
+   between a PaddleOCR pack and native OCR for UI text, or ship both behind the
+   same engine interface.
 5. **Multilingual timing.** CJK tokenization is a correctness gap today; the
    multilingual embedding tier may need to precede broad launch.
 6. **`/` and `@` vocabulary.** Fixed commands vs user-defined aliases; is
@@ -444,6 +453,10 @@ existing latency gates. Product quality that is not measured will regress.
    an ETA, or offer an explicit "continue in background" escape hatch? Default:
    block. The escape hatch, if any, must be visible and must not mark the index
    complete.
+10. **Native quick-search window.** After the daemon lands, spike a
+    GPUI/Slint/egui summoner against it and compare hidden RSS and summon
+    latency with the Tauri window. Keep Tauri for settings unless the native
+    path clearly wins. See [ROADMAP K13](ROADMAP.md#k13-native-quick-search-window-spike).
 
 ---
 

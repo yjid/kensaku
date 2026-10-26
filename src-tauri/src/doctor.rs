@@ -4,7 +4,8 @@
 //! being propagated as errors, and no check is allowed to panic.
 
 use crate::AppState;
-use crate::config::KensakuConfig;
+use crate::config::{ExternalExtractor, KensakuConfig};
+use crate::indexer::extract::external;
 use crate::models;
 use serde::Serialize;
 use std::path::Path;
@@ -251,24 +252,85 @@ fn check_full_text_index(nodes: usize) -> DoctorCheck {
         );
     }
 
-    ok(
-        ID,
-        LABEL,
-        format!("{} · {}", format_bytes(bytes), dir.display()),
-    )
+    let schema_marker = dir.join("content.schema");
+    let schema_ver = std::fs::read_to_string(&schema_marker)
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok());
+    let ver_label = match schema_ver {
+        Some(v) => format!("schema v{v} (kensaku-cjk)"),
+        None => "schema v1 (legacy)".to_string(),
+    };
+
+    let legacy_backups = dir
+        .parent()
+        .and_then(|p| std::fs::read_dir(p).ok())
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| e.file_name().to_string_lossy().starts_with("index.legacy-"))
+                .count()
+        })
+        .unwrap_or(0);
+
+    let detail = if legacy_backups > 0 {
+        format!(
+            "{} · {} · {} ({} legacy backup)",
+            format_bytes(bytes),
+            ver_label,
+            dir.display(),
+            legacy_backups
+        )
+    } else {
+        format!(
+            "{} · {} · {}",
+            format_bytes(bytes),
+            ver_label,
+            dir.display()
+        )
+    };
+
+    ok(ID, LABEL, detail)
 }
 
 fn check_semantic_index(units: usize) -> DoctorCheck {
     const ID: &str = "semantic_index";
     const LABEL: &str = "Semantic index";
 
+    let model = crate::embed::ModelRegistry::global();
+    if !model.is_enabled() {
+        return ok(
+            ID,
+            LABEL,
+            "Semantic indexing disabled (provider: none).".to_string(),
+        );
+    }
+
+    let detail = if let Some(ref fallback) = model.fallback_reason {
+        format!(
+            "provider: {} · model_id: {} · dim: {} · {} units (fallback: {})",
+            model.provider_name(),
+            model.model_id,
+            model.dim,
+            units,
+            fallback
+        )
+    } else {
+        format!(
+            "provider: {} · model_id: {} · dim: {} · {} units",
+            model.provider_name(),
+            model.model_id,
+            model.dim,
+            units
+        )
+    };
+
     if units > 0 {
-        ok(ID, LABEL, format!("{} semantic units loaded.", units))
+        ok(ID, LABEL, detail)
     } else {
         warn(
             ID,
             LABEL,
-            "No semantic units indexed yet.".to_string(),
+            format!("{} · no units indexed yet", detail),
             Some("Run >reindex once model files are available.".to_string()),
         )
     }
@@ -449,12 +511,160 @@ fn check_ocr() -> DoctorCheck {
     }
 }
 
+fn check_ocr_pack() -> DoctorCheck {
+    const ID: &str = "ocr_pack";
+    const LABEL: &str = "Accurate OCR pack";
+    let status = models::ocr_status();
+    let present = status.artifacts.iter().filter(|a| a.present).count();
+    let total = status.artifacts.len();
+    if status.ready {
+        ok(
+            ID,
+            LABEL,
+            format!(
+                "{}/{} artifacts present ({})",
+                present,
+                total,
+                format_bytes(status.total_present_bytes)
+            ),
+        )
+    } else if crate::ocr::engine_name() == crate::ocr::ACCURATE {
+        warn(
+            ID,
+            LABEL,
+            format!(
+                "Accurate OCR is selected but {} of {} artifacts are missing.",
+                total - present,
+                total
+            ),
+            Some("Download the accurate OCR pack in Settings → Search".to_string()),
+        )
+    } else {
+        ok(
+            ID,
+            LABEL,
+            "Optional pack not installed; Tesseract is active.".to_string(),
+        )
+    }
+}
+
 fn check_version() -> DoctorCheck {
     ok(
         "version",
         "Kensaku version",
         env!("CARGO_PKG_VERSION").to_string(),
     )
+}
+
+fn check_external_extractors(
+    extractors: &[ExternalExtractor],
+    failures: &[(std::path::PathBuf, String)],
+) -> DoctorCheck {
+    const ID: &str = "external_extractors";
+    const LABEL: &str = "External extractors";
+
+    if extractors.is_empty() {
+        return ok(
+            ID,
+            LABEL,
+            "No external extractors configured (none ship by default).".to_string(),
+        );
+    }
+
+    let commands = extractors
+        .iter()
+        .map(|extractor| {
+            let command = if extractor.command.chars().count() > 160 {
+                let mut short: String = extractor.command.chars().take(157).collect();
+                short.push_str("...");
+                short
+            } else {
+                extractor.command.clone()
+            };
+            format!(
+                "{} → {} ({})",
+                extractor.name.trim(),
+                command,
+                if extractor.enabled {
+                    "enabled"
+                } else {
+                    "disabled"
+                }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" · ");
+
+    let invalid = extractors
+        .iter()
+        .filter_map(|extractor| {
+            extractor
+                .validate()
+                .err()
+                .map(|error| format!("{}: {}", extractor.name.trim(), error))
+        })
+        .collect::<Vec<_>>();
+    if !invalid.is_empty() {
+        return fail(
+            ID,
+            LABEL,
+            format!("Invalid configuration: {}", invalid.join("; ")),
+            Some(
+                "Fix the command, selectors or executable permissions in config.json.".to_string(),
+            ),
+        );
+    }
+
+    let enabled = extractors
+        .iter()
+        .filter(|extractor| extractor.enabled)
+        .count();
+    let failure_detail = if failures.is_empty() {
+        String::new()
+    } else {
+        let shown = failures
+            .iter()
+            .rev()
+            .take(3)
+            .map(|(path, reason)| {
+                let reason = if reason.chars().count() > 140 {
+                    let mut short: String = reason.chars().take(137).collect();
+                    short.push_str("...");
+                    short
+                } else {
+                    reason.clone()
+                };
+                format!("{} — {}", path.display(), reason)
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        format!(" · {} recent failure(s): {}", failures.len(), shown)
+    };
+    if enabled == 0 {
+        return warn(
+            ID,
+            LABEL,
+            format!(
+                "{} configured but none enabled: {}",
+                extractors.len(),
+                commands
+            ),
+            Some("Review each command, then set enabled: true in config.json.".to_string()),
+        );
+    }
+
+    if !failure_detail.is_empty() {
+        return warn(
+            ID,
+            LABEL,
+            format!("{} enabled: {}{}", enabled, commands, failure_detail),
+            Some(
+                "Fix the plugin, then save its config or run a full reindex to retry.".to_string(),
+            ),
+        );
+    }
+
+    ok(ID, LABEL, format!("{} enabled: {}", enabled, commands))
 }
 
 /// Runs every doctor check. Never panics; each check degrades to a status.
@@ -472,11 +682,16 @@ pub fn run(state: &AppState) -> DoctorReport {
         check_semantic_index(units),
         check_watched_folders(state),
         check_watcher(state),
+        check_external_extractors(
+            &state.indexer.config.read().extractors,
+            &external::recent_failures(),
+        ),
     ];
     #[cfg(target_os = "linux")]
     checks.push(check_inotify_limit());
     checks.push(check_models());
     checks.push(check_ocr());
+    checks.push(check_ocr_pack());
     checks.push(check_version());
 
     let mut summary = DoctorSummary {
@@ -496,5 +711,63 @@ pub fn run(state: &AppState) -> DoctorReport {
         checks,
         ran_at: now_unix_secs(),
         summary,
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    fn extractor(command: &str, enabled: bool) -> ExternalExtractor {
+        ExternalExtractor {
+            name: "sample".to_string(),
+            extensions: vec!["k10ext".to_string()],
+            mime: Vec::new(),
+            command: command.to_string(),
+            args: Vec::new(),
+            timeout_ms: 1_000,
+            max_output_bytes: 1_000,
+            enabled,
+        }
+    }
+
+    #[test]
+    fn external_check_is_ok_when_nothing_is_configured() {
+        let check = check_external_extractors(&[], &[]);
+        assert_eq!(check.status, "ok");
+        assert!(check.detail.contains("none ship by default"));
+    }
+
+    #[test]
+    fn external_check_shows_the_command_while_disabled() {
+        let check = check_external_extractors(&[extractor("/bin/cat", false)], &[]);
+        assert_eq!(check.status, "warn");
+        assert!(check.detail.contains("/bin/cat"), "got: {}", check.detail);
+    }
+
+    #[test]
+    fn external_check_fails_broken_enabled_commands() {
+        let check =
+            check_external_extractors(&[extractor("/definitely/missing/plugin", true)], &[]);
+        assert_eq!(check.status, "fail");
+        assert!(check.fix.is_some());
+    }
+
+    #[test]
+    fn external_check_accepts_a_reviewed_enabled_command() {
+        let check = check_external_extractors(&[extractor("/bin/cat", true)], &[]);
+        assert_eq!(check.status, "ok");
+    }
+
+    #[test]
+    fn external_check_surfaces_runtime_failures() {
+        let failures = vec![(
+            std::path::PathBuf::from("/docs/model.k10ext"),
+            "timed out after 200 ms".to_string(),
+        )];
+        let check = check_external_extractors(&[extractor("/bin/cat", true)], &failures);
+        assert_eq!(check.status, "warn");
+        assert!(check.detail.contains("model.k10ext"));
+        assert!(check.detail.contains("timed out"));
     }
 }

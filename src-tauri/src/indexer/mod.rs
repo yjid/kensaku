@@ -1,25 +1,32 @@
+pub mod arena;
+pub mod burst;
 pub mod content;
 pub mod extract;
 pub mod metadata;
 pub mod metadata_db;
+pub mod tokenizer;
 pub mod walker;
 pub mod watcher;
 
 use crate::config::KensakuConfig;
-use crate::embed::{EMBEDDING_DIM, EmbeddingQueue, ModelRegistry, UnitStore};
+use crate::embed::units::chunk_text;
+use crate::embed::{EMBEDDING_DIM, EmbeddingQueue, ModelRegistry, Unit, UnitStore};
 use crate::indexer::content::{
     ContentIndex, is_indexable_extension, is_indexable_file_name, read_text_content,
 };
 use crate::indexer::metadata::MetadataStore;
 use crate::indexer::walker::{FileEntry, is_cloud_placeholder_path, walk_directories};
 use crate::indexer::watcher::{WatcherHandle, start_file_watcher};
+use crate::search::{SearchDispatcher, SearchResponse, SortOrder};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
+use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexingStatus {
@@ -45,6 +52,9 @@ pub struct IndexingStatus {
     /// Files queued for text extraction in the current crawl.
     #[serde(default)]
     pub extract_total: usize,
+    /// True while the user has paused background indexing.
+    #[serde(default)]
+    pub paused: bool,
 }
 
 fn default_phase() -> String {
@@ -70,10 +80,182 @@ fn is_unchanged(existing: &FileEntry, entry: &FileEntry) -> bool {
     existing.modified == entry.modified && existing.size == entry.size && !existing.content_pending
 }
 
+/// One file scheduled for text extraction in the current crawl.
+struct ExtractJob {
+    node_id: u64,
+    path: PathBuf,
+    name: String,
+    modified: u64,
+    size: u64,
+    is_image: bool,
+    /// The pixels changed (or the row is new), so any stored dHash is stale.
+    phash_needs_refresh: bool,
+}
+
+/// Crawl order: text before images, newest first within each class, then size.
+fn extract_sort_key(job: &ExtractJob) -> (bool, Reverse<u64>, u64) {
+    (job.is_image, Reverse(job.modified), job.size)
+}
+
+/// A file that has been extracted, together with any semantic vectors.
+///
+/// Passed from the extraction workers to the single index-committing thread
+/// through a bounded channel. The bound is what keeps peak memory flat: text is
+/// dropped as soon as it has been written to the lexical and semantic indexes
+/// instead of every document's text accumulating in a `Vec` until the end.
+struct ExtractedWork {
+    node_id: u64,
+    path: PathBuf,
+    name: String,
+    modified: u64,
+    content: Option<String>,
+    units: Vec<(usize, usize, Vec<i8>)>,
+    content_hash: Option<String>,
+    /// Present for images, even when OCR produced no text.
+    image_sig: Option<Vec<u8>>,
+    /// Opportunistic hash from an already-fresh cached thumbnail.
+    image_phash: Option<u64>,
+    /// Whether a missing opportunistic hash must invalidate the stored dHash.
+    phash_needs_refresh: bool,
+}
+
+fn fnv_hash(data: &str) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in data.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+/// True while a perceptual-hash backfill thread is running.
+static PHASH_BACKFILL_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Computes perceptual hashes for images the crawl deliberately skipped.
+///
+/// Full-image decoding is the slowest and most memory-hungry part of image
+/// handling, and the hash is only used by the `/dupes` view — it must never
+/// gate OCR or the search index. This worker decodes one image at a time,
+/// pauses during crawls and while a query is in flight, and lets hashes appear
+/// progressively in duplicate grouping.
+fn start_phash_backfill(
+    metadata: Arc<RwLock<MetadataStore>>,
+    content_index: Arc<RwLock<Option<ContentIndex>>>,
+    visual_store: Arc<RwLock<crate::embed::visual::VisualStore>>,
+    crawl_running: Arc<AtomicBool>,
+    query_in_flight: Arc<AtomicBool>,
+) {
+    if PHASH_BACKFILL_RUNNING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    thread::spawn(move || {
+        let thumbs_dir = KensakuConfig::config_dir().join("thumbs");
+        struct ResetOnExit;
+        impl Drop for ResetOnExit {
+            fn drop(&mut self) {
+                PHASH_BACKFILL_RUNNING.store(false, Ordering::SeqCst);
+            }
+        }
+        let _reset = ResetOnExit;
+
+        let Some(db) = metadata.read().db() else {
+            return;
+        };
+
+        loop {
+            // Never compete with a crawl or an interactive query.
+            while crawl_running.load(Ordering::Relaxed) {
+                thread::sleep(std::time::Duration::from_millis(500));
+            }
+            while query_in_flight.load(Ordering::Relaxed) {
+                thread::sleep(std::time::Duration::from_millis(100));
+            }
+
+            let paths = match db.image_paths_missing_phash(16) {
+                Ok(paths) => paths,
+                Err(_) => return,
+            };
+            if !paths.is_empty() {
+                for path in paths {
+                    if crawl_running.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    if query_in_flight.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let hash = crate::indexer::extract::image::phash64_cached(&path, &thumbs_dir)
+                        .unwrap_or(u64::MAX);
+                    let _ = db.set_image_phash(&path, hash);
+
+                    if hash != u64::MAX {
+                        let thumb =
+                            crate::indexer::extract::image::thumbnail_path(&path, &thumbs_dir);
+                        if thumb.is_file()
+                            && let Ok(Some(node_id)) = db.get_node_id_by_path(&path)
+                        {
+                            let needs = visual_store.read().needs_embedding(node_id, hash);
+                            if needs
+                                && let Some(encoder) = crate::embed::visual::active_encoder()
+                                && let Some(vec) = encoder.embed_image_from_thumbnail(&thumb)
+                            {
+                                visual_store.write().add_or_update(node_id, hash, &vec);
+                                let _ =
+                                    db.save_visual_unit(node_id, encoder.model_id(), hash, &vec);
+                            }
+                        }
+                    }
+
+                    crate::util::memory::release_memory();
+                    // One decode at a time, with a small yield between images so
+                    // typing stays responsive.
+                    thread::sleep(std::time::Duration::from_millis(20));
+                }
+                continue;
+            }
+
+            // Hashes are complete. Now assign bursts to old rows in small
+            // batches. Text comes from the committed content index, so this
+            // also works for images indexed before burst grouping existed.
+            let paths = match db.image_paths_missing_burst(50) {
+                Ok(paths) => paths,
+                Err(_) => return,
+            };
+            if paths.is_empty() {
+                return;
+            }
+            for path in paths {
+                if crawl_running.load(Ordering::Relaxed) {
+                    break;
+                }
+                let signature = content_index
+                    .read()
+                    .as_ref()
+                    .and_then(|index| index.get_stored_text(&path))
+                    .map(|text| crate::indexer::burst::line_signature(&text))
+                    .unwrap_or_default();
+                let Ok(updates) = db.set_image_text_sig(&path, &signature) else {
+                    return;
+                };
+                if !updates.is_empty() {
+                    metadata.write().apply_bursts(&updates);
+                }
+                let Ok(updates) = db.assign_burst_for_path(&path) else {
+                    return;
+                };
+                metadata.write().apply_bursts(&updates);
+                crate::util::memory::release_memory();
+                thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+    });
+}
+
 pub struct IndexerManager {
     pub metadata: Arc<RwLock<MetadataStore>>,
     pub content_index: Arc<RwLock<Option<ContentIndex>>>,
     pub unit_store: Arc<RwLock<UnitStore>>,
+    pub visual_store: Arc<RwLock<crate::embed::visual::VisualStore>>,
     pub embedding_queue: Arc<Mutex<Option<EmbeddingQueue>>>,
     pub query_in_flight: Arc<AtomicBool>,
     pub config: Arc<RwLock<KensakuConfig>>,
@@ -91,6 +273,8 @@ pub struct IndexerManager {
 
 impl IndexerManager {
     pub fn new(config: KensakuConfig) -> Self {
+        // Apply the opt-in external extractor registry before any crawl starts.
+        crate::indexer::extract::set_external_extractors(config.extractors.clone());
         let index_dir = KensakuConfig::index_dir();
         let content_index = match ContentIndex::new(&index_dir) {
             Ok(idx) => Some(idx),
@@ -99,14 +283,25 @@ impl IndexerManager {
                 None
             }
         };
+        let content_rebuilt = content_index.as_ref().is_some_and(|index| index.rebuilt);
 
         let metadata_store = Arc::new(RwLock::new(MetadataStore::new()));
         let unit_store = Arc::new(RwLock::new(UnitStore::new(EMBEDDING_DIM)));
+        let visual_store = Arc::new(RwLock::new(crate::embed::visual::VisualStore::new(
+            crate::embed::visual::VISUAL_DIM,
+            crate::embed::visual::MOCK_VISUAL_MODEL_ID,
+        )));
         let query_in_flight = Arc::new(AtomicBool::new(false));
+
+        // Semantic state (the ~30 MB embedding table and the persisted unit
+        // vectors) is only loaded when semantic search is actually enabled.
+        // With it off the indexer stays a plain lexical index and keeps that
+        // memory free.
+        let semantic_enabled = config.semantic_enabled;
 
         // Discard semantic units produced by a different embedding model; the
         // embedding worker re-queues every node once it starts.
-        if let Some(db) = metadata_store.read().db() {
+        if semantic_enabled && let Some(db) = metadata_store.read().db() {
             let expected_model_id = ModelRegistry::global().model_id;
             match db.units_model_id() {
                 Ok(Some(existing_model_id)) if existing_model_id != expected_model_id => {
@@ -131,16 +326,15 @@ impl IndexerManager {
             }
         }
 
-        // Load persisted units from database
+        // Load persisted units from database. These are required for semantic
+        // search even if the user toggles the tier on later in this session, so
+        // they are always restored; only the embedding table is lazy.
         let mut units_count = 0;
         if let Some(db) = metadata_store.read().db() {
-            match db.load_all_units() {
-                Ok(units_with_vecs) => {
-                    units_count = units_with_vecs.len();
-                    let mut store = unit_store.write();
-                    for (unit, vec) in units_with_vecs {
-                        store.add_unit(unit, &vec);
-                    }
+            let mut store = unit_store.write();
+            match db.load_units_into(&mut store) {
+                Ok(count) => {
+                    units_count = count;
                     if units_count > 0 {
                         println!(
                             "[Kensaku] Loaded {} semantic units from database",
@@ -152,12 +346,23 @@ impl IndexerManager {
                     eprintln!("[Kensaku] Failed to load semantic units: {}", e);
                 }
             }
+            let mut vstore = visual_store.write();
+            let _ = db.load_visual_units_into(&mut vstore);
+        }
+
+        if content_rebuilt {
+            let marked = metadata_store.write().mark_all_content_pending();
+            eprintln!(
+                "[Kensaku] Content index schema upgraded; {} file(s) queued for re-indexing",
+                marked
+            );
         }
 
         Self {
             metadata: metadata_store,
             content_index: Arc::new(RwLock::new(content_index)),
             unit_store,
+            visual_store,
             embedding_queue: Arc::new(Mutex::new(None)),
             query_in_flight,
             config: Arc::new(RwLock::new(config)),
@@ -173,6 +378,63 @@ impl IndexerManager {
                 total_files: 0,
                 extract_done: 0,
                 extract_total: 0,
+                paused: false,
+            })),
+            crawl_start_unix_ms: Arc::new(AtomicU64::new(0)),
+            last_reconcile_unix_secs: Arc::new(AtomicU64::new(0)),
+            watcher_ok: Arc::new(AtomicBool::new(false)),
+            is_running: Arc::new(AtomicBool::new(false)),
+            watcher_handle: Arc::new(Mutex::new(None)),
+            app_handle: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Read-only handle used by GUI clients that talk to a daemon. It loads the
+    /// persisted metadata and Tantivy index without taking a writer lock or
+    /// starting a watcher, so it can coexist with the daemon.
+    pub fn new_readonly(config: KensakuConfig) -> Self {
+        crate::indexer::extract::set_external_extractors(config.extractors.clone());
+        let index_dir = KensakuConfig::index_dir();
+        let content_index = ContentIndex::open_read_only(&index_dir).ok();
+        let metadata_store = Arc::new(RwLock::new(MetadataStore::new()));
+        let unit_store = Arc::new(RwLock::new(UnitStore::new(EMBEDDING_DIM)));
+        let visual_store = Arc::new(RwLock::new(crate::embed::visual::VisualStore::new(
+            crate::embed::visual::VISUAL_DIM,
+            crate::embed::visual::MOCK_VISUAL_MODEL_ID,
+        )));
+        let query_in_flight = Arc::new(AtomicBool::new(false));
+
+        let mut units_count = 0;
+        if let Some(db) = metadata_store.read().db() {
+            let mut store = unit_store.write();
+            if let Ok(count) = db.load_units_into(&mut store) {
+                units_count = count;
+            }
+            let mut vstore = visual_store.write();
+            let _ = db.load_visual_units_into(&mut vstore);
+        }
+
+        Self {
+            metadata: metadata_store,
+            content_index: Arc::new(RwLock::new(content_index)),
+            unit_store,
+            visual_store,
+            embedding_queue: Arc::new(Mutex::new(None)),
+            query_in_flight,
+            config: Arc::new(RwLock::new(config)),
+            status: Arc::new(RwLock::new(IndexingStatus {
+                is_indexing: false,
+                files_indexed: 0,
+                content_indexed: 0,
+                current_status: "Daemon-backed (read-only client)".to_string(),
+                is_embedding: false,
+                units_indexed: units_count,
+                semantic_ready: units_count > 0,
+                phase: "idle".to_string(),
+                total_files: 0,
+                extract_done: 0,
+                extract_total: 0,
+                paused: false,
             })),
             crawl_start_unix_ms: Arc::new(AtomicU64::new(0)),
             last_reconcile_unix_secs: Arc::new(AtomicU64::new(0)),
@@ -194,7 +456,79 @@ impl IndexerManager {
         }
     }
 
+    /// Blocks extraction workers while the user has paused indexing.
+    ///
+    /// The watcher is a separate thread and keeps applying renames/deletes, so
+    /// pausing never makes the index stale about files that disappeared.
+    fn wait_while_paused(
+        config: &Arc<RwLock<KensakuConfig>>,
+        status: &Arc<RwLock<IndexingStatus>>,
+        app_handle: &Arc<RwLock<Option<tauri::AppHandle>>>,
+    ) {
+        loop {
+            let paused = config.read().pause_indexing;
+            if !paused {
+                let mut st = status.write();
+                if st.paused {
+                    st.paused = false;
+                    st.phase = "extracting".to_string();
+                    st.current_status = "Resuming indexing…".to_string();
+                    Self::emit_status(app_handle, &st);
+                }
+                return;
+            }
+
+            let mut st = status.write();
+            if !st.paused {
+                st.paused = true;
+                st.phase = "paused".to_string();
+                st.current_status = "Indexing paused".to_string();
+                Self::emit_status(app_handle, &st);
+            }
+            drop(st);
+            thread::sleep(Duration::from_millis(150));
+        }
+    }
+
+    /// Eco mode limits how often extraction jobs start while on battery.
+    /// Documents already in flight finish normally; fresh watcher events are
+    /// handled by the watcher thread and are not paced.
+    fn pace_on_battery(
+        config: &Arc<RwLock<KensakuConfig>>,
+        battery: &Mutex<(Instant, bool)>,
+        gate: &Mutex<Instant>,
+    ) {
+        let crawl_mode = config.read().crawl_mode;
+        let should_pace = {
+            let mut cached = battery.lock();
+            if cached.0.elapsed() >= Duration::from_secs(30) {
+                cached.1 = crate::util::power::should_pace(crawl_mode);
+                cached.0 = Instant::now();
+            }
+            cached.1
+        };
+        if !should_pace {
+            return;
+        }
+
+        let mut last = gate.lock();
+        let interval = Duration::from_millis(75);
+        if let Some(wait) = interval.checked_sub(last.elapsed()) {
+            thread::sleep(wait);
+        }
+        *last = Instant::now();
+    }
+
     pub fn start_indexing(&self) {
+        if !self
+            .content_index
+            .read()
+            .as_ref()
+            .map(|index| index.is_writable())
+            .unwrap_or(false)
+        {
+            return;
+        }
         if self.is_running.swap(true, Ordering::SeqCst) {
             // Already running
             return;
@@ -208,9 +542,16 @@ impl IndexerManager {
         }
         self.watcher_ok.store(false, Ordering::SeqCst);
 
+        // The crawl embeds newly extracted text inline, so a background
+        // embedding worker from a previous run must not also pick up the same
+        // nodes (it would re-read every file and duplicate units). It is
+        // stopped inside the crawl thread so the IPC call returns immediately,
+        // and restarted at the end for incremental work.
+
         let metadata = Arc::clone(&self.metadata);
         let content_index = Arc::clone(&self.content_index);
         let unit_store = Arc::clone(&self.unit_store);
+        let visual_store = Arc::clone(&self.visual_store);
         let embedding_queue = Arc::clone(&self.embedding_queue);
         let query_in_flight = Arc::clone(&self.query_in_flight);
         let config_arc = Arc::clone(&self.config);
@@ -223,14 +564,19 @@ impl IndexerManager {
         let watcher_ok = Arc::clone(&self.watcher_ok);
 
         thread::spawn(move || {
-            let (watched_dirs, excluded_dirs, excluded_exts) = {
+            let (watched_dirs, excluded_dirs, excluded_exts, crawl_mode) = {
                 let cfg = config_arc.read();
                 (
                     cfg.watched_dirs.clone(),
                     cfg.excluded_dirs.clone(),
                     cfg.excluded_extensions.clone(),
+                    cfg.crawl_mode,
                 )
             };
+
+            // Balanced/eco keep the crawl thread in the OS idle class; full
+            // leaves it at normal priority. Failures are advisory.
+            crate::util::priority::apply(crawl_mode);
 
             crawl_start_unix_ms.store(now_unix_ms(), Ordering::Relaxed);
             watcher_ok.store(false, Ordering::Relaxed);
@@ -238,9 +584,19 @@ impl IndexerManager {
             {
                 let mut st = status.write();
                 st.is_indexing = true;
+                st.paused = false;
                 st.phase = "walking".to_string();
                 st.current_status = "Scanning files...".to_string();
                 Self::emit_status(&app_handle, &st);
+            }
+
+            // Stop a background embedding worker from a previous run before the
+            // crawl starts writing. This runs here (not on the IPC thread) so a
+            // long embedding batch cannot block the caller. The crawl embeds
+            // newly extracted text inline; the worker is restarted afterwards
+            // for incremental work.
+            if let Some(mut queue) = embedding_queue.lock().take() {
+                queue.stop();
             }
 
             println!(
@@ -248,7 +604,7 @@ impl IndexerManager {
                 watched_dirs
             );
 
-            let mut files_count = 0;
+            let mut files_count: usize = 0;
             let mut content_count = 0;
             let mut pending_commits = 0;
             let mut crawled_paths: HashSet<PathBuf> = HashSet::new();
@@ -274,7 +630,7 @@ impl IndexerManager {
 
             // Phase 2a: Filter excluded extensions, check incremental, add metadata.
             // Collect indexable files for parallel content extraction.
-            let mut to_extract: Vec<(PathBuf, String, u64)> = Vec::new();
+            let mut to_extract: Vec<ExtractJob> = Vec::new();
 
             for entry in all_entries {
                 files_count += 1;
@@ -288,24 +644,26 @@ impl IndexerManager {
                     continue;
                 }
 
-                // Incremental crawl: check + add under a single write lock. A
-                // pending entry is re-processed even when mtime/size match so
-                // an OCR toggle only re-scans images.
-                {
-                    let mut store = metadata.write();
-                    let (unchanged, was_pending) = match store.get(&entry.path) {
-                        Some(existing) => {
-                            (is_unchanged(existing, &entry), existing.content_pending)
-                        }
-                        None => (false, false),
-                    };
-                    if unchanged {
-                        continue;
-                    }
-                    store.add(entry.clone());
-                    if was_pending {
-                        pending_images.insert(entry.path.clone());
-                    }
+                // Incremental crawl: a cheap read-lock check first, so an
+                // unchanged tree never contends on the write lock or touches
+                // SQLite. A pending entry is re-processed even when mtime/size
+                // match so an OCR toggle only re-scans images.
+                let previous = { metadata.read().get(&entry.path) };
+                let unchanged = previous
+                    .as_ref()
+                    .is_some_and(|existing| is_unchanged(existing, &entry));
+                if unchanged {
+                    continue;
+                }
+                let was_pending = previous
+                    .as_ref()
+                    .is_some_and(|existing| existing.content_pending);
+                let phash_needs_refresh = previous.as_ref().is_none_or(|existing| {
+                    existing.modified != entry.modified || existing.size != entry.size
+                });
+                let node_id = metadata.write().add(entry.clone());
+                if was_pending {
+                    pending_images.insert(entry.path.clone());
                 }
 
                 // Queue indexable files for parallel content extraction.
@@ -313,13 +671,24 @@ impl IndexerManager {
                 // hydrate (download) them.
                 if !entry.is_dir
                     && (is_indexable_extension(entry.extension.as_deref())
-                        || is_indexable_file_name(&entry.name))
+                        || is_indexable_file_name(&entry.name)
+                        || crate::indexer::extract::external::handles(&entry.path))
                     && !is_cloud_placeholder_path(&entry.path)
                 {
-                    to_extract.push((entry.path.clone(), entry.name.clone(), entry.modified));
+                    to_extract.push(ExtractJob {
+                        node_id,
+                        path: entry.path.clone(),
+                        name: entry.name.clone(),
+                        modified: entry.modified,
+                        size: entry.size,
+                        is_image: entry.extension.as_deref().is_some_and(
+                            crate::indexer::extract::image::is_supported_image_extension,
+                        ),
+                        phash_needs_refresh,
+                    });
                 }
 
-                if files_count % 500 == 0 {
+                if files_count.is_multiple_of(500) {
                     let mut st = status.write();
                     st.files_indexed = files_count;
                     st.content_indexed = content_count;
@@ -328,7 +697,20 @@ impl IndexerManager {
                 }
             }
 
-            // Phase 2b: Parallel content extraction with rayon
+            // Index text and small files first. Images (OCR) are the slow tail,
+            // so this makes the lexical index useful earlier in the crawl while
+            // the same total amount of work is done. Within each class, newest
+            // files win so a just-saved document is searchable first.
+            to_extract.sort_unstable_by_key(extract_sort_key);
+
+            // Phase 2b: streaming extraction → lexical index → semantic index.
+            //
+            // Previously every extracted document was collected into a Vec and
+            // indexed afterwards, and the semantic worker then re-read and
+            // re-extracted every file (re-running OCR). The pipeline below
+            // extracts each file exactly once and hands it to both indexes
+            // through a bounded channel, so peak memory stays flat and images
+            // are OCR'd once instead of twice.
             let extract_total = to_extract.len();
             {
                 let mut st = status.write();
@@ -338,84 +720,256 @@ impl IndexerManager {
                 st.total_files = total_entries;
                 st.extract_total = extract_total;
                 st.extract_done = 0;
-                st.current_status = format!("Extracting text from {} potential files...", extract_total);
+                st.current_status =
+                    format!("Extracting text from {} potential files...", extract_total);
                 Self::emit_status(&app_handle, &st);
+            }
+
+            let semantic_enabled = config_arc.read().semantic_enabled;
+            let model = semantic_enabled.then(|| ModelRegistry::global().clone());
+            let embed_model_id = model.as_ref().map(|m| m.model_id);
+
+            // Drop semantic units for every file about to be re-extracted. New
+            // files have none, so a first scan does no work here. One batched
+            // pass (instead of per-file vector compaction) keeps re-indexing a
+            // large tree linear.
+            if semantic_enabled && !to_extract.is_empty() {
+                let ids: HashSet<u64> = to_extract
+                    .iter()
+                    .map(|job| job.node_id)
+                    .filter(|id| *id > 0)
+                    .collect();
+                if !ids.is_empty() {
+                    let id_vec: Vec<u64> = ids.iter().copied().collect();
+                    if let Some(db) = metadata.read().db() {
+                        let _ = db.delete_units_for_nodes(&id_vec);
+                        let _ = db.delete_visual_units_for_nodes(&id_vec);
+                    }
+                    unit_store.write().remove_units_for_nodes(&ids);
+                    for id in &ids {
+                        visual_store.write().remove_node(*id);
+                    }
+                }
             }
 
             let extract_done = AtomicUsize::new(0);
-            let extracted: Vec<(PathBuf, String, String, u64)> = {
+            let mut extracted_paths: HashSet<PathBuf> = HashSet::new();
+            let mut units_added = 0usize;
+
+            // Bounded handoff: at most 32 extracted documents (and their
+            // vectors) are in flight at any moment.
+            let (tx, rx) = std::sync::mpsc::sync_channel::<ExtractedWork>(32);
+            let image_db = metadata.read().db();
+            let db_handle = metadata.read().db();
+            let thumbs_dir = KensakuConfig::config_dir().join("thumbs");
+            // The producer task runs on the rayon pool and must own its handles;
+            // the consumer (this thread) keeps using the originals.
+            let producer_status = Arc::clone(&status);
+            let producer_app = Arc::clone(&app_handle);
+            let producer_config = Arc::clone(&config_arc);
+            let battery_state = Arc::new(Mutex::new((Instant::now(), false)));
+            let pace_gate = Arc::new(Mutex::new(Instant::now()));
+
+            rayon::scope(|scope| {
                 use rayon::prelude::*;
-                // Image metadata is best-effort: a corrupt or unsupported image
-                // must not prevent text extraction (OCR) from being attempted.
-                let image_db = metadata.read().db();
-                to_extract
-                    .par_iter()
-                    .filter_map(|(path, name, modified)| {
-                        let image_extension =
-                            path.extension().and_then(|ext| ext.to_str()).filter(|ext| {
-                                crate::indexer::extract::image::is_supported_image_extension(ext)
-                            });
-                        if image_extension.is_some()
-                            && let (Some((width, height)), Some(phash)) = (
-                                crate::indexer::extract::image::dimensions(path),
-                                crate::indexer::extract::image::phash64(path),
-                            )
+
+                scope.spawn(move |_| {
+                    to_extract.par_iter().for_each_with(tx, |tx, job| {
+                        Self::wait_while_paused(&producer_config, &producer_status, &producer_app);
+                        Self::pace_on_battery(&producer_config, &battery_state, &pace_gate);
+
+                        // Image dimensions come from the file header, which is
+                        // cheap. Perceptual hashing needs a full decode; doing
+                        // it here would serialize the whole crawl behind a
+                        // handful of decode slots and starve OCR. The hash is
+                        // filled in later by the background backfill.
+                        if job.is_image
+                            && let Some((width, height)) =
+                                crate::indexer::extract::image::dimensions(&job.path)
                             && let Some(db) = image_db.as_ref()
                         {
-                            let _ = db.set_image_meta(path, width, height, phash);
+                            let _ = db.set_image_dimensions(&job.path, width, height);
                         }
 
-                        let content =
-                            read_text_content(path, 1_048_576)
-                                .map(|content| (path.clone(), name.clone(), content, *modified));
+                        let content = read_text_content(&job.path, 1_048_576);
+                        let image_sig = job.is_image.then(|| {
+                            content
+                                .as_deref()
+                                .map(crate::indexer::burst::line_signature)
+                                .unwrap_or_default()
+                        });
+                        let image_phash = if job.is_image {
+                            crate::indexer::extract::image::phash64_reusing_fresh_thumbnail(
+                                &job.path,
+                                &thumbs_dir,
+                            )
+                        } else {
+                            None
+                        };
+
+                        // Embed here, in parallel with extraction and lexical
+                        // indexing. The vectors travel with the text so the
+                        // semantic tier never has to touch the file again.
+                        let (units, content_hash) = match (model.as_ref(), content.as_deref()) {
+                            (Some(model), Some(text)) if !text.trim().is_empty() => {
+                                let chunks = chunk_text(text, job.size as usize);
+                                let vectors: Vec<(usize, usize, Vec<i8>)> = chunks
+                                    .into_par_iter()
+                                    .map(|(start, end, chunk)| {
+                                        (start, end, model.embed_to_i8(&chunk))
+                                    })
+                                    .collect();
+                                (vectors, Some(format!("{:x}", fnv_hash(text))))
+                            }
+                            _ => (Vec::new(), None),
+                        };
 
                         let done = extract_done.fetch_add(1, Ordering::Relaxed) + 1;
-                        if done % 25 == 0 || done == extract_total {
-                            let mut st = status.write();
+                        if done.is_multiple_of(25) || done == extract_total {
+                            let mut st = producer_status.write();
                             st.extract_done = done;
                             st.current_status =
                                 format!("Extracting text… {}/{} files", done, extract_total);
-                            Self::emit_status(&app_handle, &st);
+                            Self::emit_status(&producer_app, &st);
                         }
 
-                        content
-                    })
-                    .collect()
-            };
+                        // Consumer may be gone only if the crawl is shutting
+                        // down; dropping the work is safe in that case.
+                        let _ = tx.send(ExtractedWork {
+                            node_id: job.node_id,
+                            path: job.path.clone(),
+                            name: job.name.clone(),
+                            modified: job.modified,
+                            content,
+                            units,
+                            content_hash,
+                            image_sig,
+                            image_phash,
+                            phash_needs_refresh: job.phash_needs_refresh,
+                        });
+                    });
+                });
+
+                // Single writer for both indexes (Tantivy requires one).
+                let index_guard = content_index.read();
+                let c_index = index_guard.as_ref();
+                for work in rx {
+                    if let Some(ref content) = work.content
+                        && let Some(c_index) = c_index
+                    {
+                        let _ =
+                            c_index.add_or_update(&work.path, &work.name, content, work.modified);
+                        content_count += 1;
+                        pending_commits += 1;
+
+                        // Publish live counts instead of waiting for a commit
+                        // boundary, otherwise the UI reports 0 documents while
+                        // extraction is still running.
+                        if content_count.is_multiple_of(64) {
+                            let mut st = status.write();
+                            st.files_indexed = files_count;
+                            st.content_indexed = content_count;
+                            Self::emit_status(&app_handle, &st);
+                        }
+                    }
+
+                    if let Some(signature) = work.image_sig.as_deref()
+                        && let Some(db) = db_handle.as_ref()
+                    {
+                        if let Ok(updates) = db.set_image_text_sig(&work.path, signature) {
+                            if !updates.is_empty() {
+                                metadata.write().apply_bursts(&updates);
+                            }
+                            if let Some(phash) = work.image_phash
+                                && phash != u64::MAX
+                            {
+                                let _ = db.set_image_phash(&work.path, phash);
+                                match db.assign_burst_for_path(&work.path) {
+                                    Ok(updates) if !updates.is_empty() => {
+                                        metadata.write().apply_bursts(&updates);
+                                    }
+                                    _ => metadata.write().clear_burst_for_path(&work.path),
+                                }
+                            } else if work.phash_needs_refresh {
+                                if let Ok(updates) = db.clear_image_hash(&work.path)
+                                    && !updates.is_empty()
+                                {
+                                    metadata.write().apply_bursts(&updates);
+                                }
+                                metadata.write().clear_burst_for_path(&work.path);
+                            } else {
+                                // Pending OCR: the pixels did not change, so
+                                // keep the existing dHash for this re-assignment.
+                                match db.assign_burst_for_path(&work.path) {
+                                    Ok(updates) if !updates.is_empty() => {
+                                        metadata.write().apply_bursts(&updates);
+                                    }
+                                    _ => metadata.write().clear_burst_for_path(&work.path),
+                                }
+                            }
+                        } else {
+                            metadata.write().clear_burst_for_path(&work.path);
+                        }
+                    }
+
+                    if pending_images.contains(&work.path) && work.content.is_some() {
+                        extracted_paths.insert(work.path.clone());
+                    }
+
+                    if let Some(model_id) = embed_model_id
+                        && let Some(db) = db_handle.as_ref()
+                    {
+                        for (start, end, vector) in &work.units {
+                            if let Ok(id) =
+                                db.insert_unit(work.node_id, *start, *end, model_id, vector)
+                            {
+                                let unit = Unit {
+                                    id,
+                                    node_id: work.node_id,
+                                    byte_start: *start,
+                                    byte_end: *end,
+                                    model_id,
+                                };
+                                unit_store.write().add_unit(unit, vector);
+                                units_added += 1;
+                                if units_added.is_multiple_of(256) {
+                                    let mut st = status.write();
+                                    st.units_indexed = unit_store.read().len();
+                                    st.semantic_ready = st.units_indexed > 0;
+                                    Self::emit_status(&app_handle, &st);
+                                }
+                            }
+                        }
+                        let _ = db.update_node_indexed_gen(
+                            work.node_id,
+                            1,
+                            work.content_hash.as_deref(),
+                        );
+                    }
+
+                    if pending_commits >= 512
+                        && let Some(c_index) = c_index
+                    {
+                        let _ = c_index.commit();
+                        pending_commits = 0;
+                        let mut st = status.write();
+                        st.content_indexed = content_count;
+                        Self::emit_status(&app_handle, &st);
+                    }
+                }
+            });
+
             {
                 let mut st = status.write();
                 st.extract_done = extract_total;
-                Self::emit_status(&app_handle, &st);
-            }
-
-            // Phase 2c: Sequential Tantivy indexing (single writer)
-            {
-                let mut st = status.write();
-                st.phase = "committing".to_string();
-                st.files_indexed = files_count;
                 st.content_indexed = content_count;
+                if semantic_enabled {
+                    st.units_indexed = unit_store.read().len();
+                    st.semantic_ready = st.units_indexed > 0;
+                }
+                st.phase = "committing".to_string();
                 st.current_status = "Updating search index...".to_string();
                 Self::emit_status(&app_handle, &st);
-            }
-
-            let mut extracted_paths: HashSet<PathBuf> = HashSet::new();
-            for (path, name, content, modified) in extracted {
-                if let Some(c_index) = content_index.read().as_ref() {
-                    let _ = c_index.add_or_update(&path, &name, &content, modified);
-                    content_count += 1;
-                    pending_commits += 1;
-                }
-
-                if pending_images.contains(&path) {
-                    extracted_paths.insert(path);
-                }
-
-                if pending_commits >= 1000 {
-                    if let Some(c_index) = content_index.read().as_ref() {
-                        let _ = c_index.commit();
-                    }
-                    pending_commits = 0;
-                }
             }
 
             // A pending image re-scanned by this crawl is done. When extraction
@@ -466,18 +1020,28 @@ impl IndexerManager {
             // Drop metadata entries for files that no longer exist on disk.
             let stale_paths: Vec<PathBuf> = {
                 let store = metadata.read();
-                store
-                    .get_entries()
-                    .iter()
-                    .filter(|entry| {
-                        !crawled_paths.contains(&entry.path)
-                            && !belongs_to_unavailable_root(&entry.path)
+                (0..store.len())
+                    .filter_map(|i| {
+                        let e = store.materialize(i as u32);
+                        if !crawled_paths.contains(&e.path) && !belongs_to_unavailable_root(&e.path)
+                        {
+                            Some(e.path)
+                        } else {
+                            None
+                        }
                     })
-                    .map(|entry| entry.path.clone())
                     .collect()
             };
 
             if !stale_paths.is_empty() {
+                // Drop content documents for the same paths directly. The old
+                // implementation scanned the entire content index on every
+                // crawl, which cost seconds on large corpora; the crawl already
+                // knows exactly what disappeared.
+                if let Some(c_index) = content_index.read().as_ref() {
+                    let _ = c_index.remove_many(&stale_paths);
+                }
+
                 let mut store = metadata.write();
                 for path in &stale_paths {
                     store.remove(path);
@@ -486,36 +1050,6 @@ impl IndexerManager {
                     "[Kensaku Indexer] Removed {} stale metadata entries",
                     stale_paths.len()
                 );
-            }
-
-            // Purge content-index documents that no longer have a metadata
-            // entry: files deleted while the app was closed, or trees that
-            // belong to watched directories removed from the configuration.
-            let valid_paths: HashSet<PathBuf> = {
-                let store = metadata.read();
-                store
-                    .get_entries()
-                    .iter()
-                    .map(|entry| entry.path.clone())
-                    .collect()
-            };
-
-            if let Some(c_index) = content_index.read().as_ref() {
-                match c_index.purge_stale(&valid_paths, &unavailable_roots) {
-                    Ok(0) => {}
-                    Ok(purged) => {
-                        println!(
-                            "[Kensaku Indexer] Purged {} stale content documents",
-                            purged
-                        );
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "[Kensaku Indexer] Failed to purge stale content documents: {}",
-                            e
-                        );
-                    }
-                }
             }
 
             // Final commit
@@ -537,6 +1071,7 @@ impl IndexerManager {
             {
                 let mut st = status.write();
                 st.is_indexing = false;
+                st.paused = false;
                 st.phase = "idle".to_string();
                 st.files_indexed = files_count;
                 st.content_indexed = content_count;
@@ -553,7 +1088,7 @@ impl IndexerManager {
             let handle = start_file_watcher(
                 watched_dirs,
                 metadata.clone(),
-                content_index,
+                content_index.clone(),
                 config_arc.clone(),
                 Arc::clone(&watcher_ok),
             );
@@ -583,6 +1118,17 @@ impl IndexerManager {
             }
 
             is_running.store(false, Ordering::SeqCst);
+
+            // Fill in perceptual hashes that the crawl skipped, one image at a
+            // time. Safe to start here: the crawl transaction is committed and
+            // the worker pauses if another crawl begins.
+            start_phash_backfill(
+                Arc::clone(&metadata),
+                Arc::clone(&content_index),
+                Arc::clone(&visual_store),
+                Arc::clone(&is_running),
+                Arc::clone(&query_in_flight),
+            );
         });
     }
 
@@ -590,10 +1136,313 @@ impl IndexerManager {
         self.status.read().clone()
     }
 
+    /// Runs a query against the live, in-process stores (no second open, no
+    /// per-query metadata/vector reload). Used by the daemon search method.
+    pub fn search_page(
+        &self,
+        query: &str,
+        limit: usize,
+        offset: usize,
+        with_snippets: bool,
+    ) -> Result<SearchResponse, String> {
+        let config = self.config.read();
+        let aliases = config.alias_pairs();
+        let metadata = self.metadata.read();
+        let content = self.content_index.read();
+        let units = self.unit_store.read();
+        let visual = self.visual_store.read();
+        Ok(
+            SearchDispatcher::search_response_fast_sorted_with_snippets_and_visual(
+                query,
+                &metadata,
+                &content,
+                Some(&units),
+                Some(&visual),
+                config.semantic_enabled,
+                limit,
+                0,
+                SortOrder::Best,
+                &aliases,
+                offset,
+                with_snippets,
+            ),
+        )
+    }
+
+    /// Looks up visually similar images for a given path.
+    pub fn find_similar_images(
+        &self,
+        path: &std::path::Path,
+        limit: usize,
+    ) -> Result<Vec<crate::embed::visual::SimilarImageResult>, String> {
+        let metadata = self.metadata.read();
+        let visual_store = self.visual_store.read();
+
+        // 1. Resolve source entry and vector
+        let (source_node_id, query_vec) = if let Some(entry) = metadata.get(path) {
+            let vec_opt = visual_store.get_vector(entry.id).map(|v| v.to_vec());
+            (Some(entry.id), vec_opt)
+        } else {
+            (None, None)
+        };
+
+        let query_vec = match query_vec {
+            Some(v) => v,
+            None => {
+                let encoder = crate::embed::visual::active_encoder().ok_or_else(|| {
+                    "Visual embeddings are not available in this build; install the visual model pack"
+                        .to_string()
+                })?;
+                let thumbs_dir = KensakuConfig::config_dir().join("thumbs");
+                let thumb = crate::indexer::extract::image::thumbnail_path(path, &thumbs_dir);
+                if thumb.is_file()
+                    && let Some(v) = encoder.embed_image_from_thumbnail(&thumb)
+                {
+                    v
+                } else if path.is_file() {
+                    let img = image::open(path)
+                        .map_err(|e| format!("Failed to open image {}: {}", path.display(), e))?;
+                    encoder.embed_image(&img)
+                } else {
+                    return Err(format!(
+                        "Image not found or not readable: {}",
+                        path.display()
+                    ));
+                }
+            }
+        };
+
+        let floor = 0.30f32;
+        let hits = visual_store.find_similar(&query_vec, source_node_id, floor, limit);
+
+        let mut results = Vec::new();
+        for (node_id, similarity) in hits {
+            if let Some(entry) = metadata.get_by_node_id(node_id) {
+                let is_image = entry
+                    .path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(crate::indexer::extract::image::is_supported_image_extension);
+                if is_image {
+                    results.push(crate::embed::visual::SimilarImageResult {
+                        path: entry.path.to_string_lossy().to_string(),
+                        filename: entry.name,
+                        similarity,
+                        file_size: entry.size,
+                        modified: entry.modified,
+                    });
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Compact live state shared by the daemon, CLI and MCP. Avoids loading
+    /// the embedding table or re-opening SQLite/Tantivy.
+    pub fn state_json(&self) -> Result<serde_json::Value, String> {
+        let (files, dirs) = {
+            let store = self.metadata.read();
+            let mut files = 0u64;
+            let mut dirs = 0u64;
+            for index in 0..store.len() {
+                if store.node(index as u32).is_dir() {
+                    dirs += 1;
+                } else {
+                    files += 1;
+                }
+            }
+            (files, dirs)
+        };
+        let content_docs = self
+            .content_index
+            .read()
+            .as_ref()
+            .map(|index| index.num_docs())
+            .unwrap_or(0);
+        let semantic_units = self.unit_store.read().len() as u64;
+        let config = self.config.read();
+        let roots: Vec<String> = config
+            .watched_dirs
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
+        let units_model_id = match self.metadata.read().db() {
+            Some(db) => db.units_model_id()?,
+            None => None,
+        };
+        let model_dir = KensakuConfig::config_dir().join("models");
+        let real_model = model_dir.join("model.safetensors").is_file()
+            && model_dir.join("tokenizer.json").is_file();
+        let (active_model_id, model_name) = if real_model {
+            (
+                crate::embed::model::REAL_MODEL_ID,
+                "potion-base-8M".to_string(),
+            )
+        } else {
+            (
+                crate::embed::model::DEFAULT_MODEL_ID,
+                "static-embed-256".to_string(),
+            )
+        };
+        let index_dir = KensakuConfig::index_dir();
+        let index_bytes = dir_size_bytes(&index_dir).saturating_add(prefixed_file_bytes(
+            &KensakuConfig::config_dir(),
+            "metadata.db",
+        ));
+        let last_reconcile = last_modified_secs(&[
+            KensakuConfig::config_dir().join("metadata.db"),
+            index_dir.join("meta.json"),
+        ]);
+        let status = self.get_status();
+
+        Ok(serde_json::json!({
+            "files": files,
+            "dirs": dirs,
+            "content_docs": content_docs,
+            "content_index_ready": self.content_index.read().is_some(),
+            "semantic_units": semantic_units,
+            "index_bytes": index_bytes,
+            "model_id": units_model_id,
+            "active_model_id": active_model_id,
+            "model_name": model_name,
+            "model_real": real_model,
+            "roots": roots,
+            "last_reconcile": last_reconcile,
+            "is_indexing": status.is_indexing,
+            "paused": status.paused,
+            "phase": status.phase,
+            "files_indexed": status.files_indexed,
+            "content_indexed": status.content_indexed,
+            "extract_done": status.extract_done,
+            "extract_total": status.extract_total,
+        }))
+    }
+
     /// True while a live filesystem watcher is running.
     pub fn watcher_ok(&self) -> bool {
         self.watcher_ok.load(Ordering::Relaxed)
     }
+
+    pub fn apply_config(&self, config: KensakuConfig) -> Result<(), String> {
+        let previous = self.config.read().clone();
+        let ocr_changed =
+            previous.ocr_enabled != config.ocr_enabled || previous.ocr_engine != config.ocr_engine;
+        let extractors_changed = previous.extractors != config.extractors;
+
+        config.save()?;
+        *self.config.write() = config.clone();
+        crate::util::priority::apply(config.crawl_mode);
+
+        let mut reindex = false;
+        if ocr_changed {
+            crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
+            crate::ocr::set_engine(&config.ocr_engine);
+            let marked = self.metadata.write().mark_images_pending();
+            eprintln!(
+                "[Kensaku] OCR {}: {} image(s) queued for re-scan",
+                if config.ocr_enabled {
+                    "enabled"
+                } else {
+                    "disabled"
+                },
+                marked
+            );
+            reindex = true;
+        }
+
+        if extractors_changed {
+            crate::indexer::extract::set_external_extractors(config.extractors.clone());
+            let active: Vec<_> = previous
+                .extractors
+                .iter()
+                .chain(config.extractors.iter())
+                .filter(|extractor| extractor.enabled)
+                .collect();
+            if !active.is_empty() {
+                let extensions: Vec<String> = active
+                    .iter()
+                    .flat_map(|extractor| extractor.extensions.iter().cloned())
+                    .collect();
+                let broad = active.iter().any(|extractor| {
+                    extractor
+                        .mime
+                        .iter()
+                        .any(|selector| !selector.trim().is_empty())
+                        || extractor
+                            .extensions
+                            .iter()
+                            .any(|selector| selector.trim().trim_start_matches('.') == "*")
+                });
+                let marked = if broad || extensions.is_empty() {
+                    self.metadata.write().mark_all_content_pending()
+                } else {
+                    self.metadata.write().mark_extensions_pending(&extensions)
+                };
+                eprintln!(
+                    "[Kensaku] External extractors changed; {} file(s) queued for re-scan",
+                    marked
+                );
+                reindex = true;
+            }
+        }
+
+        if reindex {
+            self.start_indexing();
+        }
+        Ok(())
+    }
+}
+
+fn dir_size_bytes(dir: &std::path::Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut total = 0u64;
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_dir() {
+            total = total.saturating_add(dir_size_bytes(&entry.path()));
+        } else if file_type.is_file() {
+            total = total.saturating_add(entry.metadata().map(|meta| meta.len()).unwrap_or(0));
+        }
+    }
+    total
+}
+
+fn prefixed_file_bytes(dir: &std::path::Path, prefix: &str) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut total = 0u64;
+    for entry in entries.flatten() {
+        if !entry.file_name().to_string_lossy().starts_with(prefix) {
+            continue;
+        }
+        if entry
+            .file_type()
+            .map(|kind| kind.is_file())
+            .unwrap_or(false)
+        {
+            total = total.saturating_add(entry.metadata().map(|meta| meta.len()).unwrap_or(0));
+        }
+    }
+    total
+}
+
+fn last_modified_secs(paths: &[PathBuf]) -> Option<u64> {
+    paths
+        .iter()
+        .filter_map(|path| {
+            std::fs::metadata(path)
+                .ok()
+                .and_then(|meta| meta.modified().ok())
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|duration| duration.as_secs())
+        })
+        .max()
 }
 
 #[cfg(test)]
@@ -617,6 +1466,31 @@ mod tests {
     }
 
     #[test]
+    fn crawl_orders_text_first_then_newest_then_smallest() {
+        let job = |path: &str, modified: u64, size: u64, is_image: bool| ExtractJob {
+            node_id: 0,
+            path: PathBuf::from(path),
+            name: path.to_string(),
+            modified,
+            size,
+            is_image,
+            phash_needs_refresh: false,
+        };
+        let mut jobs = [
+            job("/old-image", 10, 10, true),
+            job("/old-text", 10, 10, false),
+            job("/new-text", 20, 50, false),
+            job("/new-small-text", 20, 5, false),
+        ];
+        jobs.sort_unstable_by_key(extract_sort_key);
+        let order: Vec<&str> = jobs.iter().map(|job| job.path.to_str().unwrap()).collect();
+        assert_eq!(
+            order,
+            vec!["/new-small-text", "/new-text", "/old-text", "/old-image"]
+        );
+    }
+
+    #[test]
     fn change_detection_honors_pending_content() {
         let existing = entry(100, 10, false);
         assert!(is_unchanged(&existing, &entry(100, 10, false)));
@@ -628,5 +1502,99 @@ mod tests {
             !is_unchanged(&pending, &entry(100, 10, false)),
             "a pending entry must be re-processed even when mtime/size match"
         );
+    }
+
+    #[test]
+    fn find_similar_images_returns_matches_and_excludes_self() {
+        use crate::agent::HeadlessIndex;
+        use crate::embed::visual::{MockVisualEncoder, VisualEncoder};
+        use crate::indexer::metadata_db::MetadataDb;
+
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let temp_dir = std::env::temp_dir().join(format!("kensaku-sim-mgr-{}", nanos));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let db = MetadataDb::open_in_dir(&temp_dir).unwrap();
+        let path1 = temp_dir.join("image_1.png");
+        let path2 = temp_dir.join("image_2.png");
+        let path3 = temp_dir.join("unrelated.jpg");
+
+        let entry1 = FileEntry {
+            id: 1,
+            path: path1.clone(),
+            name: "image_1.png".to_string(),
+            extension: Some("png".to_string()),
+            size: 100,
+            modified: 10,
+            is_dir: false,
+            dev: 0,
+            ino: 0,
+            char_bloom: 0,
+            content_pending: false,
+        };
+        let entry2 = FileEntry {
+            id: 2,
+            path: path2.clone(),
+            name: "image_2.png".to_string(),
+            extension: Some("png".to_string()),
+            size: 100,
+            modified: 10,
+            is_dir: false,
+            dev: 0,
+            ino: 0,
+            char_bloom: 0,
+            content_pending: false,
+        };
+        let entry3 = FileEntry {
+            id: 3,
+            path: path3.clone(),
+            name: "unrelated.jpg".to_string(),
+            extension: Some("jpg".to_string()),
+            size: 100,
+            modified: 10,
+            is_dir: false,
+            dev: 0,
+            ino: 0,
+            char_bloom: 0,
+            content_pending: false,
+        };
+
+        db.upsert(&entry1).unwrap();
+        db.upsert(&entry2).unwrap();
+        db.upsert(&entry3).unwrap();
+
+        let id1 = db.get_node_id_by_path(&path1).unwrap().unwrap();
+        let id2 = db.get_node_id_by_path(&path2).unwrap().unwrap();
+        let id3 = db.get_node_id_by_path(&path3).unwrap().unwrap();
+
+        let encoder = MockVisualEncoder;
+        let vec_base = encoder.embed_text("same concept");
+        let inverted_vec: Vec<i8> = vec_base.iter().map(|&v| -v).collect();
+
+        db.save_visual_unit(id1, encoder.model_id(), 0x1111, &vec_base)
+            .unwrap();
+        db.save_visual_unit(id2, encoder.model_id(), 0x2222, &vec_base)
+            .unwrap();
+        db.save_visual_unit(id3, encoder.model_id(), 0x3333, &inverted_vec)
+            .unwrap();
+
+        let index = HeadlessIndex::open_at(&temp_dir).unwrap();
+
+        let results = index
+            .find_similar_images_local(path1.to_str().unwrap(), 10)
+            .unwrap();
+
+        // 1. Query path1 must be excluded
+        assert!(results.iter().all(|r| r.path != path1.to_string_lossy()));
+
+        // 2. path2 must be returned with similarity ~1.0
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].path, path2.to_string_lossy());
+        assert!(results[0].similarity >= 0.99);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

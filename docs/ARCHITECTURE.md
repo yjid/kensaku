@@ -1,12 +1,11 @@
 # Kensaku v2 — Architecture & Implementation Plan
 
-> **Status:** design through `v0.3.3`. This document describes the target
-> architecture as well as what shipped; they are not identical. In particular,
-> the daemon topology in §3 and the HTTP transport in §9.3 are **planned**, not
-> current — today the GUI backend is in-process and the CLI/MCP load the index
-> themselves. Product direction and sequencing live in
-> [`VISION.md`](VISION.md); the engineering backlog lives in
-> [`REMAINING.md`](REMAINING.md).
+> **Status:** design through `v0.3.3`, updated after the K1–K14 execution pass.
+> The daemon topology in §3 is now shipped: the GUI, CLI, and MCP are clients of
+> `kensaku-daemon` over a Unix socket or Windows named pipe, with a read-only
+> in-process fallback. The loopback HTTP transport in §9.3 is still planned.
+> Product direction and sequencing live in [`VISION.md`](VISION.md); the
+> engineering backlog lives in [`REMAINING.md`](REMAINING.md).
 
 > **One sentence:** a warm, local, read-only index of your machine that answers in under 15 ms — for you, and for every AI agent you use.
 
@@ -21,7 +20,7 @@
 | **Simple** | Zero-config default. One shortcut. One box. One list. No modes, no tabs. |
 | **Smart** | Semantic search that costs ~0.1 ms per query and never needs a GPU. |
 | **Universal** | The same index serves the GUI, the CLI, and MCP/HTTP for agents. |
-| **Small** | Core binary ~15 MB, GUI bundle ~25 MB, semantic model ~8 MB bundled. |
+| **Small** | Core binary ~15 MB, GUI bundle ~25 MB, semantic model loaded as a ~7.7 MB i8 table (f32 fallback is ~30 MB). |
 
 ### UX invariants (non-negotiable, encode these in tests)
 
@@ -78,6 +77,8 @@
 **Why a daemon, not an in-app backend:** the agent surface and the CLI require the index to exist without the GUI. Building it in-process first makes that a rewrite. The GUI becomes a client — which also means index work never competes with webview paint.
 
 **Two binaries, one core crate:** `kensaku` (daemon + CLI + MCP) and `kensaku-app` (Tauri GUI). The GUI auto-spawns the daemon if it isn't running.
+
+**Current state (v0.3.x + K1):** the GUI connects to the daemon for search, snippets, status, config, home data, duplicates, scope suggestions, and pin toggles. It constructs only a read-only `IndexerManager` for fallback when the daemon is unavailable. CLI and MCP also prefer the daemon. Unix and Windows transports use `interprocess` local sockets (Unix socket / named pipe); release packaging of the daemon sidecar is tracked in [REMAINING.md](REMAINING.md) section F.
 
 ---
 
@@ -184,16 +185,16 @@ Schema:
 | `size` | u64, fast | `size:` range |
 | `lang` | u8, fast | `lang:` filter |
 
-- **Custom tokenizer:** split `camelCase`/`snake_case`/`kebab-case`, lowercase, min length 2, max token length 48, CJK bigrams, drop pure-numeric/hash-like tokens. This single change is worth more relevance than any embedding model.
+- **Custom tokenizer (K15):** The `"kensaku"` tokenizer decomposes CJK scripts (Han, Hiragana, Katakana, Hangul) into interleaved unigrams and bigrams with exact offsets and sequential positions, enabling exact word and substring searches across unbroken CJK runs. SimpleTokenizer behavior is preserved for Latin, code, and paths. Schema marker `content.schema` (v2) automates legacy migration.
 - **Never** `QueryParser`. Build `Query` objects from our AST. No OR-by-default.
 - **Content policy:** full text up to 1 MB; head 512 KB + tail 512 KB for larger; metadata-only above 20 MB.
-- **Commit policy:** debounce 2 s or 2,000 docs, writer 128 MB. `wait_merging_threads()` + `garbage_collect_files()` at idle, and a weekly force-merge.
-- **Snippets:** never read a file inside the query. Fetch after ranking, in the blocking pool, for the top 20 only, with an LRU cache of the last 200 files.
+- **Commit policy:** debounce 2 s or 2,000 docs; the current writer arena is 16 MB (tune with [K12](ROADMAP.md#k12-index-format-spike-timeboxed)). `wait_merging_threads()` + `garbage_collect_files()` at idle, and a weekly force-merge.
+- **Snippets:** never read a file inside the query. Fetch after ranking, in the blocking pool, for the visible rows only ([K4](ROADMAP.md#k4-lazy-snippets-and-line-highlighting)), with a small LRU.
+- **Format decision:** the 1M-document K12 run rejected replacing this tier with SQLite FTS5 trigram (918 MB, 258 ms broad BM25) and rejected a sidecar; keep Tantivy and the folded field. See [docs/decisions/index-format.md](decisions/index-format.md).
 
 ### 5.3 Semantic tier — budget **0.5–2 ms**
 
-**Default model: `potion-base-8M` (model2vec, static, 256-dim, int8 table ≈ 8 MB, bundled).**
-No ONNX, no neural graph at query time: tokenize → table lookup → weighted mean → normalize. **~50 µs per query.** ~92 % of MiniLM's MTEB average. Embedding the corpus is also cheap (~50k docs/s), so full re-embed after a model change is minutes, not hours.
+**Default model: `potion-base-8M` (model2vec, static, 256-dim).** The table is stored as i8 with per-row scales (~7.7 MB; the f32 fallback is ~30 MB). No ONNX, no neural graph at query time: tokenize → table lookup → weighted mean → normalize. **~50 µs per query.** ~92 % of MiniLM's MTEB average. Embedding the corpus is also cheap (~50k docs/s), so full re-embed after a model change is minutes, not hours.
 
 **Optional "Smart" pack** (downloaded, ~40 MB): `fastembed-rs` + `ort` with **`load-dynamic`** (never static — prebuilt static ORT requires AVX2 and SIGILLs on older CPUs; dynamic also fixes macOS codesign and Windows dylib swaps). `bge-small-en-v1.5` or `EmbeddingGemma-Q4` for multilingual quality.
 
@@ -212,7 +213,60 @@ struct Unit { node_id, byte_start, byte_end, model_idx }  // 1 vector per unit
 - \> 400k units: build USearch HNSW (`cos`, i8, M=16, efConstruction=200, ef=64) at idle. Deletions via tombstones; rebuild at idle when tombstones > 15 %.
 - **Model identity is per-index:** `units.model_id` + `meta.model_id`. Changing the model never corrupts results — the old index keeps serving while the new one fills.
 
+**Crawl scheduling:** `crawl_mode` selects `full`, `balanced`, or `eco`. Balanced/eco put the crawl thread in the OS idle CPU/I/O class; eco also paces extraction starts on battery. The Settings `pause_indexing` switch gates reads but keeps renames/deletes live. Watcher events settle for 400 ms; files with a fresh mtime are fingerprinted again before their content is trusted.
+
 **Embedding queue:** bounded, resumable cursor in `nodes.indexed_gen`, priority = recently-modified first, then small files first. Hard rules: stop on battery, stop when a query is in flight, stop during fullscreen apps, max 2 threads.
+
+**Optional ONNX smart embedding pack (K17):**
+- **Model:** `bge-small-en-v1.5` (quantized int8 ONNX).
+- **License:** MIT License.
+- **Parameters & Dimensions:** 33.4M parameters, 384 dimensions (quantized to i8, unit-normalized).
+- **Disk size:** ~34.7 MB total (`model.onnx` 34,014,426 B, `tokenizer.json` 711,396 B, `config.json` 683 B).
+- **Inference & Concurrency:** Loaded through `ort` under the optional `smart-embeddings` feature. Single intra-op thread per session; maximum 2 parallel inference workers in the embed queue; batch size capped at 16 chunks.
+- **Memory overhead:** ~45–55 MB peak RSS when active; exactly 0 MB when the feature is off or provider is `static`/`none`.
+- **Model isolation:** Managed with `model_id = 3` (distinct from default hashing `1` and static table `2`), ensuring units are strictly filtered and incompatible vectors never mix. Missing or disabled smart pack falls back to the static table with an explicit fallback reason surfaced in Doctor/stats.
+
+### 5.4 Folded / substring tier ([K5](ROADMAP.md#k5-folded--trigram-content-tier))
+
+Exact BM25 is the first tier. When it cannot fill the result limit, a folded
+tier handles partial words and OCR look-alikes:
+
+- Normalize look-alike characters (`0/o`, `1/l/i/|`, `5/s/$`, `8/b`, `m/rn`,
+  `w/vv`, `d/cl`) into `content_folded`, indexed with Tantivy's 3-gram
+  tokenizer. `content_raw` is stored, not indexed, for verification.
+- Verify each folded candidate against the raw text before returning it: one
+  misread letter in a 4–7 letter word, two in 8+, none under 4. This prevents
+  `email` matching inside `internally` and rejects broad n-gram false positives.
+- Folded hits always rank after every exact hit and carry
+  `match_type = ContentFolded`.
+- Budget: the tier only runs when the exact/fuzzy/semantic tiers leave a
+  shortfall, so a normal query never pays for it. On the synthetic 500-doc
+  corpus, `p95 = 262 µs`; index growth was 1.61x with stored raw text.
+- Upgrading an older index preserves it as `index.legacy-*`, creates a fresh
+  index, and queues every file for one content re-extraction.
+
+### 5.5 Image metadata tier (thumbnails and hashes)
+
+- Width/height come from the image header; the perceptual hash is deferred out
+  of the crawl.
+- Generate the 480 px thumbnail once, compute the dHash from it, and reuse the
+  thumbnail for the grid and `/dupes`. Never decode the full image just for a
+  hash.
+- The backfill runs one decode at a time, pauses during crawls/queries, and
+  releases memory after each image (`malloc_trim` / `malloc_zone_pressure_relief`
+  / `EmptyWorkingSet`).
+- Budget: no full-resolution decode for hashing; peak indexer RSS target
+  ≤ 100 MB for an image-heavy backfill.
+- Screenshot bursts: at write time (watcher) or from an already-fresh thumbnail
+  during a crawl, compare an image with assigned images in the same directory
+  within ten minutes. The pair must share decoded dimensions and either strong
+  line overlap with a close dHash or very close dHash with too little text to
+  compare (scrolling is allowed up to a wider hash distance when line overlap is
+  strong). Matching bursts merge into the lowest node id, stored as `burst`;
+  `look` stores the dHash. A compact bottom-k line signature is stored with the
+  image so comparisons never re-run OCR. Old rows are backfilled 50 at a time
+  while idle. Search groups image rows by `burst` in one in-memory pass, and
+  `/dupes` exposes the same groups.
 
 ---
 
@@ -221,7 +275,7 @@ struct Unit { node_id, byte_start, byte_end, model_idx }  // 1 vector per unit
 ```
 input ──► Lexer ──► AST ──► Router ──► Planner ──► Executors ──► RRF ──► Rank ──► Snip ──► IPC
          (0.02ms)          (0ms)        (0.05ms)    ┌ fuzzy  2–4ms │  0.1ms   0.2ms   5–20ms
-                                                    │ BM25   1–3ms │         (top-20 only,
+                                                    │ BM25   1–3ms │         (visible rows only,
                                                     └ vector 0.5–2ms          post-paint)
 ```
 
@@ -304,7 +358,8 @@ This is the section that makes the speed claims true.
 ## 8. Extraction
 
 ```
-magic-byte sniff ─► dispatcher ─► extractor (isolated worker, timeout) ─► state machine
+magic-byte sniff ─► dispatcher ─► built-in or opt-in external extractor
+                                      (isolated worker, timeout) ─► state machine
 ```
 
 | Format | Path | Notes |
@@ -312,10 +367,11 @@ magic-byte sniff ─► dispatcher ─► extractor (isolated worker, timeout) �
 | text/code/config | encoding detect → UTF-8 | UTF-16 BOM, Latin-1 fallback; strict-UTF-8 rejection is a bug |
 | DOCX/PPTX/XLSX/EPUB | ZIP + quick-xml | shared strings, speaker notes, hidden sheets; **DTDs disabled** (billion-laughs) |
 | PDF | `pdf-extract` first; `pdfium` feature flag if quality fails | page-level offsets → "jump to page"; encrypted/scanned → explicit state |
-| Images | platform OCR (Vision / Windows OCR / optional tesseract) → text units | OCR before CLIP; screenshots prioritized |
+| Images | tesseract by default; optional PP-OCRv6 tiny pack; native Vision/Windows OCR planned → text units | OCR before CLIP; screenshots prioritized |
 | Archives | metadata only (v2) | no recursive indexing |
+| External | config-defined executable, extension/MIME allowlist | no shell, cleared env, 100–7000 ms timeout, bounded stdout, process-group kill; zero plugins by default |
 
-State machine: `pending → ok | skipped(reason) | failed(reason)`, max 3 attempts with backoff. Counts are surfaced ("38 files could not be read"), never silently dropped. Each extractor runs with a timeout and a panic boundary in its own worker — a malformed PDF must never take down the daemon.
+State machine: `pending → ok | skipped(reason) | failed(reason)`, max 3 attempts with backoff. Counts are surfaced ("38 files could not be read"), never silently dropped. Each extractor runs with a timeout and a panic boundary in its own worker — a malformed PDF must never take down the daemon. External extractors are opt-in, never shell-interpreted, and bounded by timeout/output/process-group limits; failures are logged and surfaced in Doctor, and a disabled entry never runs. See [EXTRACTORS.md](EXTRACTORS.md).
 
 ---
 
@@ -355,26 +411,33 @@ kensaku doctor
 kensaku mcp            # stdio MCP server
 ```
 
-Same AST and index as the GUI. Today the CLI loads the index per invocation; a
-warm daemon (§18.4) removes that cost and lets GUI, CLI, and MCP share one index.
+Same AST and index as the GUI. CLI, MCP, and the GUI prefer the warm daemon
+(§18.4), so queries do not re-open SQLite or Tantivy; without a daemon they fall
+back to a read-only in-process open. The GUI keeps a read-only manager only for
+that fallback.
 
 ### 9.3 MCP / agent API
 
-Transport: **stdio** (default, spawned per client, proxies to daemon) + **HTTP/SSE** on `127.0.0.1` with a token from `~/.local/state/kensaku/token` (0600).
+Transport: **stdio** (default, spawned per client). The server pings the daemon
+and forwards searches/state to it; with no daemon it opens the index read-only.
+HTTP/SSE remains planned.
 
 | Tool | Contract |
 |---|---|
-| `search` | `query`, `mode: ranked\|exhaustive`, `path?`, `ext?`, `modified_after?`, `limit≤50`, `offset` → path, score, `line_start/line_end`, `snippet`, `as_of` |
-| `read_snippet` | `path`, `query?`, `start_line?`, `max_tokens≤512` → ranked windows, **never whole files** |
-| `find_related` | `path`, `limit` → semantic neighbours (cheap, static embeddings) |
-| `index_state` | → per-root counts, generations, `as_of`, queue depth |
-| `find_symbol` | (v2.1, tree-sitter) definition/reference lookup |
+| `health_check` | daemon/db/index/model state, pid, watcher, phase → `ok` or a reason (never a tool error) |
+| `search` | `query`, `mode: ranked\|exhaustive`, `path?`, `ext?`, `modified_after?`, `page_size≤50`, `cursor` → path, score, bounded `snippet`, `snippet_truncated`, `next_cursor`, `total`, `as_of` |
+| `read_snippet` | `path`, `query?`, `max_tokens≤1024` → window + `truncated`, **never whole files** |
+| `index_state` | counts, content docs, semantic units, model ids, phase/progress, roots, queue freshness |
+| `regex_search` | bounded `pattern≤512`, filters, `page_size`, `cursor` |
+| `find_related` | planned |
+| `find_symbol` | (v2.1, tree-sitter) planned |
+| `reindex` | opt-in write; only listed when `mcp_allow_reindex=true` and the daemon is running |
 
 Design rules:
-- **Ranked vs exhaustive is the key distinction.** Agents need completeness (exhaustive, paginated, streamed); humans need relevance. Conflating them produces bad tools.
-- Responses are token-budgeted (~1,500 tokens default) and delimited so file content reads as data, never instructions.
-- `.gitignore` / `.cursorignore` are honored by default (`include_ignored` opt-in) — agents assume parity and produce garbage context otherwise.
-- Read-only. No write, no shell, no deletion.
+- **Ranked vs exhaustive is the key distinction.** Agents need completeness (exhaustive, cursor-paginated); humans need relevance. Conflating them produces bad tools.
+- Responses are token-budgeted (search: ~1,500 tokens, 100-char snippets; `read_snippet`: 32–1,024 tokens) and delimited so file content reads as data, never instructions.
+- `.gitignore` / `.cursorignore` parity is planned (`include_ignored` opt-in) — agents assume parity and produce garbage context otherwise.
+- Read-only by default. No shell and no deletion; `reindex` is the only write tool and requires an explicit config opt-in plus the daemon.
 - Ship ready-to-paste config for Cursor, Claude Code, and VS Code in the README and in Settings.
 
 ---
@@ -394,7 +457,7 @@ Design rules:
 | **first paint** | **≈ 8–18 ms** |
 | snippet fetch (post-paint, top 20) | 5–20 ms |
 
-Gates: p50 < 15 ms, p95 < 40 ms, p99 < 60 ms. Idle RSS < 60 MB at 1M. Indexing throughput > 2,000 files/s metadata, > 150 files/s content. Semantic embedding > 2,000 docs/s.
+Gates: p50 < 15 ms, p95 < 40 ms, p99 < 60 ms. **Daemon idle RSS at 1M files:** ≤ 150 MB interim (compact arena, [K2](ROADMAP.md#k2-compact-metadata-arena)); ≤ 60 MB target once the daemon + mmap'd index land ([K1](ROADMAP.md#k1-daemon-split-epic)). **Indexer peak RSS:** ≤ 100 MB for an image-heavy backfill ([K3](ROADMAP.md#k3-thumbnail-based-hashing--memory-release)); the current measured peak is ~73 MB for a mixed 700-file crawl. Indexing throughput > 2,000 files/s metadata, > 150 files/s text content (OCR-bound image content is limited by tesseract; see [BENCHMARKS.md](BENCHMARKS.md#indexing-and-extraction-reference)). Semantic embedding > 2,000 docs/s.
 
 ---
 
@@ -402,10 +465,13 @@ Gates: p50 < 15 ms, p95 < 40 ms, p99 < 60 ms. Idle RSS < 60 MB at 1M. Indexing t
 
 | Failure | Behavior |
 |---|---|
+| Daemon unavailable | GUI offers to start it; CLI/MCP fall back to read-only direct access with a banner; no writes from clients |
 | Tantivy open error | lexical + semantic only; persistent banner; "Rebuild index" action |
 | Watcher unavailable / limit hit | poll mode (30 s), banner, no silent staleness |
 | Vector file corrupt | drop semantic tier, re-embed at idle, lexical unaffected |
 | Model missing | static tier absent; everything else works |
+| Optional OCR pack missing/checksum fail | fall back to Tesseract; setup shows the failed download and retry |
+| Folded tier absent (old index) | exact + semantic only; rebuild prompt, never an error |
 | Disk full | pause writers, banner, keep serving reads |
 | Extract worker panic/hang | per-file timeout, mark failed, continue |
 | Second instance | focuses the first, exits |
@@ -420,7 +486,7 @@ crates/
   kensaku-core/      model, snapshot, sqlite, watcher, reconcile, config
   kensaku-index/     metadata arena, fuzzy, tantivy, semantic
   kensaku-query/     lexer, ast, router, planner, fusion, rank, snippet
-  kensaku-extract/   text, encoding, docx/pptx/xlsx/epub, pdf, ocr
+  kensaku-extract/   text, encoding, docx/pptx/xlsx/epub, pdf, ocr, external
   kensaku-embed/     model2vec, optional ort/fastembed, model registry
   kensaku-proto/     request/response types (shared by CLI, GUI, MCP)
   kensaku-daemon/    server, scheduler, lifecycle, MCP, HTTP
@@ -434,6 +500,15 @@ Rule: **`kensaku-core` must not depend on Tauri.** The GUI must not depend on in
 ---
 
 ## 13. Phase plan (each phase ships something usable)
+
+**Status (v0.3.x + K1–K14):** the foundation, query layer, semantic tier,
+document extraction, OCR/thumbnail work, opt-in external extractors, daemon
+split, accurate OCR pack, model/download hygiene, and native quick-window spike
+are implemented. The GUI, CLI, and MCP are daemon clients with a read-only
+fallback. The next slice is the remaining product backlog in
+[REMAINING.md](REMAINING.md): visual search, native platform OCR, HTTP/SSE,
+one-click agent connect, 1M prefilter, and packaging/signing.
+The phases below are the original plan; use ROADMAP for current ordering.
 
 ### Phase 0 — Trustworthy foundation · ~2 weeks
 Workspace split · SQLite schema + snapshot warm-load · `(dev, ino)` identity · mtime/size diffing · rename & subtree delete · watcher rewrite (overflow → rescan, single owned watcher, events during crawl) · search-first/reconcile-after startup · `spawn_blocking` + snapshot queries + cancellation · single instance · atomic config · schema versioning · `kensaku doctor`.
@@ -452,11 +527,11 @@ Magic sniffing · encoding detection · DOCX/PPTX/XLSX/EPUB · PDF text layer + 
 **Gate:** 50-page PDF < 50 ms; malformed/encrypted/scanned handled without daemon crash; zero panics on a 500-file fuzz corpus.
 
 ### Phase 4 — Agent surface · ~1 week
-Daemon socket + protocol · CLI commands · MCP stdio + HTTP with token auth · `search` / `read_snippet` / `find_related` / `index_state` · `.gitignore` parity · token budgets · config snippets for Cursor/Claude Code.
+Daemon socket + protocol (shipped) · CLI commands (shipped) · MCP stdio (shipped) + HTTP with token auth (planned) · `search` / `read_snippet` / `index_state` (shipped) · `find_related` / `.gitignore` parity (planned) · token budgets (shipped) · config snippets for Cursor/Claude Code (planned).
 **Gate:** `search` p95 < 50 ms; MCP client round-trip works from Cursor and Claude Code; exhaustive mode paginates 100k matches without OOM.
 
 ### Phase 5 — Vision & OCR · ~1.5 weeks
-Screenshot OCR (Vision/Windows OCR/tesseract) → text units · image embeddings (SigLIP or CLIP ViT-B/32 int8, **not** MobileCLIP on x86) · EXIF orientation · megapixel/size caps · perceptual-hash dedupe · thumbnails.
+Screenshot OCR (tesseract default, PP-OCRv6 pack shipped, native Vision/Windows OCR planned) → text units · image embeddings (SigLIP or CLIP ViT-B/32 int8, **not** MobileCLIP on x86) · EXIF orientation · megapixel/size caps · perceptual-hash dedupe · thumbnails.
 **Gate:** "screenshot of docker error" returns the right image in top 5; 50k-image scan < 10 ms.
 
 ### Phase 6 — Ask & act · ~1 week
@@ -500,13 +575,18 @@ GitHub Actions (AppImage/deb/AUR, dmg universal, msi/exe) · benchmark harness +
 1. **Daemon-first, GUI-as-client.** Enables CLI + agents without a rewrite; isolates indexing from paint.
 2. **SQLite as truth, arena as hot path.** Durability without per-file `PathBuf` memory.
 3. **Identity by inode/file_id, never by path.** Makes renames cheap and ghosts impossible.
-4. **Static embeddings by default, ONNX optional.** Semantic search at ~50 µs/query, 8 MB, zero runtime deps; honest about the quality/size trade.
+4. **Static embeddings by default, ONNX optional.** Semantic search at ~50 µs/query, a ~7.7 MB i8 table (~30 MB in the f32 fallback), zero runtime deps; honest about the quality/size trade.
 5. **No ANN until 400k units.** Exact scan is faster, exact, and dependency-free at desktop scale.
 6. **RRF over weighted score fusion.** No calibration data, robust to corpus-dependent BM25.
 7. **Search-first, reconcile-after startup.** The only way "instant on boot" coexists with correctness.
 8. **Exact scan + fast fields before fancy relevance.** Filters are the real speed feature.
 9. **Read-only agent surface.** Security, simplicity, and a clean mental model.
 10. **No bundled LLM.** Ollama integration gives "ask" without shipping a 4 GB dependency.
+11. **Daemon owns the index before more workers land.** The webview must not be in the memory path for OCR, image decoding, or model packs. ([K1](ROADMAP.md#k1-daemon-split-epic))
+12. **Compact arena inside the daemon.** The daemon owns the name/attribute arenas; clients never receive the full metadata payload. ([K2](ROADMAP.md#k2-compact-metadata-arena))
+13. **Thumbnail hashing, not full-image hashing.** A 480 px thumbnail is the source for dHash; full decodes never happen just to compute a duplicate key. ([K3](ROADMAP.md#k3-thumbnail-based-hashing--memory-release))
+14. **Tesseract by default, accurate OCR opt-in.** Bulk indexing stays fast and light; the PP-OCRv6 tiny pack is a ~6 MB opt-in for UI text, with native platform OCR still planned. ([K6](ROADMAP.md#k6-optional-high-accuracy-ocr-pack))
+15. **Exact → folded → semantic.** Never let tolerant matching run when exact results already fill the limit; verify folded candidates against the raw text. ([K5](ROADMAP.md#k5-folded--trigram-content-tier))
 
 ---
 
@@ -625,24 +705,27 @@ Add a fourth retrieval tier alongside fuzzy name, BM25, and static vectors.
 
 ### 18.4 Daemon migration
 
-Current: the GUI owns the indexer in-process; `kensaku-cli` and MCP load the
-metadata themselves. Target: one warm process, three clients.
+Shipped: one warm process, three clients.
 
 ```
 GUI ─┐
-CLI ─┼─► kensaku-daemon (UDS / named pipe, 0600 token)
+CLI ─┼─► kensaku-daemon (Unix socket / Windows named pipe, 0600 token)
 MCP ─┘        │
               ├─ indexer + watcher + embed queue
               └─ query planner + snippets
 ```
 
-- Keep a **dual mode**: if the daemon is absent, the GUI runs in-process as it
-  does today. This avoids making the app unusable when the daemon fails.
-- Start with UDS/named pipes; add loopback HTTP/SSE only for clients that need
-  it. Token auth, read-only, no shell, no network beyond loopback.
-- Migrate in this order: protocol types → daemon skeleton → GUI client →
-  CLI/MCP proxy → HTTP. Do not block Milestones 1–2 on this.
-- Single instance moves from the current file lock to the daemon lock.
+- **Dual mode remains:** if the daemon is absent, the GUI falls back to a
+  read-only `IndexerManager`; CLI/MCP fall back to a read-only direct open.
+- IPC uses `interprocess` local sockets: a `0600` Unix socket or a namespaced
+  Windows named pipe. Protocol version and token are checked on every request.
+- The daemon owns the single-instance lock and the writer; clients never open a
+  second writer. `daemon.pid`, socket cleanup, SIGTERM/SIGINT, and graceful
+  shutdown are implemented.
+- Loopback HTTP/SSE remains planned for web-capable MCP clients; it will reuse
+  the same token and read-only rules.
+- Release packaging of the daemon sidecar (installer/bundle) is the remaining
+  release task, tracked in [REMAINING.md](REMAINING.md) section F.
 
 ### 18.5 Memory and personalization
 
