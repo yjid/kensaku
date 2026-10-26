@@ -191,6 +191,7 @@ Schema:
 - **Content policy:** full text up to 1 MB; head 512 KB + tail 512 KB for larger; metadata-only above 20 MB.
 - **Commit policy:** debounce 2 s or 2,000 docs; the current writer arena is 16 MB (tune with [K12](ROADMAP.md#k12-index-format-spike-timeboxed)). `wait_merging_threads()` + `garbage_collect_files()` at idle, and a weekly force-merge.
 - **Snippets:** never read a file inside the query. Fetch after ranking, in the blocking pool, for the visible rows only ([K4](ROADMAP.md#k4-lazy-snippets-and-line-highlighting)), with a small LRU.
+- **Format decision:** the 1M-document K12 run rejected replacing this tier with SQLite FTS5 trigram (918 MB, 258 ms broad BM25) and rejected a sidecar; keep Tantivy and the folded field. See [docs/decisions/index-format.md](decisions/index-format.md).
 
 ### 5.3 Semantic tier — budget **0.5–2 ms**
 

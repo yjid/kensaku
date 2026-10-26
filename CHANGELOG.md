@@ -6,6 +6,10 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Index-format decision memo and reproducible benchmark: at 1M synthetic
+  documents, SQLite FTS5 trigram used 918 MB and took 258 ms for a broad BM25
+  query, versus 100 MB and 275 µs for Tantivy + folded. Keep Tantivy; no
+  production index change.
 - Screenshot burst grouping: images captured within ten minutes in the same
   folder are compared by text-line overlap and thumbnail dHash, chained to the
   lowest-id burst, and collapsed to one search row with a version count.
