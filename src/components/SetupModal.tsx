@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Check, Plus, X, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download } from "lucide-react";
 import { EmptyState } from "./EmptyState";
@@ -21,6 +21,16 @@ const PRESETS: Record<string, string[]> = {
   Minimal: [".Trash", "lost+found"],
 };
 
+function formatEta(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "";
+  if (seconds < 60) return `~${Math.max(1, Math.round(seconds))}s left`;
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  if (mins < 60) return `~${mins}m ${secs}s left`;
+  const hours = Math.floor(mins / 60);
+  return `~${hours}h ${mins % 60}m left`;
+}
+
 export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void }) {
   const [step, setStep] = useState<0 | 1 | 2 | 3 | 4>(0);
   const [suggestedDirs, setSuggestedDirs] = useState<string[]>([]);
@@ -38,6 +48,11 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const [ocrStatus, setOcrStatus] = useState<OcrStatus | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [packError, setPackError] = useState<string | null>(null);
+  const etaRef = useRef<{ phase: string; done: number; at: number }>({
+    phase: "",
+    done: 0,
+    at: 0,
+  });
   const { theme, setTheme } = useTheme();
 
   useEffect(() => {
@@ -215,6 +230,30 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     const content = st?.content_indexed ?? 0;
     const units = st?.units_indexed ?? 0;
     const phase = st?.phase ?? "walking";
+
+    // ETA from the observed throughput of the current phase.
+    const done = phase === "extracting" ? (st?.extract_done ?? 0) : files;
+    const total = phase === "extracting" ? (st?.extract_total ?? 0) : (st?.total_files ?? 0);
+    let eta = "";
+    let pct = 0;
+    if (total > 0) {
+      pct = Math.min(100, Math.round((done / total) * 100));
+      if (etaRef.current.phase !== phase) {
+        etaRef.current = { phase, done, at: Date.now() };
+      }
+      const dt = (Date.now() - etaRef.current.at) / 1000;
+      const dd = done - etaRef.current.done;
+      if (dt >= 1 && dd > 0) {
+        const rate = dd / dt;
+        eta = formatEta((total - done) / rate);
+        etaRef.current = { phase, done, at: Date.now() };
+      } else if (done > 0 && total > done) {
+        // Not enough sample yet — estimate from the phase start.
+        const elapsed = (Date.now() - etaRef.current.at) / 1000;
+        if (elapsed > 1) eta = formatEta((elapsed * (total - done)) / done);
+      }
+    }
+
     return (
       <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-bg px-8 text-center">
         <div className="flex flex-col items-center gap-2">
@@ -230,6 +269,24 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             {st?.current_status ?? "Starting scan…"}
           </p>
         </div>
+
+        {total > 0 && (
+          <div className="w-full max-w-sm space-y-1.5">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-sunken">
+              <div
+                className="h-full rounded-full bg-accent transition-[width] duration-300"
+                style={{ width: `${Math.max(3, pct)}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-subtle">
+              <span className="font-mono">
+                {done.toLocaleString()} / {total.toLocaleString()}
+              </span>
+              <span className="font-mono">{eta || (pct >= 100 ? "finishing…" : "estimating…")}</span>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-3 gap-6 text-center">
           <div>
             <div className="font-mono text-[20px] font-semibold text-fg">{files.toLocaleString()}</div>
