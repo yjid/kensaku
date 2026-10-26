@@ -98,7 +98,10 @@ impl StaticTable {
         let (embeddings, embeddings_i8, embedding_scales) = if use_f32 {
             (embeddings, Vec::new(), Vec::new())
         } else {
+            // Quantize first, then drop the f32 matrix before returning so the
+            // startup peak does not retain both representations.
             let (quantized, scales) = quantize(&embeddings, dim);
+            drop(embeddings);
             (Vec::new(), quantized, scales)
         };
 
@@ -837,5 +840,31 @@ mod tests {
         assert!(StaticTable::load(&dir).is_none());
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+
+#[cfg(test)]
+mod real_model_validation {
+    use super::StaticTable;
+    use std::path::Path;
+
+    #[test]
+    #[ignore = "requires KENSAKU_MODEL_DIR pointing at Potion artifacts"]
+    fn real_model_table_bytes_and_load() {
+        let dir = std::env::var("KENSAKU_MODEL_DIR")
+            .expect("KENSAKU_MODEL_DIR must point at a model directory");
+        let path = Path::new(&dir);
+        let f32_table = StaticTable::load_with_f32(path, true).expect("f32 table");
+        let i8_table = StaticTable::load_with_f32(path, false).expect("i8 table");
+        println!(
+            "K14 real model: vocab={} dim={} f32_matrix_bytes={} i8_matrix_bytes={} scales_bytes={}",
+            f32_table.vocab.len(),
+            f32_table.dim,
+            f32_table.embeddings.len() * std::mem::size_of::<f32>(),
+            i8_table.embeddings_i8.len(),
+            i8_table.embedding_scales.len() * std::mem::size_of::<f32>()
+        );
+        assert!(i8_table.embeddings_i8.len() <= 8 * 1024 * 1024);
     }
 }
