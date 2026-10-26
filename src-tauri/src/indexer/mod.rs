@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,6 +36,15 @@ pub struct IndexingStatus {
     /// Coarse pipeline phase: "idle", "walking", "extracting", "embedding", "committing".
     #[serde(default = "default_phase")]
     pub phase: String,
+    /// Total entries discovered by the current crawl (0 until the walk ends).
+    #[serde(default)]
+    pub total_files: usize,
+    /// Files whose text extraction has finished in the current crawl.
+    #[serde(default)]
+    pub extract_done: usize,
+    /// Files queued for text extraction in the current crawl.
+    #[serde(default)]
+    pub extract_total: usize,
 }
 
 fn default_phase() -> String {
@@ -161,6 +170,9 @@ impl IndexerManager {
                 units_indexed: units_count,
                 semantic_ready: units_count > 0,
                 phase: "idle".to_string(),
+                total_files: 0,
+                extract_done: 0,
+                extract_total: 0,
             })),
             crawl_start_unix_ms: Arc::new(AtomicU64::new(0)),
             last_reconcile_unix_secs: Arc::new(AtomicU64::new(0)),
@@ -251,6 +263,14 @@ impl IndexerManager {
 
             // Phase 1: Collect all entries (jwalk is already parallel internally).
             let all_entries = walk_directories(&watched_dirs, &excluded_dirs);
+            let total_entries = all_entries.len();
+            {
+                let mut st = status.write();
+                st.total_files = total_entries;
+                st.phase = "extracting".to_string();
+                st.current_status = "Reading file metadata...".to_string();
+                Self::emit_status(&app_handle, &st);
+            }
 
             // Phase 2a: Filter excluded extensions, check incremental, add metadata.
             // Collect indexable files for parallel content extraction.
@@ -309,18 +329,20 @@ impl IndexerManager {
             }
 
             // Phase 2b: Parallel content extraction with rayon
+            let extract_total = to_extract.len();
             {
                 let mut st = status.write();
                 st.phase = "extracting".to_string();
                 st.files_indexed = files_count;
                 st.content_indexed = content_count;
-                st.current_status = format!(
-                    "Extracting text from {} potential files...",
-                    to_extract.len()
-                );
+                st.total_files = total_entries;
+                st.extract_total = extract_total;
+                st.extract_done = 0;
+                st.current_status = format!("Extracting text from {} potential files...", extract_total);
                 Self::emit_status(&app_handle, &st);
             }
 
+            let extract_done = AtomicUsize::new(0);
             let extracted: Vec<(PathBuf, String, String, u64)> = {
                 use rayon::prelude::*;
                 // Image metadata is best-effort: a corrupt or unsupported image
@@ -343,11 +365,28 @@ impl IndexerManager {
                             let _ = db.set_image_meta(path, width, height, phash);
                         }
 
-                        read_text_content(path, 1_048_576)
-                            .map(|content| (path.clone(), name.clone(), content, *modified))
+                        let content =
+                            read_text_content(path, 1_048_576)
+                                .map(|content| (path.clone(), name.clone(), content, *modified));
+
+                        let done = extract_done.fetch_add(1, Ordering::Relaxed) + 1;
+                        if done % 25 == 0 || done == extract_total {
+                            let mut st = status.write();
+                            st.extract_done = done;
+                            st.current_status =
+                                format!("Extracting text… {}/{} files", done, extract_total);
+                            Self::emit_status(&app_handle, &st);
+                        }
+
+                        content
                     })
                     .collect()
             };
+            {
+                let mut st = status.write();
+                st.extract_done = extract_total;
+                Self::emit_status(&app_handle, &st);
+            }
 
             // Phase 2c: Sequential Tantivy indexing (single writer)
             {

@@ -118,6 +118,9 @@ export interface IndexingStatus {
   units_indexed?: number;
   semantic_ready?: boolean;
   phase?: "idle" | "walking" | "extracting" | "embedding" | "committing";
+  total_files?: number;
+  extract_done?: number;
+  extract_total?: number;
 }
 
 export interface KensakuConfig {
