@@ -4,6 +4,7 @@ pub mod content;
 pub mod extract;
 pub mod metadata;
 pub mod metadata_db;
+pub mod tokenizer;
 pub mod walker;
 pub mod watcher;
 

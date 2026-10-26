@@ -117,10 +117,9 @@ These are the highest-leverage gaps. None require a new model.
 - [-] **VLM captions (optional)** — skipped for now. Idle-time captions for
       diagrams and screenshots, stored as searchable text. Complements CLIP
       where short text queries are weak.
-- [ ] **Multilingual embeddings + CJK tokenization** — the default model is
-      English-centric and Tantivy's default tokenizer fails on no-space
-      languages. Both are correctness gaps for a global product. (ROADMAP K15,
-      K17, K22)
+- [~] **Multilingual embeddings + CJK tokenization** — K15 CJK Tantivy
+      tokenization shipped with unigrams/bigrams and schema v2; multilingual
+      ONNX smart pack and evaluation remain. (ROADMAP K15 [x], K17, K22)
 
 ## C. Agent, LLM & runtime
 

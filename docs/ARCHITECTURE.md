@@ -185,7 +185,7 @@ Schema:
 | `size` | u64, fast | `size:` range |
 | `lang` | u8, fast | `lang:` filter |
 
-- **Custom tokenizer:** split `camelCase`/`snake_case`/`kebab-case`, lowercase, min length 2, max token length 48, CJK bigrams, drop pure-numeric/hash-like tokens. This single change is worth more relevance than any embedding model.
+- **Custom tokenizer (K15):** The `"kensaku"` tokenizer decomposes CJK scripts (Han, Hiragana, Katakana, Hangul) into interleaved unigrams and bigrams with exact offsets and sequential positions, enabling exact word and substring searches across unbroken CJK runs. SimpleTokenizer behavior is preserved for Latin, code, and paths. Schema marker `content.schema` (v2) automates legacy migration.
 - **Never** `QueryParser`. Build `Query` objects from our AST. No OR-by-default.
 - **Content policy:** full text up to 1 MB; head 512 KB + tail 512 KB for larger; metadata-only above 20 MB.
 - **Commit policy:** debounce 2 s or 2,000 docs; the current writer arena is 16 MB (tune with [K12](ROADMAP.md#k12-index-format-spike-timeboxed)). `wait_merging_threads()` + `garbage_collect_files()` at idle, and a weekly force-merge.

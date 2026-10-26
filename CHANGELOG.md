@@ -6,6 +6,14 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- K15 CJK-aware Tantivy tokenization: custom "kensaku" tokenizer decomposing Han,
+  Hiragana, Katakana, and Hangul into interleaved unigram and bigram tokens with
+  exact byte offsets while preserving standard SimpleTokenizer behavior on Latin,
+  identifiers, and paths. Flushes at mixed script boundaries (`README最終.md`, `src/组件/index.ts`).
+  Schema marker `content.schema` (v2) detects legacy indexes, cleanly triggers
+  one-time index rebuilds, and surfaces the rebuild reason in Doctor and stats.
+  Measured 50 CJK docs (100 CJK chars each): index size grows from 4,944 B to
+  48,128 B (9.73x) due to unigram, bigram, and folded trigram expansion.
 - K13 native quick-search spike: an opt-in `kensaku-quick` egui binary
   (`--features quick-ui`) backed by the daemon. Debug measurements: 8.6 ms to
   first UI, 46 ms daemon round-trip, ~223 MB hidden RSS versus ~350 MB for the

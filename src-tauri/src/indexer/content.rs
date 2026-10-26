@@ -111,9 +111,7 @@ fn edit_distance_within(needle: &[char], haystack: &str, budget: usize) -> bool 
         let mut row_min = current[0];
         for (j, hay_char) in hay.iter().enumerate() {
             let substitution = previous[j] + usize::from(needle_char != hay_char);
-            current[j + 1] = (previous[j + 1] + 1)
-                .min(current[j] + 1)
-                .min(substitution);
+            current[j + 1] = (previous[j + 1] + 1).min(current[j] + 1).min(substitution);
             row_min = row_min.min(current[j + 1]);
         }
         if row_min > budget {
@@ -184,6 +182,8 @@ pub struct ContentIndex {
     /// True when this construction migrated an older schema and the caller
     /// must force a full content re-extraction.
     pub rebuilt: bool,
+    /// Reason recorded when an index was rebuilt during migration.
+    pub rebuild_reason: Option<String>,
     snippet_cache: Mutex<SnippetCache>,
 }
 
@@ -218,14 +218,27 @@ pub struct ContentSearchOutcome {
 /// Upper bound on user-supplied regex patterns to avoid pathological cases.
 pub const MAX_REGEX_PATTERN_LEN: usize = 1024;
 
+/// Version marker for the content index schema.
+/// v1: K5 schema (content_folded + content_raw)
+/// v2: K15 schema (CJK-aware "kensaku" tokenizer on filename and content)
+pub const CONTENT_SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_MARKER_FILE: &str = "content.schema";
+
 impl ContentIndex {
     pub fn new(index_dir: &Path) -> Result<Self, String> {
         fs::create_dir_all(index_dir).map_err(|e| e.to_string())?;
 
         let mut schema_builder = Schema::builder();
         let path_field = schema_builder.add_text_field("path", STRING | STORED);
-        let filename_field = schema_builder.add_text_field("filename", TEXT | STORED);
-        let content_field = schema_builder.add_text_field("content", TEXT);
+        let kensaku_indexing = TextFieldIndexing::default()
+            .set_tokenizer("kensaku")
+            .set_index_option(IndexRecordOption::WithFreqsAndPositions);
+        let filename_options = TextOptions::default()
+            .set_indexing_options(kensaku_indexing.clone())
+            .set_stored();
+        let filename_field = schema_builder.add_text_field("filename", filename_options);
+        let content_options = TextOptions::default().set_indexing_options(kensaku_indexing);
+        let content_field = schema_builder.add_text_field("content", content_options);
         let folded_indexing = TextFieldIndexing::default()
             .set_tokenizer("trigram")
             .set_index_option(IndexRecordOption::WithFreqsAndPositions);
@@ -238,14 +251,28 @@ impl ContentIndex {
         let schema = schema_builder.build();
 
         let mut rebuilt = false;
+        let mut rebuild_reason = None;
+        let marker_path = index_dir.join(SCHEMA_MARKER_FILE);
         let index = if index_dir.join("meta.json").exists() {
             let existing = Index::open_in_dir(index_dir).map_err(|e| e.to_string())?;
             let existing_schema = existing.schema();
-            let compatible = existing_schema.get_field("content_folded").is_ok()
+            let has_fields = existing_schema.get_field("content_folded").is_ok()
                 && existing_schema.get_field("content_raw").is_ok();
+            let marker_version: u32 = fs::read_to_string(&marker_path)
+                .ok()
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(0);
+            let compatible = has_fields && marker_version >= CONTENT_SCHEMA_VERSION;
             if compatible {
                 existing
             } else {
+                let reason = if !has_fields {
+                    "Pre-K5 schema missing content_folded/content_raw fields"
+                } else {
+                    "K15 CJK tokenizer migration (schema v1 -> v2)"
+                };
+                rebuild_reason = Some(reason.to_string());
+                log::info!("[Kensaku] Content index rebuild required: {}", reason);
                 // Tantivy schemas are immutable. Preserve the old derived index
                 // beside the live one and rebuild into the live path; the
                 // caller marks every file for content re-extraction.
@@ -257,21 +284,31 @@ impl ContentIndex {
                 let backup = index_dir.with_file_name(format!("index.legacy-{stamp}"));
                 fs::rename(index_dir, &backup).map_err(|e| {
                     format!(
-                        "Failed to move the pre-K5 content index to {}: {}",
+                        "Failed to move legacy content index to {}: {}",
                         backup.display(),
                         e
                     )
                 })?;
                 fs::create_dir_all(index_dir).map_err(|e| e.to_string())?;
                 rebuilt = true;
-                Index::create_in_dir(index_dir, schema.clone()).map_err(|e| e.to_string())?
+                let new_index =
+                    Index::create_in_dir(index_dir, schema.clone()).map_err(|e| e.to_string())?;
+                let _ = fs::write(&marker_path, CONTENT_SCHEMA_VERSION.to_string());
+                new_index
             }
         } else {
-            Index::create_in_dir(index_dir, schema.clone()).map_err(|e| e.to_string())?
+            let new_index =
+                Index::create_in_dir(index_dir, schema.clone()).map_err(|e| e.to_string())?;
+            let _ = fs::write(&marker_path, CONTENT_SCHEMA_VERSION.to_string());
+            new_index
         };
         index
             .tokenizers()
-            .register("trigram", NgramTokenizer::new(3, 3, false).map_err(|e| e.to_string())?);
+            .register("kensaku", crate::indexer::tokenizer::kensaku_analyzer());
+        index.tokenizers().register(
+            "trigram",
+            NgramTokenizer::new(3, 3, false).map_err(|e| e.to_string())?,
+        );
 
         // A desktop daemon should not reserve a large indexing arena. Tantivy
         // requires ~15 MB per writer thread; one thread with a 16 MB arena keeps
@@ -298,6 +335,7 @@ impl ContentIndex {
             content_raw_field: Some(raw_field),
             modified_field,
             rebuilt,
+            rebuild_reason,
             snippet_cache: Mutex::new(SnippetCache::new(32)),
         })
     }
@@ -329,10 +367,14 @@ impl ContentIndex {
             .get_field("modified")
             .map_err(|e| format!("Content index is missing the 'modified' field: {}", e))?;
 
-        // Read-only handles still need the trigram tokenizer for folded queries.
+        // Read-only handles need the kensaku and trigram tokenizers for query parsing.
         index
             .tokenizers()
-            .register("trigram", NgramTokenizer::new(3, 3, false).map_err(|e| e.to_string())?);
+            .register("kensaku", crate::indexer::tokenizer::kensaku_analyzer());
+        index.tokenizers().register(
+            "trigram",
+            NgramTokenizer::new(3, 3, false).map_err(|e| e.to_string())?,
+        );
 
         let reader = index
             .reader_builder()
@@ -351,6 +393,7 @@ impl ContentIndex {
             content_raw_field,
             modified_field,
             rebuilt: false,
+            rebuild_reason: None,
             snippet_cache: Mutex::new(SnippetCache::new(32)),
         })
     }
@@ -1374,10 +1417,10 @@ mod tests {
         assert!(index.content_folded_field.is_some());
         assert!(index.content_raw_field.is_some());
         assert!(
-            fs::read_dir(&root)
-                .unwrap()
-                .flatten()
-                .any(|entry| entry.file_name().to_string_lossy().starts_with("index.legacy-")),
+            fs::read_dir(&root).unwrap().flatten().any(|entry| entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("index.legacy-")),
             "old derived index should be preserved beside the new one"
         );
 
@@ -1632,5 +1675,210 @@ mod tests {
         };
         assert!(err.contains("No content index"), "unexpected error: {err}");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cjk_search_exact_and_substring() {
+        let temp = temp_index("cjk-search");
+        let index = temp.index.as_ref().unwrap();
+
+        add(
+            index,
+            "/tmp/kensaku/cjk/report.pdf",
+            "最終報告書.pdf",
+            "東京大学の研究発表と2026年度予算",
+        );
+        add(
+            index,
+            "/tmp/kensaku/cjk/weather.txt",
+            "weather.txt",
+            "東京都の天気予報は晴れです",
+        );
+        add(
+            index,
+            "/tmp/kensaku/cjk/readme.md",
+            "README最終.md",
+            "Project documentation in English",
+        );
+        add(
+            index,
+            "/tmp/kensaku/cjk/comp.ts",
+            "组件.ts",
+            "export const button = 1;",
+        );
+        index.commit().unwrap();
+
+        // CJK filename exact and substring
+        let hits = index.search("最終報告書", 10, None);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].filename, "最終報告書.pdf");
+
+        let hits = index.search("報告", 10, None);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].filename, "最終報告書.pdf");
+
+        // Single-character CJK query
+        let hits = index.search("最", 10, None);
+        assert_eq!(hits.len(), 2);
+        let names: Vec<&str> = hits.iter().map(|h| h.filename.as_str()).collect();
+        assert!(names.contains(&"最終報告書.pdf"));
+        assert!(names.contains(&"README最終.md"));
+
+        // CJK content word and substring
+        let hits = index.search("東京", 10, None);
+        assert_eq!(hits.len(), 2);
+
+        let hits = index.search("予報", 10, None);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].filename, "weather.txt");
+
+        // Mixed-script queries
+        let hits = index.search("README最終", 10, None);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].filename, "README最終.md");
+
+        let hits = index.search("README", 10, None);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].filename, "README最終.md");
+
+        let hits = index.search("组件", 10, None);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].filename, "组件.ts");
+
+        // Scoped searches
+        let hits = index.search_groups(&[(FieldKind::Name, "報告")], 10, None);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].filename, "最終報告書.pdf");
+
+        let hits = index.search_groups(&[(FieldKind::Content, "報告")], 10, None);
+        assert!(hits.is_empty());
+
+        let hits = index.search_groups(&[(FieldKind::Content, "晴れ")], 10, None);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].filename, "weather.txt");
+    }
+
+    #[test]
+    fn schema_v1_without_marker_triggers_rebuild() {
+        let nanos = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "kensaku-cjk-migrate-{}-{}",
+            std::process::id(),
+            nanos
+        ));
+        let index_dir = root.join("index");
+        fs::create_dir_all(&index_dir).unwrap();
+
+        // Create a legacy K5 index with content_folded and content_raw, but WITHOUT content.schema
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_text_field("path", STRING | STORED);
+        schema_builder.add_text_field("filename", TEXT | STORED);
+        schema_builder.add_text_field("content", TEXT);
+        let folded_indexing = TextFieldIndexing::default()
+            .set_tokenizer("trigram")
+            .set_index_option(IndexRecordOption::WithFreqsAndPositions);
+        schema_builder.add_text_field(
+            "content_folded",
+            TextOptions::default().set_indexing_options(folded_indexing),
+        );
+        schema_builder.add_text_field("content_raw", STORED);
+        schema_builder.add_u64_field("modified", STORED | FAST);
+        let v1_index = Index::create_in_dir(&index_dir, schema_builder.build()).unwrap();
+        v1_index
+            .tokenizers()
+            .register("trigram", NgramTokenizer::new(3, 3, false).unwrap());
+        drop(v1_index);
+
+        // First open: missing content.schema triggers rebuild
+        let migrated = ContentIndex::new(&index_dir).expect("migrate to v2");
+        assert!(migrated.rebuilt);
+        assert_eq!(
+            migrated.rebuild_reason.as_deref(),
+            Some("K15 CJK tokenizer migration (schema v1 -> v2)")
+        );
+        assert!(index_dir.join(SCHEMA_MARKER_FILE).exists());
+        let marker = fs::read_to_string(index_dir.join(SCHEMA_MARKER_FILE)).unwrap();
+        assert_eq!(marker.trim(), "2");
+        drop(migrated);
+
+        // Second open: marker exists, no rebuild triggered
+        let second_open = ContentIndex::new(&index_dir).expect("open already-migrated index");
+        assert!(!second_open.rebuilt);
+        assert!(second_open.rebuild_reason.is_none());
+        drop(second_open);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn cjk_index_size_growth_is_measured() {
+        let nanos = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root =
+            std::env::temp_dir().join(format!("kensaku-cjk-size-{}-{}", std::process::id(), nanos));
+        let old_dir = root.join("old");
+        let new_dir = root.join("new");
+        fs::create_dir_all(&old_dir).unwrap();
+        fs::create_dir_all(&new_dir).unwrap();
+
+        // Old schema: SimpleTokenizer on filename and content
+        let mut old_builder = Schema::builder();
+        let old_path = old_builder.add_text_field("path", STRING | STORED);
+        let old_filename = old_builder.add_text_field("filename", TEXT | STORED);
+        let old_content = old_builder.add_text_field("content", TEXT);
+        let old_modified = old_builder.add_u64_field("modified", STORED | FAST);
+        let old_index = Index::create_in_dir(&old_dir, old_builder.build()).unwrap();
+        let mut old_writer = old_index.writer(16_000_000).unwrap();
+
+        // New schema: ContentIndex with kensaku tokenizer
+        let new_index = ContentIndex::new(&new_dir).unwrap();
+
+        let cjk_sample_titles = [
+            "最終報告書.pdf",
+            "東京都天気予報.txt",
+            "研究成果発表資料.docx",
+            "年度予算概算要求書.xlsx",
+            "システム設計仕様書.md",
+        ];
+        let cjk_sample_body = "東京大学情報理工学系研究科の研究チームは2026年度予算案に基づき人工知能検索エンジンの評価を実施した。日本語および中国語韓国語の形態素解析と文字分割の正確性を検証する。";
+
+        for i in 0..50 {
+            let title = cjk_sample_titles[i % cjk_sample_titles.len()];
+            let path_str = format!("/cjk/doc_{i}/{title}");
+            let path = PathBuf::from(&path_str);
+            old_writer
+                .add_document(doc!(
+                    old_path => path_str,
+                    old_filename => title.to_string(),
+                    old_content => cjk_sample_body.to_string(),
+                    old_modified => i as u64,
+                ))
+                .unwrap();
+
+            new_index
+                .add_or_update(&path, title, cjk_sample_body, i as u64)
+                .unwrap();
+        }
+        old_writer.commit().unwrap();
+        new_index.commit().unwrap();
+
+        drop(old_writer);
+        drop(old_index);
+        drop(new_index);
+
+        let old_bytes = dir_size(&old_dir);
+        let new_bytes = dir_size(&new_dir);
+        let ratio = new_bytes as f64 / old_bytes.max(1) as f64;
+        println!(
+            "K15 CJK index size: 50 docs x ~100 CJK chars: simple={} B, kensaku(cjk+folded)={} B, ratio={:.2}x",
+            old_bytes, new_bytes, ratio
+        );
+        assert!(new_bytes > 0);
+        let _ = fs::remove_dir_all(&root);
     }
 }
