@@ -6,14 +6,14 @@ pub enum QueryRoute {
     ContentPhrase,
     FilteredScope,
     SemanticSearch,
+    VisualSearch,
     ScopeNavigation,
     General,
 }
 
 const NL_STOPWORDS: &[&str] = &[
-    "how", "to", "what", "is", "where", "the", "a", "an", "in", "of", "for",
-    "with", "on", "at", "by", "from", "and", "or", "why", "can", "i", "find",
-    "which", "who", "show", "me", "all",
+    "how", "to", "what", "is", "where", "the", "a", "an", "in", "of", "for", "with", "on", "at",
+    "by", "from", "and", "or", "why", "can", "i", "find", "which", "who", "show", "me", "all",
 ];
 
 pub fn route_query(query: &Query) -> QueryRoute {
@@ -32,6 +32,17 @@ pub fn route_query(query: &Query) -> QueryRoute {
     });
     let has_scope = !query.scopes.is_empty();
     if has_type_filter || has_scope {
+        let has_image_filter = query.filters.iter().any(|f| match f {
+            Filter::Type(t) => t == "image",
+            Filter::Ext(ext) => matches!(
+                ext.as_str(),
+                "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp" | "tiff" | "tif"
+            ),
+            _ => false,
+        });
+        if has_image_filter && !query.terms.is_empty() {
+            return QueryRoute::VisualSearch;
+        }
         return QueryRoute::FilteredScope;
     }
 

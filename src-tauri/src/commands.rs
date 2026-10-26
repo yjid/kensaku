@@ -178,17 +178,20 @@ pub async fn search(
         .as_deref()
         .map(crate::search::SortOrder::parse)
         .unwrap_or_default();
-    let resp = SearchDispatcher::search_response_fast_sorted(
+    let visual_store = indexer.visual_store.read();
+    let resp = SearchDispatcher::search_response_fast_sorted_with_snippets_and_visual(
         &query,
         &metadata,
         &content_index,
         Some(&unit_store),
+        Some(&visual_store),
         semantic_enabled,
         max_results,
         req_seq,
         sort,
         &aliases,
         offset.unwrap_or(0),
+        false,
     );
 
     indexer.query_in_flight.store(false, Ordering::SeqCst);

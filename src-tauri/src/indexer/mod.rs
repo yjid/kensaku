@@ -1155,19 +1155,23 @@ impl IndexerManager {
         let metadata = self.metadata.read();
         let content = self.content_index.read();
         let units = self.unit_store.read();
-        Ok(SearchDispatcher::search_response_fast_sorted_with_snippets(
-            query,
-            &metadata,
-            &content,
-            Some(&units),
-            config.semantic_enabled,
-            limit,
-            0,
-            SortOrder::Best,
-            &aliases,
-            offset,
-            with_snippets,
-        ))
+        let visual = self.visual_store.read();
+        Ok(
+            SearchDispatcher::search_response_fast_sorted_with_snippets_and_visual(
+                query,
+                &metadata,
+                &content,
+                Some(&units),
+                Some(&visual),
+                config.semantic_enabled,
+                limit,
+                0,
+                SortOrder::Best,
+                &aliases,
+                offset,
+                with_snippets,
+            ),
+        )
     }
 
     /// Compact live state shared by the daemon, CLI and MCP. Avoids loading

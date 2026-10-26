@@ -1,6 +1,8 @@
 use crate::indexer::walker::FileEntry;
-use crate::query::ast::{ActiveFilterDto, FileKind, Filter, Mode, Query, RangeOp, Scope, Term, TermField};
-use crate::query::lexer::{tokenize, Token};
+use crate::query::ast::{
+    ActiveFilterDto, FileKind, Filter, Mode, Query, RangeOp, Scope, Term, TermField,
+};
+use crate::query::lexer::{Token, tokenize};
 use crate::query::scope_trie::{DirectoryTrie, TrieMatchResult};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -30,7 +32,9 @@ pub fn parse_query(
 
     for token in tokens {
         match token {
-            Token::Word(ref text) if is_first_token && is_directory_like(text) && trie.is_some() => {
+            Token::Word(ref text)
+                if is_first_token && is_directory_like(text) && trie.is_some() =>
+            {
                 // Leading directory-looking token (e.g. src/ or ~/Projects/)
                 if let Some(dir_trie) = trie {
                     match dir_trie.resolve(text, entries, path_index) {
@@ -55,7 +59,10 @@ pub fn parse_query(
                                 is_regex: false,
                             });
                             for cand in candidates.iter().take(2) {
-                                hints.push(format!("did you mean 📁 {}?", cand.path.to_string_lossy()));
+                                hints.push(format!(
+                                    "did you mean 📁 {}?",
+                                    cand.path.to_string_lossy()
+                                ));
                             }
                         }
                         TrieMatchResult::None => {
@@ -131,6 +138,26 @@ pub fn parse_query(
                 };
 
                 match key_lower.as_str() {
+                    "visual" => {
+                        let filter = Filter::Type("image".to_string());
+                        if negated {
+                            filters.push(Filter::Not(Box::new(filter)));
+                        } else {
+                            filters.push(filter);
+                        }
+                        terms.push(Term {
+                            text: value.clone(),
+                            field: TermField::Any,
+                            phrase: quoted_value,
+                            is_regex: false,
+                        });
+                        active_filters_dto.push(ActiveFilterDto {
+                            raw: raw_token,
+                            filter_type: "visual".to_string(),
+                            value,
+                            negated,
+                        });
+                    }
                     "type" => {
                         let filter = Filter::Type(value.to_lowercase());
                         if negated {
@@ -186,7 +213,10 @@ pub fn parse_query(
                                         is_regex: false,
                                     });
                                     for cand in candidates.iter().take(2) {
-                                        hints.push(format!("did you mean 📁 {}?", cand.path.to_string_lossy()));
+                                        hints.push(format!(
+                                            "did you mean 📁 {}?",
+                                            cand.path.to_string_lossy()
+                                        ));
                                     }
                                     resolved_scope = true;
                                 }
@@ -238,7 +268,10 @@ pub fn parse_query(
                                 negated,
                             });
                         } else {
-                            hints.push(format!("Invalid modified filter '{}'; use <7d, >30d, 7d..30d", value));
+                            hints.push(format!(
+                                "Invalid modified filter '{}'; use <7d, >30d, 7d..30d",
+                                value
+                            ));
                             terms.push(Term {
                                 text: raw_token,
                                 field: TermField::Any,
@@ -262,7 +295,10 @@ pub fn parse_query(
                                 negated,
                             });
                         } else {
-                            hints.push(format!("Invalid size filter '{}'; use >2mb, <100kb, 1mb..10mb", value));
+                            hints.push(format!(
+                                "Invalid size filter '{}'; use >2mb, <100kb, 1mb..10mb",
+                                value
+                            ));
                             terms.push(Term {
                                 text: raw_token,
                                 field: TermField::Any,
@@ -294,7 +330,10 @@ pub fn parse_query(
                                 negated,
                             });
                         } else {
-                            hints.push(format!("Unknown 'is:{}' filter; use is:image, is:dir, is:file", value));
+                            hints.push(format!(
+                                "Unknown 'is:{}' filter; use is:image, is:dir, is:file",
+                                value
+                            ));
                             terms.push(Term {
                                 text: raw_token,
                                 field: TermField::Any,
@@ -374,7 +413,10 @@ fn is_directory_like(s: &str) -> bool {
 
 fn parse_duration_seconds(s: &str) -> Option<u64> {
     let s = s.trim().to_lowercase();
-    let num_str: String = s.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+    let num_str: String = s
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
     if num_str.is_empty() {
         return None;
     }
@@ -398,7 +440,11 @@ fn parse_modified_range(val: &str, now_sec: u64) -> Option<RangeOp> {
     if let Some((first, second)) = s.split_once("..") {
         let dur1 = parse_duration_seconds(first)?;
         let dur2 = parse_duration_seconds(second)?;
-        let (min_dur, max_dur) = if dur1 <= dur2 { (dur1, dur2) } else { (dur2, dur1) };
+        let (min_dur, max_dur) = if dur1 <= dur2 {
+            (dur1, dur2)
+        } else {
+            (dur2, dur1)
+        };
         let low_time = now_sec.saturating_sub(max_dur);
         let high_time = now_sec.saturating_sub(min_dur);
         return Some(RangeOp::Between(low_time, high_time));
@@ -417,7 +463,10 @@ fn parse_modified_range(val: &str, now_sec: u64) -> Option<RangeOp> {
 
 fn parse_size(s: &str) -> Option<u64> {
     let s = s.trim().to_lowercase();
-    let num_str: String = s.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+    let num_str: String = s
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
     if num_str.is_empty() {
         return None;
     }
@@ -570,7 +619,9 @@ mod tests {
             RangeOp::Gte(value) | RangeOp::Lte(value) | RangeOp::Gt(value) | RangeOp::Lt(value) => {
                 value
             }
-            RangeOp::Between(low, high) => panic!("expected a single bound, got Between({low}, {high})"),
+            RangeOp::Between(low, high) => {
+                panic!("expected a single bound, got Between({low}, {high})")
+            }
         }
     }
 
@@ -693,10 +744,7 @@ mod tests {
         );
 
         let query = parse("size:<100kb");
-        assert_eq!(
-            query.filters,
-            vec![Filter::Size(RangeOp::Lt(100 * 1024))]
-        );
+        assert_eq!(query.filters, vec![Filter::Size(RangeOp::Lt(100 * 1024))]);
     }
 
     #[test]
@@ -734,10 +782,7 @@ mod tests {
 
         assert_eq!(query.scopes.len(), 1);
         assert!(query.scopes[0].include);
-        assert_eq!(
-            query.scopes[0].path,
-            fixture.entries[fixture.src_idx].path
-        );
+        assert_eq!(query.scopes[0].path, fixture.entries[fixture.src_idx].path);
         assert_eq!(query.terms, vec![term("fuzzy")]);
     }
 
@@ -815,5 +860,21 @@ mod tests {
                 Filter::Size(RangeOp::Gt(1024)),
             ]
         );
+    }
+
+    #[test]
+    fn parses_visual_filter_and_routes_to_visual_search() {
+        let query = parse("visual:diagram");
+        assert_eq!(query.filters, vec![Filter::Type("image".to_string())]);
+        assert_eq!(query.terms, vec![term("diagram")]);
+        assert!(
+            query
+                .active_filters_dto
+                .iter()
+                .any(|f| f.filter_type == "visual" && f.value == "diagram")
+        );
+
+        let route = crate::query::router::route_query(&query);
+        assert_eq!(route, crate::query::router::QueryRoute::VisualSearch);
     }
 }
