@@ -155,10 +155,10 @@ These are the highest-leverage gaps. None require a new model.
       A compact arena (name bytes + parent id + attrs ≈ 40–50 B/entry) cuts the
       footprint ~3×. Target: 1M entries ≤ 100 MB (stretch 64 MB). Full task:
       [ROADMAP K2](ROADMAP.md#k2-compact-metadata-arena). (ROADMAP K2)
-- [ ] **Embedding table quantization** — the static table is ~30 MB f32 today;
+- [x] **Embedding table quantization** — the static table is ~30 MB f32 today;
       i8 with scales targets ~8 MB with a golden-set quality check. Task:
       [ROADMAP K14](ROADMAP.md#k14-quantize-the-static-embedding-table-to-i8).
-      (ROADMAP K14)
+      (ROADMAP K14; real Potion run: 7.56 MB i8, MRR 1.0 vs f32 1.0.)
 - [x] **Thumbnail-based image hashing + memory release** — generate the 480 px
       thumbnail once, hash it (~2.4 ms), reuse it for the grid, and return freed
       pages after each image/PDF (`malloc_trim`, `malloc_zone_pressure_relief`,

@@ -30,12 +30,12 @@
 | K6 | Blocked — needs ONNX Runtime + OCR model artifacts (offline) |
 | K7 | Shipped — default mode now `full`; measurement pending |
 | K8 | Shipped |
-| K9 | Partial — framework shipped; production SHA-256 pins require artifacts |
+| K9 | Shipped for Potion — pinned SHA-256, mirrors, resume, disk precheck; OCR/ORT pins land with K6 |
 | K10 | Shipped |
 | K11 | Shipped |
 | K12 | Shipped |
 | K13 | Blocked — needs GPUI/Slint/egui crates (offline) and K1 |
-| K14 | Harness shipped — real Potion artifacts not installed |
+| K14 | Shipped — real Potion artifacts validated: 7.56 MB i8 matrix, MRR 1.0 vs f32 1.0 |
 
 ## P0 — foundation
 
@@ -233,10 +233,10 @@ read-only guarantees preserved.
 
 ### K9. Model and download hygiene
 
-- [~] SHA-256 pinning framework for model/OCR/ORT downloads: `.part` files,
-  HTTP Range resume, mirror fallback, atomic rename, and checksum verification
-  are implemented and tested. Production artifact checksums still need to be
-  pinned from a trusted source.
+- [x] SHA-256 pinning for model/OCR/ORT downloads: `.part` files, HTTP Range
+  resume, mirror fallback, atomic rename, checksum verification, and a disk
+  precheck are implemented and tested. The three Potion artifacts are pinned;
+  OCR/ORT pins land with K6.
 - [~] One pack manifest shared by setup, Settings, and Doctor: the semantic
   pack manifest exists; OCR/ORT packs still need manifests.
 
@@ -292,6 +292,9 @@ land first either way.
 
 **Acceptance:** table memory ≤ 8 MB (from ~30 MB); semantic recall within 1 % of
 f32; query p50 unchanged; no new dependency.
+
+**Measured (real Potion artifacts):** 7,559,168-byte i8 matrix + 118,112 bytes
+of scales; MRR 1.000 for both f32 and i8 on the labelled set.
 
 ## Order and effort
 

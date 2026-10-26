@@ -867,4 +867,66 @@ mod real_model_validation {
         );
         assert!(i8_table.embeddings_i8.len() <= 8 * 1024 * 1024);
     }
+
+    fn cosine(a: &[f32], b: &[f32]) -> f32 {
+        let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+        let na: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let nb: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if na == 0.0 || nb == 0.0 {
+            0.0
+        } else {
+            dot / (na * nb)
+        }
+    }
+
+    fn mrr(table: &StaticTable, queries: &[(&str, &[&str])]) -> f32 {
+        let mut total = 0.0f32;
+        for (query, docs) in queries {
+            let query_vec = table.embed(query);
+            let mut scored: Vec<(f32, usize)> = docs
+                .iter()
+                .enumerate()
+                .map(|(index, doc)| (cosine(&query_vec, &table.embed(doc)), index))
+                .collect();
+            scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+            if let Some(rank) = scored.iter().position(|(_, index)| *index == 0) {
+                total += 1.0 / (rank as f32 + 1.0);
+            }
+        }
+        total / queries.len() as f32
+    }
+
+    #[test]
+    #[ignore = "requires KENSAKU_MODEL_DIR pointing at Potion artifacts"]
+    fn real_model_i8_relevance_stays_within_one_percent() {
+        let dir = std::env::var("KENSAKU_MODEL_DIR")
+            .expect("KENSAKU_MODEL_DIR must point at a model directory");
+        let path = Path::new(&dir);
+        let f32_table = StaticTable::load_with_f32(path, true).expect("f32 table");
+        let i8_table = StaticTable::load_with_f32(path, false).expect("i8 table");
+
+        // A small labelled set: the relevant document is always index 0.
+        let queries: &[(&str, &[&str])] = &[
+            ("invoice payment", &["billing receipt total due", "cat photo", "server logs"]),
+            ("deploy docker", &["container image build deploy", "resume cv", "invoice"]),
+            ("vacation beach", &["summer holiday ocean sand", "database migration", "invoice"]),
+            ("resume cv", &["curriculum vitae job experience", "invoice payment", "docker deploy"]),
+            ("error timeout", &["connection timed out retry", "holiday photo", "invoice"]),
+            ("screenshot design", &["ui mockup wireframe design", "invoice", "server logs"]),
+            ("meeting notes", &["minutes agenda discussion", "photo", "invoice"]),
+            ("database query", &["sql index table query", "holiday", "invoice"]),
+            ("photo sunset", &["beach ocean sky sunset", "database", "invoice"]),
+            ("security password", &["login credential secret", "invoice", "photo"]),
+            ("machine learning", &["neural network training model", "invoice", "photo"]),
+            ("budget report", &["finance spreadsheet cost", "holiday", "docker"]),
+        ];
+
+        let f32_mrr = mrr(&f32_table, queries);
+        let i8_mrr = mrr(&i8_table, queries);
+        println!("K14 real model MRR: f32={f32_mrr:.4} i8={i8_mrr:.4}");
+        assert!(
+            i8_mrr + 0.01 >= f32_mrr,
+            "i8 MRR {i8_mrr:.4} is more than 0.01 below f32 {f32_mrr:.4}"
+        );
+    }
 }
