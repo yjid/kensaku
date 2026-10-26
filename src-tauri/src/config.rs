@@ -149,6 +149,33 @@ pub struct KensakuConfig {
     /// model download; it is intentionally not wired into search yet.
     #[serde(default)]
     pub visual_search_beta_enabled: bool,
+    /// Local LLM provider: `off` (default), `ollama`, `lmstudio`, or `openai`
+    /// (any OpenAI-compatible endpoint; requires `llm_allow_cloud`).
+    #[serde(default)]
+    pub llm_provider: String,
+    /// LLM base URL override. Empty uses the provider's loopback default.
+    #[serde(default)]
+    pub llm_base_url: String,
+    /// Model name used by the query compiler and `/ask`.
+    #[serde(default)]
+    pub llm_model: String,
+    /// Allow non-loopback (cloud) LLM endpoints. Off by default; `/ask` also
+    /// asks for consent per use when the endpoint is not loopback.
+    #[serde(default)]
+    pub llm_allow_cloud: bool,
+    /// Refine natural-language queries with the configured local LLM after
+    /// the deterministic intent pass. Off by default.
+    #[serde(default)]
+    pub llm_compile_queries: bool,
+    /// Agent-surface scope: when non-empty, MCP/HTTP/CLI results and snippet
+    /// reads are restricted to these roots (read-only scoping per root).
+    #[serde(default)]
+    pub agent_scoped_roots: Vec<String>,
+    /// Include files matched by `.gitignore` / `.cursorignore` in the index.
+    /// Default false: ignore files are honored so agents see the same tree
+    /// developers do ("ignore parity").
+    #[serde(default)]
+    pub include_ignored: bool,
     /// Persisted UI theme ("paper" or "void").
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -284,6 +311,13 @@ impl Default for KensakuConfig {
             pause_indexing: false,
             mcp_allow_reindex: false,
             visual_search_beta_enabled: false,
+            llm_provider: String::new(),
+            llm_base_url: String::new(),
+            llm_model: String::new(),
+            llm_allow_cloud: false,
+            llm_compile_queries: false,
+            agent_scoped_roots: Vec::new(),
+            include_ignored: false,
             extractors: Vec::new(),
             ocr_enabled: true,
             ocr_engine: default_ocr_engine(),

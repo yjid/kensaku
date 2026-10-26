@@ -2,6 +2,7 @@ pub mod arena;
 pub mod burst;
 pub mod content;
 pub mod extract;
+pub mod ignore;
 pub mod metadata;
 pub mod metadata_db;
 pub mod tokenizer;
@@ -564,13 +565,14 @@ impl IndexerManager {
         let watcher_ok = Arc::clone(&self.watcher_ok);
 
         thread::spawn(move || {
-            let (watched_dirs, excluded_dirs, excluded_exts, crawl_mode) = {
+            let (watched_dirs, excluded_dirs, excluded_exts, crawl_mode, include_ignored) = {
                 let cfg = config_arc.read();
                 (
                     cfg.watched_dirs.clone(),
                     cfg.excluded_dirs.clone(),
                     cfg.excluded_extensions.clone(),
                     cfg.crawl_mode,
+                    cfg.include_ignored,
                 )
             };
 
@@ -618,7 +620,7 @@ impl IndexerManager {
             }
 
             // Phase 1: Collect all entries (jwalk is already parallel internally).
-            let all_entries = walk_directories(&watched_dirs, &excluded_dirs);
+            let all_entries = walk_directories(&watched_dirs, &excluded_dirs, include_ignored);
             let total_entries = all_entries.len();
             {
                 let mut st = status.write();
@@ -1167,6 +1169,36 @@ impl IndexerManager {
                 with_snippets,
             ),
         )
+    }
+
+    /// Keyset-paginated exhaustive search for agent surfaces: returns the
+    /// page of matches strictly after `start_after` (a path cursor), so
+    /// result sets beyond the 10k exhaustive cap stay reachable without
+    /// materialising more than one window.
+    pub fn search_page_after(
+        &self,
+        query: &str,
+        limit: usize,
+        start_after: &str,
+        with_snippets: bool,
+    ) -> Result<SearchResponse, String> {
+        let config = self.config.read();
+        let aliases = config.alias_pairs();
+        let metadata = self.metadata.read();
+        let content = self.content_index.read();
+        let units = self.unit_store.read();
+        Ok(SearchDispatcher::search_response_exhaustive_after(
+            query,
+            &metadata,
+            &content,
+            Some(&units),
+            config.semantic_enabled,
+            limit,
+            0,
+            &aliases,
+            start_after,
+            with_snippets,
+        ))
     }
 
     /// Looks up visually similar images for a given path.

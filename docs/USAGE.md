@@ -199,6 +199,35 @@ kensaku-cli state --json
 kensaku-cli mcp
 ```
 
+More agent surfaces:
+
+```bash
+# One-click connect (writes the client's config, with a .bak backup):
+kensaku-cli connect claude-desktop --write   # or claude-code / cursor
+kensaku-cli connect cursor                   # prints the JSON snippet instead
+
+# Loopback HTTP/SSE transport for MCP clients (bearer token in
+# <config>/http.token; printed once on startup):
+kensaku-cli serve --port 8765
+```
+
+### Local AI (optional)
+
+Kensaku works fully without any model. If you run [Ollama](https://ollama.com)
+or LM Studio, Settings → Agents → Local AI can use it for two things:
+
+- **Query refinement** — after the deterministic results land, the model may
+  propose a compiled refinement of a natural-language query. Every token it
+  proposes is validated against the query grammar before it is shown, and the
+  chips are removable. The model never retrieves on its own.
+- **`/ask`** — answers a question strictly from your indexed files, with path
+  and line citations. No retrieval, no answer. Cloud endpoints stay off
+  unless you enable them and confirm per use.
+
+```bash
+kensaku-cli ask "where did I note the docker compose fix?"
+```
+
 ## Commands
 
 Type `/` in the search box to open the command menu, then filter and press Enter:
@@ -213,6 +242,7 @@ Type `/` in the search box to open the command menu, then filter and press Enter
 | `/recent` | Files changed in the last 7 days |
 | `/errors` | Search for error text |
 | `/diagrams` | Search for diagrams |
+| `/ask` | Ask your indexed files (needs a local model in Settings → Agents) |
 | `/dupes` | Open the duplicate review view |
 | `/reindex` | Re-scan watched folders |
 | `/doctor` | Print an index health summary |

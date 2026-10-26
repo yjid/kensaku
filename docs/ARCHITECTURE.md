@@ -436,7 +436,7 @@ HTTP/SSE remains planned.
 Design rules:
 - **Ranked vs exhaustive is the key distinction.** Agents need completeness (exhaustive, cursor-paginated); humans need relevance. Conflating them produces bad tools.
 - Responses are token-budgeted (search: ~1,500 tokens, 100-char snippets; `read_snippet`: 32–1,024 tokens) and delimited so file content reads as data, never instructions.
-- `.gitignore` / `.cursorignore` parity is planned (`include_ignored` opt-in) — agents assume parity and produce garbage context otherwise.
+- `.gitignore` / `.cursorignore` parity ships by default (`include_ignored` opts out) — agents assume parity and produce garbage context otherwise.
 - Read-only by default. No shell and no deletion; `reindex` is the only write tool and requires an explicit config opt-in plus the daemon.
 - Ship ready-to-paste config for Cursor, Claude Code, and VS Code in the README and in Settings.
 
@@ -527,7 +527,7 @@ Magic sniffing · encoding detection · DOCX/PPTX/XLSX/EPUB · PDF text layer + 
 **Gate:** 50-page PDF < 50 ms; malformed/encrypted/scanned handled without daemon crash; zero panics on a 500-file fuzz corpus.
 
 ### Phase 4 — Agent surface · ~1 week
-Daemon socket + protocol (shipped) · CLI commands (shipped) · MCP stdio (shipped) + HTTP with token auth (planned) · `search` / `read_snippet` / `index_state` (shipped) · `find_related` / `.gitignore` parity (planned) · token budgets (shipped) · config snippets for Cursor/Claude Code (planned).
+Daemon socket + protocol (shipped) · CLI commands (shipped) · MCP stdio (shipped) + loopback HTTP/SSE with token auth (shipped) · `search` / `read_snippet` / `index_state` / `find_symbol` (shipped) · keyset pagination past the 10k cap (shipped) · `.gitignore` / `.cursorignore` parity (shipped) · `agent_scoped_roots` read-only scoping (shipped) · token budgets (shipped) · one-click connect for Cursor/Claude (shipped) · `find_related` (planned).
 **Gate:** `search` p95 < 50 ms; MCP client round-trip works from Cursor and Claude Code; exhaustive mode paginates 100k matches without OOM.
 
 ### Phase 5 — Vision & OCR · ~1.5 weeks

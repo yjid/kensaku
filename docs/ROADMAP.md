@@ -244,9 +244,11 @@ compete with typing and read half-written files.
 
 ### K8. MCP v2
 
-- [x] `reindex`, `health_check`, extended `index_state`, bounded `regex_search`
-  (tree-sitter `find_symbol` deferred), pagination with cursors, per-tool token
-  budgets.
+- [x] `reindex`, `health_check`, extended `index_state`, bounded `regex_search`,
+  pagination with cursors, per-tool token budgets.
+- [x] v2.1 follow-ups: tree-sitter `find_symbol` (Rust/Python/JS/TS), keyset
+  cursors past the 10k exhaustive cap, `.gitignore`/`.cursorignore` parity,
+  `agent_scoped_roots` read-only scoping, loopback HTTP/SSE transport.
 - [x] Daemon-backed session: no per-session metadata/vector load.
 - [x] Contract tests + manual MCP stdio check (Cursor/Claude Code were not
   installed; the wire protocol and tool calls were exercised directly).

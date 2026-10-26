@@ -172,6 +172,83 @@ export interface KensakuConfig {
   saved_searches?: SavedSearch[];
   pins?: string[];
   config_version?: number;
+  /** Local LLM provider: off (default), ollama, lmstudio, or openai. */
+  llm_provider?: string;
+  /** LLM base URL override; empty uses the provider default. */
+  llm_base_url?: string;
+  /** Model used by the query compiler and /ask. */
+  llm_model?: string;
+  /** Allow non-loopback (cloud) LLM endpoints; off by default. */
+  llm_allow_cloud?: boolean;
+  /** Refine natural-language queries with the local LLM. */
+  llm_compile_queries?: boolean;
+  /** When non-empty, agent results and reads are scoped to these roots. */
+  agent_scoped_roots?: string[];
+  /** Include .gitignore/.cursorignore-matched files in the index. */
+  include_ignored?: boolean;
+}
+
+/* ---------------- Local LLM ---------------- */
+
+export interface CompiledQuery {
+  query: string;
+  text: string;
+  filters: string[];
+  sort?: string | null;
+  chips: InterpretationChip[];
+}
+
+export interface LlmCompileOutcome {
+  status: "compiled" | "deterministic" | "unavailable" | "off";
+  compiled?: CompiledQuery | null;
+  detail?: string | null;
+}
+
+export interface LlmStatus {
+  configured: boolean;
+  reachable: boolean;
+  provider: string;
+  base_url: string;
+  model: string;
+  models: string[];
+  error?: string | null;
+}
+
+export interface AskSource {
+  index: number;
+  path: string;
+  line_start: number;
+  line_end: number;
+  snippet: string;
+  score: number;
+  cited: boolean;
+}
+
+export interface AskResponse {
+  question: string;
+  answer: string;
+  sources: AskSource[];
+  model: string;
+  provider: string;
+  answered: boolean;
+  as_of: number;
+}
+
+/* ---------------- One-click agent connect ---------------- */
+
+export interface ClientStatus {
+  id: string;
+  name: string;
+  config_path: string | null;
+  installed: boolean;
+  configured: boolean;
+}
+
+export interface InstallOutcome {
+  status: ClientStatus;
+  wrote: boolean;
+  backup: string | null;
+  message: string;
 }
 
 /* ---- OCR (get_ocr_status / download_ocr_language). The backend may ---- */

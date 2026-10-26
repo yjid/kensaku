@@ -5,7 +5,32 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Agent surface v2: `find_symbol` MCP tool backed by tree-sitter (Rust,
+  Python, JavaScript, TypeScript), keyset cursors that paginate past the 10k
+  exhaustive cap, `.gitignore`/`.cursorignore` parity honored at index time
+  (`include_ignored` opts out), and `agent_scoped_roots` read-only scoping.
+- Loopback HTTP/SSE agent transport: `kensaku-cli serve` exposes the MCP tool
+  surface over Streamable HTTP on `127.0.0.1` with bearer-token auth; JSON or
+  SSE responses, plus read-only `/health` and `/search` endpoints. `reindex`
+  is never available on this transport.
+- One-click agent connect: Settings → Agents detects Claude Desktop, Claude
+  Code, and Cursor and merges the Kensaku MCP entry (with a `.bak` backup);
+  `kensaku-cli connect <client> [--write]` mirrors it in the shell. The
+  manual JSON fallback stays.
+- Optional local LLM (Ollama / LM Studio / OpenAI-compatible, off by
+  default): a query compiler that validates model output token-by-token
+  against the query grammar before showing it as removable chips, and `/ask`
+  with path+line citations. No retrieval, no answer; no cloud by default and
+  per-use consent for non-loopback endpoints. CLI: `kensaku-cli ask`.
+
 ### Fixed
+- Rust CI links again on older glibc: the ONNX runtime is now loaded
+  dynamically instead of statically linked. The prebuilt static archive
+  required glibc 2.38+ symbols and broke the `Rust` CI job on ubuntu-22.04
+  from the moment PP-OCRv6 joined the default builds. Behavior is unchanged:
+  when the runtime library is absent, accurate OCR returns nothing and
+  extraction falls back to Tesseract.
 - PP-OCRv6 is now compiled into normal app builds via the default `accurate-ocr`
   feature, so Setup/Settings no longer show "not included in this build".
 - Setup and Settings now treat Tesseract and PP-OCRv6 as an either/or choice:

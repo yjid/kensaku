@@ -9,7 +9,10 @@
 //! write-capable tool (`reindex`) is disabled unless `mcp_allow_reindex` is
 //! explicitly enabled in config.
 
-use super::{AgentSession, HeadlessIndex, compose_query, now_unix_secs, truncate_chars};
+use super::{
+    AgentSession, HeadlessIndex, agent_path_allowed, compose_query_scoped, now_unix_secs,
+    truncate_chars,
+};
 use crate::config::KensakuConfig;
 use crate::indexer::content::read_text_content;
 use crate::indexer::extract::extract_document;
@@ -314,6 +317,37 @@ fn tool_definitions(reindex_enabled: bool, visual_available: bool) -> Vec<Value>
             }
         }),
     ];
+    tools.push(json!({
+        "name": "find_symbol",
+        "description": "Find code-symbol definitions (functions, classes, structs, traits, interfaces) by name across indexed source files. Candidates come from the content index; each file is parsed with tree-sitter. Read-only.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Symbol name (case-insensitive; exact matches rank first)."
+                },
+                "language": {
+                    "type": "string",
+                    "enum": ["rust", "python", "javascript", "typescript"],
+                    "description": "Restrict to one language. Optional."
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Only search this file. Optional."
+                },
+                "page_size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50,
+                    "default": 10,
+                    "description": "Maximum symbols to return."
+                }
+            },
+            "required": ["query"],
+            "additionalProperties": false
+        }
+    }));
     if visual_available {
         tools.push(json!({
             "name": "similar_images",
@@ -387,10 +421,20 @@ fn call_tool(
     let outcome: Result<Value, ToolFailure> = match name {
         "health_check" => Ok(tool_health_check(session)),
         "search" => tool_search(session, &arguments),
-        "read_snippet" => tool_read_snippet(&arguments),
+        "read_snippet" => tool_read_snippet(session, &arguments),
         "index_state" => tool_index_state(session),
         "similar_images" => tool_similar_images(session, &arguments),
         "regex_search" => tool_regex_search(session, &arguments),
+        "find_symbol" => match crate::agent::symbols::tool_find_symbol(session, &arguments) {
+            Ok(payload) => Ok(payload),
+            Err((message, invalid)) => {
+                if invalid {
+                    Err(ToolFailure::Invalid(message))
+                } else {
+                    Err(ToolFailure::Execution(message))
+                }
+            }
+        },
         "reindex" => {
             if !reindex_enabled {
                 Err(ToolFailure::Execution(
@@ -514,10 +558,22 @@ fn run_search(
     mode: &str,
 ) -> Result<Value, ToolFailure> {
     let page_size = parse_page_size(args)?;
-    let offset = parse_cursor(args)?;
+    let cursor = parse_cursor(args)?;
+    let offset = match cursor {
+        Cursor::Offset(offset) => offset,
+        // Keyset cursors only exist for exhaustive pages past the offset cap.
+        Cursor::Path(_) if mode != "exhaustive" => {
+            return Err(ToolFailure::Invalid(
+                "Invalid params: keyset cursor requires mode:exhaustive".to_string(),
+            ));
+        }
+        Cursor::Path(path) => {
+            return run_search_keyset(session, args, base_query, snippet_query, page_size, &path);
+        }
+    };
     if offset > MAX_OFFSET {
         return Err(ToolFailure::Invalid(format!(
-            "Invalid params: cursor is beyond the {} result pagination cap; start a new search",
+            "Invalid params: cursor is beyond the {} result pagination cap; use a keyset cursor (mode:exhaustive)",
             MAX_OFFSET
         )));
     }
@@ -526,9 +582,13 @@ fn run_search(
     let ext = optional_string(args, "ext")?;
     let modified_after = optional_string(args, "modified_after")?;
 
-    let composed = compose_query(
+    // Agent-scope enforcement (read-only scoping per root): intersect the
+    // requested path with the configured roots, or default to their union.
+    let scope_paths = super::agent_scope_paths(&session.scoped_roots(), path.as_deref())
+        .map_err(ToolFailure::Invalid)?;
+    let composed = compose_query_scoped(
         base_query,
-        path.as_deref(),
+        &scope_paths,
         ext.as_deref(),
         modified_after.as_deref(),
         mode == "exhaustive",
@@ -594,7 +654,14 @@ fn run_search(
     let consumed = offset.saturating_add(returned);
     let has_more = consumed < response.total;
     let cursor_limit_reached = has_more && consumed >= MAX_OFFSET;
-    let next_cursor = if has_more && !cursor_limit_reached {
+    let next_cursor = if cursor_limit_reached {
+        // Switch to keyset pagination: the next page starts after the last
+        // path of this page instead of materialising another 10k offset.
+        page
+            .last()
+            .map(|result| Value::String(encode_path_cursor(&result.path)))
+            .unwrap_or(Value::Null)
+    } else if has_more {
         Value::String(encode_cursor(consumed))
     } else {
         Value::Null
@@ -614,13 +681,113 @@ fn run_search(
     }))
 }
 
-fn tool_read_snippet(args: &Value) -> Result<Value, ToolFailure> {
+/// Exhaustive keyset page: matches strictly after `start_after`. The cap
+/// applies per window, so arbitrarily large result sets stay reachable.
+fn run_search_keyset(
+    session: &AgentSession<'_>,
+    args: &Value,
+    base_query: &str,
+    snippet_query: Option<&str>,
+    page_size: usize,
+    start_after: &str,
+) -> Result<Value, ToolFailure> {
+    let path = optional_string(args, "path")?;
+    let ext = optional_string(args, "ext")?;
+    let modified_after = optional_string(args, "modified_after")?;
+
+    let scope_paths = super::agent_scope_paths(&session.scoped_roots(), path.as_deref())
+        .map_err(ToolFailure::Invalid)?;
+    let composed = compose_query_scoped(
+        base_query,
+        &scope_paths,
+        ext.as_deref(),
+        modified_after.as_deref(),
+        true,
+    );
+
+    let response = session
+        .search_page_after(&composed, page_size, start_after)
+        .map_err(ToolFailure::Execution)?;
+
+    let paths: Vec<String> = response.results.iter().map(|r| r.path.clone()).collect();
+    let snippets = snippet_query
+        .map(str::trim)
+        .filter(|query| !query.is_empty())
+        .map(|query| session.snippets(&paths, query))
+        .unwrap_or_else(|| vec![None; paths.len()]);
+
+    let mut snippet_budget_chars = SEARCH_TOKEN_BUDGET.saturating_mul(4);
+    let results: Vec<Value> = response
+        .results
+        .iter()
+        .enumerate()
+        .map(|(idx, result)| {
+            let (snippet, snippet_truncated) = match result.snippet.as_deref().or_else(|| snippets.get(idx).and_then(|s| s.as_deref())) {
+                None => (None, false),
+                Some(_) if snippet_budget_chars == 0 => (None, true),
+                Some(full) => {
+                    let allowed = SNIPPET_CHARS.min(snippet_budget_chars);
+                    let truncated = full.chars().count() > allowed;
+                    let snippet = truncate_chars(full, allowed);
+                    snippet_budget_chars = snippet_budget_chars.saturating_sub(allowed);
+                    (Some(snippet), truncated)
+                }
+            };
+            json!({
+                "path": result.path,
+                "score": result.score,
+                "snippet": snippet,
+                "snippet_truncated": snippet_truncated,
+                "match_type": result.match_type,
+                "size": result.file_size,
+                "modified": result.modified,
+            })
+        })
+        .collect();
+
+    let returned = results.len();
+    let has_more = returned == page_size;
+    let next_cursor = if has_more {
+        response
+            .results
+            .last()
+            .map(|result| Value::String(encode_path_cursor(&result.path)))
+            .unwrap_or(Value::Null)
+    } else {
+        Value::Null
+    };
+
+    Ok(json!({
+        "results": results,
+        "returned": returned,
+        // With a keyset the total is relative to the window: an honest lower
+        // bound, not the whole set.
+        "total": response.total,
+        "total_is_lower_bound": response.total >= MAX_OFFSET,
+        "mode": "exhaustive",
+        "page_size": page_size,
+        "next_cursor": next_cursor,
+        "has_more": has_more,
+        "cursor_limit_reached": false,
+        "token_budget": SEARCH_TOKEN_BUDGET,
+        "as_of": now_unix_secs(),
+    }))
+}
+
+fn tool_read_snippet(session: &AgentSession<'_>, args: &Value) -> Result<Value, ToolFailure> {
     let path = args
         .get("path")
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|path| !path.is_empty())
         .ok_or_else(|| ToolFailure::Invalid("Invalid params: 'path' is required".to_string()))?;
+
+    // Scope enforcement applies to direct reads too.
+    if !agent_path_allowed(&session.scoped_roots(), path) {
+        return Err(ToolFailure::Invalid(
+            "Invalid params: path is outside the configured agent scope".to_string(),
+        ));
+    }
 
     let query = optional_string(args, "query")?;
 
@@ -743,9 +910,9 @@ fn parse_page_size(args: &Value) -> Result<usize, ToolFailure> {
     Ok(DEFAULT_PAGE_SIZE)
 }
 
-fn parse_cursor(args: &Value) -> Result<usize, ToolFailure> {
+fn parse_cursor(args: &Value) -> Result<Cursor, ToolFailure> {
     match args.get("cursor") {
-        None | Some(Value::Null) => Ok(0),
+        None | Some(Value::Null) => Ok(Cursor::Offset(0)),
         Some(Value::String(cursor)) => decode_cursor(cursor),
         Some(_) => Err(ToolFailure::Invalid(
             "Invalid params: 'cursor' must be a string".to_string(),
@@ -757,7 +924,44 @@ fn encode_cursor(offset: usize) -> String {
     format!("k1-{:x}", offset)
 }
 
-fn decode_cursor(cursor: &str) -> Result<usize, ToolFailure> {
+/// Keyset cursor v2: hex of the last path, so exhaustive pages past the 10k
+/// offset cap stay reachable. Paths are opaque bytes; hex is unambiguous.
+fn encode_path_cursor(path: &str) -> String {
+    let mut out = String::with_capacity(2 * path.len() + 3);
+    out.push_str("k2-");
+    for byte in path.as_bytes() {
+        out.push_str(&format!("{:02x}", byte));
+    }
+    out
+}
+
+#[derive(Debug, PartialEq)]
+enum Cursor {
+    Offset(usize),
+    Path(String),
+}
+
+fn decode_cursor(cursor: &str) -> Result<Cursor, ToolFailure> {
+    if let Some(hex) = cursor.strip_prefix("k2-") {
+        if hex.len() % 2 != 0 || hex.len() > 8_192 {
+            return Err(ToolFailure::Invalid(
+                "Invalid params: 'cursor' is malformed".to_string(),
+            ));
+        }
+        let mut bytes = Vec::with_capacity(hex.len() / 2);
+        for pair in hex.as_bytes().chunks(2) {
+            let value = u8::from_str_radix(std::str::from_utf8(pair).unwrap_or(""), 16)
+                .map_err(|_| {
+                    ToolFailure::Invalid("Invalid params: 'cursor' is malformed".to_string())
+                })?;
+            bytes.push(value);
+        }
+        return String::from_utf8(bytes)
+            .map(|path| Cursor::Path(path.trim_end_matches('/').to_string()))
+            .map_err(|_| {
+                ToolFailure::Invalid("Invalid params: 'cursor' is malformed".to_string())
+            });
+    }
     if cursor.len() > 32 {
         return Err(ToolFailure::Invalid(
             "Invalid params: 'cursor' is malformed".to_string(),
@@ -769,6 +973,7 @@ fn decode_cursor(cursor: &str) -> Result<usize, ToolFailure> {
         ));
     };
     usize::from_str_radix(hex, 16)
+        .map(Cursor::Offset)
         .map_err(|_| ToolFailure::Invalid("Invalid params: 'cursor' is malformed".to_string()))
 }
 
@@ -991,7 +1196,7 @@ mod tests {
         .expect("tools/list must reply");
 
         let tools = response["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 6);
+        assert_eq!(tools.len(), 7);
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert_eq!(
             names,
@@ -1001,6 +1206,7 @@ mod tests {
                 "read_snippet",
                 "index_state",
                 "regex_search",
+                "find_symbol",
                 "similar_images"
             ]
         );
@@ -1275,6 +1481,46 @@ mod tests {
     }
 
     #[test]
+    fn exhaustive_keyset_cursor_pages_past_the_offset_cap() {
+        let fixture = fixture_with_files(
+            "keyset",
+            &[
+                ("a.txt", "needle alpha"),
+                ("b.txt", "needle beta"),
+                ("c.txt", "needle gamma"),
+                ("d.txt", "needle delta"),
+                ("e.txt", "needle epsilon"),
+            ],
+        );
+
+        let first = payload(&call(
+            &fixture,
+            "search",
+            json!({"query": "needle", "mode": "exhaustive", "page_size": 2}),
+        ));
+        assert_eq!(first["returned"], 2);
+        let last_path = first["results"][1]["path"].as_str().unwrap().to_string();
+
+        let second = payload(&call(
+            &fixture,
+            "search",
+            json!({
+                "query": "needle",
+                "mode": "exhaustive",
+                "page_size": 2,
+                "cursor": encode_path_cursor(&last_path)
+            }),
+        ));
+        let second_results = second["results"].as_array().unwrap();
+        assert!(!second_results.is_empty());
+        for result in second_results {
+            let path = result["path"].as_str().unwrap();
+            assert!(path > last_path.as_str(), "{} must follow {}", path, last_path);
+        }
+        assert_eq!(second["cursor_limit_reached"], false);
+    }
+
+    #[test]
     fn search_snippet_budget_marks_truncation() {
         let long = format!("{} needle {}", "x".repeat(200), "y".repeat(2_000));
         let fixture = fixture_with_files("snippet-budget", &[("long.txt", &long)]);
@@ -1320,7 +1566,7 @@ mod tests {
 
     #[test]
     fn cursor_codec_rejects_malformed_and_caps_offsets() {
-        assert_eq!(decode_cursor(&encode_cursor(1_234)).unwrap(), 1_234);
+        assert_eq!(decode_cursor(&encode_cursor(1_234)).unwrap(), Cursor::Offset(1_234));
         assert!(decode_cursor("nope").is_err());
         assert!(decode_cursor("k1-").is_err());
         assert!(decode_cursor("k1-zz").is_err());
@@ -1330,6 +1576,30 @@ mod tests {
             .expect_err("offset beyond the cap must be rejected");
         match error {
             ToolFailure::Invalid(message) => assert!(message.contains("pagination cap")),
+            ToolFailure::Execution(message) => panic!("unexpected execution error: {message}"),
+        }
+    }
+
+    #[test]
+    fn path_cursor_codec_roundtrips_and_rejects_garbage() {
+        let cursor = encode_path_cursor("/tmp/some dir/file name.txt");
+        assert_eq!(
+            decode_cursor(&cursor).unwrap(),
+            Cursor::Path("/tmp/some dir/file name.txt".to_string())
+        );
+        assert!(decode_cursor("k2-abc").is_err(), "odd hex rejected");
+        assert!(decode_cursor("k2-zzzz").is_err(), "non-hex rejected");
+        // A keyset cursor outside exhaustive mode is rejected.
+        let error = run_search(
+            &AgentSession::None,
+            &json!({"cursor": cursor}),
+            "x",
+            None,
+            "ranked",
+        )
+        .expect_err("keyset cursor needs exhaustive mode");
+        match error {
+            ToolFailure::Invalid(message) => assert!(message.contains("keyset")),
             ToolFailure::Execution(message) => panic!("unexpected execution error: {message}"),
         }
     }
