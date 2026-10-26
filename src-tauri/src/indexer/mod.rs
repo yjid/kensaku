@@ -1218,6 +1218,7 @@ impl IndexerManager {
 
         config.save()?;
         *self.config.write() = config.clone();
+        crate::util::priority::apply(config.crawl_mode);
 
         let mut reindex = false;
         if ocr_changed {

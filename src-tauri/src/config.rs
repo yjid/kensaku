@@ -239,7 +239,7 @@ impl Default for KensakuConfig {
             semantic_enabled: true,
             semantic_model: "static".to_string(),
             semantic_f32_table: false,
-            crawl_mode: CrawlMode::Balanced,
+            crawl_mode: CrawlMode::Full,
             pause_indexing: false,
             mcp_allow_reindex: false,
             extractors: Vec::new(),
@@ -504,7 +504,7 @@ mod tests {
     #[test]
     fn crawl_mode_and_pause_parse_from_config() {
         let cfg = KensakuConfig::default();
-        assert_eq!(cfg.crawl_mode, CrawlMode::Balanced);
+        assert_eq!(cfg.crawl_mode, CrawlMode::Full);
         assert!(!cfg.pause_indexing);
 
         let raw = r#"{

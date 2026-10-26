@@ -731,7 +731,7 @@ function SearchSection({
           description="Balanced uses idle I/O and CPU priority. Eco also paces work on battery. Full speed keeps normal priority."
         >
           <select
-            value={config.crawl_mode ?? "balanced"}
+            value={config.crawl_mode ?? "full"}
             onChange={(e) =>
               setConfig((c) =>
                 c
