@@ -41,6 +41,7 @@ quick-xml = "0.42.0"
 zip = "9.1.0"
 ureq = { version = "2", features = ["tls"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff"] }
+paddleocr_rs_onnx = { version = "0.2.8", default-features = false, optional = true }
 
 [profile.release]
 codegen-units = 1
@@ -56,3 +57,6 @@ strip = true
 [profile.dev.package."*"]
 opt-level = 2
 debug = false
+
+[features]
+accurate-ocr = ["dep:paddleocr_rs_onnx"]

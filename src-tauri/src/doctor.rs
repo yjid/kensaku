@@ -450,6 +450,43 @@ fn check_ocr() -> DoctorCheck {
     }
 }
 
+fn check_ocr_pack() -> DoctorCheck {
+    const ID: &str = "ocr_pack";
+    const LABEL: &str = "Accurate OCR pack";
+    let status = models::ocr_status();
+    let present = status.artifacts.iter().filter(|a| a.present).count();
+    let total = status.artifacts.len();
+    if status.ready {
+        ok(
+            ID,
+            LABEL,
+            format!(
+                "{}/{} artifacts present ({})",
+                present,
+                total,
+                format_bytes(status.total_present_bytes)
+            ),
+        )
+    } else if crate::ocr::engine_name() == crate::ocr::ACCURATE {
+        warn(
+            ID,
+            LABEL,
+            format!(
+                "Accurate OCR is selected but {} of {} artifacts are missing.",
+                total - present,
+                total
+            ),
+            Some("Download the accurate OCR pack in Settings → Search".to_string()),
+        )
+    } else {
+        ok(
+            ID,
+            LABEL,
+            "Optional pack not installed; Tesseract is active.".to_string(),
+        )
+    }
+}
+
 fn check_version() -> DoctorCheck {
     ok(
         "version",
@@ -593,6 +630,7 @@ pub fn run(state: &AppState) -> DoctorReport {
     checks.push(check_inotify_limit());
     checks.push(check_models());
     checks.push(check_ocr());
+    checks.push(check_ocr_pack());
     checks.push(check_version());
 
     let mut summary = DoctorSummary {

@@ -172,9 +172,10 @@ These are the highest-leverage gaps. None require a new model.
       (`nutsmp` → `donutsmp.net`, `0RDER` → `ORDER`), ranked after exact matches
       with raw-text verification. Task: [ROADMAP K5](ROADMAP.md#k5-folded--trigram-content-tier).
       (ROADMAP K5)
-- [ ] **Optional high-accuracy OCR pack** — PaddleOCR PP-OCRv6 or native
-      macOS/Windows OCR for UI screenshots; Tesseract stays the fast default.
-      Task: [ROADMAP K6](ROADMAP.md#k6-optional-high-accuracy-ocr-pack). (ROADMAP K6)
+- [x] **Optional high-accuracy OCR pack** — PaddleOCR PP-OCRv6 tiny for UI
+      screenshots; Tesseract stays the fast default. Native macOS/Windows OCR
+      remains in section B. Task: [ROADMAP K6](ROADMAP.md#k6-optional-high-accuracy-ocr-pack).
+      (ROADMAP K6; 104/104 fixture lines exact.)
 - [ ] **Idle/battery scheduling + watcher robustness** — `SCHED_IDLE`/ioprio,
       `PRIO_DARWIN_BG`, battery pacing, pause, 400 ms settle, still-writing
       retry, newest-first fresh files. Task: [ROADMAP K7](ROADMAP.md#k7-scheduling-and-watcher-robustness).

@@ -672,6 +672,19 @@ pub async fn download_ocr_language() -> Result<OcrStatus, String> {
     .map_err(|e| format!("OCR download task failed: {}", e))?
 }
 
+/// Reports the optional accurate OCR pack inventory.
+#[tauri::command]
+pub async fn get_ocr_pack_status() -> Result<crate::models::ModelsStatus, String> {
+    Ok(crate::models::ocr_status())
+}
+
+/// Starts the background download of the accurate OCR pack.
+#[tauri::command]
+pub async fn download_ocr_pack() -> Result<crate::models::ModelsStatus, String> {
+    crate::models::download_ocr_pack();
+    Ok(crate::models::ocr_status())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DuplicateGroup {
     /// `"content"` for exact extracted-content matches, `"image"` for
@@ -894,6 +907,7 @@ pub async fn complete_setup(
     config.save()?;
 
     crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
+    crate::ocr::set_engine(&config.ocr_engine);
     crate::indexer::extract::set_external_extractors(config.extractors.clone());
     *state.indexer.config.write() = config;
     state.indexer.start_indexing();

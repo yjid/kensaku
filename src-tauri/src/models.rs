@@ -53,6 +53,36 @@ const ARTIFACTS: [Artifact; 3] = [
     },
 ];
 
+/// Optional accurate OCR pack (PP-OCRv6 tiny detector + recognizer + dict).
+const OCR_ARTIFACTS: [Artifact; 3] = [
+    Artifact {
+        name: "det.onnx",
+        urls: &[
+            "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_det_onnx/resolve/main/inference.onnx",
+            "https://hf-mirror.com/PaddlePaddle/PP-OCRv6_tiny_det_onnx/resolve/main/inference.onnx",
+        ],
+        bytes_expected: 1_780_590,
+        sha256: Some("193bab7a04fca699a6c82e6abb5b81bdb28177f0abd4062552b04908dafb19f8"),
+    },
+    Artifact {
+        name: "rec.onnx",
+        urls: &[
+            "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_rec_onnx/resolve/main/inference.onnx",
+            "https://hf-mirror.com/PaddlePaddle/PP-OCRv6_tiny_rec_onnx/resolve/main/inference.onnx",
+        ],
+        bytes_expected: 4_462_639,
+        sha256: Some("9ef676d6ed3c88256a2d92c640c44f25b0c40947e111b14b8be8f594091563e6"),
+    },
+    Artifact {
+        name: "dict.txt",
+        urls: &[
+            "https://github.com/GreatV/oar-ocr/releases/download/v0.7.0/ppocrv6_tiny_dict.txt",
+        ],
+        bytes_expected: 27_156,
+        sha256: Some("c5cbe34ef40c29c4df07ed012bf96569cb69a2d2a01a07027e9f13cb832bd9cd"),
+    },
+];
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelArtifact {
     pub name: String,
@@ -143,12 +173,21 @@ fn ensure_dir(dir: &Path) -> Result<(), String> {
 
 /// Current artifact inventory, derived entirely from disk.
 pub fn status() -> ModelsStatus {
-    let dir = models_dir();
-    let mut artifacts = Vec::with_capacity(ARTIFACTS.len());
+    status_for(&models_dir(), &ARTIFACTS)
+}
+
+/// Current optional OCR pack inventory.
+pub fn ocr_status() -> ModelsStatus {
+    status_for(&crate::ocr::pack_dir(), &OCR_ARTIFACTS)
+}
+
+fn status_for(dir: &Path, artifacts_list: &[Artifact]) -> ModelsStatus {
+    let dir = dir.to_path_buf();
+    let mut artifacts = Vec::with_capacity(artifacts_list.len());
     let mut total_bytes = 0u64;
     let mut total_present_bytes = 0u64;
 
-    for artifact in ARTIFACTS.iter() {
+    for artifact in artifacts_list.iter() {
         let path = dir.join(artifact.name);
         let metadata = std::fs::metadata(&path).ok();
         let is_file = metadata.as_ref().map(|m| m.is_file()).unwrap_or(false);
@@ -189,11 +228,35 @@ pub fn status() -> ModelsStatus {
 /// Returns immediately. Calling this while a download is already running is a
 /// no-op.
 pub fn download_all() {
+    start_download(
+        models_dir(),
+        &ARTIFACTS,
+        "kensaku-model-download",
+        "model",
+    );
+}
+
+/// Starts a background download of the optional accurate OCR pack.
+pub fn download_ocr_pack() {
+    start_download(
+        crate::ocr::pack_dir(),
+        &OCR_ARTIFACTS,
+        "kensaku-ocr-download",
+        "OCR pack",
+    );
+}
+
+fn start_download(
+    dir: PathBuf,
+    artifacts: &'static [Artifact],
+    thread_name: &str,
+    label: &'static str,
+) {
     if DOWNLOADING.swap(true, Ordering::SeqCst) {
         return;
     }
 
-    if let Err(e) = ensure_dir(&models_dir()) {
+    if let Err(e) = ensure_dir(&dir) {
         set_error(Some(e));
         DOWNLOADING.store(false, Ordering::SeqCst);
         return;
@@ -203,20 +266,20 @@ pub fn download_all() {
     set_progress(None);
 
     let spawned = std::thread::Builder::new()
-        .name("kensaku-model-download".to_string())
-        .spawn(run_download);
+        .name(thread_name.to_string())
+        .spawn(move || run_download(dir, artifacts, label));
 
     if let Err(e) = spawned {
         set_error(Some(format!(
-            "Failed to start model download thread: {}",
-            e
+            "Failed to start {} download thread: {}",
+            label, e
         )));
         DOWNLOADING.store(false, Ordering::SeqCst);
     }
 }
 
-fn run_download() {
-    match download_missing() {
+fn run_download(dir: PathBuf, artifacts: &'static [Artifact], label: &'static str) {
+    match download_missing_for(&dir, artifacts, label) {
         Ok(()) => {
             set_progress(None);
             set_error(None);
@@ -229,21 +292,25 @@ fn run_download() {
     DOWNLOADING.store(false, Ordering::SeqCst);
 }
 
-fn download_missing() -> Result<(), String> {
-    let dir = models_dir();
-    ensure_dir(&dir)?;
+fn download_missing_for(
+    dir: &Path,
+    artifacts: &[Artifact],
+    label: &str,
+) -> Result<(), String> {
+    ensure_dir(dir)?;
 
-    let missing_bytes: u64 = ARTIFACTS
+    let missing_bytes: u64 = artifacts
         .iter()
         .filter(|artifact| !dir.join(artifact.name).is_file())
         .map(|artifact| artifact.bytes_expected)
         .sum();
     if missing_bytes > 0
-        && let Some(free) = free_bytes(&dir)
+        && let Some(free) = free_bytes(dir)
         && free < missing_bytes.saturating_add(64 * 1024 * 1024)
     {
         return Err(format!(
-            "Not enough disk space for model files: need {} MB, have {} MB",
+            "Not enough disk space for {} files: need {} MB, have {} MB",
+            label,
             missing_bytes / (1024 * 1024),
             free / (1024 * 1024)
         ));
@@ -251,8 +318,8 @@ fn download_missing() -> Result<(), String> {
 
     // Always verify an existing artifact. A truncated or corrupt final file is
     // removed and downloaded again instead of being trusted by name alone.
-    for artifact in ARTIFACTS.iter() {
-        download_one(&dir, artifact)?;
+    for artifact in artifacts {
+        download_one(dir, artifact)?;
     }
 
     Ok(())

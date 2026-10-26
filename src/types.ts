@@ -157,6 +157,7 @@ export interface KensakuConfig {
   extractors?: ExternalExtractor[];
   skip_hidden?: boolean;
   ocr_enabled?: boolean;
+  ocr_engine?: "tesseract" | "accurate";
   theme?: "paper" | "void";
   aliases?: Alias[];
   saved_searches?: SavedSearch[];
@@ -174,6 +175,9 @@ export interface OcrStatus {
   available: boolean;
   tessdata_dir: string;
   error: string | null;
+  engine?: "tesseract" | "accurate";
+  accurate_available?: boolean;
+  accurate_compiled?: boolean;
 }
 
 /* ---- SystemStats (get_stats). The backend may not expose this yet; ---- */

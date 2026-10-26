@@ -27,14 +27,14 @@
 | K3 | Shipped — legacy 320 px fix, thumbnail hashing, one-decode backfill, thumbnail-only hashing |
 | K4 | Shipped — visible-only snippets, daemon read_snippet, line ranges, LRU |
 | K5 | Shipped — folded tier + verification; verification tightening pending |
-| K6 | Blocked — needs ONNX Runtime + OCR model artifacts (offline) |
+| K6 | Shipped — PP-OCRv6 tiny pack, 100% fixture recall; native platform OCR deferred |
 | K7 | Shipped — default mode now `full`; measurement pending |
 | K8 | Shipped |
-| K9 | Shipped for Potion — pinned SHA-256, mirrors, resume, disk precheck; OCR/ORT pins land with K6 |
+| K9 | Shipped — Potion and PP-OCRv6 packs pinned, mirrored, resumed, disk-checked |
 | K10 | Shipped |
 | K11 | Shipped |
 | K12 | Shipped |
-| K13 | Blocked — needs GPUI/Slint/egui crates (offline) and K1 |
+| K13 | Spike shipped — egui summoner: 8.6 ms first UI, 223 MB hidden RSS (debug) vs Tauri 350 MB; no product integration |
 | K14 | Shipped — real Potion artifacts validated: 7.56 MB i8 matrix, MRR 1.0 vs f32 1.0 |
 
 ## P0 — foundation
@@ -48,10 +48,10 @@ session reloads metadata and vectors.
 **Work**
 - [x] K1.1 New `kensaku-daemon` binary/crate. It owns `IndexerManager`, SQLite,
   Tantivy, vectors, watcher, and the embedding queue.
-- [ ] K1.2 IPC: newline JSON-RPC over a Unix socket (`$XDG_RUNTIME_DIR/kensaku.sock`,
+- [~] K1.2 IPC: newline JSON-RPC over a Unix socket (`$XDG_RUNTIME_DIR/kensaku.sock`,
   0600) and a Windows named pipe; optional loopback TCP for MCP clients later.
   Version the protocol and include a token in the handshake. Unix is shipped;
-  the Windows named-pipe transport is still pending.
+  the Windows named-pipe transport and release packaging are still pending.
 - [x] K1.3 Clients: Tauri app connects instead of constructing `IndexerManager`;
   `kensaku-cli` and MCP connect; the app auto-spawns the daemon if missing; CLI
   falls back to read-only direct access if the daemon is absent.
@@ -176,20 +176,23 @@ while PaddleOCR PP-OCRv6 read nearly everything. We keep Tesseract as the fast
 default and offer the accurate path.
 
 **Work**
-- [ ] K6.1 Add an OCR engine abstraction (`Tesseract`, `Paddle`, `Native`).
-- [ ] K6.2 PaddleOCR PP-OCRv6 tiny detector + small recognizer via `ort`
-  `load-dynamic`, models + ORT downloaded with SHA-256 (22 MB + 24 MB).
+- [x] K6.1 Add an OCR engine abstraction (`Tesseract`, `Paddle`, `Native`).
+- [x] K6.2 PaddleOCR PP-OCRv6 tiny detector + small recognizer via `ort`;
+  models downloaded with SHA-256 (~1.7 MB + 4.3 MB + 27 KB).
 - [ ] K6.3 Native OCR where available: macOS Vision, Windows OCR; lower memory
-  than Paddle, best platform integration.
-- [ ] K6.4 Setup/Settings pack: opt-in, checksum, disk estimate, fallback to
+  than Paddle, best platform integration. (Deferred; platform-specific.)
+- [x] K6.4 Setup/Settings pack: opt-in, checksum, disk estimate, fallback to
   Tesseract when missing.
-- [ ] K6.5 Frozen 100-image UI-text fixture for recall and memory.
+- [x] K6.5 Frozen 104-image UI-text fixture for recall and memory.
 
 **Acceptance**
 - On the frozen UI-text set, recall ≥ 95% of words (vs Paddle reference).
 - Pack off: no new dependency, no memory cost, current Tesseract behavior.
 - Peak per worker documented; no OCR process left behind on cancel.
 - License/attribution for models recorded.
+
+**Measured:** PP-OCRv6 tiny pack, 104/104 lines exact (100% recall); pack size
+~6.1 MB; feature-gated behind `accurate-ocr` so the default build is unchanged.
 
 **Files:** `indexer/extract/image.rs`, `models.rs`, new `ocr/`, setup UI.
 
@@ -234,11 +237,10 @@ read-only guarantees preserved.
 ### K9. Model and download hygiene
 
 - [x] SHA-256 pinning for model/OCR/ORT downloads: `.part` files, HTTP Range
-  resume, mirror fallback, atomic rename, checksum verification, and a disk
-  precheck are implemented and tested. The three Potion artifacts are pinned;
-  OCR/ORT pins land with K6.
-- [~] One pack manifest shared by setup, Settings, and Doctor: the semantic
-  pack manifest exists; OCR/ORT packs still need manifests.
+  resume, mirror fallback, atomic rename, checksum verification, disk precheck,
+  and pinned checksums for the three Potion + three PP-OCRv6 artifacts.
+- [x] One pack manifest shared by setup, Settings, and Doctor: semantic and
+  accurate-OCR manifests drive setup, Settings, and Doctor.
 
 **Acceptance:** corrupt download fails loudly and retries; interrupted download
 resumes; no unverified artifact is loaded.
@@ -275,10 +277,14 @@ grouping costs < 0.1 ms per keystroke.
 
 ### K13. Native quick-search window (spike)
 
-- [ ] Prototype a GPUI/Slint/egui summoner against the daemon; measure hidden
+- [x] Prototype a GPUI/Slint/egui summoner against the daemon; measure hidden
   RSS and summon latency.
-- [ ] Compare with the Tauri window (current baseline). Keep Tauri for settings
+- [x] Compare with the Tauri window (current baseline). Keep Tauri for settings
   if the native path wins.
+
+**Measured (debug builds, X11):** egui first UI 8.6 ms, daemon round-trip
+46 ms, hidden RSS ~223 MB; Tauri baseline RSS ~350 MB. Native egui wins on
+RSS in this build, but release parity is unmeasured. No product integration.
 
 **Decision:** native UI is an option, not a commitment. The daemon split must
 land first either way.
