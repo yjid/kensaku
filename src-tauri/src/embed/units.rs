@@ -141,6 +141,33 @@ impl UnitStore {
         self.node_to_units.clear();
     }
 
+    /// Retains only units matching `expected_model_id`, discarding any units
+    /// produced by a previous or incompatible embedding model.
+    pub fn retain_model(&mut self, expected_model_id: u32) {
+        if self.units.iter().all(|u| u.model_id == expected_model_id) {
+            return;
+        }
+        let mut new_units = Vec::new();
+        let mut new_vectors = Vec::new();
+        let mut new_node_to_units: HashMap<u64, Vec<usize>> = HashMap::new();
+        for (idx, unit) in self.units.iter().enumerate() {
+            if unit.model_id == expected_model_id {
+                let start = idx * self.dim;
+                let end = start + self.dim;
+                let new_idx = new_units.len();
+                new_node_to_units
+                    .entry(unit.node_id)
+                    .or_default()
+                    .push(new_idx);
+                new_units.push(unit.clone());
+                new_vectors.extend_from_slice(&self.vectors[start..end]);
+            }
+        }
+        self.units = new_units;
+        self.vectors = new_vectors;
+        self.node_to_units = new_node_to_units;
+    }
+
     pub fn len(&self) -> usize {
         self.units.len()
     }

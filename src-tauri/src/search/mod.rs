@@ -66,17 +66,36 @@ pub struct Facets {
 }
 
 fn classify_extension(ext: &str) -> &'static str {
-    const IMAGE: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "tiff", "tif", "heic", "avif"];
-    const DOC: &[&str] = &["pdf", "md", "txt", "doc", "docx", "ppt", "pptx", "odp", "key", "xls", "xlsx", "csv", "tsv", "ods", "rtf", "odt", "pages", "epub", "log"];
-    const CODE: &[&str] = &["rs", "ts", "tsx", "js", "jsx", "py", "go", "c", "cpp", "h", "hpp", "java", "kt", "swift", "rb", "php", "lua", "zig", "nim", "html", "css", "scss", "json", "toml", "yaml", "yml", "xml", "sql", "sh", "bash", "fish", "conf"];
-    const MEDIA: &[&str] = &["mp4", "mov", "avi", "mkv", "webm", "m4v", "mp3", "flac", "wav", "ogg", "m4a", "aac", "opus"];
+    const IMAGE: &[&str] = &[
+        "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "tiff", "tif", "heic", "avif",
+    ];
+    const DOC: &[&str] = &[
+        "pdf", "md", "txt", "doc", "docx", "ppt", "pptx", "odp", "key", "xls", "xlsx", "csv",
+        "tsv", "ods", "rtf", "odt", "pages", "epub", "log",
+    ];
+    const CODE: &[&str] = &[
+        "rs", "ts", "tsx", "js", "jsx", "py", "go", "c", "cpp", "h", "hpp", "java", "kt", "swift",
+        "rb", "php", "lua", "zig", "nim", "html", "css", "scss", "json", "toml", "yaml", "yml",
+        "xml", "sql", "sh", "bash", "fish", "conf",
+    ];
+    const MEDIA: &[&str] = &[
+        "mp4", "mov", "avi", "mkv", "webm", "m4v", "mp3", "flac", "wav", "ogg", "m4a", "aac",
+        "opus",
+    ];
     const ARCHIVE: &[&str] = &["zip", "tar", "gz", "rar", "7z", "bz2", "xz", "dmg", "iso"];
-    if IMAGE.contains(&ext) { "image" }
-    else if DOC.contains(&ext) { "doc" }
-    else if CODE.contains(&ext) { "code" }
-    else if MEDIA.contains(&ext) { "media" }
-    else if ARCHIVE.contains(&ext) { "archive" }
-    else { "file" }
+    if IMAGE.contains(&ext) {
+        "image"
+    } else if DOC.contains(&ext) {
+        "doc"
+    } else if CODE.contains(&ext) {
+        "code"
+    } else if MEDIA.contains(&ext) {
+        "media"
+    } else if ARCHIVE.contains(&ext) {
+        "archive"
+    } else {
+        "file"
+    }
 }
 
 fn language_of(ext: &str) -> Option<&'static str> {
@@ -111,7 +130,11 @@ fn compute_facets(results: &[SearchResult], now_sec: u64) -> Facets {
             .rsplit_once('.')
             .map(|(_, e)| e.to_lowercase())
             .unwrap_or_default();
-        let category = if r.is_dir { "folder" } else { classify_extension(&ext) };
+        let category = if r.is_dir {
+            "folder"
+        } else {
+            classify_extension(&ext)
+        };
         *facets.types.entry(category.to_string()).or_insert(0) += 1;
         if let Some(lang) = language_of(&ext) {
             *facets.languages.entry(lang.to_string()).or_insert(0) += 1;
@@ -192,7 +215,9 @@ fn group_versions(results: &mut Vec<SearchResult>) {
                 base = next;
             }
         }
-        let base = base.trim_matches(|c: char| c == ' ' || c == '_' || c == '-' || c == '.').to_string();
+        let base = base
+            .trim_matches(|c: char| c == ' ' || c == '_' || c == '-' || c == '.')
+            .to_string();
         if base.is_empty() {
             continue;
         }
@@ -306,19 +331,31 @@ fn apply_sort(results: &mut [SearchResult], sort: SortOrder) {
         SortOrder::Newest => results.sort_by(|a, b| {
             b.modified
                 .cmp(&a.modified)
-                .then_with(|| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal))
+                .then_with(|| {
+                    b.score
+                        .partial_cmp(&a.score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
                 .then_with(|| a.path.cmp(&b.path))
         }),
         SortOrder::Oldest => results.sort_by(|a, b| {
             a.modified
                 .cmp(&b.modified)
-                .then_with(|| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal))
+                .then_with(|| {
+                    b.score
+                        .partial_cmp(&a.score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
                 .then_with(|| a.path.cmp(&b.path))
         }),
         SortOrder::Largest => results.sort_by(|a, b| {
             b.file_size
                 .cmp(&a.file_size)
-                .then_with(|| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal))
+                .then_with(|| {
+                    b.score
+                        .partial_cmp(&a.score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
                 .then_with(|| a.path.cmp(&b.path))
         }),
         SortOrder::Name => results.sort_by(|a, b| {
@@ -569,12 +606,21 @@ impl SearchDispatcher {
         let entries: Vec<FileEntry> = (0..metadata.len())
             .map(|i| metadata.materialize(i as u32))
             .collect();
-        let path_index: HashMap<PathBuf, usize> =
-            entries.iter().enumerate().map(|(i, e)| (e.path.clone(), i)).collect();
+        let path_index: HashMap<PathBuf, usize> = entries
+            .iter()
+            .enumerate()
+            .map(|(i, e)| (e.path.clone(), i))
+            .collect();
         let generation = metadata.generation();
 
         // 1. Parse AST from query
-        let mut parsed = parse_query(effective_query, &entries, &path_index, Some(&trie), generation);
+        let mut parsed = parse_query(
+            effective_query,
+            &entries,
+            &path_index,
+            Some(&trie),
+            generation,
+        );
         let route = crate::query::router::route_query(&parsed);
 
         // Pre-compile filters once per query (lowercase strings, intern extensions)
@@ -777,20 +823,23 @@ impl SearchDispatcher {
         // Weak vectors are kept in the map (with their raw cosine) so hits that
         // also match fuzzy/BM25 still contribute; the floor below is applied
         // only when creating a semantic-only candidate.
-        let semantic_floor = if ModelRegistry::global().has_static_table() {
-            0.28
-        } else {
-            0.12
-        };
+        let model = ModelRegistry::global();
+        let semantic_floor = if model.has_static_table() { 0.28 } else { 0.12 };
         let mut semantic_ranks: HashMap<PathBuf, (usize, f32, (usize, usize))> = HashMap::new();
         if semantic_enabled
+            && model.is_enabled()
             && !search_text.is_empty()
             && let Some(store) = unit_store
             && !store.is_empty()
         {
-            let model = ModelRegistry::global();
             let query_vec = model.embed_to_i8(search_text);
-            let hits = ExactScanner::scan(&query_vec, store, allowed_node_ids.as_ref(), limit * 3);
+            let hits = ExactScanner::scan_with_model(
+                &query_vec,
+                store,
+                allowed_node_ids.as_ref(),
+                limit * 3,
+                Some(model.model_id),
+            );
             for (rank, hit) in hits.into_iter().enumerate() {
                 let orig_idx = match node_to_idx.get(&hit.node_id).copied() {
                     Some(idx) => idx,
@@ -992,23 +1041,19 @@ impl SearchDispatcher {
                 let entry = entries.get(cand.entry_idx)?;
 
                 // MatchType resolution: Semantic badge if only found by semantic tier
-                let match_type = if cand.in_semantic
-                    && !cand.in_fuzzy
-                    && !cand.in_bm25
-                    && !cand.in_folded
-                {
-                    MatchType::Semantic
-                } else if cand.in_fuzzy
-                    && (cand.in_bm25 || cand.in_semantic || cand.in_folded)
-                {
-                    MatchType::Both
-                } else if cand.in_bm25 {
-                    MatchType::Content
-                } else if cand.in_folded {
-                    MatchType::ContentFolded
-                } else {
-                    MatchType::FileName
-                };
+                let match_type =
+                    if cand.in_semantic && !cand.in_fuzzy && !cand.in_bm25 && !cand.in_folded {
+                        MatchType::Semantic
+                    } else if cand.in_fuzzy && (cand.in_bm25 || cand.in_semantic || cand.in_folded)
+                    {
+                        MatchType::Both
+                    } else if cand.in_bm25 {
+                        MatchType::Content
+                    } else if cand.in_folded {
+                        MatchType::ContentFolded
+                    } else {
+                        MatchType::FileName
+                    };
 
                 let usage = metadata.get_usage(&entry.path);
                 let score = finalize_score(
@@ -1563,7 +1608,10 @@ mod tests {
 
         assert!(!response.results.is_empty());
         assert!(
-            response.results.iter().all(|result| result.snippet.is_none()),
+            response
+                .results
+                .iter()
+                .all(|result| result.snippet.is_none()),
             "the fast search path must not attach snippets"
         );
     }
@@ -1749,7 +1797,9 @@ mod tests {
             .map(|(idx, value)| (idx, *value))
             .expect("non-empty embedding");
         assert_ne!(value, 0, "embedding should have a non-zero component");
-        let scaled = (1200.0 / f32::from(value.abs().max(1))).round().clamp(1.0, 127.0) as i8;
+        let scaled = (1200.0 / f32::from(value.abs().max(1)))
+            .round()
+            .clamp(1.0, 127.0) as i8;
         let mut weak_vec = vec![0i8; query_vec.len()];
         weak_vec[idx] = scaled * value.signum();
 
@@ -1819,6 +1869,90 @@ mod tests {
         );
         assert!(response.results[0].path.ends_with("strong.txt"));
         assert!(response.results[0].score >= 0.0);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn semantic_search_respects_semantic_enabled_and_model_id() {
+        use crate::embed::Unit;
+        use crate::indexer::metadata_db::MetadataDb;
+
+        let model = ModelRegistry::global();
+        let query_vec = model.embed_to_i8("needle");
+
+        let mut units = UnitStore::new(model.dim);
+        // Unit 1: active model id
+        units.add_unit(
+            Unit {
+                id: 0,
+                node_id: 1,
+                byte_start: 0,
+                byte_end: 10,
+                model_id: model.model_id,
+            },
+            &query_vec,
+        );
+        // Unit 2: old/incompatible model id
+        units.add_unit(
+            Unit {
+                id: 1,
+                node_id: 2,
+                byte_start: 0,
+                byte_end: 10,
+                model_id: model.model_id + 999,
+            },
+            &query_vec,
+        );
+
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "kensaku-semantic-model-id-{}-{}",
+            std::process::id(),
+            nanos
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let db = MetadataDb::open_in_dir(&dir).expect("open metadata db");
+        db.upsert(&entry(1, "/tmp/kensaku/sem/active.txt", "active.txt"))
+            .unwrap();
+        db.upsert(&entry(
+            2,
+            "/tmp/kensaku/sem/incompatible.txt",
+            "incompatible.txt",
+        ))
+        .unwrap();
+        let metadata = MetadataStore::with_db(db);
+
+        // 1. With semantic_enabled = true: only active model unit matches (node 1)
+        let response = SearchDispatcher::search_response(
+            "needle",
+            &metadata,
+            &None,
+            Some(&units),
+            true,
+            10,
+            0,
+        );
+        assert_eq!(response.results.len(), 1);
+        assert!(response.results[0].path.ends_with("active.txt"));
+
+        // 2. With semantic_enabled = false: semantic search is skipped entirely
+        let response_disabled = SearchDispatcher::search_response(
+            "needle",
+            &metadata,
+            &None,
+            Some(&units),
+            false,
+            10,
+            0,
+        );
+        assert!(
+            response_disabled.results.is_empty(),
+            "when semantic_enabled=false, semantic-only results must not be returned"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }

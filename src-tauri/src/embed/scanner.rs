@@ -25,7 +25,26 @@ impl ExactScanner {
         allowed: Option<&HashSet<u64>>,
         limit: usize,
     ) -> Vec<SemanticHit> {
-        if store.is_empty() || query_vec.len() != store.dim {
+        Self::scan_with_model(query_vec, store, allowed, limit, None)
+    }
+
+    /// Exact parallel scan over memory-mapped / in-memory i8 vectors.
+    /// Returns top-k hits grouped by node_id with max score and best unit range.
+    ///
+    /// When `allowed` is `Some`, units whose `node_id` is not in the set are
+    /// skipped before computing cosine similarity. This keeps scoped/filtered
+    /// queries from scoring the entire corpus.
+    ///
+    /// When `expected_model_id` is `Some`, units created by a different model
+    /// are skipped so vectors from different models/spaces are never compared.
+    pub fn scan_with_model(
+        query_vec: &[i8],
+        store: &UnitStore,
+        allowed: Option<&HashSet<u64>>,
+        limit: usize,
+        expected_model_id: Option<u32>,
+    ) -> Vec<SemanticHit> {
+        if store.is_empty() || query_vec.is_empty() || query_vec.len() != store.dim {
             return Vec::new();
         }
 
@@ -37,7 +56,14 @@ impl ExactScanner {
         let scored_units: Vec<(usize, f32)> = (0..units.len())
             .into_par_iter()
             .filter_map(|idx| {
-                let node_id = units[idx].node_id;
+                let unit = &units[idx];
+                if let Some(expected_id) = expected_model_id
+                    && unit.model_id != expected_id
+                {
+                    return None;
+                }
+
+                let node_id = unit.node_id;
                 if let Some(allowed) = allowed
                     && !allowed.contains(&node_id)
                 {
@@ -129,5 +155,33 @@ mod tests {
         let both = ExactScanner::scan(&query, &store, Some(&allowed), 10);
         assert_eq!(both.len(), 1);
         assert_eq!(both[0].node_id, 2);
+    }
+
+    #[test]
+    fn model_id_isolation_skips_units_from_different_models() {
+        let mut store = UnitStore::new(4);
+        let mut u1 = unit(0, 1);
+        u1.model_id = 1;
+        let mut u2 = unit(1, 2);
+        u2.model_id = 2; // Different model
+
+        store.add_unit(u1, &[127, 0, 0, 0]);
+        store.add_unit(u2, &[127, 0, 0, 0]);
+
+        let query = [127i8, 0, 0, 0];
+
+        // Active model is 1: unit 2 must be ignored
+        let hits = ExactScanner::scan_with_model(&query, &store, None, 10, Some(1));
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].node_id, 1);
+
+        // Active model is 2: unit 1 must be ignored
+        let hits = ExactScanner::scan_with_model(&query, &store, None, 10, Some(2));
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].node_id, 2);
+
+        // Active model is 3: neither matches
+        let hits = ExactScanner::scan_with_model(&query, &store, None, 10, Some(3));
+        assert!(hits.is_empty());
     }
 }

@@ -94,10 +94,11 @@ These are the highest-leverage gaps. None require a new model.
 
 ## B. Intelligence & vision
 
-- [ ] **Embedding provider contract** — `semantic_model` exists in config but is
-      not wired to an implementation. Make provider selection real, keep the
-      static table as the default, and define the fallback contract before
-      adding another model. (ROADMAP K16)
+- [x] **Embedding provider contract** — `semantic_model` exists in config and is
+      wired to real provider selection (`static`, `smart`, `none`). Static table
+      remains default; missing/incompatible providers fall back cleanly with
+      recorded reasons; model-id isolation prevents mixing incompatible vectors.
+      (ROADMAP K16)
 - [ ] **ONNX "smart pack"** — optional `ort`/ONNX model with `load-dynamic`,
       bge-small or EmbeddingGemma-Q4, activation after download. The Potion
       table is already used; this is the quality tier above it. (ROADMAP K17)

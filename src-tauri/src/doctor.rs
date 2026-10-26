@@ -296,13 +296,41 @@ fn check_semantic_index(units: usize) -> DoctorCheck {
     const ID: &str = "semantic_index";
     const LABEL: &str = "Semantic index";
 
+    let model = crate::embed::ModelRegistry::global();
+    if !model.is_enabled() {
+        return ok(
+            ID,
+            LABEL,
+            "Semantic indexing disabled (provider: none).".to_string(),
+        );
+    }
+
+    let detail = if let Some(ref fallback) = model.fallback_reason {
+        format!(
+            "provider: {} · model_id: {} · dim: {} · {} units (fallback: {})",
+            model.provider_name(),
+            model.model_id,
+            model.dim,
+            units,
+            fallback
+        )
+    } else {
+        format!(
+            "provider: {} · model_id: {} · dim: {} · {} units",
+            model.provider_name(),
+            model.model_id,
+            model.dim,
+            units
+        )
+    };
+
     if units > 0 {
-        ok(ID, LABEL, format!("{} semantic units loaded.", units))
+        ok(ID, LABEL, detail)
     } else {
         warn(
             ID,
             LABEL,
-            "No semantic units indexed yet.".to_string(),
+            format!("{} · no units indexed yet", detail),
             Some("Run >reindex once model files are available.".to_string()),
         )
     }
