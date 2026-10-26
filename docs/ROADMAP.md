@@ -178,13 +178,13 @@ settles writes for 400 ms, and retries files still being written. Our crawl can
 compete with typing and read half-written files.
 
 **Work**
-- [ ] K7.1 Priority: `SCHED_IDLE` + idle I/O (Linux), `PRIO_DARWIN_BG` (macOS),
+- [x] K7.1 Priority: `SCHED_IDLE` + idle I/O (Linux), `PRIO_DARWIN_BG` (macOS),
   background mode (Windows), behind a "full speed / balanced / eco" setting.
-- [ ] K7.2 Battery detection and pacing; pause/resume in Settings.
-- [ ] K7.3 Newest-first within each type (keep text-first for first scan).
-- [ ] K7.4 400 ms settle; retry files written within 10 s; rename pairing and
+- [x] K7.2 Battery detection and pacing; pause/resume in Settings.
+- [x] K7.3 Newest-first within each type (keep text-first for first scan).
+- [x] K7.4 400 ms settle; retry files written within 10 s; rename pairing and
   overflow rescan hardening.
-- [ ] K7.5 Fresh files jump the queue even during a backfill.
+- [x] K7.5 Fresh files jump the queue even during a backfill.
 
 **Acceptance**
 - During a full crawl, keystroke p95 ≤ 40 ms (10k-file corpus).

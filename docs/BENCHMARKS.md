@@ -97,6 +97,7 @@ is dominated by the external tesseract process and is build-independent.
 | --- | --- |
 | K2 metadata arena | Node size 64 bytes (vs 128-byte `FileEntry`); 1M entries ≈ 64 MB metadata (stretch target met) |
 | K3 thumbnail hashing | dHash now reuses the 480 px JPEG thumbnail; `phash64_cached` decodes sources only when the thumbnail is stale. 1400-image RSS run still pending. |
+| K7 scheduling + watcher | 400 ms settle and 500 ms fresh-file verification added; 6 watcher tests cover coalescing, fresh retries, rename, delete-while-paused, and overflow rescan. Keystroke p95 on a 10k-file crawl was not measured on this machine (no GUI corpus); priority is applied at crawl-thread start and can be disabled with `KENSAKU_NO_BG_PRIORITY=1`. |
 | K14 i8 embedding table | 29,528 × 256: f32 30,236,672 B (~28.8 MiB) → i8 + per-row scales 7,677,280 B (~7.3 MiB). Synthetic 96-row golden set: recall@5 1.000, MRR 1.000 (f32) / 1.000 (i8). 512-token `embed` p50 (debug): 1.227 ms f32 / 1.230 ms i8. Production model artifacts were not installed, so the real-corpus quality check remains to be run on a machine that has them. |
 | 200 screenshots, OCR | ~12 s (~17 files/s) |
 | 400 screenshots, OCR | ~26 s (~15 files/s) |

@@ -36,6 +36,30 @@ pub fn default_aliases() -> Vec<Alias> {
     .collect()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum CrawlMode {
+    Full,
+    #[default]
+    Balanced,
+    Eco,
+}
+
+impl CrawlMode {
+    /// True when indexing should run at background priority.
+    pub fn is_background(self) -> bool {
+        !matches!(self, Self::Full)
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Balanced => "balanced",
+            Self::Eco => "eco",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KensakuConfig {
     pub watched_dirs: Vec<PathBuf>,
@@ -61,6 +85,14 @@ pub struct KensakuConfig {
     /// rollback without rebuilding.
     #[serde(default)]
     pub semantic_f32_table: bool,
+    /// Background indexing policy. `balanced` uses idle priority; `eco` also
+    /// paces work on battery. `full` stays at normal priority.
+    #[serde(default)]
+    pub crawl_mode: CrawlMode,
+    /// Pause background crawling without stopping the watcher. Renames and
+    /// deletes still apply while paused.
+    #[serde(default)]
+    pub pause_indexing: bool,
     #[serde(default = "default_true")]
     pub ocr_enabled: bool,
     /// Persisted UI theme ("paper" or "void").
@@ -161,6 +193,8 @@ impl Default for KensakuConfig {
             semantic_enabled: true,
             semantic_model: "static".to_string(),
             semantic_f32_table: false,
+            crawl_mode: CrawlMode::Balanced,
+            pause_indexing: false,
             ocr_enabled: true,
             theme: default_theme(),
             aliases: default_aliases(),
@@ -417,6 +451,27 @@ mod tests {
             "\"semantic_f32_table\":true",
         );
         assert!(KensakuConfig::load_from_str(&with_flag).semantic_f32_table);
+    }
+
+    #[test]
+    fn crawl_mode_and_pause_parse_from_config() {
+        let cfg = KensakuConfig::default();
+        assert_eq!(cfg.crawl_mode, CrawlMode::Balanced);
+        assert!(!cfg.pause_indexing);
+
+        let raw = r#"{
+            "watched_dirs": [],
+            "excluded_dirs": [],
+            "excluded_extensions": [],
+            "shortcut": "Alt+Space",
+            "max_results": 50,
+            "is_setup_complete": false,
+            "crawl_mode": "eco",
+            "pause_indexing": true
+        }"#;
+        let parsed = KensakuConfig::load_from_str(raw);
+        assert_eq!(parsed.crawl_mode, CrawlMode::Eco);
+        assert!(parsed.pause_indexing);
     }
 
     #[test]

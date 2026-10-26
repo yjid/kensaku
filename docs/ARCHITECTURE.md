@@ -213,6 +213,8 @@ struct Unit { node_id, byte_start, byte_end, model_idx }  // 1 vector per unit
 - \> 400k units: build USearch HNSW (`cos`, i8, M=16, efConstruction=200, ef=64) at idle. Deletions via tombstones; rebuild at idle when tombstones > 15 %.
 - **Model identity is per-index:** `units.model_id` + `meta.model_id`. Changing the model never corrupts results — the old index keeps serving while the new one fills.
 
+**Crawl scheduling:** `crawl_mode` selects `full`, `balanced`, or `eco`. Balanced/eco put the crawl thread in the OS idle CPU/I/O class; eco also paces extraction starts on battery. The Settings `pause_indexing` switch gates reads but keeps renames/deletes live. Watcher events settle for 400 ms; files with a fresh mtime are fingerprinted again before their content is trusted.
+
 **Embedding queue:** bounded, resumable cursor in `nodes.indexed_gen`, priority = recently-modified first, then small files first. Hard rules: stop on battery, stop when a query is in flight, stop during fullscreen apps, max 2 threads.
 
 ### 5.4 Folded / substring tier (planned, [K5](ROADMAP.md#k5-folded--trigram-content-tier))
