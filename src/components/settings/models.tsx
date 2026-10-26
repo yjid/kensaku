@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, Copy, Download, Trash2 } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 import { ModelsStatus } from "../../types";
 import { formatBytes } from "../../lib/format";
 import { Card, Field } from "./kit";
@@ -17,9 +17,7 @@ function mb(bytes: number): string {
 export function ModelFilesCard() {
   const [status, setStatus] = useState<ModelsStatus | null>(null);
   const [live, setLive] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -41,23 +39,6 @@ export function ModelFilesCard() {
     const id = window.setInterval(load, 600);
     return () => window.clearInterval(id);
   }, [live, status?.downloading, load]);
-
-  const act = useCallback(
-    async (cmd: string) => {
-      setBusy(true);
-      setActionError(null);
-      try {
-        await invoke(cmd);
-        await load();
-      } catch (err) {
-        console.warn(`${cmd} failed:`, err);
-        setActionError(String(err));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [load],
-  );
 
   const copyDir = useCallback(async () => {
     if (!status?.dir) return;
@@ -127,7 +108,7 @@ export function ModelFilesCard() {
           </div>
         ))}
 
-      {/* State + actions */}
+      {/* State (read-only — downloads live in setup). */}
       {!live ? (
         <p className="px-4 py-3.5 text-[11px] leading-relaxed text-muted">
           Model status unavailable — the backend command is not connected yet.
@@ -146,66 +127,27 @@ export function ModelFilesCard() {
               {mb(prog?.downloaded ?? 0)} / {mb(prog?.total || expected)} · {pct}%
             </span>
           </div>
-          <button
-            type="button"
-            disabled
-            className="flex h-7 items-center gap-1.5 rounded-[10px] border border-line px-2.5 text-[11px] text-subtle"
-          >
-            <Download className="h-3 w-3" />
-            Downloading…
-          </button>
+          <p className="font-mono text-[10px] text-subtle">downloading in setup…</p>
         </div>
       ) : status?.error ? (
         <div className="border-t border-line px-4 py-3">
           <p className="break-words text-[11px] text-danger">{status.error}</p>
-          <div className="flex items-center gap-1.5 pt-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => act("download_models")}
-              className="flex h-7 items-center gap-1.5 rounded-[10px] border border-line px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
-            >
-              <Download className="h-3 w-3" />
-              Retry download
-            </button>
-          </div>
+          <p className="pt-1.5 text-[11px] leading-relaxed text-muted">
+            Use <b>About → Run setup again</b> to retry the download.
+          </p>
         </div>
       ) : status?.ready ? (
-        <div className="flex items-center justify-between gap-4 border-t border-line px-4 py-3">
-          <div className="flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-success" />
-            <p className="text-[12px] font-medium text-fg">Model files ready</p>
-          </div>
-          <button
-            type="button"
-            disabled={busy}
-            title="Delete the downloaded model files"
-            onClick={() => act("delete_models")}
-            className="flex h-7 items-center gap-1.5 rounded-[10px] border border-line px-2.5 text-[11px] text-muted transition-colors hover:border-danger/40 hover:text-danger disabled:opacity-50"
-          >
-            <Trash2 className="h-3 w-3" />
-            Remove
-          </button>
+        <div className="flex items-center gap-1.5 border-t border-line px-4 py-3">
+          <span className="h-1.5 w-1.5 rounded-full bg-success" />
+          <p className="text-[12px] font-medium text-fg">Model files ready</p>
         </div>
       ) : (
         <div className="border-t border-line px-4 py-3">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => act("download_models")}
-            className="flex h-7 items-center gap-1.5 rounded-[10px] bg-accent px-3 text-[11px] font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            <Download className="h-3 w-3" />
-            Download · {formatBytes(expected)}
-          </button>
+          <p className="text-[11px] leading-relaxed text-muted">
+            Not downloaded. Use <b>About → Run setup again</b> to acquire the optional neural
+            tier.
+          </p>
         </div>
-      )}
-
-      {busy && <p className="px-4 pb-3 font-mono text-[10px] text-subtle">working…</p>}
-      {actionError && (
-        <p className="break-words border-t border-line px-4 py-2 font-mono text-[10px] text-danger">
-          {actionError}
-        </p>
       )}
 
       {/* Honest note. */}

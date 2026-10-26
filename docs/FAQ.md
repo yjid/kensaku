@@ -13,9 +13,8 @@ later launches stay search-first and instant. See [VISION.md](VISION.md).
 **What happens during setup?**
 The guided flow covers folders, exclusions, preferences (theme + shortcut),
 optional OCR/model downloads, and the first scan, ending with a Done summary
-before the main window opens. Settings → About offers **Run setup again**.
-Model and OCR downloads remain available in Settings for now. See
-[VISION.md](VISION.md).
+before the main window opens. Downloads are acquired there; Settings shows
+installed status and **About → Run setup again**. See [VISION.md](VISION.md).
 
 **Why does search return nothing for a word I know is in a file?**
 Check: is the folder watched? Is the extension in the excluded list? Is the file

@@ -728,26 +728,10 @@ pub async fn execute_command(
             message: "Use the Settings dialog to add new folders to watch, or trigger >settings."
                 .to_string(),
         }),
-        "dupes" => {
-            let groups = find_duplicates(state.clone(), None, Some(50)).await?;
-            if groups.is_empty() {
-                return Ok(CommandOutput {
-                    success: true,
-                    message: "No duplicate groups found.".to_string(),
-                });
-            }
-            let mut msg = format!("Found {} duplicate group(s):\n", groups.len());
-            for (i, g) in groups.iter().take(20).enumerate() {
-                msg.push_str(&format!("\n{}. [{}] {} files\n", i + 1, g.kind, g.paths.len()));
-                for p in g.paths.iter().take(5) {
-                    msg.push_str(&format!("   - {}\n", p));
-                }
-                if g.paths.len() > 5 {
-                    msg.push_str(&format!("   … and {} more\n", g.paths.len() - 5));
-                }
-            }
-            Ok(CommandOutput { success: true, message: msg })
-        }
+        "dupes" => Ok(CommandOutput {
+            success: true,
+            message: "DUPLICATES".to_string(),
+        }),
         "settings" => Ok(CommandOutput {
             success: true,
             message: "SETTINGS".to_string(),

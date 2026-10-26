@@ -52,6 +52,12 @@ export interface FilePreview {
   height?: number | null;
 }
 
+export interface DuplicateGroup {
+  kind: "content" | "image" | string;
+  hash: string;
+  paths: string[];
+}
+
 export interface CommandOutput {
   success: boolean;
   message: string;

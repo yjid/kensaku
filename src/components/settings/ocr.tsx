@@ -4,12 +4,11 @@ import {
   Check,
   ChevronDown,
   Copy,
-  Download,
   RefreshCw,
   TriangleAlert,
 } from "lucide-react";
 import { KensakuConfig, OcrStatus } from "../../types";
-import { Switch, reasonFrom } from "./kit";
+import { Switch } from "./kit";
 
 /* OCR row — state-aware. Calls `get_ocr_status` on mount; every outcome
    is honest: when OCR cannot work the switch is disabled next to the
@@ -51,8 +50,6 @@ function pickPlatform(): (typeof INSTALL_COMMANDS)[number] {
   return INSTALL_COMMANDS[0];
 }
 
-type DownloadState = "idle" | "running" | "failed";
-
 export function OcrField({
   config,
   setConfig,
@@ -64,8 +61,6 @@ export function OcrField({
      switch stays enabled, optimistic, with no hint line. */
   const [status, setStatus] = useState<OcrStatus | null>(null);
   const [rechecking, setRechecking] = useState(false);
-  const [download, setDownload] = useState<DownloadState>("idle");
-  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [allPlatforms, setAllPlatforms] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const platform = pickPlatform();
@@ -87,32 +82,6 @@ export function OcrField({
     setRechecking(true);
     await check();
     setRechecking(false);
-  };
-
-  const downloadEnglish = async () => {
-    if (download === "running") return;
-    setDownload("running");
-    setDownloadError(null);
-    try {
-      /* The backend resolves with a refreshed status; fall back to an
-         explicit re-check if it returns anything else. */
-      const refreshed = await invoke<unknown>("download_ocr_language", { language: "eng" });
-      if (
-        refreshed &&
-        typeof refreshed === "object" &&
-        "engine_present" in refreshed &&
-        "languages" in refreshed
-      ) {
-        setStatus(refreshed as OcrStatus);
-      } else {
-        await check();
-      }
-    } catch (err) {
-      setDownloadError(reasonFrom(err));
-      setDownload("failed");
-    } finally {
-      setDownload("idle");
-    }
   };
 
   const copy = async (text: string) => {
@@ -251,43 +220,26 @@ export function OcrField({
           </div>
         </div>
       ) : (
-        /* Engine present, no language data — one small download unlocks OCR. */
+        /* Engine present, no language data — setup owns the download. */
         <div className="space-y-2.5 bg-sunken px-4 py-3">
           {status?.error && (
             <p className="break-words font-mono text-[10px] leading-4 text-muted">
               {status.error}
             </p>
           )}
-          <div>
-            <button
-              type="button"
-              disabled={download === "running"}
-              onClick={downloadEnglish}
-              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-accent px-3.5 text-[11px] font-medium text-accent-fg transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Download className="h-3.5 w-3.5" />
-              {download === "running" ? "Downloading…" : "Download English · 4 MB"}
-            </button>
-          </div>
-          {download === "running" && (
-            <div className="progress-track w-[220px] max-w-full" aria-hidden="true">
-              <div className="progress-bar" />
-            </div>
-          )}
-          {downloadError && (
-            <div className="flex items-center justify-between gap-3">
-              <p className="min-w-0 break-words font-mono text-[10px] leading-4 text-danger">
-                {downloadError}
-              </p>
-              <button
-                type="button"
-                onClick={downloadEnglish}
-                className="h-8 shrink-0 rounded-[10px] border border-danger/40 px-3 text-[11px] font-medium text-danger transition-colors duration-150 hover:bg-danger/10"
-              >
-                Retry
-              </button>
-            </div>
-          )}
+          <p className="text-[11px] leading-relaxed text-muted">
+            Language data is downloaded during setup. Use <b>About → Run setup again</b> to
+            acquire it, then re-check here.
+          </p>
+          <button
+            type="button"
+            disabled={rechecking}
+            onClick={recheck}
+            className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-elevated px-3 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3 w-3 ${rechecking ? "animate-spin" : ""}`} aria-hidden={rechecking} />
+            Re-check
+          </button>
         </div>
       )}
     </div>

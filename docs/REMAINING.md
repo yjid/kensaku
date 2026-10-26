@@ -61,14 +61,15 @@ These are the highest-leverage gaps. None require a new model.
       `@me`; recent places first; resolved against the existing directory trie.
 - [ ] **New home and result states** — recent files, recent queries, pins,
       suggestions, best-guess card, grouped versions, related files.
-- [~] **Duplicate cleanup UI** — `>dupes` now prints grouped exact-content and
-      near-image duplicates. A dedicated review/delete view is still missing.
+- [x] **Duplicate cleanup UI** — `>dupes` opens a review view with exact-content
+      and near-image groups; open/copy/reveal per file. Destructive delete is
+      intentionally left to the OS.
 - [x] **Guided first-run setup flow** — welcome → folders → exclusions →
       preferences → optional packs → first scan → Done, with resume after an
       interrupted scan.
-- [~] **Setup-owned downloads and configuration** — folders, exclusions, theme,
-      and shortcut are asked in setup; OCR/model downloads are offered there but
-      still also live in Settings. Vision Packs and a Settings status-only view
+- [x] **Setup-owned downloads and configuration** — folders, exclusions, theme,
+      and shortcut are asked in setup; OCR/model downloads are offered there.
+      Settings shows status only and links to **Run setup again**. Vision Packs
       remain.
 - [x] **First-scan completion gate** — `first_scan_done` gates `is_setup_complete`;
       the scan shows live counts and a Done summary, resumes after interruption,
