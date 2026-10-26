@@ -610,6 +610,19 @@ fn tool_read_snippet(args: &Value) -> Result<Value, ToolFailure> {
             })?,
     };
 
+    if crate::daemon::request("ping", json!({})).is_ok()
+        && let Ok(value) = crate::daemon::request(
+            "read_snippet",
+            json!({
+                "path": path,
+                "query": query,
+                "max_tokens": max_tokens,
+            }),
+        )
+    {
+        return Ok(value);
+    }
+
     let file = Path::new(path);
     let text = extract_text(file)
         .ok_or_else(|| ToolFailure::Execution(format!("Could not read text from {}", path)))?;
@@ -725,7 +738,7 @@ fn optional_string(args: &Value, key: &str) -> Result<Option<String>, ToolFailur
     }
 }
 
-fn extract_text(path: &Path) -> Option<String> {
+pub fn extract_text(path: &Path) -> Option<String> {
     if !path.is_file() {
         return None;
     }

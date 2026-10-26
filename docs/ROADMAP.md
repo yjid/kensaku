@@ -22,20 +22,20 @@
 
 | Task | Status |
 |---|---|
-| K1 | Partial — daemon binary/IPC/CLI/MCP done; GUI client partial; Windows pipe/packaging/read_snippet RPC pending |
+| K1 | Partial — Unix daemon, clients, metadata RPCs, snippets; Windows named pipe and packaging pending |
 | K2 | Shipped — 92.8 MB at 1M (target ≤ 100 MB) |
 | K3 | Shipped — legacy 320 px fix, thumbnail hashing, one-decode backfill, thumbnail-only hashing |
-| K4 | Partial — visible-only snippets shipped; line boxes/LRU pending |
+| K4 | Shipped — visible-only snippets, daemon read_snippet, line ranges, LRU |
 | K5 | Shipped — folded tier + verification; verification tightening pending |
-| K6 | Not started — blocked on K9 |
+| K6 | Blocked — needs ONNX Runtime + OCR model artifacts (offline) |
 | K7 | Shipped — default mode now `full`; measurement pending |
 | K8 | Shipped |
-| K9 | Partial — framework shipped; checksums/mirrors/manifest pending |
+| K9 | Partial — framework shipped; production SHA-256 pins require artifacts |
 | K10 | Shipped |
 | K11 | Shipped |
 | K12 | Shipped |
-| K13 | Not started — depends on K1 |
-| K14 | Shipped — validation on real model/golden set pending |
+| K13 | Blocked — needs GPUI/Slint/egui crates (offline) and K1 |
+| K14 | Harness shipped — real Potion artifacts not installed |
 
 ## P0 — foundation
 
@@ -46,17 +46,18 @@ the UI. Our WebView currently sits in the indexing process and every CLI/MCP
 session reloads metadata and vectors.
 
 **Work**
-- [ ] K1.1 New `kensaku-daemon` binary/crate. It owns `IndexerManager`, SQLite,
+- [x] K1.1 New `kensaku-daemon` binary/crate. It owns `IndexerManager`, SQLite,
   Tantivy, vectors, watcher, and the embedding queue.
 - [ ] K1.2 IPC: newline JSON-RPC over a Unix socket (`$XDG_RUNTIME_DIR/kensaku.sock`,
   0600) and a Windows named pipe; optional loopback TCP for MCP clients later.
-  Version the protocol and include a token in the handshake.
-- [ ] K1.3 Clients: Tauri app connects instead of constructing `IndexerManager`;
+  Version the protocol and include a token in the handshake. Unix is shipped;
+  the Windows named-pipe transport is still pending.
+- [x] K1.3 Clients: Tauri app connects instead of constructing `IndexerManager`;
   `kensaku-cli` and MCP connect; the app auto-spawns the daemon if missing; CLI
   falls back to read-only direct access if the daemon is absent.
-- [ ] K1.4 Lifecycle: single-instance lock, PID/status file, graceful shutdown,
+- [x] K1.4 Lifecycle: single-instance lock, PID/status file, graceful shutdown,
   `SIGTERM` handling, log to config dir, no zombie writers.
-- [ ] K1.5 Migration: keep the existing in-process path behind a feature flag
+- [x] K1.5 Migration: keep the existing in-process path behind a feature flag
   until the daemon passes the acceptance tests.
 
 **Acceptance**
@@ -129,11 +130,11 @@ for visible tiles (60–90 ms → 1–10 ms). Our result payload still carries
 snippets for the ranked set.
 
 **Work**
-- [ ] K4.1 Search returns result metadata only (path, score, match type, range).
-- [ ] K4.2 GUI requests snippets for visible rows, debounced/batched; cache by
+- [x] K4.1 Search returns result metadata only (path, score, match type, range).
+- [x] K4.2 GUI requests snippets for visible rows, debounced/batched; cache by
   `(path, mtime, query)`.
-- [ ] K4.3 MCP `read_snippet` stays the primitive; add optional line boxes.
-- [ ] K4.4 Keep a small LRU for the last N visible snippets.
+- [x] K4.3 MCP `read_snippet` stays the primitive; add optional line boxes.
+- [x] K4.4 Keep a small LRU for the last N visible snippets.
 
 **Acceptance**
 - A 2-character query matching ~2,000 files: p95 ≤ 20 ms to first paint.

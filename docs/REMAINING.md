@@ -116,7 +116,8 @@ These are the highest-leverage gaps. None require a new model.
 - [ ] **Warm daemon** — one process owns the index; GUI, CLI, and MCP attach.
       Today the GUI backend is in-process and a one-shot CLI pays metadata load.
       This is the top architectural gap: see [ROADMAP K1](ROADMAP.md#k1-daemon-split-epic)
-      for the IPC, lifecycle, client migration, and acceptance criteria. (ROADMAP K1)
+      for the IPC, lifecycle, client migration, and acceptance criteria. (ROADMAP K1;
+      Unix daemon and clients shipped, Windows named pipe/packaging pending.)
 - [ ] **Local HTTP/SSE endpoint** — loopback only, token auth, read-only.
       Needed for web-capable MCP clients and long-lived agents. Follows K1.
       (ROADMAP K1)
@@ -163,7 +164,7 @@ These are the highest-leverage gaps. None require a new model.
       pages after each image/PDF (`malloc_trim`, `malloc_zone_pressure_relief`,
       `EmptyWorkingSet`). Task: [ROADMAP K3](ROADMAP.md#k3-thumbnail-based-hashing--memory-release).
       (ROADMAP K3)
-- [ ] **Lazy snippets and line highlighting** — return result metadata only;
+- [x] **Lazy snippets and line highlighting** — return result metadata only;
       fetch snippets for visible rows. This is the difference between 60–90 ms
       and 1–10 ms on broad queries. Task: [ROADMAP K4](ROADMAP.md#k4-lazy-snippets-and-line-highlighting).
       (ROADMAP K4)

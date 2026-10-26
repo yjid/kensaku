@@ -201,6 +201,42 @@ fn handle_client(mut stream: UnixStream, token: &str, manager: &Arc<IndexerManag
                     "error": e,
                 })),
             },
+            "get_stats" => kensaku_lib::commands::stats_for(manager),
+            "get_home_data" => kensaku_lib::commands::home_data_for(manager)
+                .and_then(|data| serde_json::to_value(data).map_err(|e| e.to_string())),
+            "toggle_pin" => {
+                let path = params.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                if path.is_empty() {
+                    Err("toggle_pin requires a path".to_string())
+                } else {
+                    kensaku_lib::commands::toggle_pin_for(manager, path.to_string())
+                        .map(|pinned| json!(pinned))
+                }
+            }
+            "get_scope_suggestions" => {
+                let prefix = params
+                    .get("prefix")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
+                let limit = params
+                    .get("limit")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize);
+                kensaku_lib::commands::scope_suggestions_for(manager, prefix, limit)
+                    .and_then(|items| serde_json::to_value(items).map_err(|e| e.to_string()))
+            }
+            "find_duplicates" => {
+                let max_distance = params
+                    .get("max_distance")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32);
+                let limit = params
+                    .get("limit")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize);
+                kensaku_lib::commands::duplicates_for(manager, max_distance, limit)
+                    .and_then(|groups| serde_json::to_value(groups).map_err(|e| e.to_string()))
+            }
             "get_status" => serde_json::to_value(manager.get_status())
                 .map_err(|e| e.to_string()),
             "get_config" => serde_json::to_value(manager.config.read().clone())
@@ -249,6 +285,50 @@ fn handle_client(mut stream: UnixStream, token: &str, manager: &Arc<IndexerManag
                 manager
                     .search_page(query, limit, offset, with_snippets)
                     .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string()))
+            }
+            "get_snippets" => {
+                let paths: Vec<String> = params
+                    .get("paths")
+                    .and_then(|v| v.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| item.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let query = params.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                serde_json::to_value(kensaku_lib::commands::compute_snippets(paths, query))
+                    .map_err(|e| e.to_string())
+            }
+            "read_snippet" => {
+                let path = params.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                if path.is_empty() {
+                    Err("read_snippet requires a path".to_string())
+                } else {
+                    let query = params.get("query").and_then(|v| v.as_str());
+                    let max_tokens = params
+                        .get("max_tokens")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(256)
+                        .clamp(32, 1024) as usize;
+                    match kensaku_lib::agent::mcp::extract_text(Path::new(path)) {
+                        Some(text) => {
+                            let (line_start, line_end, window, truncated) =
+                                kensaku_lib::agent::mcp::read_snippet_window(
+                                    &text, query, max_tokens,
+                                );
+                            Ok(json!({
+                                "path": path,
+                                "line_start": line_start,
+                                "line_end": line_end,
+                                "text": window,
+                                "truncated": truncated,
+                            }))
+                        }
+                        None => Err(format!("Could not read text from {}", path)),
+                    }
+                }
             }
             "index_state" => manager.state_json(),
             "shutdown" => {

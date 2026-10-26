@@ -214,14 +214,21 @@ const MAX_SNIPPET_PATHS: usize = 50;
 /// formats are served from the extraction cache, so a preview request can
 /// never trigger OCR or PDF parsing.
 #[tauri::command]
-pub async fn get_snippets(paths: Vec<String>, query: String) -> Result<Vec<SnippetDto>, String> {
+pub async fn get_snippets(
+    paths: Vec<String>,
+    query: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<SnippetDto>, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.get_snippets(paths, &query);
+    }
     // File reads stay off the async runtime even though they are cheap.
     tauri::async_runtime::spawn_blocking(move || compute_snippets(paths, &query))
         .await
         .map_err(|e| format!("Snippet task failed: {}", e))
 }
 
-fn compute_snippets(paths: Vec<String>, query: &str) -> Vec<SnippetDto> {
+pub fn compute_snippets(paths: Vec<String>, query: &str) -> Vec<SnippetDto> {
     use rayon::prelude::*;
 
     let paths: Vec<String> = paths.into_iter().take(MAX_SNIPPET_PATHS).collect();
@@ -282,9 +289,9 @@ pub async fn get_indexing_status(state: State<'_, AppState>) -> Result<IndexingS
     Ok(state.indexer.get_status())
 }
 
-#[tauri::command]
-pub async fn get_stats(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let indexer = &state.indexer;
+pub fn stats_for(
+    indexer: &crate::indexer::IndexerManager,
+) -> Result<serde_json::Value, String> {
     let status = indexer.get_status();
 
     let (files, dirs) = {
@@ -410,6 +417,14 @@ pub async fn get_stats(state: State<'_, AppState>) -> Result<serde_json::Value, 
             "model_id": model_id,
         },
     }))
+}
+
+#[tauri::command]
+pub async fn get_stats(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.get_stats();
+    }
+    stats_for(&state.indexer)
 }
 
 #[tauri::command]
@@ -668,13 +683,12 @@ pub struct DuplicateGroup {
 }
 
 /// Finds exact content duplicates and near-duplicate images.
-#[tauri::command]
-pub async fn find_duplicates(
-    state: State<'_, AppState>,
+pub fn duplicates_for(
+    indexer: &crate::indexer::IndexerManager,
     max_distance: Option<u32>,
     limit: Option<usize>,
 ) -> Result<Vec<DuplicateGroup>, String> {
-    let db = state.indexer.metadata.read().db();
+    let db = indexer.metadata.read().db();
     let Some(db) = db else {
         return Ok(Vec::new());
     };
@@ -723,6 +737,18 @@ pub async fn find_duplicates(
     }
 
     Ok(groups)
+}
+
+#[tauri::command]
+pub async fn find_duplicates(
+    state: State<'_, AppState>,
+    max_distance: Option<u32>,
+    limit: Option<usize>,
+) -> Result<Vec<DuplicateGroup>, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.find_duplicates(max_distance, limit);
+    }
+    duplicates_for(&state.indexer, max_distance, limit)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -891,10 +917,11 @@ pub struct HomeData {
     pub saved_searches: Vec<crate::config::SavedSearch>,
 }
 
-#[tauri::command]
-pub async fn get_home_data(state: State<'_, AppState>) -> Result<HomeData, String> {
-    let metadata = state.indexer.metadata.read();
-    let config = state.indexer.config.read().clone();
+pub fn home_data_for(
+    indexer: &crate::indexer::IndexerManager,
+) -> Result<HomeData, String> {
+    let metadata = indexer.metadata.read();
+    let config = indexer.config.read().clone();
     let mut recent: Vec<HomeItem> = (0..metadata.len())
         .filter_map(|i| {
             let e = metadata.materialize(i as u32);
@@ -948,8 +975,18 @@ pub async fn get_home_data(state: State<'_, AppState>) -> Result<HomeData, Strin
 }
 
 #[tauri::command]
-pub async fn toggle_pin(path: String, state: State<'_, AppState>) -> Result<bool, String> {
-    let mut config = state.indexer.config.read().clone();
+pub async fn get_home_data(state: State<'_, AppState>) -> Result<HomeData, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.get_home_data();
+    }
+    home_data_for(&state.indexer)
+}
+
+pub fn toggle_pin_for(
+    indexer: &crate::indexer::IndexerManager,
+    path: String,
+) -> Result<bool, String> {
+    let mut config = indexer.config.read().clone();
     let pinned = if let Some(pos) = config.pins.iter().position(|p| p == &path) {
         config.pins.remove(pos);
         false
@@ -958,20 +995,27 @@ pub async fn toggle_pin(path: String, state: State<'_, AppState>) -> Result<bool
         true
     };
     config.save()?;
-    *state.indexer.config.write() = config;
+    *indexer.config.write() = config;
     Ok(pinned)
 }
 
-/// Directory suggestions for the `@` scope menu, derived from indexed dirs.
 #[tauri::command]
-pub async fn get_scope_suggestions(
+pub async fn toggle_pin(path: String, state: State<'_, AppState>) -> Result<bool, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.toggle_pin(path);
+    }
+    toggle_pin_for(&state.indexer, path)
+}
+
+/// Directory suggestions for the `@` scope menu, derived from indexed dirs.
+pub fn scope_suggestions_for(
+    indexer: &crate::indexer::IndexerManager,
     prefix: Option<String>,
     limit: Option<usize>,
-    state: State<'_, AppState>,
 ) -> Result<Vec<String>, String> {
     let prefix = prefix.unwrap_or_default().trim().to_lowercase();
     let limit = limit.unwrap_or(12).clamp(1, 50);
-    let metadata = state.indexer.metadata.read();
+    let metadata = indexer.metadata.read();
     let mut matches: Vec<(u8, String)> = Vec::new();
     for i in 0..metadata.len() {
         let entry = metadata.materialize(i as u32);
@@ -997,6 +1041,18 @@ pub async fn get_scope_suggestions(
             .then_with(|| a.1.cmp(&b.1))
     });
     Ok(matches.into_iter().take(limit).map(|(_, path)| path).collect())
+}
+
+#[tauri::command]
+pub async fn get_scope_suggestions(
+    prefix: Option<String>,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.get_scope_suggestions(prefix, limit);
+    }
+    scope_suggestions_for(&state.indexer, prefix, limit)
 }
 
 #[tauri::command]

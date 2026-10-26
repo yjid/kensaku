@@ -48,6 +48,22 @@ import "./App.css";
 
 const VIEW_KEY = "kensaku.view";
 const PREVIEW_KEY = "kensaku.preview";
+const SNIPPET_LRU_LIMIT = 200;
+
+/** Small insertion-order LRU for snippets: recent hits move to the end. */
+function putSnippet(
+  cache: Map<string, string | null>,
+  key: string,
+  value: string | null,
+) {
+  cache.delete(key);
+  cache.set(key, value);
+  while (cache.size > SNIPPET_LRU_LIMIT) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
+}
 
 function App() {
   const [isSetupComplete, setIsSetupComplete] = useState<boolean | null>(null);
@@ -217,6 +233,7 @@ function App() {
             const cacheKey = `${r.path}\u0000${r.modified}\u0000${query}`;
             if (r.snippet == null && snippetCacheRef.has(cacheKey)) {
               const cached = snippetCacheRef.get(cacheKey) ?? null;
+              putSnippet(snippetCacheRef, cacheKey, cached);
               fetchedSnippetsRef.set(r.path, cached);
               return { ...r, snippet: cached };
             }
@@ -277,7 +294,11 @@ function App() {
             if (dto && typeof dto.path === "string") {
               const result = results.find((r) => r.path === dto.path);
               const key = `${dto.path}\u0000${result?.modified ?? 0}\u0000${q}`;
-              snippetCacheRef.set(key, typeof dto.snippet === "string" ? dto.snippet : null);
+              putSnippet(
+                snippetCacheRef,
+                key,
+                typeof dto.snippet === "string" ? dto.snippet : null,
+              );
               fetchedSnippetsRef.set(
                 dto.path,
                 typeof dto.snippet === "string" ? dto.snippet : null,

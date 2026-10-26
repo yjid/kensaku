@@ -6,6 +6,10 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- K1 daemon parity: the GUI now fetches snippets, `read_snippet`, stats, home
+  data, duplicate groups, scope suggestions and pin toggles through the daemon
+  instead of opening metadata in-process. K4 visible-row snippets now use a
+  bounded insertion-order LRU, and `read_snippet` returns line ranges.
 - K14 startup quantization drops the temporary f32 matrix after quantizing and
   adds an ignored real-model validation test gated on KENSAKU_MODEL_DIR.
 - K9 download hygiene framework: resumable `.part` downloads, HTTP Range resume,
