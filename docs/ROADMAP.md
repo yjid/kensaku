@@ -4,7 +4,9 @@
 > competitive analysis). [REMAINING.md](REMAINING.md) is the full backlog;
 > this file is the ordered, testable slice we should work through next.
 >
-> Status: proposed. Update the checkboxes as tasks land.
+> Status: K1-K14 shipped. K15-K22 are the planned Intelligence & Vision slice;
+> see [INTELLIGENCE_VISION_PLAN.md](INTELLIGENCE_VISION_PLAN.md) for the detailed
+> step-by-step execution plan. Update the checkboxes as tasks land.
 
 ## Principles
 
@@ -36,6 +38,14 @@
 | K12 | Shipped |
 | K13 | Spike shipped — egui summoner: 8.6 ms first UI, 223 MB hidden RSS (debug) vs Tauri 350 MB; no product integration |
 | K14 | Shipped — real Potion artifacts validated: 7.56 MB i8 matrix, MRR 1.0 vs f32 1.0 |
+| K15 | Planned — CJK-aware tokenization |
+| K16 | Planned — embedding provider contract |
+| K17 | Planned — optional ONNX smart pack |
+| K18 | Planned — image embedding pipeline |
+| K19 | Planned — visual search tier |
+| K20 | Planned — similar-image lookup |
+| K21 | Planned — native platform OCR |
+| K22 | Planned — CJK/multilingual golden queries |
 
 ## P0 — foundation
 
@@ -303,6 +313,23 @@ f32; query p50 unchanged; no new dependency.
 **Measured (real Potion artifacts):** 7,559,168-byte i8 matrix + 118,112 bytes
 of scales; MRR 1.000 for both f32 and i8 on the labelled set.
 
+## P3 — Intelligence & vision
+
+Detailed steps, acceptance criteria, and risks live in
+[INTELLIGENCE_VISION_PLAN.md](INTELLIGENCE_VISION_PLAN.md). This is the backlog
+section B expansion; identity and VLM captions remain deferred.
+
+| Task | Scope | Effort |
+|---|---|---|
+| K15 | CJK-aware Tantivy tokenization | 1 wk |
+| K16 | Embedding provider contract (wire `semantic_model`) | 3-5 d |
+| K17 | Optional ONNX smart embedding pack | 2 wk |
+| K18 | Image embedding extraction pipeline | 2 wk |
+| K19 | Visual search tier and RRF integration | 2 wk |
+| K20 | Similar-image lookup | 1 wk |
+| K21 | Native macOS/Windows OCR | 1-2 wk |
+| K22 | Extend the golden query set with CJK/multilingual cases | 3-5 d |
+
 ## Order and effort
 
 | Order | Task | Effort | Depends on |
@@ -321,6 +348,14 @@ of scales; MRR 1.000 for both f32 and i8 on the labelled set.
 | 12 | K12 format spike | 3 d | — |
 | 13 | K13 native UI spike | 1 wk | K1 |
 | 14 | K14 i8 embedding table | 3 d | K2 |
+| 15 | K15 CJK tokenization | 1 wk | — |
+| 16 | K16 provider contract | 3-5 d | K15 recommended |
+| 17 | K17 ONNX smart pack | 2 wk | K16 |
+| 18 | K18 image embedding pipeline | 2 wk | K17 |
+| 19 | K19 visual search tier | 2 wk | K18 |
+| 20 | K20 similar images | 1 wk | K19 |
+| 21 | K21 native OCR | 1-2 wk | — (platform) |
+| 22 | K22 multilingual golden queries | 3-5 d | K15-K17 + section D set |
 
 ## Definition of done (every task)
 

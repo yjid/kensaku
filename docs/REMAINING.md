@@ -94,27 +94,33 @@ These are the highest-leverage gaps. None require a new model.
 
 ## B. Intelligence & vision
 
-- [ ] **ONNX "smart pack"** — `fastembed`/`ort` with `load-dynamic`,
-      bge-small or EmbeddingGemma-Q4, activation after download. The potion
-      table is already used; this is the quality tier above it. (ROADMAP K9)
+- [ ] **Embedding provider contract** — `semantic_model` exists in config but is
+      not wired to an implementation. Make provider selection real, keep the
+      static table as the default, and define the fallback contract before
+      adding another model. (ROADMAP K16)
+- [ ] **ONNX "smart pack"** — optional `ort`/ONNX model with `load-dynamic`,
+      bge-small or EmbeddingGemma-Q4, activation after download. The Potion
+      table is already used; this is the quality tier above it. (ROADMAP K17)
 - [ ] **Image embeddings** — SigLIP or CLIP ViT-B/32 int8 for "red cap",
       "system design diagram", "whiteboard". Today images are searchable through
       OCR text and filename only. Wire as a fourth retrieval tier into RRF.
-      (ROADMAP K6, K9)
+      (ROADMAP K18, K19)
 - [ ] **Similar images** — image-to-image query from a selected result; reuse
-      the same visual index and the related-file response shape. (ROADMAP K3, K6)
+      the same visual index and the related-file response shape. (ROADMAP K20)
 - [ ] **Native OCR** — macOS Vision (`objc2-vision`) and Windows OCR (`windows`
       crate). Today it shells out to `tesseract`, which may not be installed.
-      Scanned PDFs need the same path. (ROADMAP K6)
-- [-] **"This is me" identity** —  skip for now will think and appy it later , local face embeddings + clustering, opt-in
-      enrollment with 3–5 photos, explainable matches, delete-all. Sensitive
-      data: local only, never uploaded; ship after the sensitive-path policy.
-- [-] **VLM captions (optional)** — skip this feature , idle-time captions for diagrams and
-      screenshots, stored as searchable text. Complements CLIP where short text
-      queries are weak.
+      Scanned PDFs need the same path. (ROADMAP K21)
+- [-] **"This is me" identity** — skipped for now; revisit after the vision
+      tier and sensitive-data controls. Local face embeddings + clustering,
+      opt-in enrollment with 3–5 photos, explainable matches, delete-all.
+      Sensitive data: local only, never uploaded.
+- [-] **VLM captions (optional)** — skipped for now. Idle-time captions for
+      diagrams and screenshots, stored as searchable text. Complements CLIP
+      where short text queries are weak.
 - [ ] **Multilingual embeddings + CJK tokenization** — the default model is
       English-centric and Tantivy's default tokenizer fails on no-space
-      languages. Both are correctness gaps for a global product. (ROADMAP K14)
+      languages. Both are correctness gaps for a global product. (ROADMAP K15,
+      K17, K22)
 
 ## C. Agent, LLM & runtime
 
@@ -194,7 +200,9 @@ These are the highest-leverage gaps. None require a new model.
 - [ ] **Golden query set in CI** — a frozen set of 40–50 labelled queries with
       recall@5, MRR, NDCG, and latency thresholds. Include intent queries
       ("latest resume", "screenshots from last week", "docker error in
-      Projects") alongside lexical and semantic ones. (ROADMAP K4, K5, K14)
+      Projects") alongside lexical and semantic ones. The CJK/multilingual
+      cases are added by [ROADMAP K22](ROADMAP.md#p3--intelligence--vision),
+      not as a separate set. (ROADMAP K4, K5, K14, K22)
 - [ ] **Facet latency tests** — counts and toggles must hold their budgets at
       100k and 1M files. (ROADMAP K4)
 
