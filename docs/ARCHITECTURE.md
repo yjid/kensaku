@@ -21,7 +21,7 @@
 | **Simple** | Zero-config default. One shortcut. One box. One list. No modes, no tabs. |
 | **Smart** | Semantic search that costs ~0.1 ms per query and never needs a GPU. |
 | **Universal** | The same index serves the GUI, the CLI, and MCP/HTTP for agents. |
-| **Small** | Core binary ~15 MB, GUI bundle ~25 MB, semantic model ~8 MB bundled. |
+| **Small** | Core binary ~15 MB, GUI bundle ~25 MB, semantic model ~30 MB as loaded today (i8 table quantization is a planned reduction to ~8 MB). |
 
 ### UX invariants (non-negotiable, encode these in tests)
 
@@ -78,6 +78,8 @@
 **Why a daemon, not an in-app backend:** the agent surface and the CLI require the index to exist without the GUI. Building it in-process first makes that a rewrite. The GUI becomes a client — which also means index work never competes with webview paint.
 
 **Two binaries, one core crate:** `kensaku` (daemon + CLI + MCP) and `kensaku-app` (Tauri GUI). The GUI auto-spawns the daemon if it isn't running.
+
+**Current state (v0.3.x):** the GUI still constructs `IndexerManager` in-process, and the CLI/MCP open the index read-only. The daemon split shown above is the target; [ROADMAP K1](ROADMAP.md#k1-daemon-split-epic) executes it. [LANDSCAPE.md](LANDSCAPE.md) explains why this is the top architectural gap.
 
 ---
 
@@ -187,13 +189,12 @@ Schema:
 - **Custom tokenizer:** split `camelCase`/`snake_case`/`kebab-case`, lowercase, min length 2, max token length 48, CJK bigrams, drop pure-numeric/hash-like tokens. This single change is worth more relevance than any embedding model.
 - **Never** `QueryParser`. Build `Query` objects from our AST. No OR-by-default.
 - **Content policy:** full text up to 1 MB; head 512 KB + tail 512 KB for larger; metadata-only above 20 MB.
-- **Commit policy:** debounce 2 s or 2,000 docs, writer 128 MB. `wait_merging_threads()` + `garbage_collect_files()` at idle, and a weekly force-merge.
-- **Snippets:** never read a file inside the query. Fetch after ranking, in the blocking pool, for the top 20 only, with an LRU cache of the last 200 files.
+- **Commit policy:** debounce 2 s or 2,000 docs; the current writer arena is 16 MB (tune with [K12](ROADMAP.md#k12-index-format-spike-timeboxed)). `wait_merging_threads()` + `garbage_collect_files()` at idle, and a weekly force-merge.
+- **Snippets:** never read a file inside the query. Fetch after ranking, in the blocking pool, for the visible rows only ([K4](ROADMAP.md#k4-lazy-snippets-and-line-highlighting)), with a small LRU.
 
 ### 5.3 Semantic tier — budget **0.5–2 ms**
 
-**Default model: `potion-base-8M` (model2vec, static, 256-dim, int8 table ≈ 8 MB, bundled).**
-No ONNX, no neural graph at query time: tokenize → table lookup → weighted mean → normalize. **~50 µs per query.** ~92 % of MiniLM's MTEB average. Embedding the corpus is also cheap (~50k docs/s), so full re-embed after a model change is minutes, not hours.
+**Default model: `potion-base-8M` (model2vec, static, 256-dim).** The table is ~30 MB as loaded today (f32); quantizing it to i8 (~8 MB) is a planned memory win. No ONNX, no neural graph at query time: tokenize → table lookup → weighted mean → normalize. **~50 µs per query.** ~92 % of MiniLM's MTEB average. Embedding the corpus is also cheap (~50k docs/s), so full re-embed after a model change is minutes, not hours.
 
 **Optional "Smart" pack** (downloaded, ~40 MB): `fastembed-rs` + `ort` with **`load-dynamic`** (never static — prebuilt static ORT requires AVX2 and SIGILLs on older CPUs; dynamic also fixes macOS codesign and Windows dylib swaps). `bge-small-en-v1.5` or `EmbeddingGemma-Q4` for multilingual quality.
 
@@ -214,6 +215,34 @@ struct Unit { node_id, byte_start, byte_end, model_idx }  // 1 vector per unit
 
 **Embedding queue:** bounded, resumable cursor in `nodes.indexed_gen`, priority = recently-modified first, then small files first. Hard rules: stop on battery, stop when a query is in flight, stop during fullscreen apps, max 2 threads.
 
+### 5.4 Folded / substring tier (planned, [K5](ROADMAP.md#k5-folded--trigram-content-tier))
+
+Exact BM25 is the first tier. When it cannot fill the result limit, a folded
+tier handles partial words and OCR look-alikes:
+
+- Normalize look-alike characters (`0/o`, `1/l/i/|`, `5/s/$`, `8/b`, `m/rn`,
+  `w/vv`, `d/cl`) into a second content field, indexed with an n-gram tokenizer
+  (or a SQLite FTS5 trigram sidecar; decide with [K12](ROADMAP.md#k12-index-format-spike-timeboxed)).
+- Verify each folded candidate against the raw text before returning it: one
+  misread letter in a 4–7 letter word, two in 8+, none under 4. This prevents
+  `email` matching inside `internally`.
+- Folded hits always rank after every exact hit.
+- Budget: the tier only runs when the exact tier is short, so a normal query
+  never pays for it.
+
+### 5.5 Image metadata tier (thumbnails and hashes)
+
+- Width/height come from the image header; the perceptual hash is deferred out
+  of the crawl.
+- Generate the 480 px thumbnail once, compute the dHash from it, and reuse the
+  thumbnail for the grid and `/dupes`. Never decode the full image just for a
+  hash.
+- The backfill runs one decode at a time, pauses during crawls/queries, and
+  releases memory after each image (`malloc_trim` / `malloc_zone_pressure_relief`
+  / `EmptyWorkingSet`).
+- Budget: no full-resolution decode for hashing; peak indexer RSS target
+  ≤ 100 MB for an image-heavy backfill.
+
 ---
 
 ## 6. Query pipeline
@@ -221,7 +250,7 @@ struct Unit { node_id, byte_start, byte_end, model_idx }  // 1 vector per unit
 ```
 input ──► Lexer ──► AST ──► Router ──► Planner ──► Executors ──► RRF ──► Rank ──► Snip ──► IPC
          (0.02ms)          (0ms)        (0.05ms)    ┌ fuzzy  2–4ms │  0.1ms   0.2ms   5–20ms
-                                                    │ BM25   1–3ms │         (top-20 only,
+                                                    │ BM25   1–3ms │         (visible rows only,
                                                     └ vector 0.5–2ms          post-paint)
 ```
 
@@ -394,7 +423,7 @@ Design rules:
 | **first paint** | **≈ 8–18 ms** |
 | snippet fetch (post-paint, top 20) | 5–20 ms |
 
-Gates: p50 < 15 ms, p95 < 40 ms, p99 < 60 ms. Idle RSS < 60 MB at 1M (budget; the current in-memory entry list is ~128 B/file before the path index, so this needs an on-disk metadata tier). Indexing throughput > 2,000 files/s metadata, > 150 files/s text content (OCR-bound image content is limited by tesseract; see [BENCHMARKS.md](BENCHMARKS.md#indexing-and-extraction-reference)). Semantic embedding > 2,000 docs/s.
+Gates: p50 < 15 ms, p95 < 40 ms, p99 < 60 ms. **Daemon idle RSS at 1M files:** ≤ 150 MB interim (compact arena, [K2](ROADMAP.md#k2-compact-metadata-arena)); ≤ 60 MB target once the daemon + mmap'd index land ([K1](ROADMAP.md#k1-daemon-split-epic)). **Indexer peak RSS:** ≤ 100 MB for an image-heavy backfill ([K3](ROADMAP.md#k3-thumbnail-based-hashing--memory-release)); the current measured peak is ~73 MB for a mixed 700-file crawl. Indexing throughput > 2,000 files/s metadata, > 150 files/s text content (OCR-bound image content is limited by tesseract; see [BENCHMARKS.md](BENCHMARKS.md#indexing-and-extraction-reference)). Semantic embedding > 2,000 docs/s.
 
 ---
 
@@ -402,10 +431,13 @@ Gates: p50 < 15 ms, p95 < 40 ms, p99 < 60 ms. Idle RSS < 60 MB at 1M (budget; th
 
 | Failure | Behavior |
 |---|---|
+| Daemon unavailable | GUI offers to start it; CLI/MCP fall back to read-only direct access with a banner; no writes from clients |
 | Tantivy open error | lexical + semantic only; persistent banner; "Rebuild index" action |
 | Watcher unavailable / limit hit | poll mode (30 s), banner, no silent staleness |
 | Vector file corrupt | drop semantic tier, re-embed at idle, lexical unaffected |
 | Model missing | static tier absent; everything else works |
+| Optional OCR pack missing/checksum fail | fall back to Tesseract; setup shows the failed download and retry |
+| Folded tier absent (old index) | exact + semantic only; rebuild prompt, never an error |
 | Disk full | pause writers, banner, keep serving reads |
 | Extract worker panic/hang | per-file timeout, mark failed, continue |
 | Second instance | focuses the first, exits |
@@ -434,6 +466,13 @@ Rule: **`kensaku-core` must not depend on Tauri.** The GUI must not depend on in
 ---
 
 ## 13. Phase plan (each phase ships something usable)
+
+**Status (v0.3.x):** the foundation, query layer, semantic tier, document
+extraction, and OCR/thumbnail work are implemented. The daemon/agent split
+(Phase 4) is not: the GUI still owns the indexer in-process. The next slice is
+the landscape-derived [ROADMAP](ROADMAP.md) P0/P1 (daemon, compact arena,
+thumbnail hashing, lazy snippets, folded tier, optional OCR pack, scheduling).
+The phases below are the original plan; use ROADMAP for current ordering.
 
 ### Phase 0 — Trustworthy foundation · ~2 weeks
 Workspace split · SQLite schema + snapshot warm-load · `(dev, ino)` identity · mtime/size diffing · rename & subtree delete · watcher rewrite (overflow → rescan, single owned watcher, events during crawl) · search-first/reconcile-after startup · `spawn_blocking` + snapshot queries + cancellation · single instance · atomic config · schema versioning · `kensaku doctor`.
@@ -500,13 +539,18 @@ GitHub Actions (AppImage/deb/AUR, dmg universal, msi/exe) · benchmark harness +
 1. **Daemon-first, GUI-as-client.** Enables CLI + agents without a rewrite; isolates indexing from paint.
 2. **SQLite as truth, arena as hot path.** Durability without per-file `PathBuf` memory.
 3. **Identity by inode/file_id, never by path.** Makes renames cheap and ghosts impossible.
-4. **Static embeddings by default, ONNX optional.** Semantic search at ~50 µs/query, 8 MB, zero runtime deps; honest about the quality/size trade.
+4. **Static embeddings by default, ONNX optional.** Semantic search at ~50 µs/query, ~30 MB today (8 MB after i8 table quantization), zero runtime deps; honest about the quality/size trade.
 5. **No ANN until 400k units.** Exact scan is faster, exact, and dependency-free at desktop scale.
 6. **RRF over weighted score fusion.** No calibration data, robust to corpus-dependent BM25.
 7. **Search-first, reconcile-after startup.** The only way "instant on boot" coexists with correctness.
 8. **Exact scan + fast fields before fancy relevance.** Filters are the real speed feature.
 9. **Read-only agent surface.** Security, simplicity, and a clean mental model.
 10. **No bundled LLM.** Ollama integration gives "ask" without shipping a 4 GB dependency.
+11. **Daemon owns the index before more workers land.** The webview must not be in the memory path for OCR, image decoding, or model packs. ([K1](ROADMAP.md#k1-daemon-split-epic))
+12. **Compact arena before the daemon payload.** Move to name/attribute arenas while the index is still in-process, then hand the smaller structure to the daemon. ([K2](ROADMAP.md#k2-compact-metadata-arena))
+13. **Thumbnail hashing, not full-image hashing.** A 480 px thumbnail is the source for dHash; full decodes never happen just to compute a duplicate key. ([K3](ROADMAP.md#k3-thumbnail-based-hashing--memory-release))
+14. **Tesseract by default, accurate OCR opt-in.** Bulk indexing stays fast and light; PaddleOCR/native OCR is a per-platform pack for UI text. ([K6](ROADMAP.md#k6-optional-high-accuracy-ocr-pack))
+15. **Exact → folded → semantic.** Never let tolerant matching run when exact results already fill the limit; verify folded candidates against the raw text. ([K5](ROADMAP.md#k5-folded--trigram-content-tier))
 
 ---
 
