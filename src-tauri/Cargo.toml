@@ -63,3 +63,5 @@ debug = false
 [features]
 accurate-ocr = ["dep:paddleocr_rs_onnx"]
 smart-embeddings = ["dep:ort"]
+native-ocr-macos = []
+native-ocr-windows = []

@@ -51,7 +51,8 @@ pub fn extract_pdf(path: &Path, max_bytes: usize) -> Option<PdfExtractResult> {
 
         let is_scanned = page_count > 0 && full_text.trim().len() < 50;
         let text = if is_scanned && full_text.trim().is_empty() {
-            "[Scanned PDF: Image only]".to_string()
+            extract_scanned_pdf_ocr(&doc, max_bytes)
+                .unwrap_or_else(|| "[Scanned PDF: Image only]".to_string())
         } else {
             full_text
         };
@@ -70,5 +71,62 @@ pub fn extract_pdf(path: &Path, max_bytes: usize) -> Option<PdfExtractResult> {
             eprintln!("[Kensaku PDF] Panic caught while parsing PDF {}", path.display());
             None
         }
+    }
+}
+
+/// Extracts embedded image streams from a PDF and attempts OCR when pages contain no text.
+fn extract_scanned_pdf_ocr(doc: &Document, max_bytes: usize) -> Option<String> {
+    let mut collected = String::new();
+    let mut image_count = 0usize;
+
+    for object in doc.objects.values() {
+        if collected.len() >= max_bytes || image_count >= 5 {
+            break;
+        }
+        let Ok(stream) = object.as_stream() else {
+            continue;
+        };
+        let Ok(subtype) = stream.dict.get(b"Subtype").and_then(|o| o.as_name()) else {
+            continue;
+        };
+        if subtype != b"Image" {
+            continue;
+        }
+        let Ok(data) = stream.decompressed_content() else {
+            continue;
+        };
+        let Ok(img) = image::load_from_memory(&data) else {
+            continue;
+        };
+        image_count += 1;
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let tmp_path = std::env::temp_dir().join(format!(
+            "kensaku-pdf-ocr-{}-{}.png",
+            std::process::id(),
+            nanos
+        ));
+        if img.save(&tmp_path).is_ok() {
+            if let Some(ocr_text) =
+                crate::indexer::extract::image::extract_image_ocr(&tmp_path)
+            {
+                let trimmed = ocr_text.trim();
+                if !trimmed.is_empty() {
+                    if !collected.is_empty() {
+                        collected.push_str("\n\n");
+                    }
+                    collected.push_str(trimmed);
+                }
+            }
+            let _ = std::fs::remove_file(&tmp_path);
+        }
+    }
+
+    if collected.trim().is_empty() {
+        None
+    } else {
+        Some(collected)
     }
 }
