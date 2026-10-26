@@ -199,10 +199,12 @@ compete with typing and read half-written files.
 
 ### K8. MCP v2
 
-- [ ] `reindex`, `health_check`, `index_status` (already), `grep`,
-  `find_symbol` (tree-sitter), pagination with cursors, per-tool token budgets.
-- [ ] Daemon-backed session: no per-session metadata/vector load.
-- [ ] Contract tests + Cursor/Claude Code manual check.
+- [x] `reindex`, `health_check`, extended `index_state`, bounded `regex_search`
+  (tree-sitter `find_symbol` deferred), pagination with cursors, per-tool token
+  budgets.
+- [x] Daemon-backed session: no per-session metadata/vector load.
+- [x] Contract tests + manual MCP stdio check (Cursor/Claude Code were not
+  installed; the wire protocol and tool calls were exercised directly).
 
 **Acceptance:** MCP search p95 < 50 ms warm; pagination beyond 10k without OOM;
 read-only guarantees preserved.

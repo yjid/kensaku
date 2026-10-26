@@ -267,7 +267,7 @@ function renderSection(
     case "ai":
       return <AiSection config={config} />;
     case "agents":
-      return <AgentsSection />;
+      return <AgentsSection config={config} setConfig={setConfig} />;
     case "stats":
       return <StatsForNerds />;
     case "doctor":
@@ -947,9 +947,12 @@ const CLI_EXAMPLES = [
 ];
 
 const MCP_TOOLS: [string, string][] = [
-  ["search", "query, --json, --limit, --path, --ext, --since, --exhaustive"],
-  ["read_snippet", "path, query?, start_line?, max_tokens <= 512"],
-  ["index_state", "per-root counts, generation, queue depth, freshness"],
+  ["health_check", "daemon · db · index · model"],
+  ["search", "query, page_size ≤ 50, cursor, mode, filters"],
+  ["read_snippet", "path, query?, max_tokens ≤ 1024"],
+  ["index_state", "counts, phase, queue, freshness"],
+  ["regex_search", "bounded pattern, page_size, cursor"],
+  ["reindex", "opt-in only; requires daemon"],
 ];
 
 /** One copyable mono row — command text with a trailing copy button. */
@@ -982,7 +985,13 @@ function CopyRow({
   );
 }
 
-function AgentsSection() {
+function AgentsSection({
+  config,
+  setConfig,
+}: {
+  config: KensakuConfig;
+  setConfig: React.Dispatch<React.SetStateAction<KensakuConfig | null>>;
+}) {
   const [configCopied, setConfigCopied] = useState(false);
   const [copiedRow, setCopiedRow] = useState<string | null>(null);
 
@@ -994,7 +1003,7 @@ function AgentsSection() {
   return (
     <>
       <p className="pb-3 text-[12px] leading-relaxed text-muted">
-        Let your AI agents search this index. Read-only, local, no network.
+        Let your AI agents search this index. Read-only by default, local, no network.
       </p>
 
       {/* MCP */}
@@ -1002,8 +1011,9 @@ function AgentsSection() {
         <div className="px-4 py-3">
           <p className="text-[11px] leading-relaxed text-muted">
             Point Claude Code, Cursor, or any MCP client at the{" "}
-            <code className="font-mono text-[10.5px] text-fg">kensaku-cli</code> binary. It shares
-            this app's index — no daemon to start, nothing to configure twice.
+            <code className="font-mono text-[10.5px] text-fg">kensaku-cli</code> binary. It reuses
+            this app's data directory: it attaches to the daemon when one is running, otherwise it
+            reads the index read-only.
           </p>
         </div>
         <div className="relative border-t border-line bg-sunken p-3 pr-10">
@@ -1044,8 +1054,8 @@ function AgentsSection() {
           ))}
         </div>
         <p className="border-t border-line px-4 py-2.5 text-[11px] leading-relaxed text-muted">
-          The MCP server loads the index once per session; per-query latency is the same as the
-          app.
+          When the daemon is running the MCP server forwards queries to it and never opens the
+          database itself. Without a daemon it falls back to the read-only local index.
         </p>
       </Card>
 
@@ -1068,10 +1078,27 @@ function AgentsSection() {
         </div>
       </Card>
 
+      {/* Write access */}
+      <Card title="Write access">
+        <Field
+          label="Allow MCP reindex"
+          description="Adds an opt-in reindex tool for agents. Requires the daemon; restart MCP clients after changing this."
+        >
+          <Switch
+            checked={config.mcp_allow_reindex ?? false}
+            onChange={(v) =>
+              setConfig((c) => (c ? { ...c, mcp_allow_reindex: v } : c))
+            }
+          />
+        </Field>
+      </Card>
+
       {/* Security */}
       <Card title="Security">
         <p className="p-4 text-[11px] leading-relaxed text-muted">
-          Read-only. No writes, no shell, no network. Honors your watched folders and exclusions.
+          Read-only by default. <code className="font-mono text-[10.5px] text-fg">reindex</code> is
+          off unless enabled above. No shell and no network. Honors your watched folders,
+          exclusions and the daemon's opt-in check.
         </p>
       </Card>
     </>

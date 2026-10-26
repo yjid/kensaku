@@ -1,4 +1,3 @@
-use kensaku_lib::agent::HeadlessIndex;
 use kensaku_lib::config::KensakuConfig;
 use kensaku_lib::indexer::IndexerManager;
 use serde_json::{Value, json};
@@ -177,29 +176,60 @@ fn handle_client(mut stream: UnixStream, token: &str, manager: &Arc<IndexerManag
         }
 
         let result = match method {
-            "health" => Ok(json!({"ok": true, "protocol_version": 1})),
+            "ping" => Ok(json!({"ok": true, "protocol_version": 1})),
+            "health" => match manager.state_json() {
+                Ok(state) => Ok(json!({
+                    "ok": true,
+                    "daemon": true,
+                    "protocol_version": 1,
+                    "pid": std::process::id(),
+                    "watcher_ok": manager.watcher_ok(),
+                    "db": true,
+                    "index": state["content_index_ready"].as_bool().unwrap_or(false),
+                    "model": state["active_model_id"].as_u64().is_some(),
+                    "state": state,
+                })),
+                Err(e) => Ok(json!({
+                    "ok": true,
+                    "daemon": true,
+                    "protocol_version": 1,
+                    "pid": std::process::id(),
+                    "watcher_ok": manager.watcher_ok(),
+                    "db": false,
+                    "index": false,
+                    "model": false,
+                    "error": e,
+                })),
+            },
             "get_status" => serde_json::to_value(manager.get_status())
                 .map_err(|e| e.to_string()),
             "reindex" => {
-                manager.start_indexing();
-                Ok(json!({"started": true}))
-            }
-            "search" => match HeadlessIndex::open() {
-                Ok(idx) => {
-                    let query = params.get("query").and_then(|v| v.as_str()).unwrap_or("");
-                    let limit = params
-                        .get("limit")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(10) as usize;
-                    idx.search_local(query, limit)
-                        .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string()))
+                if !manager.config.read().mcp_allow_reindex {
+                    Err("reindex is disabled; enable mcp_allow_reindex in config.json".to_string())
+                } else {
+                    manager.start_indexing();
+                    Ok(json!({"started": true}))
                 }
-                Err(e) => Err(e),
-            },
-            "index_state" => match HeadlessIndex::open() {
-                Ok(idx) => idx.state_local(),
-                Err(e) => Err(e),
-            },
+            }
+            "search" => {
+                let query = params.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                let limit = params
+                    .get("limit")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(10) as usize;
+                let offset = params
+                    .get("offset")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize;
+                let with_snippets = params
+                    .get("snippets")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true);
+                manager
+                    .search_page(query, limit, offset, with_snippets)
+                    .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string()))
+            }
+            "index_state" => manager.state_json(),
             "shutdown" => {
                 cleanup_paths();
                 std::process::exit(0);

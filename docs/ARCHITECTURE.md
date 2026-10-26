@@ -390,26 +390,33 @@ kensaku doctor
 kensaku mcp            # stdio MCP server
 ```
 
-Same AST and index as the GUI. Today the CLI loads the index per invocation; a
-warm daemon (§18.4) removes that cost and lets GUI, CLI, and MCP share one index.
+Same AST and index as the GUI. CLI and MCP prefer the warm daemon (§18.4), so
+queries do not re-open SQLite or Tantivy; without a daemon they fall back to a
+read-only in-process open. The GUI still constructs its own `IndexerManager`
+until the Tauri-client part of [K1](ROADMAP.md#k1-daemon-split-epic) lands.
 
 ### 9.3 MCP / agent API
 
-Transport: **stdio** (default, spawned per client, proxies to daemon) + **HTTP/SSE** on `127.0.0.1` with a token from `~/.local/state/kensaku/token` (0600).
+Transport: **stdio** (default, spawned per client). The server pings the daemon
+and forwards searches/state to it; with no daemon it opens the index read-only.
+HTTP/SSE remains planned.
 
 | Tool | Contract |
 |---|---|
-| `search` | `query`, `mode: ranked\|exhaustive`, `path?`, `ext?`, `modified_after?`, `limit≤50`, `offset` → path, score, `line_start/line_end`, `snippet`, `as_of` |
-| `read_snippet` | `path`, `query?`, `start_line?`, `max_tokens≤512` → ranked windows, **never whole files** |
-| `find_related` | `path`, `limit` → semantic neighbours (cheap, static embeddings) |
-| `index_state` | → per-root counts, generations, `as_of`, queue depth |
-| `find_symbol` | (v2.1, tree-sitter) definition/reference lookup |
+| `health_check` | daemon/db/index/model state, pid, watcher, phase → `ok` or a reason (never a tool error) |
+| `search` | `query`, `mode: ranked\|exhaustive`, `path?`, `ext?`, `modified_after?`, `page_size≤50`, `cursor` → path, score, bounded `snippet`, `snippet_truncated`, `next_cursor`, `total`, `as_of` |
+| `read_snippet` | `path`, `query?`, `max_tokens≤1024` → window + `truncated`, **never whole files** |
+| `index_state` | counts, content docs, semantic units, model ids, phase/progress, roots, queue freshness |
+| `regex_search` | bounded `pattern≤512`, filters, `page_size`, `cursor` |
+| `find_related` | planned |
+| `find_symbol` | (v2.1, tree-sitter) planned |
+| `reindex` | opt-in write; only listed when `mcp_allow_reindex=true` and the daemon is running |
 
 Design rules:
-- **Ranked vs exhaustive is the key distinction.** Agents need completeness (exhaustive, paginated, streamed); humans need relevance. Conflating them produces bad tools.
-- Responses are token-budgeted (~1,500 tokens default) and delimited so file content reads as data, never instructions.
-- `.gitignore` / `.cursorignore` are honored by default (`include_ignored` opt-in) — agents assume parity and produce garbage context otherwise.
-- Read-only. No write, no shell, no deletion.
+- **Ranked vs exhaustive is the key distinction.** Agents need completeness (exhaustive, cursor-paginated); humans need relevance. Conflating them produces bad tools.
+- Responses are token-budgeted (search: ~1,500 tokens, 100-char snippets; `read_snippet`: 32–1,024 tokens) and delimited so file content reads as data, never instructions.
+- `.gitignore` / `.cursorignore` parity is planned (`include_ignored` opt-in) — agents assume parity and produce garbage context otherwise.
+- Read-only by default. No shell and no deletion; `reindex` is the only write tool and requires an explicit config opt-in plus the daemon.
 - Ship ready-to-paste config for Cursor, Claude Code, and VS Code in the README and in Settings.
 
 ---

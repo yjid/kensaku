@@ -6,6 +6,15 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- MCP v2: daemon-first sessions avoid opening SQLite, Tantivy or the embedding
+  table in the agent process; `health_check`, bounded `regex_search`, cursor +
+  `page_size` pagination, per-tool token budgets, `truncated` snippet flags, and
+  an extended `index_state` (phase/progress/model freshness). The only write
+  tool, `reindex`, is hidden and disabled unless `mcp_allow_reindex` is enabled
+  in config and the daemon is running; Settings → Agents exposes the switch.
+  Daemon search now queries the live manager stores instead of re-opening the
+  index per request. Verified with a manual MCP stdio session and daemon
+  handshake; see BENCHMARKS.md.
 - Folded/trigram content tier: `content_folded` plus stored `content_raw`
   fields, OCR-lookalike folding, raw-text verification (1 misread for 4–7
   letters, 2 for 8+), and a `ContentFolded` result badge. The tier only runs
@@ -29,12 +38,12 @@ versioning: [SemVer](https://semver.org/).
   locking, writes `daemon.pid`, and serves token-authenticated JSON-RPC
   `health`/`index_state`/`shutdown`. CLI/MCP `state`/`index_state` now prefer
   the daemon and fall back to direct read-only access when it is absent.
-  Search remains local until the daemon search method lands. The daemon also
-  exposes `get_status` and `reindex`, handles SIGTERM/SIGINT, validates the
+  The daemon also exposes `get_status`, `ping`, `health`, `reindex`, and
+  search with an offset; it handles SIGTERM/SIGINT, validates the
   token/protocol handshake, removes its socket/PID on SIGTERM and shutdown, and
-  clients can opt out with `KENSAKU_NO_DAEMON=1`.
-  CLI/MCP search now prefers the warm daemon and falls back locally. The Tauri
-  app still runs the in-process indexer (the `--no-daemon` fallback).
+  clients can opt out with `KENSAKU_NO_DAEMON=1`. CLI/MCP search now prefers
+  the warm daemon and falls back locally. The Tauri app still runs the
+  in-process indexer (the `--no-daemon` fallback).
 - Compact metadata arena (`NodeArena`/`NameArena`): per-entry node is 64 bytes
   (down from 128-byte `FileEntry`), full paths are reconstructed from parent
   chains instead of being stored per entry.

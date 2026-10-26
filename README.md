@@ -67,13 +67,16 @@ Most "fast search" tools stop at filenames. Kensaku opens the file.
 
 This is the part that changes your workflow. Kensaku ships an MCP server over stdio, so compatible agents can search your local index — read-only — instead of guessing at paths or asking you to paste content into chat.
 
-Your agent gets three tools:
+Your agent gets five read-only tools, plus an opt-in reindex:
 
 | Tool | What it does |
 |---|---|
-| `search` | Ranked file/content search with path, extension, and recency filters |
+| `health_check` | Daemon, database, index and model health |
+| `search` | Ranked or exhaustive search with cursor pagination, path/extension/recency filters |
 | `read_snippet` | A bounded snippet from an indexed file, centered on a query |
-| `index_state` | Index freshness and size |
+| `regex_search` | Bounded regular-expression search over content |
+| `index_state` | Freshness, phase, model ids and size |
+| `reindex` | Hidden unless `mcp_allow_reindex` is enabled; requires the daemon |
 
 One index. You search it in the app; your agent searches it in a tool call. No re-indexing, no cloud sync, no API key.
 
@@ -149,7 +152,7 @@ Point a compatible MCP client at the CLI:
 }
 ```
 
-If `kensaku-cli` is not on `PATH`, use its absolute path. The server binds to stdio only; tools are read-only and responses are token-budgeted. File content is returned as data, never as instructions. Full guide: [docs/USAGE.md](docs/USAGE.md).
+If `kensaku-cli` is not on `PATH`, use its absolute path. The server binds to stdio only. It forwards to the warm daemon when one is running and otherwise falls back to a read-only local index. Tools are read-only by default; `reindex` stays hidden unless `mcp_allow_reindex` is enabled in settings. Responses are token-budgeted, and file content is returned as data, never as instructions. Full guide: [docs/AGENTS.md](docs/AGENTS.md).
 
 ## Performance
 
@@ -183,16 +186,16 @@ Reference values, not guarantees. The query-path benchmark isolates the keystrok
 - **Local by default.** No telemetry, no account, no cloud search.
 - **You choose what is indexed.** Watched folders and exclusions are yours to set. Hidden files and common junk directories are skipped; common credential extensions (`.pem`, `.key`, `.pfx`, …) are excluded by default. Add `.ssh`, browser profiles, and password-manager folders to exclusions.
 - **Bounded extraction.** 8-second timeout per file with a bounded pool of extraction slots, 1 MB indexed content cap, 20 MB extraction ceiling, 50 MP image cap.
-- **Read-only agent access.** The CLI and MCP server open the index without the writer lock and expose no write, shell, or network tools.
+- **Read-only agent access by default.** The CLI and MCP server expose no shell or network tools. The only write tool, `reindex`, is hidden and disabled unless explicitly enabled and a daemon is running.
 - **Treat the index as sensitive.** It contains filenames and extracted text; don't sync it to a shared location.
 
 Full threat model: [SECURITY.md](SECURITY.md).
 
 ## Project status
 
-**Available today:** desktop app, CLI, MCP, semantic + lexical hybrid search, full query grammar, PDF/Office/EPUB/ODT/RTF extraction, tesseract OCR, image thumbnails and near-duplicate grouping, incremental indexing, rename/delete tracking, two themes, Doctor, factory reset, guided first-run setup, and 102 Rust tests.
+**Available today:** desktop app, CLI, daemon-backed MCP, semantic + lexical + folded/trigram hybrid search, full query grammar, PDF/Office/EPUB/ODT/RTF extraction, tesseract OCR, image thumbnails and near-duplicate grouping, incremental indexing, rename/delete tracking, two themes, Doctor, factory reset, guided first-run setup, and 138 Rust tests.
 
-**Planned:** warm shared daemon and compact metadata arena, lazy snippets and folded substring search, optional high-accuracy OCR, native platform OCR, CLIP/SigLIP visual search, face identity, 1M-file prefilter, signing/notarization, and auto-update. See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/REMAINING.md](docs/REMAINING.md), [docs/VISION.md](docs/VISION.md), and the [landscape notes](docs/LANDSCAPE.md).
+**Planned:** Tauri GUI client for the daemon, optional high-accuracy OCR, native platform OCR, CLIP/SigLIP visual search, face identity, 1M-file prefilter, signing/notarization, and auto-update. See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/REMAINING.md](docs/REMAINING.md), [docs/VISION.md](docs/VISION.md), and the [landscape notes](docs/LANDSCAPE.md).
 
 ## Contributing
 

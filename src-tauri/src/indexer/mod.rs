@@ -15,6 +15,7 @@ use crate::indexer::content::{
 use crate::indexer::metadata::MetadataStore;
 use crate::indexer::walker::{FileEntry, is_cloud_placeholder_path, walk_directories};
 use crate::indexer::watcher::{WatcherHandle, start_file_watcher};
+use crate::search::{SearchDispatcher, SearchResponse, SortOrder};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
@@ -936,10 +937,171 @@ impl IndexerManager {
         self.status.read().clone()
     }
 
+    /// Runs a query against the live, in-process stores (no second open, no
+    /// per-query metadata/vector reload). Used by the daemon search method.
+    pub fn search_page(
+        &self,
+        query: &str,
+        limit: usize,
+        offset: usize,
+        with_snippets: bool,
+    ) -> Result<SearchResponse, String> {
+        let config = self.config.read();
+        let aliases = config.alias_pairs();
+        let metadata = self.metadata.read();
+        let content = self.content_index.read();
+        let units = self.unit_store.read();
+        Ok(SearchDispatcher::search_response_fast_sorted_with_snippets(
+            query,
+            &metadata,
+            &content,
+            Some(&units),
+            config.semantic_enabled,
+            limit,
+            0,
+            SortOrder::Best,
+            &aliases,
+            offset,
+            with_snippets,
+        ))
+    }
+
+    /// Compact live state shared by the daemon, CLI and MCP. Avoids loading
+    /// the embedding table or re-opening SQLite/Tantivy.
+    pub fn state_json(&self) -> Result<serde_json::Value, String> {
+        let (files, dirs) = {
+            let store = self.metadata.read();
+            let mut files = 0u64;
+            let mut dirs = 0u64;
+            for index in 0..store.len() {
+                if store.node(index as u32).is_dir() {
+                    dirs += 1;
+                } else {
+                    files += 1;
+                }
+            }
+            (files, dirs)
+        };
+        let content_docs = self
+            .content_index
+            .read()
+            .as_ref()
+            .map(|index| index.num_docs())
+            .unwrap_or(0);
+        let semantic_units = self.unit_store.read().len() as u64;
+        let config = self.config.read();
+        let roots: Vec<String> = config
+            .watched_dirs
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
+        let units_model_id = match self.metadata.read().db() {
+            Some(db) => db.units_model_id()?,
+            None => None,
+        };
+        let model_dir = KensakuConfig::config_dir().join("models");
+        let real_model = model_dir.join("model.safetensors").is_file()
+            && model_dir.join("tokenizer.json").is_file();
+        let (active_model_id, model_name) = if real_model {
+            (
+                crate::embed::model::REAL_MODEL_ID,
+                "potion-base-8M".to_string(),
+            )
+        } else {
+            (
+                crate::embed::model::DEFAULT_MODEL_ID,
+                "static-embed-256".to_string(),
+            )
+        };
+        let index_dir = KensakuConfig::index_dir();
+        let index_bytes = dir_size_bytes(&index_dir).saturating_add(prefixed_file_bytes(
+            &KensakuConfig::config_dir(),
+            "metadata.db",
+        ));
+        let last_reconcile = last_modified_secs(&[
+            KensakuConfig::config_dir().join("metadata.db"),
+            index_dir.join("meta.json"),
+        ]);
+        let status = self.get_status();
+
+        Ok(serde_json::json!({
+            "files": files,
+            "dirs": dirs,
+            "content_docs": content_docs,
+            "content_index_ready": self.content_index.read().is_some(),
+            "semantic_units": semantic_units,
+            "index_bytes": index_bytes,
+            "model_id": units_model_id,
+            "active_model_id": active_model_id,
+            "model_name": model_name,
+            "model_real": real_model,
+            "roots": roots,
+            "last_reconcile": last_reconcile,
+            "is_indexing": status.is_indexing,
+            "paused": status.paused,
+            "phase": status.phase,
+            "files_indexed": status.files_indexed,
+            "content_indexed": status.content_indexed,
+            "extract_done": status.extract_done,
+            "extract_total": status.extract_total,
+        }))
+    }
+
     /// True while a live filesystem watcher is running.
     pub fn watcher_ok(&self) -> bool {
         self.watcher_ok.load(Ordering::Relaxed)
     }
+}
+
+fn dir_size_bytes(dir: &std::path::Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut total = 0u64;
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_dir() {
+            total = total.saturating_add(dir_size_bytes(&entry.path()));
+        } else if file_type.is_file() {
+            total = total.saturating_add(entry.metadata().map(|meta| meta.len()).unwrap_or(0));
+        }
+    }
+    total
+}
+
+fn prefixed_file_bytes(dir: &std::path::Path, prefix: &str) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut total = 0u64;
+    for entry in entries.flatten() {
+        if !entry.file_name().to_string_lossy().starts_with(prefix) {
+            continue;
+        }
+        if entry
+            .file_type()
+            .map(|kind| kind.is_file())
+            .unwrap_or(false)
+        {
+            total = total.saturating_add(entry.metadata().map(|meta| meta.len()).unwrap_or(0));
+        }
+    }
+    total
+}
+
+fn last_modified_secs(paths: &[PathBuf]) -> Option<u64> {
+    paths
+        .iter()
+        .filter_map(|path| {
+            std::fs::metadata(path)
+                .ok()
+                .and_then(|meta| meta.modified().ok())
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|duration| duration.as_secs())
+        })
+        .max()
 }
 
 #[cfg(test)]

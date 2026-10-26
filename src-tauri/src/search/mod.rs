@@ -426,6 +426,37 @@ impl SearchDispatcher {
         aliases: &[(String, Vec<String>)],
         offset: usize,
     ) -> SearchResponse {
+        Self::search_response_fast_sorted_with_snippets(
+            raw_query,
+            metadata,
+            content_index,
+            unit_store,
+            semantic_enabled,
+            limit,
+            seq,
+            sort,
+            aliases,
+            offset,
+            false,
+        )
+    }
+
+    /// Sorted variant with an explicit snippet switch. The daemon uses this so
+    /// CLI callers keep snippets while MCP can batch its own extraction.
+    #[allow(clippy::too_many_arguments)]
+    pub fn search_response_fast_sorted_with_snippets(
+        raw_query: &str,
+        metadata: &MetadataStore,
+        content_index: &Option<ContentIndex>,
+        unit_store: Option<&UnitStore>,
+        semantic_enabled: bool,
+        limit: usize,
+        seq: u64,
+        sort: SortOrder,
+        aliases: &[(String, Vec<String>)],
+        offset: usize,
+        with_snippets: bool,
+    ) -> SearchResponse {
         Self::search_response_with_snippets(
             raw_query,
             metadata,
@@ -434,7 +465,7 @@ impl SearchDispatcher {
             semantic_enabled,
             limit,
             seq,
-            false,
+            with_snippets,
             sort,
             aliases,
             offset,
