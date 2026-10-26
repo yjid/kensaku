@@ -248,6 +248,16 @@ tier handles partial words and OCR look-alikes:
   / `EmptyWorkingSet`).
 - Budget: no full-resolution decode for hashing; peak indexer RSS target
   ≤ 100 MB for an image-heavy backfill.
+- Screenshot bursts: at write time (watcher) or from an already-fresh thumbnail
+  during a crawl, compare an image with assigned images in the same directory
+  within ten minutes. The pair must share decoded dimensions and either strong
+  line overlap with a close dHash or very close dHash with too little text to
+  compare (scrolling is allowed up to a wider hash distance when line overlap is
+  strong). Matching bursts merge into the lowest node id, stored as `burst`;
+  `look` stores the dHash. A compact bottom-k line signature is stored with the
+  image so comparisons never re-run OCR. Old rows are backfilled 50 at a time
+  while idle. Search groups image rows by `burst` in one in-memory pass, and
+  `/dupes` exposes the same groups.
 
 ---
 

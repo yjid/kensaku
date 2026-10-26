@@ -6,6 +6,12 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Screenshot burst grouping: images captured within ten minutes in the same
+  folder are compared by text-line overlap and thumbnail dHash, chained to the
+  lowest-id burst, and collapsed to one search row with a version count.
+  Assignments store `burst` and `look`; old rows are backfilled 50 at a time
+  while idle. `/dupes` reuses the same burst data. Distinct pages that share
+  chrome stay separate.
 - Opt-in external extractors: config-defined commands keyed by extension or
   MIME selector, with an absolute-executable allowlist, no shell, cleared
   environment, 100–7000 ms timeout, 1 KiB–4 MiB stdout cap, and process-group

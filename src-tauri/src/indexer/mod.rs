@@ -1,4 +1,5 @@
 pub mod arena;
+pub mod burst;
 pub mod content;
 pub mod extract;
 pub mod metadata;
@@ -86,6 +87,8 @@ struct ExtractJob {
     modified: u64,
     size: u64,
     is_image: bool,
+    /// The pixels changed (or the row is new), so any stored dHash is stale.
+    phash_needs_refresh: bool,
 }
 
 /// Crawl order: text before images, newest first within each class, then size.
@@ -107,6 +110,12 @@ struct ExtractedWork {
     content: Option<String>,
     units: Vec<(usize, usize, Vec<i8>)>,
     content_hash: Option<String>,
+    /// Present for images, even when OCR produced no text.
+    image_sig: Option<Vec<u8>>,
+    /// Opportunistic hash from an already-fresh cached thumbnail.
+    image_phash: Option<u64>,
+    /// Whether a missing opportunistic hash must invalidate the stored dHash.
+    phash_needs_refresh: bool,
 }
 
 fn fnv_hash(data: &str) -> u64 {
@@ -130,6 +139,7 @@ static PHASH_BACKFILL_RUNNING: AtomicBool = AtomicBool::new(false);
 /// progressively in duplicate grouping.
 fn start_phash_backfill(
     metadata: Arc<RwLock<MetadataStore>>,
+    content_index: Arc<RwLock<Option<ContentIndex>>>,
     crawl_running: Arc<AtomicBool>,
     query_in_flight: Arc<AtomicBool>,
 ) {
@@ -164,21 +174,54 @@ fn start_phash_backfill(
                 Ok(paths) => paths,
                 Err(_) => return,
             };
+            if !paths.is_empty() {
+                for path in paths {
+                    if crawl_running.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let hash = crate::indexer::extract::image::phash64_cached(&path, &thumbs_dir)
+                        .unwrap_or(u64::MAX);
+                    let _ = db.set_image_phash(&path, hash);
+                    crate::util::memory::release_memory();
+                    // One decode at a time, with a small yield between images so
+                    // typing stays responsive.
+                    thread::sleep(std::time::Duration::from_millis(20));
+                }
+                continue;
+            }
+
+            // Hashes are complete. Now assign bursts to old rows in small
+            // batches. Text comes from the committed content index, so this
+            // also works for images indexed before burst grouping existed.
+            let paths = match db.image_paths_missing_burst(50) {
+                Ok(paths) => paths,
+                Err(_) => return,
+            };
             if paths.is_empty() {
                 return;
             }
-
             for path in paths {
                 if crawl_running.load(Ordering::Relaxed) {
                     break;
                 }
-                let hash = crate::indexer::extract::image::phash64_cached(&path, &thumbs_dir)
-                    .unwrap_or(u64::MAX);
-                let _ = db.set_image_phash(&path, hash);
+                let signature = content_index
+                    .read()
+                    .as_ref()
+                    .and_then(|index| index.get_stored_text(&path))
+                    .map(|text| crate::indexer::burst::line_signature(&text))
+                    .unwrap_or_default();
+                let Ok(updates) = db.set_image_text_sig(&path, &signature) else {
+                    return;
+                };
+                if !updates.is_empty() {
+                    metadata.write().apply_bursts(&updates);
+                }
+                let Ok(updates) = db.assign_burst_for_path(&path) else {
+                    return;
+                };
+                metadata.write().apply_bursts(&updates);
                 crate::util::memory::release_memory();
-                // One decode at a time, with a small yield between images so
-                // typing stays responsive.
-                thread::sleep(std::time::Duration::from_millis(20));
+                thread::sleep(std::time::Duration::from_millis(10));
             }
         }
     });
@@ -507,24 +550,20 @@ impl IndexerManager {
                 // unchanged tree never contends on the write lock or touches
                 // SQLite. A pending entry is re-processed even when mtime/size
                 // match so an OCR toggle only re-scans images.
-                let unchanged = {
-                    let store = metadata.read();
-                    store
-                        .get(&entry.path)
-                        .is_some_and(|existing| is_unchanged(&existing, &entry))
-                };
+                let previous = { metadata.read().get(&entry.path) };
+                let unchanged = previous
+                    .as_ref()
+                    .is_some_and(|existing| is_unchanged(existing, &entry));
                 if unchanged {
                     continue;
                 }
-
-                let (node_id, was_pending) = {
-                    let mut store = metadata.write();
-                    let was_pending = store
-                        .get(&entry.path)
-                        .is_some_and(|existing| existing.content_pending);
-                    let id = store.add(entry.clone());
-                    (id, was_pending)
-                };
+                let was_pending = previous
+                    .as_ref()
+                    .is_some_and(|existing| existing.content_pending);
+                let phash_needs_refresh = previous.as_ref().is_none_or(|existing| {
+                    existing.modified != entry.modified || existing.size != entry.size
+                });
+                let node_id = metadata.write().add(entry.clone());
                 if was_pending {
                     pending_images.insert(entry.path.clone());
                 }
@@ -547,6 +586,7 @@ impl IndexerManager {
                         is_image: entry.extension.as_deref().is_some_and(
                             crate::indexer::extract::image::is_supported_image_extension,
                         ),
+                        phash_needs_refresh,
                     });
                 }
 
@@ -619,6 +659,7 @@ impl IndexerManager {
             let (tx, rx) = std::sync::mpsc::sync_channel::<ExtractedWork>(32);
             let image_db = metadata.read().db();
             let db_handle = metadata.read().db();
+            let thumbs_dir = KensakuConfig::config_dir().join("thumbs");
             // The producer task runs on the rayon pool and must own its handles;
             // the consumer (this thread) keeps using the originals.
             let producer_status = Arc::clone(&status);
@@ -653,6 +694,20 @@ impl IndexerManager {
                         }
 
                         let content = read_text_content(&job.path, 1_048_576);
+                        let image_sig = job.is_image.then(|| {
+                            content
+                                .as_deref()
+                                .map(crate::indexer::burst::line_signature)
+                                .unwrap_or_default()
+                        });
+                        let image_phash = if job.is_image {
+                            crate::indexer::extract::image::phash64_reusing_fresh_thumbnail(
+                                &job.path,
+                                &thumbs_dir,
+                            )
+                        } else {
+                            None
+                        };
 
                         // Embed here, in parallel with extraction and lexical
                         // indexing. The vectors travel with the text so the
@@ -690,6 +745,9 @@ impl IndexerManager {
                             content,
                             units,
                             content_hash,
+                            image_sig,
+                            image_phash,
+                            phash_needs_refresh: job.phash_needs_refresh,
                         });
                     });
                 });
@@ -714,6 +772,45 @@ impl IndexerManager {
                             st.files_indexed = files_count;
                             st.content_indexed = content_count;
                             Self::emit_status(&app_handle, &st);
+                        }
+                    }
+
+                    if let Some(signature) = work.image_sig.as_deref()
+                        && let Some(db) = db_handle.as_ref()
+                    {
+                        if let Ok(updates) = db.set_image_text_sig(&work.path, signature) {
+                            if !updates.is_empty() {
+                                metadata.write().apply_bursts(&updates);
+                            }
+                            if let Some(phash) = work.image_phash
+                                && phash != u64::MAX
+                            {
+                                let _ = db.set_image_phash(&work.path, phash);
+                                match db.assign_burst_for_path(&work.path) {
+                                    Ok(updates) if !updates.is_empty() => {
+                                        metadata.write().apply_bursts(&updates);
+                                    }
+                                    _ => metadata.write().clear_burst_for_path(&work.path),
+                                }
+                            } else if work.phash_needs_refresh {
+                                if let Ok(updates) = db.clear_image_hash(&work.path)
+                                    && !updates.is_empty()
+                                {
+                                    metadata.write().apply_bursts(&updates);
+                                }
+                                metadata.write().clear_burst_for_path(&work.path);
+                            } else {
+                                // Pending OCR: the pixels did not change, so
+                                // keep the existing dHash for this re-assignment.
+                                match db.assign_burst_for_path(&work.path) {
+                                    Ok(updates) if !updates.is_empty() => {
+                                        metadata.write().apply_bursts(&updates);
+                                    }
+                                    _ => metadata.write().clear_burst_for_path(&work.path),
+                                }
+                            }
+                        } else {
+                            metadata.write().clear_burst_for_path(&work.path);
                         }
                     }
 
@@ -894,7 +991,7 @@ impl IndexerManager {
             let handle = start_file_watcher(
                 watched_dirs,
                 metadata.clone(),
-                content_index,
+                content_index.clone(),
                 config_arc.clone(),
                 Arc::clone(&watcher_ok),
             );
@@ -930,6 +1027,7 @@ impl IndexerManager {
             // the worker pauses if another crawl begins.
             start_phash_backfill(
                 Arc::clone(&metadata),
+                Arc::clone(&content_index),
                 Arc::clone(&is_running),
                 Arc::clone(&query_in_flight),
             );
@@ -1136,6 +1234,7 @@ mod tests {
             modified,
             size,
             is_image,
+            phash_needs_refresh: false,
         };
         let mut jobs = [
             job("/old-image", 10, 10, true),

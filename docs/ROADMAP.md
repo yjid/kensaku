@@ -233,9 +233,9 @@ plugin is killed and marked failed; no shell injection from file names.
 
 ### K11. Search-result grouping
 
-- [ ] Group near-identical screenshots/versions at write time (text overlap +
+- [x] Group near-identical screenshots/versions at write time (text overlap +
   thumbnail dHash, like screenshot bursts); collapse in results with a count.
-- [ ] Reuse the existing `/dupes` data; do not merge distinct pages that share a
+- [x] Reuse the existing `/dupes` data; do not merge distinct pages that share a
   sidebar.
 
 **Acceptance:** a screenshot burst is one row; distinct pages stay separate;

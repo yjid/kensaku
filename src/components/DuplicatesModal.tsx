@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { Copy, FolderOpen, LoaderCircle, X } from "lucide-react";
 import type { DuplicateGroup } from "../types";
 
-/* Duplicate review: exact-content groups plus near-duplicate images.
+/* Duplicate review: exact-content groups, screenshot bursts, and
+   near-duplicate images.
    Read-only by design — open a file or reveal its folder; deletion is
    deliberately left to the OS/file manager. */
 
@@ -89,7 +90,7 @@ export function DuplicatesModal({ onClose }: { onClose: () => void }) {
           <div className="flex h-full flex-col items-center justify-center gap-1 text-center">
             <p className="text-[13px] font-medium text-fg">No duplicates found.</p>
             <p className="text-[11px] text-muted">
-              Exact-content and perceptual-image duplicates will appear here.
+              Exact-content, screenshot-burst, and perceptual-image duplicates will appear here.
             </p>
           </div>
         ) : (
@@ -99,7 +100,7 @@ export function DuplicatesModal({ onClose }: { onClose: () => void }) {
                 <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-sunken px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted">
-                      {g.kind}
+                      {g.kind === "burst" ? "screenshot burst" : g.kind}
                     </span>
                     <span className="text-[12px] font-medium text-fg">
                       {g.paths.length} files
