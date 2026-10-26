@@ -22,8 +22,18 @@ const OCR_DESCRIPTION =
 const INSTALL_COMMANDS = [
   {
     id: "linux" as const,
-    label: "Ubuntu / Debian (apt)",
+    label: "Ubuntu / Debian",
     command: "sudo apt install tesseract-ocr tesseract-ocr-eng",
+  },
+  {
+    id: "arch" as const,
+    label: "Arch Linux",
+    command: "sudo pacman -S tesseract tesseract-data-eng",
+  },
+  {
+    id: "fedora" as const,
+    label: "Fedora",
+    command: "sudo dnf install tesseract tesseract-langpack-eng",
   },
   { id: "mac" as const, label: "macOS (Homebrew)", command: "brew install tesseract" },
   {
@@ -35,8 +45,8 @@ const INSTALL_COMMANDS = [
 
 function pickPlatform(): (typeof INSTALL_COMMANDS)[number] {
   const ua = navigator.userAgent;
-  if (/Windows/i.test(ua)) return INSTALL_COMMANDS[2];
-  if (/Macintosh|Mac OS/i.test(ua)) return INSTALL_COMMANDS[1];
+  if (/Windows/i.test(ua)) return INSTALL_COMMANDS[4];
+  if (/Macintosh|Mac OS/i.test(ua)) return INSTALL_COMMANDS[3];
   /* Linux webviews and anything unmatched land here — the honest default. */
   return INSTALL_COMMANDS[0];
 }
@@ -122,7 +132,7 @@ export function OcrField({
   const hint: React.ReactNode | null = engineMissing ? (
     <>
       <TriangleAlert className="h-3 w-3 shrink-0 text-warning" />
-      <span className="text-warning">tesseract not installed.</span>
+      <span className="text-warning">tesseract not found or not runnable.</span>
     </>
   ) : noLanguages ? (
     <>
@@ -157,6 +167,11 @@ export function OcrField({
         /* tesseract absent — show the install command for this platform,
            keep the rest one chevron away, let the user re-check. */
         <div className="space-y-2 bg-sunken px-4 py-3">
+          {status?.error && (
+            <p className="break-words font-mono text-[10px] leading-4 text-muted">
+              {status.error}
+            </p>
+          )}
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <span className="shrink-0 font-mono text-[10px] text-subtle">

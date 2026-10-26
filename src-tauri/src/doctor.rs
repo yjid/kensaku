@@ -444,7 +444,7 @@ fn check_ocr() -> DoctorCheck {
             ID,
             LABEL,
             detail,
-            Some("Install tesseract (e.g. sudo apt install tesseract-ocr)".to_string()),
+            Some("Install tesseract and its English language data for your distro".to_string()),
         )
     }
 }
