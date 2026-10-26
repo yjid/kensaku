@@ -53,8 +53,14 @@ Yes. Add each root in Settings → Folders. Unplugged drives are preserved rathe
 than pruned.
 
 **How much memory does it use?**
-Roughly 128 bytes per file entry plus the Tantivy index. 100k files ≈ 12 MB of
-metadata; the OS page cache handles the rest.
+The metadata layer keeps roughly 128 bytes per file entry (≈12 MB per 100k
+files), plus a path index and the ~30 MB static embedding table when the semantic
+pack is installed. The crawl is bounded: extracted text is written through a
+small queue instead of accumulating in memory, image hashing decodes at most two
+images at once, and the Tantivy writer arena is 16 MB. On the development
+machine the indexer process peaked at ~73 MB for text-only corpora and ~153 MB
+while OCR'ing a batch of images (debug build; release is lower). Total app memory
+is dominated by the OS webview that hosts the desktop window.
 
 **Does it conflict with Spotlight / Everything / Recoll?**
 No. It builds its own index and does not read or write theirs.

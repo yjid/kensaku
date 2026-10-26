@@ -76,7 +76,7 @@ impl EmbeddingQueue {
                     .build()
                     .ok();
 
-                let mut hash_cache: HashMap<String, Vec<(usize, usize, Vec<i8>)>> = HashMap::new();
+                let mut hash_cache: HashMap<String, Arc<Vec<(usize, usize, Vec<i8>)>>> = HashMap::new();
                 let mut was_embedding = false;
 
                 while is_running.load(Ordering::SeqCst) {
@@ -165,7 +165,7 @@ impl EmbeddingQueue {
                         let content_hash = format!("{:x}", fnv_hash(&content));
 
                         let chunks_with_vectors = if let Some(cached) = hash_cache.get(&content_hash) {
-                            cached.clone()
+                            Arc::clone(cached)
                         } else {
                             let chunks = chunk_text(&content, size as usize);
                             let model_ref = &model;
@@ -189,24 +189,25 @@ impl EmbeddingQueue {
                                     .collect()
                             };
 
-                            if hash_cache.len() < 5000 {
-                                hash_cache.insert(content_hash.clone(), computed.clone());
+                            let computed = Arc::new(computed);
+                            if hash_cache.len() < 512 {
+                                hash_cache.insert(content_hash.clone(), Arc::clone(&computed));
                             }
                             computed
                         };
 
                         batch_node_ids.push(node_id);
-                        for (start, end, vec) in chunks_with_vectors {
+                        for (start, end, vec) in chunks_with_vectors.iter() {
                             batch_units.push((
                                 node_id,
                                 Unit {
                                     id: 0,
                                     node_id,
-                                    byte_start: start,
-                                    byte_end: end,
+                                    byte_start: *start,
+                                    byte_end: *end,
                                     model_id: ModelRegistry::global().model_id,
                                 },
-                                vec,
+                                vec.clone(),
                                 content_hash.clone(),
                             ));
                         }
@@ -215,16 +216,14 @@ impl EmbeddingQueue {
                         let _ = db.update_node_indexed_gen(node_id, 1, Some(&content_hash));
                     }
 
-                    // Batch delete + insert: one transaction for all nodes
-                    for &nid in &batch_node_ids {
-                        let _ = db.delete_units_for_node(nid);
-                    }
+                    // Batch delete + insert: one statement/pass for all nodes
+                    let _ = db.delete_units_for_nodes(&batch_node_ids);
 
                     // Batch insert all units
                     let mut unit_store_write = unit_store.write();
-                    for nid in &batch_node_ids {
-                        unit_store_write.remove_units_for_node(*nid);
-                    }
+                    let replaced: std::collections::HashSet<u64> =
+                        batch_node_ids.iter().copied().collect();
+                    unit_store_write.remove_units_for_nodes(&replaced);
 
                     for (node_id, mut unit, vec, _hash) in batch_units {
                         if let Ok(inserted_id) = db.insert_unit(

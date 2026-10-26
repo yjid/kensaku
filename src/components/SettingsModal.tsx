@@ -843,7 +843,7 @@ function AiSection({ config }: { config: KensakuConfig }) {
         <Field label="Dimensions" description="Reported by the model manifest.">
           <span className="font-mono text-[11px] text-muted">{live ? "—" : "—"}</span>
         </Field>
-        <Field label="Vector tier on disk" description="What the embeddings cost you in bytes.">
+        <Field label="Vector tier on disk" description="Embedding vectors stored inside metadata.db.">
           <span className="font-mono text-[11px] text-muted">{formatBytes(stats?.index?.vector_bytes ?? 0)}</span>
         </Field>
         <Field label="Readiness" description="Units searchable in RRF fusion right now.">

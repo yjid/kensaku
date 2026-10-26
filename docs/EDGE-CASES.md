@@ -203,4 +203,5 @@
 - p50 keystroke→pixels < 15ms at 1M files
 - Idle RSS < 60MB at 1M
 - MCP search p95 < 50ms
-- Indexing throughput > 2,000 files/s metadata, > 150 files/s content
+- Indexing throughput > 2,000 files/s metadata, > 150 files/s text content (image
+  content is OCR-bound; see [BENCHMARKS.md](BENCHMARKS.md#indexing-and-extraction-reference))

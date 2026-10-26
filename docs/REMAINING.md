@@ -18,12 +18,15 @@ rename/delete handling · full query language (`type:`, `ext:`, `in:`, `path:`,
 EPUB/ODT/RTF extraction · tesseract OCR · image thumbnails, dimensions, and
 perceptual duplicates · CLI + MCP · `/` command menu · two themes · Doctor ·
 Stats for Nerds · factory reset · extraction timeout · cloud-placeholder guard ·
-single-instance lock · 77+ Rust tests and CI.
+single-instance lock · 102 Rust tests and CI.
 
 Also shipped in the `v0.3.x` hardening cycle: image/PDF exclusion migration,
 thumbnail asset scope fix, snippets no longer invoke the full extractor
 (3.86 s → 0.14 s), metadata DB vacuum (310 MB → 604 KB), OCR toggle persistence,
-and OCR language download.
+and OCR language download. The crawl is now a single extraction pass that feeds
+Tantivy and the semantic index together (images are OCR'd once), with bounded
+extraction slots, OMP-pinned tesseract children, streaming index commits, and a
+16 MB Tantivy writer arena. See [BENCHMARKS.md](BENCHMARKS.md#indexing-and-extraction-reference).
 
 ---
 

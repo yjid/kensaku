@@ -252,9 +252,14 @@ impl MetadataDb {
         Ok(entries)
     }
 
-    pub fn upsert(&self, entry: &FileEntry) -> Result<(), String> {
+    /// Inserts or updates a node and returns its durable row id.
+    ///
+    /// The id matters for the crawl pipeline: semantic units are written in the
+    /// same pass as extraction, so the indexer needs the id immediately instead
+    /// of re-querying the database (or, worse, re-reading the file later).
+    pub fn upsert(&self, entry: &FileEntry) -> Result<u64, String> {
         let conn = self.conn.lock();
-        conn.execute(
+        conn.query_row(
             "INSERT INTO nodes (path, name, extension, size, modified, is_dir, dev, ino, content_pending)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              ON CONFLICT(path) DO UPDATE SET
@@ -268,7 +273,8 @@ impl MetadataDb {
                width = CASE WHEN nodes.modified != excluded.modified OR nodes.size != excluded.size THEN NULL ELSE nodes.width END,
                height = CASE WHEN nodes.modified != excluded.modified OR nodes.size != excluded.size THEN NULL ELSE nodes.height END,
                phash = CASE WHEN nodes.modified != excluded.modified OR nodes.size != excluded.size THEN NULL ELSE nodes.phash END,
-               indexed_gen = CASE WHEN nodes.modified != excluded.modified OR nodes.size != excluded.size THEN 0 ELSE nodes.indexed_gen END",
+               indexed_gen = CASE WHEN nodes.modified != excluded.modified OR nodes.size != excluded.size THEN 0 ELSE nodes.indexed_gen END
+             RETURNING id",
             params![
                 entry.path.to_string_lossy().to_string(),
                 entry.name,
@@ -280,10 +286,10 @@ impl MetadataDb {
                 entry.ino as i64,
                 entry.content_pending as i64,
             ],
+            |row| row.get::<_, i64>(0),
         )
-        .map_err(|e| format!("Failed to upsert metadata entry: {}", e))?;
-
-        Ok(())
+        .map(|id| id as u64)
+        .map_err(|e| format!("Failed to upsert metadata entry: {}", e))
     }
 
     pub fn remove(&self, path: &Path) -> Result<(), String> {
@@ -396,6 +402,22 @@ impl MetadataDb {
         Ok(usize::try_from(count).unwrap_or(0))
     }
 
+    /// Total bytes occupied by stored embedding vectors (the `vec` BLOBs).
+    ///
+    /// Vectors live inside `metadata.db`, not in a separate `vectors/`
+    /// directory, so this is the honest on-disk cost of the semantic tier.
+    pub fn vector_bytes(&self) -> Result<u64, String> {
+        let conn = self.conn.lock();
+        let total: i64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(LENGTH(vec)), 0) FROM units",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Failed to sum vector bytes: {}", e))?;
+        Ok(u64::try_from(total).unwrap_or(0))
+    }
+
     /// Number of file (non-directory) nodes that still need semantic units.
     pub fn count_unembedded(&self) -> Result<usize, String> {
         let conn = self.conn.lock();
@@ -474,6 +496,41 @@ impl MetadataDb {
         Ok(conn.last_insert_rowid() as u64)
     }
 
+    /// Streams persisted units directly into an in-memory store.
+    ///
+    /// Unlike [`Self::load_all_units`] this never materializes a second copy of
+    /// every vector, which keeps startup memory flat on large indexes.
+    pub fn load_units_into(&self, store: &mut crate::embed::UnitStore) -> Result<usize, String> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare("SELECT id, node_id, byte_start, byte_end, model_id, coalesce(vec, zeroblob(256)) FROM units")
+            .map_err(|e| format!("Failed to prepare units query: {}", e))?;
+
+        let mut rows = stmt
+            .query([])
+            .map_err(|e| format!("Failed to query units: {}", e))?;
+
+        let mut count = 0usize;
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| format!("Failed to read unit row: {}", e))?
+        {
+            let unit = crate::embed::Unit {
+                id: row.get::<_, i64>(0).map_err(|e| e.to_string())? as u64,
+                node_id: row.get::<_, i64>(1).map_err(|e| e.to_string())? as u64,
+                byte_start: row.get::<_, i64>(2).map_err(|e| e.to_string())? as usize,
+                byte_end: row.get::<_, i64>(3).map_err(|e| e.to_string())? as usize,
+                model_id: row.get::<_, i64>(4).map_err(|e| e.to_string())? as u32,
+            };
+            let blob: Vec<u8> = row.get(5).map_err(|e| e.to_string())?;
+            let vector: Vec<i8> = blob.into_iter().map(|b| b as i8).collect();
+            store.add_unit(unit, &vector);
+            count += 1;
+        }
+
+        Ok(count)
+    }
+
     pub fn load_all_units(&self) -> Result<Vec<(crate::embed::Unit, Vec<i8>)>, String> {
         let conn = self.conn.lock();
         let mut stmt = conn
@@ -516,6 +573,30 @@ impl MetadataDb {
             params![node_id as i64],
         )
         .map_err(|e| format!("Failed to delete units for node: {}", e))?;
+        Ok(())
+    }
+
+    /// Deletes every unit belonging to any of `node_ids` in one transaction.
+    ///
+    /// The crawl knows up front which files it is about to re-extract, so a
+    /// single batched delete replaces one statement per changed file.
+    pub fn delete_units_for_nodes(&self, node_ids: &[u64]) -> Result<(), String> {
+        if node_ids.is_empty() {
+            return Ok(());
+        }
+        let conn = self.conn.lock();
+        for chunk in node_ids.chunks(500) {
+            let placeholders = std::iter::repeat_n("?", chunk.len())
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql = format!("DELETE FROM units WHERE node_id IN ({})", placeholders);
+            let mut stmt = conn
+                .prepare_cached(&sql)
+                .map_err(|e| format!("Failed to prepare unit delete: {}", e))?;
+            let params: Vec<i64> = chunk.iter().map(|id| *id as i64).collect();
+            stmt.execute(rusqlite::params_from_iter(params))
+                .map_err(|e| format!("Failed to delete units for nodes: {}", e))?;
+        }
         Ok(())
     }
 
@@ -607,11 +688,13 @@ impl MetadataDb {
         content_hash: Option<&str>,
     ) -> Result<(), String> {
         let conn = self.conn.lock();
-        conn.execute(
-            "UPDATE nodes SET indexed_gen = ?1, content_hash = coalesce(?2, content_hash) WHERE id = ?3",
-            params![indexed_gen, content_hash, node_id as i64],
-        )
-        .map_err(|e| format!("Failed to update node indexed_gen: {}", e))?;
+        let mut stmt = conn
+            .prepare_cached(
+                "UPDATE nodes SET indexed_gen = ?1, content_hash = coalesce(?2, content_hash) WHERE id = ?3",
+            )
+            .map_err(|e| format!("Failed to prepare indexed_gen update: {}", e))?;
+        stmt.execute(params![indexed_gen, content_hash, node_id as i64])
+            .map_err(|e| format!("Failed to update node indexed_gen: {}", e))?;
         Ok(())
     }
 

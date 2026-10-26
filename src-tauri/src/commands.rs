@@ -292,7 +292,10 @@ pub async fn get_stats(state: State<'_, AppState>) -> Result<serde_json::Value, 
 
     let metadata_db_bytes = config_prefixed_bytes("metadata.db", false);
     let tantivy_bytes = dir_size_bytes(&KensakuConfig::index_dir());
-    let vector_bytes = config_prefixed_bytes("vectors", true);
+    let vector_bytes = {
+        let db = indexer.metadata.read().db();
+        db.map(|db| db.vector_bytes().unwrap_or(0)).unwrap_or(0)
+    };
 
     let embed_queue_depth = {
         let db = indexer.metadata.read().db();

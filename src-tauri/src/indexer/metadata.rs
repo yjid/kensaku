@@ -4,8 +4,8 @@ use crate::query::scope_trie::DirectoryTrie;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
 pub struct MetadataStore {
@@ -137,9 +137,14 @@ impl MetadataStore {
         }
     }
 
-    pub fn add(&mut self, entry: FileEntry) {
+    /// Adds or updates a file entry, returning its durable row id.
+    ///
+    /// Callers that go on to extract content (the crawl pipeline, semantic
+    /// indexing) need the id right away; returning it here avoids a second
+    /// database lookup per file.
+    pub fn add(&mut self, entry: FileEntry) -> u64 {
         let is_dir = entry.is_dir;
-        let entry_id = entry.id;
+        let mut entry_id = entry.id;
         let idx = if let Some(&idx) = self.path_index.get(&entry.path) {
             let mut entry = entry;
             // `mark_images_pending` sets this flag; a crawl must not erase it
@@ -156,10 +161,6 @@ impl MetadataStore {
             idx
         };
 
-        if entry_id > 0 {
-            self.node_id_to_idx.insert(entry_id, idx);
-        }
-
         // Bump metadata generation for search consistency (metadata changed).
         self.generation.fetch_add(1, Ordering::SeqCst);
 
@@ -169,15 +170,26 @@ impl MetadataStore {
             *self.cached_trie.write() = None;
         }
 
-        if let Some(db) = self.db.as_ref()
-            && let Err(e) = db.upsert(&self.entries[idx])
-        {
-            eprintln!(
-                "[Kensaku] Failed to persist metadata entry '{}': {}",
-                self.entries[idx].path.display(),
-                e
-            );
+        if let Some(db) = self.db.as_ref() {
+            match db.upsert(&self.entries[idx]) {
+                Ok(id) => {
+                    // Keep the in-memory entry attributable to the same row so
+                    // semantic units can be attached without another query.
+                    self.entries[idx].id = id;
+                    entry_id = id;
+                    self.node_id_to_idx.insert(id, idx);
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[Kensaku] Failed to persist metadata entry '{}': {}",
+                        self.entries[idx].path.display(),
+                        e
+                    );
+                }
+            }
         }
+
+        entry_id
     }
 
     /// Marks every in-memory raster image for a content re-read and mirrors the
@@ -398,7 +410,9 @@ impl MetadataStore {
     }
 
     pub fn get_by_node_id(&self, node_id: u64) -> Option<&FileEntry> {
-        self.node_id_to_idx.get(&node_id).and_then(|&idx| self.entries.get(idx))
+        self.node_id_to_idx
+            .get(&node_id)
+            .and_then(|&idx| self.entries.get(idx))
     }
 
     pub fn db(&self) -> Option<Arc<MetadataDb>> {

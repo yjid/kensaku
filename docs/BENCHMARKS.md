@@ -1,25 +1,30 @@
 # Benchmarks
 
-The in-tree benchmark measures the hot path of Kensaku: walking a directory
-tree, building the in-memory entry list, and running fuzzy filename queries.
-It deliberately skips SQLite/Tantivy indexing so the numbers isolate the code
-that runs on every keystroke.
+There are two in-tree harnesses:
+
+- `bench` measures the hot path of Kensaku: walking a directory tree, building
+  the in-memory entry list, and running fuzzy filename queries. It deliberately
+  skips SQLite/Tantivy indexing so the numbers isolate the code that runs on
+  every keystroke.
+- `index_bench` measures crawl extraction: the same walk, image metadata
+  (dimensions + perceptual hash), and text/OCR extraction the indexer performs.
+  It does not touch the real index.
 
 ## Running
 
 ```bash
-# from the repository root
+# query hot path
 cargo run --manifest-path src-tauri/Cargo.toml --example bench --release -- ~/Projects
 
-# or from src-tauri/
-cargo run --manifest-path src-tauri/Cargo.toml --example bench --release -- ~/Projects
+# crawl extraction (optionally cap the number of files)
+cargo run --manifest-path src-tauri/Cargo.toml --example index_bench --release -- ~/Pictures 400
 ```
 
 Always use `--release`. Debug builds are 10–50× slower and are not comparable
 with the reference numbers. Point `<dir>` at a corpus of the desired size; the
 100k reference numbers below were collected from a tree of ~100,000 files.
 
-The harness uses `walker::walk_directories`, so hidden entries and the default
+The harnesses use `walker::walk_directories`, so hidden entries and the default
 excluded directories (`node_modules`, `.git`, `target`, `dist`, …) are skipped.
 
 ## Warm vs cold
@@ -66,6 +71,33 @@ Use the same approach for the walk time (grep `Walk time`) when a percentile is
 needed. Run on an otherwise idle machine; disable power saving and keep the
 corpus on local storage.
 
+## Indexing and extraction reference
+
+The crawl is a single extraction pass: extracted text feeds both Tantivy and the
+semantic index, so an image is OCR'd once rather than once per index. Extraction
+concurrency is bounded (up to 8 workers, and each tesseract child is pinned to
+one OpenMP thread), and the indexer commits through a bounded channel instead of
+collecting every document in memory.
+
+Measured on the development machine (Linux, local SSD). **These runs used a
+debug build**, so they are conservative; release builds are faster. OCR time is
+dominated by the external tesseract process and is build-independent.
+
+| Workload | Result |
+| --- | --- |
+| 200 screenshots, OCR + perceptual hash | ~15 s (~13 files/s) |
+| 400 screenshots, OCR | ~23 s (~16 files/s) |
+| Fresh crawl, 243 mixed files (40 images + 200 text), SQLite + Tantivy + embeddings | ~7 s |
+| Warm re-crawl of the same tree | ~0.2 s |
+| Indexer process peak RSS, text-only / mixed | ~73 MB / ~153 MB |
+
+The mixed crawl used the fallback embedder; a real install adds the ~30 MB
+static embedding table when the semantic pack is installed. Desktop RSS is
+dominated by the OS webview and is not comparable with the indexer-process
+numbers above. The 1,400-image `~/Pictures` corpus used during development
+extrapolates to roughly 80–90 s in a debug build; a release build is faster, and
+text-only corpora finish in milliseconds per thousand files.
+
 ## Reference numbers (100k files)
 
 Measured on Linux, release build, warm page cache, local SSD:
@@ -74,7 +106,7 @@ Measured on Linux, release build, warm page cache, local SSD:
 | --- | --- |
 | Walk | ~190 ms per 100k files (~525k files/s) |
 | Fuzzy search | ~2.8 ms average per query (p50) |
-| Memory | 128 B per entry (~12.8 MB per 100k files) |
+| Metadata footprint | 128 B per entry (~12.8 MB per 100k files) |
 
 These are reference values for spotting regressions, not hard guarantees.
 Hardware, filesystem, path length, and the query mix all move the numbers.
