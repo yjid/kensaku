@@ -58,8 +58,8 @@ already shipped:
 
 - The GUI backend is **in-process**. The daemon topology in
   [ARCHITECTURE.md](ARCHITECTURE.md) is the target, not the current state.
-- `find_duplicates` is reachable through `>dupes`, but there is **no review or
-  delete UI** yet.
+- `find_duplicates` is reachable through `>dupes`, which opens a review view
+  (open/copy/reveal). Destructive deletion is intentionally not automated.
 
 ## What "friend, not search" means in practice
 
@@ -183,7 +183,7 @@ friend.
 | **Results** | Flat list / grid | Best-guess result, grouped versions, facets, related files |
 | **Commands** | `>` prefix in the search box | `/` command menu; same capabilities, discoverable |
 | **Home** | Empty search box | Recent work, pins, suggestions, one input |
-| **Setup** | Guided first-run flow (folders → exclusions → preferences → optional packs → first scan → Done); Settings offers **Run setup again**; OCR/model downloads still also in Settings | Downloads and status live only in setup; Settings shows status and re-runs setup |
+| **Setup** | Guided first-run flow (folders → exclusions → preferences → optional packs → first scan → Done); downloads live in setup; Settings shows status and **Run setup again** | Vision Packs; setup-owned initial configuration refinements |
 | **Images** | OCR and filenames only | Visual search, similar images, diagrams, optional identity |
 | **LLM** | MCP config snippet | One-click connect; optional local intent compiler; cited `/ask` |
 | **Architecture** | In-process backend + per-call CLI | Warm daemon shared by GUI, CLI, and agents |

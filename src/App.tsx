@@ -12,6 +12,7 @@ import {
   emptyStats,
 } from "./types";
 import { SetupModal } from "./components/SetupModal";
+import { DuplicatesModal } from "./components/DuplicatesModal";
 import { ResultItem, ResultView } from "./components/ResultItem";
 import { Settings } from "./components/SettingsModal";
 import { FilterChips } from "./components/FilterChips";
@@ -70,6 +71,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<string | undefined>(undefined);
   const [showPalette, setShowPalette] = useState(false);
+  const [showDuplicates, setShowDuplicates] = useState(false);
   const [commandOutput, setCommandOutput] = useState<string | null>(null);
   const [view, setView] = useState<ResultView>(
     () => (localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "list") as ResultView,
@@ -312,6 +314,8 @@ function App() {
       const out = await invoke<CommandOutput>("execute_command", { command: cmdStr });
       if (out.message === "SETTINGS") {
         setShowSettings(true);
+      } else if (out.message === "DUPLICATES") {
+        setShowDuplicates(true);
       } else {
         setCommandOutput(out.message);
       }
@@ -479,6 +483,7 @@ function App() {
       // Overlays capture their own Esc; everything else pauses the main list.
       if (showPalette) return;
       if (showSettings) return;
+      if (showDuplicates) return;
 
       if (e.key === "Tab") {
         // Tab toggles the preview pane, except when focus is on a real
@@ -572,7 +577,7 @@ function App() {
         }
       }
     },
-    [showPalette, showSettings, query, results, recent, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount],
+    [showPalette, showSettings, showDuplicates, query, results, recent, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount],
   );
 
   /* ---------------- render ---------------- */
@@ -614,6 +619,8 @@ function App() {
 
       {isSetupComplete === true && (
         <>
+          {showDuplicates && <DuplicatesModal onClose={() => setShowDuplicates(false)} />}
+
           {/* Search bar */}
           {showSettings && (
             <div className="absolute inset-0 z-40">

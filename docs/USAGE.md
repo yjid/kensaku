@@ -86,8 +86,9 @@ Results are deterministic: score, then path.
 > **Setup (shipped):** the guided first run covers watched folders, exclusions,
 > preferences (theme + shortcut), optional OCR/model downloads, and the first
 > scan, ending with a Done summary before the main window opens. Settings shows
-> current values and offers **About → Run setup again**; model/OCR downloads also
-> remain available in Settings for now. Later launches stay search-first.
+> current values and offers **About → Run setup again**; model/OCR downloads are
+> acquired in setup, and Settings shows installed status only. Later launches
+> stay search-first.
 
 - **General** — theme (`paper` / `void`), global shortcut, max results, start at login.
 - **Folders** — watched roots, add/remove, drag-and-drop.
@@ -118,9 +119,9 @@ Results are deterministic: score, then path.
   after an 8-second timeout.
 - **Images** — OCR via `tesseract` when the engine and language data are present.
   The setup flow offers `eng.traineddata` as an optional pack; Settings → Search
-  still shows status and can download it. The toggle controls whether image text
-  is indexed, and saving re-scans existing images. Thumbnails and dimensions are
-  cached; near-duplicates use a perceptual hash.
+  shows status and links to **Run setup again**. The toggle controls whether image
+  text is indexed, and saving re-scans existing images. Thumbnails and dimensions
+  are cached; near-duplicates use a perceptual hash.
 - **Cloud placeholders** (Windows OneDrive/iCloud) are indexed by name only, so
   reading doesn't hydrate the file.
 
@@ -143,5 +144,5 @@ Type `>` in the search box to run an action:
 | `>reindex` | Re-scan watched folders |
 | `>doctor` | Print an index health summary |
 | `>model` | Show the active semantic model and unit count |
-| `>dupes` | List exact-content and near-image duplicate groups |
+| `>dupes` | Open the duplicate review view |
 | `>settings` | Open Settings |

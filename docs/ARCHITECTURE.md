@@ -331,7 +331,7 @@ State machine: `pending → ok | skipped(reason) | failed(reason)`, max 3 attemp
 - **Bottom bar:** `12 ms · 1,204,553 files · 2 s old · semantic ✓`.
 - **Preview:** monospace text with highlighted matches for code/text; page render for PDF; thumbnail for images. Virtualized list, fixed row height, no layout shift.
 - **Semantic badge:** a subtle `≈` on results that only the vector tier found. No mode switch — semantics are part of the one box.
-- **Settings:** progressive disclosure. Watched folders, exclusions preset, shortcut, and AI toggle stay visible. Today downloads and some setup controls live here; planned: setup owns initial configuration and downloads (§18.8). Everything else is a config file, documented, not a UI.
+- **Settings:** progressive disclosure. Watched folders, exclusions preset, shortcut, and AI toggle stay visible. Downloads live in setup; Settings shows installed status and **Run setup again** (§18.8). Everything else is a config file, documented, not a UI.
 
 > This is the **shipped `v0.3.x`** surface. The planned zero-syntax interaction —
 > plain-language intent, `/` commands, `@` scopes, interpretation chips, facet
@@ -687,8 +687,8 @@ a field is added. The CLI default output stays `path<TAB>score<TAB>snippet`.
 `SetupModal` now runs the guided flow, `complete_setup` saves config and calls
 `start_indexing`, and the modal stays on screen through the first scan until a
 Done summary is acknowledged. Downloads (OCR language, semantic models) are
-offered as optional packs in setup and remain available in Settings; future
-Vision Packs will follow the same pattern.
+acquired as optional packs in setup; Settings shows status and links to
+**Run setup again**. Future Vision Packs will follow the same pattern.
 
 **State machine**
 
