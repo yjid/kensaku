@@ -679,7 +679,7 @@ pub async fn execute_command(
     command: String,
     state: State<'_, AppState>,
 ) -> Result<CommandOutput, String> {
-    let trimmed = command.trim().trim_start_matches('>');
+    let trimmed = command.trim().trim_start_matches(['/', '>']);
     let parts: Vec<&str> = trimmed.split_whitespace().collect();
     let cmd = parts.first().copied().unwrap_or("").to_lowercase();
 
@@ -739,7 +739,7 @@ pub async fn execute_command(
         _ => Ok(CommandOutput {
             success: false,
             message: format!(
-                "Unknown command '>{}'. Available: >reindex, >doctor, >model, >dupes, >add folder, >settings",
+                "Unknown command '/{}'. Available: /reindex, /doctor, /model, /dupes, /add folder, /settings",
                 trimmed
             ),
         }),

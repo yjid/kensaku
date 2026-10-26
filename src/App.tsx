@@ -8,42 +8,33 @@ import {
   ActiveFilter,
   IndexingStatus,
   CommandOutput,
-  SystemStats,
-  emptyStats,
 } from "./types";
 import { SetupModal } from "./components/SetupModal";
 import { DuplicatesModal } from "./components/DuplicatesModal";
+import { SlashMenu, SlashCommand } from "./components/SlashMenu";
 import { ResultItem, ResultView } from "./components/ResultItem";
 import { Settings } from "./components/SettingsModal";
 import { FilterChips } from "./components/FilterChips";
 import { PreviewPane } from "./components/PreviewPane";
 import { SearchBar } from "./components/SearchBar";
 import { CategoryChips } from "./components/CategoryChips";
-import { Palette, PaletteGroup, PaletteItem } from "./components/Palette";
 import { EmptyState } from "./components/EmptyState";
 import { useTheme } from "./hooks/useTheme";
-import { CATEGORY_CHIPS, CategoryChip } from "./lib/categories";
+import { CategoryChip } from "./lib/categories";
 import {
-  Eye,
-  EyeOff,
-  LayoutGrid,
-  List,
   Settings as SettingsIcon,
   RefreshCw,
-  ExternalLink,
-  FolderOpen,
   Copy,
   FileText,
   Sun,
   Moon,
   Image as ImageIcon,
-  Folder as FolderIcon,
   FileCode,
-  File as FileIcon,
   Film,
   Clock,
   Terminal,
-  ClipboardCopy,
+  Stethoscope,
+  TriangleAlert,
   X,
 } from "lucide-react";
 import "./App.css";
@@ -70,10 +61,10 @@ function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<string | undefined>(undefined);
-  const [showPalette, setShowPalette] = useState(false);
   const [showDuplicates, setShowDuplicates] = useState(false);
+  const [slashIndex, setSlashIndex] = useState(0);
   const [commandOutput, setCommandOutput] = useState<string | null>(null);
-  const [view, setView] = useState<ResultView>(
+  const [view] = useState<ResultView>(
     () => (localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "list") as ResultView,
   );
   const [previewOpen, setPreviewOpen] = useState<boolean>(
@@ -164,7 +155,7 @@ function App() {
       return;
     }
 
-    if (query.startsWith(">")) {
+    if (query.startsWith("/")) {
       setResults([]);
       setActiveFilters([]);
       setHints([]);
@@ -361,7 +352,6 @@ function App() {
 
   const openSettings = useCallback((section?: string) => {
     setSettingsSection(section);
-    setShowPalette(false);
     setShowSettings(true);
   }, []);
 
@@ -371,124 +361,51 @@ function App() {
 
   const selected: SearchResult | null = results[selectedIndex] ?? null;
 
-  /* ---------------- global palette ---------------- */
+  /* ---------------- `/` commands ---------------- */
 
-  const paletteGroups = useMemo((): PaletteGroup[] => {
-    const groups: PaletteGroup[] = [];
+  const slashCommands = useMemo((): SlashCommand[] => {
+    const focus = (q: string) => {
+      setQuery(q);
+      inputRef.current?.focus();
+    };
+    return [
+      { id: "images", name: "images", label: "type:image", description: "Screenshots and photos", icon: ImageIcon, run: () => focus("type:image ") },
+      { id: "pdf", name: "pdf", label: "ext:pdf", description: "PDF documents", icon: FileText, run: () => focus("ext:pdf ") },
+      { id: "docs", name: "docs", label: "type:doc", description: "Documents and notes", icon: FileText, run: () => focus("type:doc ") },
+      { id: "code", name: "code", label: "type:code", description: "Source and config files", icon: FileCode, run: () => focus("type:code ") },
+      { id: "media", name: "media", label: "type:media", description: "Audio and video", icon: Film, run: () => focus("type:media ") },
+      { id: "recent", name: "recent", label: "modified:<7d", description: "Changed in the last week", icon: Clock, run: () => focus("modified:<7d ") },
+      { id: "errors", name: "errors", label: "error", description: "Search for error text", icon: TriangleAlert, run: () => focus("error ") },
+      { id: "diagrams", name: "diagrams", label: "diagram", description: "Search for diagrams", icon: FileCode, run: () => focus("diagram ") },
+      { id: "dupes", name: "dupes", label: "review", description: "Find duplicate files and images", icon: Copy, run: () => { setQuery(""); setShowDuplicates(true); } },
+      { id: "reindex", name: "reindex", label: "action", description: "Re-scan watched folders", icon: RefreshCw, run: () => { setQuery(""); handleRunCommand("/reindex"); } },
+      { id: "doctor", name: "doctor", label: "action", description: "Index health report", icon: Stethoscope, run: () => { setQuery(""); handleRunCommand("/doctor"); } },
+      { id: "settings", name: "settings", label: "⌘,", description: "Open Settings", icon: SettingsIcon, run: () => { setQuery(""); openSettings(); } },
+    ];
+  }, [handleRunCommand, openSettings]);
 
-    if (selected) {
-      const fileActions: PaletteItem[] = [
-        { id: "open", label: `Open ${selected.filename}`, shortcut: ["↵"], icon: ExternalLink, run: () => handleOpenFile(selected.path) },
-        { id: "reveal", label: "Reveal in file manager", hint: "Shift+↵", icon: FolderOpen, run: () => handleOpenFolder(selected.path) },
-        { id: "copypath", label: "Copy absolute path", icon: Copy, run: () => handleCopyPath(selected.path) },
-      ];
-      if (!selected.is_dir) {
-        fileActions.push({
-          id: "copycontent",
-          label: "Copy file text content",
-          icon: FileText,
-          run: async () => {
-            try {
-              const content = await invoke<string>("read_file_content", { path: selected.path });
-              navigator.clipboard.writeText(content);
-            } catch (e) {
-              console.error(e);
-            }
-          },
-        });
-        fileActions.push({
-          id: "similar",
-          label: "Find similar files",
-          icon: ImageIcon,
-          run: () => {
-            const ext = selected.filename.split(".").pop();
-            setQuery(ext && ext !== selected.filename ? `ext:${ext}` : selected.filename.slice(0, 4));
-            inputRef.current?.focus();
-          },
-        });
-      }
-      groups.push({ label: selected.filename, items: fileActions });
-    }
+  const slashFilter = query.startsWith("/") ? query.slice(1).trim().toLowerCase() : null;
+  const slashItems = useMemo(() => {
+    if (slashFilter === null) return [];
+    return slashCommands.filter(
+      (c) => slashFilter === "" || c.name.includes(slashFilter) || c.description.toLowerCase().includes(slashFilter),
+    );
+  }, [slashCommands, slashFilter]);
 
-    groups.push({
-      label: "Actions",
-      items: [
-        {
-          id: "toggle-preview",
-          label: previewOpen ? "Hide preview pane" : "Show preview pane",
-          hint: "Tab",
-          icon: previewOpen ? EyeOff : Eye,
-          run: () => setPreviewOpen((p) => !p),
-        },
-        {
-          id: "toggle-view",
-          label: view === "list" ? "Switch to grid cards" : "Switch to list rows",
-          icon: view === "list" ? LayoutGrid : List,
-          run: () => setView((v) => (v === "list" ? "grid" : "list")),
-        },
-        {
-          id: "reindex",
-          label: "Reindex all folders",
-          icon: RefreshCw,
-          run: () => handleRunCommand(">reindex"),
-        },
-      ],
-    });
-
-    groups.push({
-      label: "Filters",
-      items: CATEGORY_CHIPS.filter((c) => c.token).map((c) => ({
-        id: `chip-${c.id}`,
-        label: `Filter: ${c.label}`,
-        hint: c.token,
-        icon: categoryIcon(c.id),
-        run: () => handleChip(c),
-      })),
-    });
-
-    groups.push({
-      label: "Settings",
-      items: [
-        { id: "open-settings", label: "Open settings", hint: "⌘,", icon: SettingsIcon, run: () => openSettings() },
-        {
-          id: "theme",
-          label: theme === "paper" ? "Switch to void theme" : "Switch to paper theme",
-          icon: theme === "paper" ? Moon : Sun,
-          run: toggleTheme,
-        },
-        {
-          id: "copy-stats",
-          label: "Copy system stats JSON",
-          icon: ClipboardCopy,
-          run: async () => {
-            let s: SystemStats = emptyStats();
-            try {
-              s = await invoke<SystemStats>("get_stats");
-            } catch {
-              /* keeps zeroed fallback */
-            }
-            navigator.clipboard.writeText(JSON.stringify(s, null, 2));
-          },
-        },
-      ],
-    });
-
-    return groups;
-  }, [selected, previewOpen, view, theme, handleOpenFile, handleOpenFolder, handleCopyPath, handleRunCommand, handleChip, openSettings, toggleTheme]);
-
-  /* ---------------- keyboard ---------------- */
+  useEffect(() => {
+    setSlashIndex(0);
+  }, [slashFilter]);
 
   const handleKeyDown = useCallback(
     async (e: React.KeyboardEvent) => {
       // Overlays capture their own Esc; everything else pauses the main list.
-      if (showPalette) return;
       if (showSettings) return;
       if (showDuplicates) return;
 
       if (e.key === "Tab") {
         // Tab toggles the preview pane, except when focus is on a real
         // control (theme/settings buttons) — then native focus cycling runs
-        // so chrome stays reachable by keyboard. ⌘K also exposes both.
+        // so chrome stays reachable by keyboard. The / menu covers commands and filters.
         const t = e.target;
         if (t instanceof HTMLElement && t.closest("button")) return;
         e.preventDefault();
@@ -503,23 +420,26 @@ function App() {
         return;
       }
 
-      if (e.key.toLowerCase() === "k" && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        setShowPalette(true);
-        return;
-      }
-
       if (e.key === "," && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         openSettings();
         return;
       }
 
-      // Command mode execution
-      if (query.startsWith(">")) {
-        if (e.key === "Enter") {
+      // `/` command menu
+      if (query.startsWith("/")) {
+        if (e.key === "ArrowDown") {
           e.preventDefault();
-          handleRunCommand(query.trim());
+          setSlashIndex((i) => (slashItems.length ? (i + 1) % slashItems.length : 0));
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setSlashIndex((i) =>
+            slashItems.length ? (i - 1 + slashItems.length) % slashItems.length : 0,
+          );
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          const item = slashItems[slashIndex] ?? slashItems[0];
+          if (item) item.run();
         } else if (e.key === "Escape") {
           e.preventDefault();
           setQuery("");
@@ -577,7 +497,7 @@ function App() {
         }
       }
     },
-    [showPalette, showSettings, showDuplicates, query, results, recent, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount],
+    [showSettings, showDuplicates, query, results, recent, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount, slashItems, slashIndex],
   );
 
   /* ---------------- render ---------------- */
@@ -590,7 +510,7 @@ function App() {
     );
   }
 
-  const isCommandMode = query.startsWith(">");
+  const isCommandMode = query.startsWith("/");
   const filteredCommands = COMMAND_SUGGESTIONS.filter((s) =>
     s.cmd.toLowerCase().includes(query.toLowerCase()),
   );
@@ -641,7 +561,11 @@ function App() {
                 setQuery={setQuery}
                 inputRef={inputRef}
                 isSearching={isSearching}
-                onOpenPalette={() => setShowPalette(true)}
+                onOpenCommands={() => {
+                  setSlashIndex(0);
+                  setQuery("/");
+                  inputRef.current?.focus();
+                }}
                 onFocusInput={() => {}}
                 resultCount={results.length}
                 trailing={
@@ -671,6 +595,10 @@ function App() {
                   </>
                 }
               />
+
+              {slashFilter !== null && (
+                <SlashMenu items={slashItems} activeIndex={slashIndex} onPick={(c) => c.run()} />
+              )}
 
               {/* Global indexing progress: 2px accent line under the bar —
                   pure feedback, no numbers. Stale results stay visible. */}
@@ -865,20 +793,10 @@ function App() {
                     searchQuery={query}
                     onOpen={() => selected && handleOpenFile(selected.path)}
                     onOpenFolder={() => selected && handleOpenFolder(selected.path)}
-                    onOpenActions={() => setShowPalette(true)}
                   />
                 )}
               </div>
 
-              {/* Palette */}
-              {showPalette && (
-                <Palette
-                  title={selected ? "Kensaku · file actions" : "Kensaku · command palette"}
-                  placeholder={selected ? "Type a command…" : "Type a command or filter…"}
-                  groups={paletteGroups}
-                  onClose={() => setShowPalette(false)}
-                />
-              )}
             </>
           )}
         </>
@@ -902,23 +820,6 @@ function SuggestChip({ label, onClick }: { label: string; onClick: () => void })
 
 function hasActiveFilters(q: string): boolean {
   return /\b(type|ext|in|modified|size):/i.test(q);
-}
-
-function categoryIcon(id: string): React.ComponentType<{ className?: string }> {
-  switch (id) {
-    case "image":
-      return ImageIcon;
-    case "folder":
-      return FolderIcon;
-    case "code":
-      return FileCode;
-    case "media":
-      return Film;
-    case "file":
-      return FileIcon;
-    default:
-      return Clock;
-  }
 }
 
 export default App;

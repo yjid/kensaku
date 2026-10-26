@@ -16,7 +16,7 @@ rename/delete handling · full query language (`type:`, `ext:`, `in:`, `path:`,
 `modified:`, `size:`, `is:`, `lang:`, `name:`, `content:`, `re:`, negation,
 `mode:exhaustive`) · three-tier RRF ranking · semantic vectors · PDF/Office/
 EPUB/ODT/RTF extraction · tesseract OCR · image thumbnails, dimensions, and
-perceptual duplicates · CLI + MCP · command palette · two themes · Doctor ·
+perceptual duplicates · CLI + MCP · `/` command menu · two themes · Doctor ·
 Stats for Nerds · factory reset · extraction timeout · cloud-placeholder guard ·
 single-instance lock · 77+ Rust tests and CI.
 
@@ -61,7 +61,7 @@ These are the highest-leverage gaps. None require a new model.
       `@me`; recent places first; resolved against the existing directory trie.
 - [ ] **New home and result states** — recent files, recent queries, pins,
       suggestions, best-guess card, grouped versions, related files.
-- [x] **Duplicate cleanup UI** — `>dupes` opens a review view with exact-content
+- [x] **Duplicate cleanup UI** — `/dupes` opens a review view with exact-content
       and near-image groups; open/copy/reveal per file. Destructive delete is
       intentionally left to the OS.
 - [x] **Guided first-run setup flow** — welcome → folders → exclusions →

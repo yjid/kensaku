@@ -40,7 +40,7 @@ Three properties, together. Competitors have one or two of them.
 ## What we have today
 
 Honest inventory. "Shipped" means in the code at `v0.3.3` or landed on `master`
-after it (guided first-run setup, first-scan gate, `>dupes`, default-deny
+after it (guided first-run setup, first-scan gate, `/dupes`, default-deny
 sensitive paths); "planned" means it lives in this document.
 
 | Area | Shipped today | Still missing |
@@ -49,7 +49,7 @@ sensitive paths); "planned" means it lives in this document.
 | **Content** | Text, code, configs, logs; PDF, DOCX/PPTX/XLSX, EPUB/ODT/RTF; image OCR via tesseract | Native OCR; scanned-PDF OCR; video/audio content |
 | **Images** | Filename, OCR text, dimensions, thumbnails, perceptual hashes, near-duplicate groups | CLIP/SigLIP visual search; similar images; face identity; captions |
 | **Surfaces** | Desktop GUI; CLI; MCP over stdio | Warm shared daemon; local HTTP; one-click agent connect |
-| **Interaction** | Search-as-you-type, category chips, list/grid, preview, command palette, `>` commands (`>reindex`, `>doctor`, `>model`, `>dupes`, `>settings`), full filter grammar, guided first-run setup with first-scan gate | Natural-language intent; `/` and `@`; visible interpretation; sort; aliases; facets; saved searches; Settings status-only setup view |
+| **Interaction** | Search-as-you-type, category chips, list/grid, preview, `/` command menu (`/images`, `/pdf`, `/docs`, `/code`, `/media`, `/recent`, `/errors`, `/diagrams`, `/dupes`, `/reindex`, `/doctor`, `/settings`), full filter grammar, guided first-run setup with first-scan gate | Natural-language intent; `@` scopes; visible interpretation; sort; aliases; facets; saved searches |
 | **Intelligence** | Semantic tier; frecency; recency boost | Explicit "latest" sort; version grouping; personal vocabulary; optional local LLM query compiler; `/ask` with citations |
 | **Trust** | Local-only, no telemetry, atomic config, crash log, Doctor, default-deny sensitive paths and credential extensions | Face-data controls; cloud-consent UX |
 
@@ -58,7 +58,7 @@ already shipped:
 
 - The GUI backend is **in-process**. The daemon topology in
   [ARCHITECTURE.md](ARCHITECTURE.md) is the target, not the current state.
-- `find_duplicates` is reachable through `>dupes`, which opens a review view
+- `find_duplicates` is reachable through `/dupes`, which opens a review view
   (open/copy/reveal). Destructive deletion is intentionally not automated.
 
 ## What "friend, not search" means in practice

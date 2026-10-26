@@ -9,7 +9,7 @@ interface SearchBarProps {
   setQuery: (q: string) => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
   isSearching: boolean;
-  onOpenPalette: () => void;
+  onOpenCommands: () => void;
   onFocusInput: () => void;
   resultCount: number;
   /** 28px icon buttons rendered to the right of the pill (theme, settings). */
@@ -27,7 +27,7 @@ export function SearchBar({
   setQuery,
   inputRef,
   isSearching,
-  onOpenPalette,
+  onOpenCommands,
   onFocusInput,
   resultCount,
   trailing,
@@ -101,8 +101,8 @@ export function SearchBar({
 
         <button
           type="button"
-          title="Filters & commands (⌘K)"
-          onClick={onOpenPalette}
+          title="Commands (/)"
+          onClick={onOpenCommands}
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-fg-subtle transition-colors duration-150 hover:bg-sunken hover:text-fg"
         >
           <SlidersHorizontal className="h-4 w-4" />

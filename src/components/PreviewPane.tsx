@@ -6,7 +6,6 @@ import {
   FolderOpen,
   Copy,
   Check,
-  Ellipsis,
   LoaderCircle,
 } from "lucide-react";
 import { FileTypeIcon } from "./FileTypeIcon";
@@ -22,13 +21,12 @@ interface PreviewPaneProps {
   searchQuery: string;
   onOpen: () => void;
   onOpenFolder: () => void;
-  onOpenActions: () => void;
 }
 
 const PREVIEW_W = "w-[360px] shrink-0 border-l border-line bg-bg";
 
 export const PreviewPane = React.memo<PreviewPaneProps>(
-  ({ result, searchQuery, onOpen, onOpenFolder, onOpenActions }) => {
+  ({ result, searchQuery, onOpen, onOpenFolder }) => {
     const [preview, setPreview] = useState<FilePreview | null>(null);
     const [loading, setLoading] = useState(false);
     const [copiedPath, setCopiedPath] = useState(false);
@@ -129,14 +127,6 @@ export const PreviewPane = React.memo<PreviewPaneProps>(
                 {result.path}
               </p>
             </div>
-            <button
-              type="button"
-              title="Actions (⌘K)"
-              onClick={onOpenActions}
-              className="-mr-1 flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors duration-150 hover:bg-sunken hover:text-fg"
-            >
-              <Ellipsis className="h-4 w-4" />
-            </button>
           </div>
 
           <div className="mt-2.5 flex items-center gap-1.5">
