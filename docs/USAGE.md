@@ -71,6 +71,14 @@ name:Cargo content:workspace
 re:"TODO|FIXME" ext:rs
 ```
 
+### Scopes and sort
+
+- Type `@` to pick a folder from the index; the choice inserts `in:"<path>"`.
+- Type `/` for the command menu (filters, `/dupes`, `/reindex`, `/doctor`, `/settings`).
+- When results are showing, the **Sort** control offers `Best match`, `Newest`,
+  `Oldest`, `Largest`, and `Name`. Sorting is applied server-side before the
+  result limit; `Best match` keeps the fused relevance order.
+
 ### How ranking works
 
 Three tiers run in parallel — fuzzy filename, BM25 content, and static-vector

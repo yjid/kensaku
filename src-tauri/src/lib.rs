@@ -216,6 +216,7 @@ pub fn run() {
             commands::run_setup_again,
             commands::complete_setup,
             commands::get_suggested_directories,
+            commands::get_scope_suggestions,
             commands::hide_window,
             commands::run_doctor,
             commands::reset_all,
