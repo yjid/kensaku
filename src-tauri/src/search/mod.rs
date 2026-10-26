@@ -36,6 +36,64 @@ pub struct SearchResult {
     pub best_range: Option<(usize, usize)>,
 }
 
+/// Result ordering. `Best` preserves the fused relevance ranking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SortOrder {
+    #[default]
+    Best,
+    Newest,
+    Oldest,
+    Largest,
+    Name,
+}
+
+impl SortOrder {
+    pub fn parse(value: &str) -> Self {
+        match value.trim().to_lowercase().as_str() {
+            "newest" | "recent" => Self::Newest,
+            "oldest" => Self::Oldest,
+            "largest" | "biggest" | "size" => Self::Largest,
+            "name" | "filename" => Self::Name,
+            _ => Self::Best,
+        }
+    }
+}
+
+fn apply_sort(results: &mut [SearchResult], sort: SortOrder) {
+    match sort {
+        SortOrder::Best => results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.path.cmp(&b.path))
+        }),
+        SortOrder::Newest => results.sort_by(|a, b| {
+            b.modified
+                .cmp(&a.modified)
+                .then_with(|| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal))
+                .then_with(|| a.path.cmp(&b.path))
+        }),
+        SortOrder::Oldest => results.sort_by(|a, b| {
+            a.modified
+                .cmp(&b.modified)
+                .then_with(|| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal))
+                .then_with(|| a.path.cmp(&b.path))
+        }),
+        SortOrder::Largest => results.sort_by(|a, b| {
+            b.file_size
+                .cmp(&a.file_size)
+                .then_with(|| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal))
+                .then_with(|| a.path.cmp(&b.path))
+        }),
+        SortOrder::Name => results.sort_by(|a, b| {
+            a.filename
+                .to_lowercase()
+                .cmp(&b.filename.to_lowercase())
+                .then_with(|| a.path.cmp(&b.path))
+        }),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResponse {
     pub results: Vec<SearchResult>,
@@ -95,6 +153,7 @@ impl SearchDispatcher {
             limit,
             seq,
             true,
+            SortOrder::Best,
         )
     }
 
@@ -121,6 +180,32 @@ impl SearchDispatcher {
             limit,
             seq,
             false,
+            SortOrder::Best,
+        )
+    }
+
+    /// Sorted variant used by the desktop UI.
+    #[allow(clippy::too_many_arguments)]
+    pub fn search_response_fast_sorted(
+        raw_query: &str,
+        metadata: &MetadataStore,
+        content_index: &Option<ContentIndex>,
+        unit_store: Option<&UnitStore>,
+        semantic_enabled: bool,
+        limit: usize,
+        seq: u64,
+        sort: SortOrder,
+    ) -> SearchResponse {
+        Self::search_response_with_snippets(
+            raw_query,
+            metadata,
+            content_index,
+            unit_store,
+            semantic_enabled,
+            limit,
+            seq,
+            false,
+            sort,
         )
     }
 
@@ -134,6 +219,7 @@ impl SearchDispatcher {
         limit: usize,
         seq: u64,
         with_snippets: bool,
+        sort: SortOrder,
     ) -> SearchResponse {
         let start_time = SystemTime::now();
         let trimmed = raw_query.trim();
@@ -295,6 +381,7 @@ impl SearchDispatcher {
                 EXHAUSTIVE_LIMIT,
                 &mut hints,
             );
+            apply_sort(&mut results, sort);
             let total = results.len();
             if results.len() > EXHAUSTIVE_LIMIT {
                 results.truncate(EXHAUSTIVE_LIMIT);
@@ -550,13 +637,8 @@ impl SearchDispatcher {
             })
             .collect();
 
-        // 8. Deterministic tiebreak: sort by score descending, then path ascending
-        results.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.path.cmp(&b.path))
-        });
+        // 8. Ordering: best-match by default; explicit sort when requested.
+        apply_sort(&mut results, sort);
 
         let total = results.len();
 
@@ -897,6 +979,16 @@ fn matches_language(lang: &str, ext_opt: Option<&str>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sort_order_parses_known_values() {
+        assert_eq!(SortOrder::parse("newest"), SortOrder::Newest);
+        assert_eq!(SortOrder::parse("Oldest"), SortOrder::Oldest);
+        assert_eq!(SortOrder::parse("largest"), SortOrder::Largest);
+        assert_eq!(SortOrder::parse("name"), SortOrder::Name);
+        assert_eq!(SortOrder::parse("nonsense"), SortOrder::Best);
+    }
+
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 

@@ -141,6 +141,7 @@ fn resident_set_bytes() -> u64 {
 pub async fn search(
     query: String,
     seq: Option<u64>,
+    sort: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<SearchResponse, String> {
     let started = Instant::now();
@@ -159,7 +160,11 @@ pub async fn search(
 
     // The UI asks for snippets separately (`get_snippets`) so the search
     // itself never touches file contents.
-    let resp = SearchDispatcher::search_response_fast(
+    let sort = sort
+        .as_deref()
+        .map(crate::search::SortOrder::parse)
+        .unwrap_or_default();
+    let resp = SearchDispatcher::search_response_fast_sorted(
         &query,
         &metadata,
         &content_index,
@@ -167,6 +172,7 @@ pub async fn search(
         semantic_enabled,
         max_results,
         req_seq,
+        sort,
     );
 
     indexer.query_in_flight.store(false, Ordering::SeqCst);
@@ -830,6 +836,41 @@ pub async fn complete_setup(
     state.indexer.start_indexing();
 
     Ok(())
+}
+
+/// Directory suggestions for the `@` scope menu, derived from indexed dirs.
+#[tauri::command]
+pub async fn get_scope_suggestions(
+    prefix: Option<String>,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let prefix = prefix.unwrap_or_default().trim().to_lowercase();
+    let limit = limit.unwrap_or(12).clamp(1, 50);
+    let metadata = state.indexer.metadata.read();
+    let mut matches: Vec<(u8, String)> = Vec::new();
+    for entry in metadata.get_entries().iter().filter(|e| e.is_dir) {
+        let name = entry.name.to_lowercase();
+        let path = entry.path.to_string_lossy().to_string();
+        let score = if prefix.is_empty() {
+            0
+        } else if name.starts_with(&prefix) {
+            0
+        } else if name.contains(&prefix) {
+            1
+        } else if path.to_lowercase().contains(&prefix) {
+            2
+        } else {
+            continue;
+        };
+        matches.push((score, path));
+    }
+    matches.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then_with(|| a.1.len().cmp(&b.1.len()))
+            .then_with(|| a.1.cmp(&b.1))
+    });
+    Ok(matches.into_iter().take(limit).map(|(_, path)| path).collect())
 }
 
 #[tauri::command]

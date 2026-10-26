@@ -49,7 +49,7 @@ sensitive paths); "planned" means it lives in this document.
 | **Content** | Text, code, configs, logs; PDF, DOCX/PPTX/XLSX, EPUB/ODT/RTF; image OCR via tesseract | Native OCR; scanned-PDF OCR; video/audio content |
 | **Images** | Filename, OCR text, dimensions, thumbnails, perceptual hashes, near-duplicate groups | CLIP/SigLIP visual search; similar images; face identity; captions |
 | **Surfaces** | Desktop GUI; CLI; MCP over stdio | Warm shared daemon; local HTTP; one-click agent connect |
-| **Interaction** | Search-as-you-type, category chips, list/grid, preview, `/` command menu (`/images`, `/pdf`, `/docs`, `/code`, `/media`, `/recent`, `/errors`, `/diagrams`, `/dupes`, `/reindex`, `/doctor`, `/settings`), full filter grammar, guided first-run setup with first-scan gate | Natural-language intent; `@` scopes; visible interpretation; sort; aliases; facets; saved searches |
+| **Interaction** | Search-as-you-type, category chips, list/grid, preview, `/` command menu, `@` scope picker, explicit sort (Best/Newest/Oldest/Largest/Name), full filter grammar, guided first-run setup with first-scan gate | Natural-language intent; visible interpretation; aliases; facets; saved searches |
 | **Intelligence** | Semantic tier; frecency; recency boost | Explicit "latest" sort; version grouping; personal vocabulary; optional local LLM query compiler; `/ask` with citations |
 | **Trust** | Local-only, no telemetry, atomic config, crash log, Doctor, default-deny sensitive paths and credential extensions | Face-data controls; cloud-consent UX |
 
@@ -195,7 +195,7 @@ friend.
 |---|---|---|---|
 | **P0** | Natural-language intent compiler (local rules) | Makes "latest resume" work without syntax | M |
 | **P0** | Aliases and personal vocabulary | The app learns that resume = cv = curriculum | S |
-| **P0** | Explicit sort modes | "Latest", "biggest", "oldest" must actually sort | S |
+| **P0** | ~~Explicit sort modes~~ ✅ shipped | "Latest", "biggest", "oldest" must actually sort | S |
 | **P0** | Interpretation chips | Trust and discoverability; no silent AI | S |
 | **P0** | Version grouping | `resume_v1`, `resume_final`, `resume_final_final` become one row | S |
 | **P0** | Facet bar with live counts | "Filter anything" feels instant | M |
@@ -203,7 +203,7 @@ friend.
 | **P0** | Duplicate cleanup UI | Backend already exists; high perceived value | S |
 | **P0** | Guided first-run setup flow | One place for folders, preferences, downloads, and a completed first scan | M |
 | **P0** | Default-deny sensitive files | Must precede face and vision features | S |
-| **P0** | `/` command menu and `@` scope mentions | Familiar LLM-style acceleration | S |
+| **P0** | ~~`/` command menu and `@` scope mentions~~ ✅ shipped | Familiar LLM-style acceleration | S |
 | **P0** | New home and result states | Makes it feel personal before the first keystroke | M |
 | **P1** | Visual embeddings (SigLIP/CLIP int8) | "red cap", "system design diagram", similar images | L |
 | **P1** | Native OCR (macOS Vision, Windows OCR) | Removes tesseract install friction | M |
@@ -235,14 +235,13 @@ reviewable and testable.
    Emit an `Interpretation`; do not change ranking yet.
 3. **Extend the response** with `interpretation` and `sort`; render them as
    removable chips. Add the 40-query golden set before tuning the rules.
-4. **Add `/` and `@` to the search input.** `/` opens the command menu, `@`
-   resolves scopes through the existing directory trie. Keep the grammar
-   fallback and the keyboard shortcut behavior.
-5. **Build the guided setup flow.** Folders, preferences, optional packs, and
-   downloads live here. Gate the main window on the first scan and finish with a
-   Done summary.
-6. **Ship the home and grouped-result states**, then surface the existing
-   duplicate finder as `/dupes`.
+4. ~~**Add `/` and `@` to the search input.**~~ ✅ `/` opens the command menu
+   and `@` resolves scopes through the directory index. The grammar remains the
+   substrate; `Ctrl+K` is gone.
+5. ~~**Build the guided setup flow.**~~ ✅ Folders, preferences, optional packs,
+   and downloads live there; the main window is gated on the first scan.
+6. **Ship the home and grouped-result states**, then build out the duplicate
+   review view (the `>dupes` → `/dupes` review list already exists).
 7. **Only then** consider the optional local LLM compiler. The deterministic
    path must be good without it.
 

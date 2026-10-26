@@ -326,7 +326,8 @@ State machine: `pending → ok | skipped(reason) | failed(reason)`, max 3 attemp
 - **First run (shipped):** guided flow — welcome, folders, exclusions, preferences, optional packs, first scan, Done. The first scan finishes with counts and a Done summary before the main window opens; setup markers are gated by `first_scan_done`. Settings → About offers **Run setup again**.
 - **Default screen:** input + list + right-side preview. No tabs, no sidebar, no modes.
 - **Chips** under the input appear only when a filter/scope is active; click to remove.
-- **`/`** in the search box: command menu (filters, `/dupes`, `/reindex`, `/doctor`, `/settings`). No global palette shortcut.
+- **`/`** in the search box: command menu (filters, `/dupes`, `/reindex`, `/doctor`, `/settings`). **`@`** opens a directory scope picker and inserts `in:"<path>"`. No global palette shortcut.
+- **Sort** control: Best match / Newest / Oldest / Largest / Name, applied server-side.
 - **`>`** in the input switches to commands: `/reindex`, `/add folder`, `/model`, `/doctor`.
 - **Bottom bar:** `12 ms · 1,204,553 files · 2 s old · semantic ✓`.
 - **Preview:** monospace text with highlighted matches for code/text; page render for PDF; thumbnail for images. Virtualized list, fixed row height, no layout shift.

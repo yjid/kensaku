@@ -39,8 +39,8 @@ These are the highest-leverage gaps. None require a new model.
 - [ ] **Aliases and personal vocabulary** — `resume → resume, cv, curriculum`;
       `invoice → invoice, receipt, bill`; user-editable; seeded by use-case
       preset. Suggestions from behavior, never silent rewrites.
-- [ ] **First-class sort** — `Best match | Newest | Oldest | Largest | Name`.
-      Recency is currently a ranking bonus, so "latest" does not actually sort.
+- [x] **First-class sort** — `Best match | Newest | Oldest | Largest | Name`,
+      applied server-side before the result limit.
 - [ ] **Interpretation chips** — expose the parsed intent as removable chips,
       including sort, scope, type, and aliases. Low confidence asks with chips,
       not a chat message.
@@ -55,10 +55,11 @@ These are the highest-leverage gaps. None require a new model.
 - [ ] **Saved searches / smart folders** — "My screenshots", "Work invoices",
       "This project's logs". User-created first; auto-suggestion optional and
       never silent.
-- [ ] **`/` command menu** — `/images`, `/pdf`, `/docs`, `/recent`, `/dupes`,
-      `/errors`, `/diagrams`, `/reindex`, `/doctor`, `/settings`, `/ask`.
-- [ ] **`@` scope mentions** — `@Projects`, `@Downloads`, `@Work`, `@Photos`,
-      `@me`; recent places first; resolved against the existing directory trie.
+- [x] **`/` command menu** — `/images`, `/pdf`, `/docs`, `/code`, `/media`,
+      `/recent`, `/errors`, `/diagrams`, `/dupes`, `/reindex`, `/doctor`,
+      `/settings`. (`/ask` awaits a local model.)
+- [x] **`@` scope mentions** — resolves a typed prefix against indexed
+      directories and inserts `in:"<path>"`; arrow keys + Enter.
 - [ ] **New home and result states** — recent files, recent queries, pins,
       suggestions, best-guess card, grouped versions, related files.
 - [x] **Duplicate cleanup UI** — `/dupes` opens a review view with exact-content

@@ -12,6 +12,7 @@ import {
 import { SetupModal } from "./components/SetupModal";
 import { DuplicatesModal } from "./components/DuplicatesModal";
 import { SlashMenu, SlashCommand } from "./components/SlashMenu";
+import { ScopeMenu } from "./components/ScopeMenu";
 import { ResultItem, ResultView } from "./components/ResultItem";
 import { Settings } from "./components/SettingsModal";
 import { FilterChips } from "./components/FilterChips";
@@ -63,7 +64,10 @@ function App() {
   const [settingsSection, setSettingsSection] = useState<string | undefined>(undefined);
   const [showDuplicates, setShowDuplicates] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
+  const [scopeItems, setScopeItems] = useState<string[]>([]);
+  const [scopeIndex, setScopeIndex] = useState(0);
   const [commandOutput, setCommandOutput] = useState<string | null>(null);
+  const [sort, setSort] = useState("best");
   const [view] = useState<ResultView>(
     () => (localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "list") as ResultView,
   );
@@ -168,7 +172,7 @@ function App() {
       const seq = ++currentSeqRef.current;
       queryRef.current = query;
       try {
-        const res = await invoke<SearchResponse>("search", { query });
+        const res = await invoke<SearchResponse>("search", { query, sort });
         if (seq >= currentSeqRef.current) {
           // Seed rows with snippets already fetched for these paths so a
           // repeated path never flashes snippet-less. Existing snippets are
@@ -244,7 +248,7 @@ function App() {
     }, 40);
 
     return () => clearTimeout(timer);
-  }, [query, isSetupComplete]);
+  }, [query, sort, isSetupComplete]);
 
   // Results never reorder while typing — sort is backend-provided and stable;
   // nothing needed here beyond identity-stable render keys.
@@ -396,6 +400,43 @@ function App() {
     setSlashIndex(0);
   }, [slashFilter]);
 
+  /* ---------------- `@` scopes ---------------- */
+
+  const scopePrefix = useMemo(() => {
+    if (query.startsWith("/")) return null;
+    const m = query.match(/(?:^|\s)@([^\s]*)$/);
+    return m ? m[1] : null;
+  }, [query]);
+
+  useEffect(() => {
+    if (scopePrefix === null) {
+      setScopeItems([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      invoke<string[]>("get_scope_suggestions", { prefix: scopePrefix, limit: 12 })
+        .then((items) => {
+          if (!cancelled) {
+            setScopeItems(items);
+            setScopeIndex(0);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setScopeItems([]);
+        });
+    }, 120);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [scopePrefix]);
+
+  const applyScope = useCallback((path: string) => {
+    setQuery((prev) => prev.replace(/@[^\s]*$/, `in:"${path}" `));
+    inputRef.current?.focus();
+  }, []);
+
   const handleKeyDown = useCallback(
     async (e: React.KeyboardEvent) => {
       // Overlays capture their own Esc; everything else pauses the main list.
@@ -445,6 +486,30 @@ function App() {
           setQuery("");
         }
         return;
+      }
+
+      // `@` scope menu
+      if (scopePrefix !== null && scopeItems.length > 0) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setScopeIndex((i) => (i + 1) % scopeItems.length);
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setScopeIndex((i) => (i - 1 + scopeItems.length) % scopeItems.length);
+          return;
+        }
+        if (e.key === "Enter") {
+          e.preventDefault();
+          applyScope(scopeItems[scopeIndex] ?? scopeItems[0]);
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setQuery((prev) => prev.replace(/@[^\s]*$/, "").trimEnd());
+          return;
+        }
       }
 
       if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
@@ -497,7 +562,7 @@ function App() {
         }
       }
     },
-    [showSettings, showDuplicates, query, results, recent, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount, slashItems, slashIndex],
+    [showSettings, showDuplicates, query, results, recent, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope],
   );
 
   /* ---------------- render ---------------- */
@@ -599,6 +664,9 @@ function App() {
               {slashFilter !== null && (
                 <SlashMenu items={slashItems} activeIndex={slashIndex} onPick={(c) => c.run()} />
               )}
+              {scopePrefix !== null && (
+                <ScopeMenu items={scopeItems} activeIndex={scopeIndex} onPick={applyScope} />
+              )}
 
               {/* Global indexing progress: 2px accent line under the bar —
                   pure feedback, no numbers. Stale results stay visible. */}
@@ -611,6 +679,26 @@ function App() {
               {/* Category chips */}
               {!isCommandMode && (
                 <CategoryChips query={query} results={results} onPick={handleChip} />
+              )}
+
+              {!isCommandMode && results.length > 0 && (
+                <div className="flex shrink-0 items-center justify-end gap-2 border-b border-line px-4 py-1.5">
+                  <label htmlFor="sort" className="text-[10px] uppercase tracking-wider text-subtle">
+                    Sort
+                  </label>
+                  <select
+                    id="sort"
+                    value={sort}
+                    onChange={(e) => setSort(e.target.value)}
+                    className="rounded-[8px] border border-line bg-elevated px-2 py-1 text-[11px] text-fg outline-none focus:border-accent"
+                  >
+                    <option value="best">Best match</option>
+                    <option value="newest">Newest</option>
+                    <option value="oldest">Oldest</option>
+                    <option value="largest">Largest</option>
+                    <option value="name">Name</option>
+                  </select>
+                </div>
               )}
 
               {/* Active backend filters + hints */}
