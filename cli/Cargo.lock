@@ -2532,6 +2532,7 @@ dependencies = [
  "fs4",
  "image",
  "jwalk",
+ "libc",
  "log",
  "lopdf",
  "notify",
@@ -2557,7 +2558,10 @@ dependencies = [
 name = "kensaku-cli"
 version = "0.3.3"
 dependencies = [
+ "fs4",
  "kensaku",
+ "libc",
+ "serde_json",
 ]
 
 [[package]]
