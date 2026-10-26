@@ -6,6 +6,10 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `kensaku-daemon` scaffold: a headless process that owns `IndexerManager`,
+  listens on `$XDG_RUNTIME_DIR/kensaku.sock` (0600), enforces single-instance
+  locking, writes `daemon.pid`, and serves token-authenticated JSON-RPC
+  `health`/`index_state`/`shutdown`. Clients still default to direct access.
 - Compact metadata arena (`NodeArena`/`NameArena`): per-entry node is 64 bytes
   (down from 128-byte `FileEntry`), full paths are reconstructed from parent
   chains instead of being stored per entry.
