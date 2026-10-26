@@ -1,6 +1,6 @@
 # Benchmarks
 
-There are four in-tree harnesses:
+There are five in-tree harnesses:
 
 - `bench` measures the hot path of Kensaku: walking a directory tree, building
   the in-memory entry list, and running fuzzy filename queries. It deliberately
@@ -16,6 +16,8 @@ There are four in-tree harnesses:
   Tantivy, Tantivy + folded field, and SQLite FTS5 trigram (index time/size,
   query p50/p95, and RSS). See
   [the K12 decision](decisions/index-format.md).
+- `mem_probe` builds 1M synthetic metadata entries with no database and reports
+  RSS before/after plus path-lookup latency.
 
 ## Running
 
@@ -32,6 +34,9 @@ cargo run --manifest-path src-tauri/Cargo.toml --example crawl_bench --release -
 # K12 index-format comparison (one backend per process)
 cargo run --manifest-path src-tauri/Cargo.toml --example index_format_bench --release -- \
   tantivy 1000000 /tmp/kensaku-k12-tantivy
+
+# K2 metadata memory
+cargo run --manifest-path src-tauri/Cargo.toml --example mem_probe --release -- 1000000
 ```
 
 Always use `--release`. Debug builds are 10–50× slower and are not comparable
@@ -103,7 +108,7 @@ is dominated by the external tesseract process and is build-independent.
 
 | Workload | Result |
 | --- | --- |
-| K2 metadata arena | Node size 64 bytes (vs 128-byte `FileEntry`); 1M entries ≈ 64 MB metadata (stretch target met) |
+| K2 metadata arena | 1,001,001 synthetic nodes: 91.3 MB RSS delta (96.4 MB total process RSS); 64-byte `Node`, 12.0 MB names, 16 MB path index (1,001,001 live entries, 2,097,152 slots), lazy id index/bursts. Path lookup p50 0.271 µs / p95 0.521 µs. 100k filename search average 0.305 ms. Measured with `mem_probe` and `bench`; see command above. |
 | K3 thumbnail hashing | dHash now reuses the 480 px JPEG thumbnail; `phash64_cached` decodes sources only when the thumbnail is stale. 1400-image RSS run still pending. |
 | K5 folded/trigram tier | 100 docs × 6,899 B raw: 84,029 B → 135,318 B index (1.61x, includes stored raw text). Folded `invoice` query over 500 docs (debug): p50 172 µs, p95 262 µs. `nutsmp`→`donutsmp.net`, `0RDER`→`ORDER`, `email` does not match `internally`, and d/cl false positives are rejected by raw verification. |
 | K7 scheduling + watcher | 400 ms settle and 500 ms fresh-file verification added; 6 watcher tests cover coalescing, fresh retries, rename, delete-while-paused, and overflow rescan. Keystroke p95 on a 10k-file crawl was not measured on this machine (no GUI corpus); priority is applied at crawl-thread start and can be disabled with `KENSAKU_NO_BG_PRIORITY=1`. |

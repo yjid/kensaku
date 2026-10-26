@@ -57,14 +57,14 @@ duplicate path string. Spacedrive targets ~50 B/entry; fsearch's daemon is
 21–35 MB for 8M names.
 
 **Work**
-- [ ] K2.1 `NodeArena`: parent id, name offset/len, size, mtime, dev, ino,
+- [x] K2.1 `NodeArena`: parent id, name offset/len, size, mtime, dev, ino,
   extension id, flags, bloom — contiguous, no per-node `PathBuf`.
-- [ ] K2.2 `NameArena`: one byte buffer per folder; resolve a full path only for
+- [x] K2.2 `NameArena`: one byte buffer per folder; resolve a full path only for
   displayed results and filters.
-- [ ] K2.3 Extension interning (`u16`) and remove the duplicate path map where
-  possible.
-- [ ] K2.4 Rebuild the scope trie from the arena; keep the generation counters.
-- [ ] K2.5 Migration/loader from SQLite; keep `FileEntry` as a temporary view
+- [x] K2.3 Extension interning (`u16`) and a compact open-addressed path index
+  (8 bytes/slot) instead of `HashMap<u64, u32>` + `HashMap<PathBuf, u32>`.
+- [x] K2.4 Rebuild the scope trie from the arena; keep the generation counters.
+- [x] K2.5 Migration/loader from SQLite; keep `FileEntry` as a temporary view
   for search/watcher until they are ported.
 
 **Acceptance**

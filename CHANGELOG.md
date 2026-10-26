@@ -6,6 +6,10 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- K2 metadata memory fix: replaced the `HashMap` path/id/burst maps with a
+  compact open-addressed path index, lazy id index, and lazy burst vector.
+  1M synthetic entries now measure 92.8 MB RSS (target ≤ 100 MB); path lookup
+  p50 0.261 µs.
 - Index-format decision memo and reproducible benchmark: at 1M synthetic
   documents, SQLite FTS5 trigram used 918 MB and took 258 ms for a broad BM25
   query, versus 100 MB and 275 µs for Tantivy + folded. Keep Tantivy; no

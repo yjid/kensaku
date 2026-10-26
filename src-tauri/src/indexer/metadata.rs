@@ -1,8 +1,8 @@
-use crate::indexer::arena::{Node, NodeArena, NO_PARENT, path_hash};
+use crate::indexer::arena::{IdIndex, Node, NodeArena, NO_PARENT, PathIndex};
+use parking_lot::RwLock;
 use crate::indexer::metadata_db::MetadataDb;
 use crate::indexer::walker::FileEntry;
 use crate::query::scope_trie::DirectoryTrie;
-use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -11,11 +11,10 @@ use std::time::SystemTime;
 
 pub struct MetadataStore {
     arena: NodeArena,
-    path_index: HashMap<u64, u32>,
-    collision_index: HashMap<PathBuf, u32>,
-    node_id_to_idx: HashMap<u64, u32>,
-    /// Image node id -> burst id. Only images with an assigned burst appear.
-    bursts: HashMap<u64, u64>,
+    path_index: PathIndex,
+    id_index: RwLock<Option<IdIndex>>,
+    /// Parallel to `arena`: burst id per arena slot, 0 means unassigned.
+    bursts: RwLock<Option<Vec<u64>>>,
     db: Option<Arc<MetadataDb>>,
     generation: AtomicU64,
     dir_generation: AtomicU64,
@@ -30,6 +29,20 @@ impl Default for MetadataStore {
 }
 
 impl MetadataStore {
+    pub fn without_db() -> Self {
+        Self {
+            arena: NodeArena::new(),
+            path_index: PathIndex::new(),
+            id_index: RwLock::new(None),
+            bursts: RwLock::new(None),
+            db: None,
+            generation: AtomicU64::new(1),
+            dir_generation: AtomicU64::new(1),
+            usage: RwLock::new(HashMap::new()),
+            cached_trie: RwLock::new(None),
+        }
+    }
+
     pub fn new() -> Self {
         let db = match MetadataDb::open() {
             Ok(db) => Some(Arc::new(db)),
@@ -39,26 +52,14 @@ impl MetadataStore {
             }
         };
 
-        let mut store = Self {
-            arena: NodeArena::new(),
-            path_index: HashMap::new(),
-            collision_index: HashMap::new(),
-            node_id_to_idx: HashMap::new(),
-            bursts: HashMap::new(),
-            db,
-            generation: AtomicU64::new(1),
-            dir_generation: AtomicU64::new(1),
-            usage: RwLock::new(HashMap::new()),
-            cached_trie: RwLock::new(None),
-        };
-
+        let mut store = Self::without_db();
+        store.db = db;
         if store.db.is_some() {
             let loaded = store.load_from_db();
             if loaded > 0 {
                 println!("[Kensaku] Loaded {} metadata entries from database", loaded);
             }
         }
-
         store
     }
 
@@ -71,18 +72,8 @@ impl MetadataStore {
     }
 
     pub fn with_db(db: MetadataDb) -> Self {
-        let mut store = Self {
-            arena: NodeArena::new(),
-            path_index: HashMap::new(),
-            collision_index: HashMap::new(),
-            node_id_to_idx: HashMap::new(),
-            bursts: HashMap::new(),
-            db: Some(Arc::new(db)),
-            generation: AtomicU64::new(1),
-            dir_generation: AtomicU64::new(1),
-            usage: RwLock::new(HashMap::new()),
-            cached_trie: RwLock::new(None),
-        };
+        let mut store = Self::without_db();
+        store.db = Some(Arc::new(db));
         store.load_from_db();
         store
     }
@@ -107,9 +98,8 @@ impl MetadataStore {
 
         self.arena = NodeArena::new();
         self.path_index.clear();
-        self.collision_index.clear();
-        self.node_id_to_idx.clear();
-        self.bursts.clear();
+        *self.id_index.write() = None;
+        *self.bursts.write() = None;
 
         let count = entries.len();
         // First pass: push nodes (parents resolved later).
@@ -138,10 +128,7 @@ impl MetadataStore {
                 node_id: entry.id,
             };
             let idx = self.arena.push(node);
-            self.insert_path_index(&entry.path, idx);
-            if entry.id > 0 {
-                self.node_id_to_idx.insert(entry.id, idx);
-            }
+            self.path_index.insert(&self.arena, &entry.path, idx);
             idxs.push(idx);
         }
         // Second pass: resolve parent pointers.
@@ -160,8 +147,20 @@ impl MetadataStore {
             }
         }
 
-        if let Ok(bursts) = db.load_bursts() {
-            self.bursts = bursts.into_iter().collect();
+        if let Ok(loaded_bursts) = db.load_bursts() {
+            if !loaded_bursts.is_empty() {
+                let mut bursts = vec![0u64; self.arena.len()];
+                for (node_id, burst) in loaded_bursts {
+                    if let Some(idx) = self.get_index_by_node_id(node_id)
+                        && (idx as usize) < bursts.len()
+                    {
+                        bursts[idx as usize] = burst;
+                    }
+                }
+                *self.bursts.write() = Some(bursts);
+            } else {
+                *self.bursts.write() = None;
+            }
         }
 
         self.generation.fetch_add(1, Ordering::SeqCst);
@@ -172,34 +171,18 @@ impl MetadataStore {
     }
 
     fn insert_path_index(&mut self, path: &Path, idx: u32) {
-        let h = path_hash(path);
-        // collision handling
-        if let Some(&existing) = self.path_index.get(&h) {
-            // verify
-            if self.arena.path(existing) != path {
-                self.collision_index.insert(path.to_path_buf(), idx);
-                return;
-            }
-        }
-        self.path_index.insert(h, idx);
+        self.path_index.insert(&self.arena, path, idx);
     }
 
     fn find_path_index(&self, path: &Path) -> Option<u32> {
-        let h = path_hash(path);
-        if let Some(&idx) = self.path_index.get(&h)
-            && self.arena.path(idx) == path
-        {
-            return Some(idx);
-        }
-        self.collision_index.get(path).copied()
+        self.path_index.find(&self.arena, path)
     }
 
     pub fn clear(&mut self) {
         self.arena = NodeArena::new();
         self.path_index.clear();
-        self.collision_index.clear();
-        self.node_id_to_idx.clear();
-        self.bursts.clear();
+        *self.id_index.write() = None;
+        *self.bursts.write() = None;
         self.generation.fetch_add(1, Ordering::SeqCst);
         self.dir_generation.fetch_add(1, Ordering::SeqCst);
         *self.cached_trie.write() = None;
@@ -287,7 +270,7 @@ impl MetadataStore {
                 node_id: entry.id,
             };
             let idx = self.arena.push(node);
-            self.insert_path_index(&entry.path, idx);
+            self.path_index.insert(&self.arena, &entry.path, idx);
             idx
         };
 
@@ -305,7 +288,16 @@ impl MetadataStore {
                 Ok(id) => {
                     self.arena.node_mut(idx).node_id = id;
                     entry_id = id;
-                    self.node_id_to_idx.insert(id, idx);
+                    if let Some(index) = self.id_index.write().as_mut()
+                        && id > 0
+                    {
+                        index.insert(id, idx);
+                    }
+                    if let Some(bursts) = self.bursts.write().as_mut()
+                        && idx as usize >= bursts.len()
+                    {
+                        bursts.resize(self.arena.len(), 0);
+                    }
                 }
                 Err(e) => {
                     eprintln!(
@@ -453,38 +445,44 @@ impl MetadataStore {
         if let Some(idx) = self.find_path_index(path) {
             let was_dir = self.arena.node(idx).is_dir();
             let removed_id = self.arena.node(idx).node_id;
-            if removed_id > 0 {
-                self.node_id_to_idx.remove(&removed_id);
-                self.bursts.remove(&removed_id);
+            if removed_id > 0
+                && let Some(index) = self.id_index.write().as_mut()
+            {
+                index.remove(removed_id);
             }
-            // remove from collision/path index
-            let h = path_hash(path);
-            if self.path_index.get(&h) == Some(&idx) {
-                self.path_index.remove(&h);
+            if let Some(bursts) = self.bursts.write().as_mut()
+                && (idx as usize) < bursts.len()
+            {
+                bursts[idx as usize] = 0;
             }
-            self.collision_index.remove(path);
 
-            // swap remove in arena vectors? NodeArena uses Vec<Node>; removing middle requires swap.
+            self.path_index.remove(&self.arena, path);
+
             let last_idx = self.arena.len().saturating_sub(1) as u32;
             if idx < last_idx {
-                // move last node to idx
+                let last_path = self.arena.path(last_idx);
+                self.path_index.remove(&self.arena, &last_path);
+
                 let last_node = self.arena.nodes[last_idx as usize];
                 self.arena.nodes[idx as usize] = last_node;
-                // update indices maps for swapped node
+
                 let swapped_path = self.arena.path(idx);
-                // update path_index entry for swapped path
-                // Remove old hash for swapped? We'll rebuild: find and update
-                // Update collision_index if present
-                // Simpler: update path_index for swapped path hash
-                let sh = path_hash(&swapped_path);
-                self.path_index.insert(sh, idx);
-                // node_id map
+                self.path_index.insert(&self.arena, &swapped_path, idx);
+
                 let swapped_id = self.arena.node(idx).node_id;
-                if swapped_id > 0 {
-                    self.node_id_to_idx.insert(swapped_id, idx);
+                if swapped_id > 0
+                    && let Some(index) = self.id_index.write().as_mut()
+                {
+                    index.insert(swapped_id, idx);
+                }
+
+                if let Some(bursts) = self.bursts.write().as_mut()
+                    && (idx as usize) < bursts.len()
+                    && (last_idx as usize) < bursts.len()
+                {
+                    bursts[idx as usize] = bursts[last_idx as usize];
                 }
             }
-            // Fix up parent pointers that referenced the swapped (last) slot.
             if idx < last_idx {
                 for node in self.arena.nodes.iter_mut() {
                     if node.parent == last_idx {
@@ -493,7 +491,11 @@ impl MetadataStore {
                 }
             }
             self.arena.nodes.pop();
-            // Note: NameArena not compacted (append-only). Acceptable.
+            if let Some(bursts) = self.bursts.write().as_mut()
+                && !bursts.is_empty()
+            {
+                bursts.pop();
+            }
 
             self.generation.fetch_add(1, Ordering::SeqCst);
             if was_dir {
@@ -586,7 +588,6 @@ impl MetadataStore {
 
         // Rebuild path_index
         self.path_index.clear();
-        self.collision_index.clear();
         for i in 0..self.arena.len() {
             let idx = i as u32;
             let p = self.arena.path(idx);
@@ -711,13 +712,36 @@ impl MetadataStore {
     }
 
     pub fn get_by_node_id(&self, node_id: u64) -> Option<FileEntry> {
-        self.node_id_to_idx
-            .get(&node_id)
-            .map(|&idx| self.materialize(idx))
+        let idx = {
+            let mut guard = self.id_index.write();
+            if guard.is_none() {
+                let mut index = IdIndex::new();
+                for i in 0..self.arena.len() {
+                    let id = self.arena.node(i as u32).node_id;
+                    if id > 0 {
+                        index.insert(id, i as u32);
+                    }
+                }
+                *guard = Some(index);
+            }
+            guard.as_ref()?.get(node_id)?
+        };
+        Some(self.materialize(idx))
     }
 
     pub fn get_index_by_node_id(&self, node_id: u64) -> Option<u32> {
-        self.node_id_to_idx.get(&node_id).copied()
+        let mut guard = self.id_index.write();
+        if guard.is_none() {
+            let mut index = IdIndex::new();
+            for i in 0..self.arena.len() {
+                let id = self.arena.node(i as u32).node_id;
+                if id > 0 {
+                    index.insert(id, i as u32);
+                }
+            }
+            *guard = Some(index);
+        }
+        guard.as_ref()?.get(node_id)
     }
 
     pub fn path_index_map(&self) -> HashMap<PathBuf, usize> {
@@ -731,7 +755,18 @@ impl MetadataStore {
 
     /// Assigned burst for a node, if it is an image that has been grouped.
     pub fn burst_for_node_id(&self, node_id: u64) -> Option<u64> {
-        self.bursts.get(&node_id).copied()
+        let idx = self.get_index_by_node_id(node_id)?;
+        let bursts = self.bursts.read();
+        let bursts = bursts.as_ref()?;
+        if idx as usize >= bursts.len() {
+            return None;
+        }
+        let burst = bursts[idx as usize];
+        if burst == 0 {
+            None
+        } else {
+            Some(burst)
+        }
     }
 
     /// Assigned burst for a path. The hash lookup is the same one search
@@ -748,25 +783,52 @@ impl MetadataStore {
         let Some(idx) = self.find_path_index(path) else {
             return;
         };
-        let node_id = self.arena.node(idx).node_id;
-        self.bursts.remove(&node_id);
+        if let Some(bursts) = self.bursts.write().as_mut()
+            && (idx as usize) < bursts.len()
+        {
+            bursts[idx as usize] = 0;
+        }
     }
 
     /// Applies burst assignments returned by the database after a merge.
     pub fn apply_bursts(&mut self, updates: &[(PathBuf, u64)]) {
+        let mut bursts = self.bursts.write();
+        if bursts.is_none() {
+            *bursts = Some(vec![0; self.arena.len()]);
+        }
+        let bursts = bursts.as_mut().expect("bursts allocated");
         for (path, burst) in updates {
             let Some(idx) = self.find_path_index(path) else {
                 continue;
             };
+            if idx as usize >= bursts.len() {
+                bursts.resize(self.arena.len(), 0);
+            }
             let node_id = self.arena.node(idx).node_id;
             if node_id > 0 {
-                self.bursts.insert(node_id, *burst);
+                bursts[idx as usize] = *burst;
             }
         }
     }
 
     pub fn db(&self) -> Option<Arc<MetadataDb>> {
         self.db.as_ref().map(Arc::clone)
+    }
+
+    pub fn path_index_len(&self) -> usize {
+        self.path_index.len()
+    }
+
+    pub fn path_index_capacity(&self) -> usize {
+        self.path_index.capacity()
+    }
+
+    pub fn id_index_len(&self) -> usize {
+        self.id_index.read().as_ref().map(IdIndex::len).unwrap_or(0)
+    }
+
+    pub fn bursts_allocated(&self) -> usize {
+        self.bursts.read().as_ref().map(|bursts| bursts.len()).unwrap_or(0)
     }
 
     pub fn len(&self) -> usize {
