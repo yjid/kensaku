@@ -39,8 +39,9 @@ Three properties, together. Competitors have one or two of them.
 
 ## What we have today
 
-Honest inventory. "Shipped" means in the code at `v0.3.3`; "planned" means it
-lives in this document.
+Honest inventory. "Shipped" means in the code at `v0.3.3` or landed on `master`
+after it (guided first-run setup, first-scan gate, `>dupes`, default-deny
+sensitive paths); "planned" means it lives in this document.
 
 | Area | Shipped today | Still missing |
 |---|---|---|
@@ -48,16 +49,17 @@ lives in this document.
 | **Content** | Text, code, configs, logs; PDF, DOCX/PPTX/XLSX, EPUB/ODT/RTF; image OCR via tesseract | Native OCR; scanned-PDF OCR; video/audio content |
 | **Images** | Filename, OCR text, dimensions, thumbnails, perceptual hashes, near-duplicate groups | CLIP/SigLIP visual search; similar images; face identity; captions |
 | **Surfaces** | Desktop GUI; CLI; MCP over stdio | Warm shared daemon; local HTTP; one-click agent connect |
-| **Interaction** | Search-as-you-type, category chips, list/grid, preview, command palette, `>` commands, full filter grammar | Natural-language intent; `/` and `@`; visible interpretation; sort; aliases; facets; saved searches; one guided setup flow |
+| **Interaction** | Search-as-you-type, category chips, list/grid, preview, command palette, `>` commands (`>reindex`, `>doctor`, `>model`, `>dupes`, `>settings`), full filter grammar, guided first-run setup with first-scan gate | Natural-language intent; `/` and `@`; visible interpretation; sort; aliases; facets; saved searches; Settings status-only setup view |
 | **Intelligence** | Semantic tier; frecency; recency boost | Explicit "latest" sort; version grouping; personal vocabulary; optional local LLM query compiler; `/ask` with citations |
-| **Trust** | Local-only, no telemetry, atomic config, crash log, Doctor | Default-deny sensitive files; face-data controls; cloud-consent UX |
+| **Trust** | Local-only, no telemetry, atomic config, crash log, Doctor, default-deny sensitive paths and credential extensions | Face-data controls; cloud-consent UX |
 
 Two facts worth stating plainly, because older design docs can read as if they
 already shipped:
 
 - The GUI backend is **in-process**. The daemon topology in
   [ARCHITECTURE.md](ARCHITECTURE.md) is the target, not the current state.
-- `find_duplicates` is implemented in the backend but has **no UI**.
+- `find_duplicates` is reachable through `>dupes`, but there is **no review or
+  delete UI** yet.
 
 ## What "friend, not search" means in practice
 
@@ -181,7 +183,7 @@ friend.
 | **Results** | Flat list / grid | Best-guess result, grouped versions, facets, related files |
 | **Commands** | `>` prefix in the search box | `/` command menu; same capabilities, discoverable |
 | **Home** | Empty search box | Recent work, pins, suggestions, one input |
-| **Setup** | Configuration, OCR data, and model downloads scattered across Settings; first scan runs in the background | One guided first-run flow owns folders, preferences, downloads, and model packs; first scan completes before the main window opens |
+| **Setup** | Guided first-run flow (folders → exclusions → preferences → optional packs → first scan → Done); Settings offers **Run setup again**; OCR/model downloads still also in Settings | Downloads and status live only in setup; Settings shows status and re-runs setup |
 | **Images** | OCR and filenames only | Visual search, similar images, diagrams, optional identity |
 | **LLM** | MCP config snippet | One-click connect; optional local intent compiler; cited `/ask` |
 | **Architecture** | In-process backend + per-call CLI | Warm daemon shared by GUI, CLI, and agents |

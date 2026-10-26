@@ -61,21 +61,19 @@ These are the highest-leverage gaps. None require a new model.
       `@me`; recent places first; resolved against the existing directory trie.
 - [ ] **New home and result states** — recent files, recent queries, pins,
       suggestions, best-guess card, grouped versions, related files.
-- [ ] **Duplicate cleanup UI** — `find_duplicates` already groups exact content
-      duplicates and near-duplicate images; nothing in the frontend calls it.
-- [ ] **Guided first-run setup flow** — welcome → folders → preferences →
-      optional packs → first scan → Done. Replace the current three-screen modal
-      that closes immediately.
-- [ ] **Setup-owned downloads and configuration** — OCR language, semantic
-      models, and Vision Packs are acquired only in setup. Settings shows
-      current values, installed status, and a "Run setup again" entry point, not
-      a parallel setup or download UI. Watched folders, exclusions, theme, and
-      shortcut are asked in context.
-- [ ] **First-scan completion gate** — persist `first_scan_done`; `is_setup_complete`
-      returns true only after the initial crawl finishes. Show files, folders,
-      documents, images, OCR'd images, and embedded units with current path and
-      ETA; resume after interruption; never show Done on a partial index.
-      Subsequent launches remain search-first.
+- [~] **Duplicate cleanup UI** — `>dupes` now prints grouped exact-content and
+      near-image duplicates. A dedicated review/delete view is still missing.
+- [x] **Guided first-run setup flow** — welcome → folders → exclusions →
+      preferences → optional packs → first scan → Done, with resume after an
+      interrupted scan.
+- [~] **Setup-owned downloads and configuration** — folders, exclusions, theme,
+      and shortcut are asked in setup; OCR/model downloads are offered there but
+      still also live in Settings. Vision Packs and a Settings status-only view
+      remain.
+- [x] **First-scan completion gate** — `first_scan_done` gates `is_setup_complete`;
+      the scan shows live counts and a Done summary, resumes after interruption,
+      and later launches stay search-first. (Current path and ETA are not yet
+      shown.)
 - [ ] **Voice and microcopy pass** — human, anticipatory, quiet. No chat
       persona, no "How can I help you today?".
 
@@ -145,10 +143,11 @@ These are the highest-leverage gaps. None require a new model.
 
 ## E. Correctness, privacy & robustness
 
-- [ ] **Default-deny sensitive paths** — `~/.ssh`, `~/.gnupg`, browser
-      profiles, password managers, `.env`, `*.pem`, `*.key`. The edge-case
-      catalogue lists this; the code does not enforce it. Must precede face and
-      vision features.
+- [x] **Default-deny sensitive paths** — hidden entries are skipped; `.ssh`,
+      `.gnupg`, `.aws`, `.kube`, `.docker`, `.password-store`, password-manager
+      folders, `.env*`, and credential extensions (`.pem`, `.key`, `.pfx`, …)
+      are denied by default in the walker/config. Browser profiles under hidden
+      app-data directories are covered by the hidden-entry skip.
 - [ ] **Non-UTF-8 paths** — `purge_stale` compares lossy strings; a `bytes`
       path field or raw `OsStr` keying would make it exact.
 - [ ] **Platform indexers** — Windows USN journal and macOS FSEvents

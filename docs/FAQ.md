@@ -6,18 +6,15 @@ model or OCR language download you choose during setup (currently surfaced in
 Settings).
 
 **Why is the first launch slow?**
-It builds the index. Today you can search while it works. The planned first-run
-flow will complete the initial scan before opening the main window, showing live
-counts and ending with a Done screen; later launches stay search-first and
-instant. See [VISION.md](VISION.md).
+It builds the index. The guided first run completes the initial scan before
+opening the main window, showing live counts and ending with a Done summary;
+later launches stay search-first and instant. See [VISION.md](VISION.md).
 
 **What happens during setup?**
-Today: three screens (welcome, folders, exclusions), then indexing continues in
-the background; OCR and model downloads live in Settings. Planned: one guided
-flow covering preferences, optional packs/downloads, and a first scan that shows
-files, folders, documents, images, OCR'd images, and embeddings, then ends in a
-clear Done state before the main window opens. Downloads and initial
-configuration happen only there; Settings will link to **Run setup again**. See
+The guided flow covers folders, exclusions, preferences (theme + shortcut),
+optional OCR/model downloads, and the first scan, ending with a Done summary
+before the main window opens. Settings → About offers **Run setup again**.
+Model and OCR downloads remain available in Settings for now. See
 [VISION.md](VISION.md).
 
 **Why does search return nothing for a word I know is in a file?**
@@ -48,9 +45,8 @@ milestone — see [VISION.md](VISION.md).
 **OCR is on but no image text is indexed.**
 Tesseract is probably installed without language data. Settings → Search shows
 the state; click **Download English · 4 MB** (or install `tesseract-ocr-eng`),
-then save. Existing images are re-scanned. Doctor repeats the check. Planned:
-OCR language data moves into the first-run setup flow; Settings will show status
-and link to **Run setup again** instead of downloading separately.
+then save. Existing images are re-scanned. Doctor repeats the check. OCR
+language data is also offered as an optional pack in the guided setup flow.
 
 **Can it search across multiple drives?**
 Yes. Add each root in Settings → Folders. Unplugged drives are preserved rather

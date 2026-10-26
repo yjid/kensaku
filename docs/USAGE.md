@@ -83,12 +83,11 @@ Results are deterministic: score, then path.
 
 ## Settings
 
-> **Planned (see [VISION.md](VISION.md)):** the guided first-run setup will own
-> watched folders, preferences, OCR/model downloads, and the initial scan.
-> Settings will show current values and offer **Run setup again** instead of
-> duplicating setup or download actions. The first scan will finish with counts
-> and a Done screen before the main window opens; later launches stay
-> search-first.
+> **Setup (shipped):** the guided first run covers watched folders, exclusions,
+> preferences (theme + shortcut), optional OCR/model downloads, and the first
+> scan, ending with a Done summary before the main window opens. Settings shows
+> current values and offers **About → Run setup again**; model/OCR downloads also
+> remain available in Settings for now. Later launches stay search-first.
 
 - **General** — theme (`paper` / `void`), global shortcut, max results, start at login.
 - **Folders** — watched roots, add/remove, drag-and-drop.
@@ -105,19 +104,22 @@ Results are deterministic: score, then path.
 ## Indexing behavior
 
 - **Hidden entries** are skipped by default, along with common junk directories.
+- **Sensitive paths and credentials** are default-denied: `.ssh`, `.gnupg`, `.aws`,
+  `.kube`, `.docker`, `.password-store`, password-manager folders, `.env*`, and
+  credential extensions (`.pem`, `.key`, `.pfx`, …).
 - **Incremental** — unchanged files (same size + mtime) are not re-read.
 - **Renames** are tracked by `(device, inode)`, so moves do not duplicate entries.
 - **Startup** is search-first: the snapshot loads, then a stat-only reconcile runs
-  in the background. This applies **after the first completed scan**; the
-  planned first-run flow waits for the initial scan and ends with a Done screen.
-  Until it finishes the app reports how old the index is.
+  in the background. This applies **after the first completed scan**; the guided
+  first run waits for the initial scan and ends with a Done screen. Until it
+  finishes the app reports how old the index is.
 - **Unavailable roots** (unplugged drive, unmounted share) are preserved, not pruned.
 - **Documents** — PDF, DOCX/PPTX/XLSX, EPUB/ODT, RTF; malformed files are skipped
   after an 8-second timeout.
-- **Images** — OCR via `tesseract` when the engine and language data are present
-  (today Settings → Search shows the status and can download `eng.traineddata`;
-  planned: setup owns this download); the toggle controls whether image text is
-  indexed, and saving re-scans existing images. Thumbnails and dimensions are
+- **Images** — OCR via `tesseract` when the engine and language data are present.
+  The setup flow offers `eng.traineddata` as an optional pack; Settings → Search
+  still shows status and can download it. The toggle controls whether image text
+  is indexed, and saving re-scans existing images. Thumbnails and dimensions are
   cached; near-duplicates use a perceptual hash.
 - **Cloud placeholders** (Windows OneDrive/iCloud) are indexed by name only, so
   reading doesn't hydrate the file.
@@ -131,3 +133,15 @@ kensaku-cli search "docker error" --json --limit 10
 kensaku-cli state --json
 kensaku-cli mcp
 ```
+
+## Commands
+
+Type `>` in the search box to run an action:
+
+| Command | Action |
+|---|---|
+| `>reindex` | Re-scan watched folders |
+| `>doctor` | Print an index health summary |
+| `>model` | Show the active semantic model and unit count |
+| `>dupes` | List exact-content and near-image duplicate groups |
+| `>settings` | Open Settings |

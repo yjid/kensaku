@@ -164,7 +164,10 @@ the same check.
 
 1. Pick folders (Home, Projects, Documents, Downloads).
 2. Choose an exclusion preset (Developer / Creative / All-round).
-3. Start. The index builds in the background; you can search immediately.
+3. Set preferences (theme, global shortcut).
+4. Optionally download OCR language data and the semantic model.
+5. Start. The first scan shows live counts and ends with a Done summary; later
+   launches are search-first and instant. You can search while indexing runs.
 
 The index lives at:
 

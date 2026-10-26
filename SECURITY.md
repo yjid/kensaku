@@ -50,8 +50,13 @@ be safe when pointed at untrusted files.
 
 The index contains filenames and extracted text from your watched folders. Treat
 `~/.config/kensaku/` as sensitive: it is created with user-only permissions where
-the platform supports it, and should not be synced to a shared location. Use
-exclusions for secrets (`.ssh`, `.gnupg`, password-manager folders, `.env`).
+the platform supports it, and should not be synced to a shared location.
+
+Default-deny covers hidden entries, `.ssh`, `.gnupg`, `.aws`, `.kube`, `.docker`,
+`.password-store`, common password-manager folders, `.env*`, and credential
+extensions (`.pem`, `.key`, `.pfx`, `.p12`, `.crt`, `.cer`). Additional paths
+(browser profiles outside hidden app-data directories, custom secret stores)
+should still be added to exclusions.
 
 ## Agent surface
 
