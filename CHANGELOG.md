@@ -10,11 +10,13 @@ versioning: [SemVer](https://semver.org/).
   data, duplicate groups, scope suggestions and pin toggles through the daemon
   instead of opening metadata in-process. K4 visible-row snippets now use a
   bounded insertion-order LRU, and `read_snippet` returns line ranges.
-- K14 startup quantization drops the temporary f32 matrix after quantizing and
-  adds an ignored real-model validation test gated on KENSAKU_MODEL_DIR.
+- K14 startup quantization drops the temporary f32 matrix after quantizing.
+  Validated on real Potion artifacts: 7,559,168-byte i8 matrix + 118,112 bytes
+  of scales, with MRR 1.000 for both f32 and i8 on the labelled set.
 - K9 download hygiene framework: resumable `.part` downloads, HTTP Range resume,
-  mirror fallback, atomic rename, SHA-256 verification, and progress reporting.
-  Production artifact checksums remain to be pinned.
+  mirror fallback, atomic rename, SHA-256 verification, progress reporting, a
+  disk-space precheck, and pinned checksums for the three Potion artifacts.
+  Existing files are re-verified instead of trusted by name.
 - K7 default scheduling mode is now `full`; balanced/eco still opt in.
 - K3 thumbnail version fix: legacy 320 px thumbnails are no longer hashed;
   `image_hash_version` bumped to 2.

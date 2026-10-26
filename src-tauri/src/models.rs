@@ -26,21 +26,30 @@ struct Artifact {
 const ARTIFACTS: [Artifact; 3] = [
     Artifact {
         name: "model.safetensors",
-        urls: &["https://huggingface.co/minishlab/potion-base-8M/resolve/main/model.safetensors"],
+        urls: &[
+            "https://huggingface.co/minishlab/potion-base-8M/resolve/main/model.safetensors",
+            "https://hf-mirror.com/minishlab/potion-base-8M/resolve/main/model.safetensors",
+        ],
         bytes_expected: 30_236_760,
-        sha256: None,
+        sha256: Some("f65d0f325faadc1e121c319e2faa41170d3fa07d8c89abd48ca5358d9a223de2"),
     },
     Artifact {
         name: "tokenizer.json",
-        urls: &["https://huggingface.co/minishlab/potion-base-8M/resolve/main/tokenizer.json"],
+        urls: &[
+            "https://huggingface.co/minishlab/potion-base-8M/resolve/main/tokenizer.json",
+            "https://hf-mirror.com/minishlab/potion-base-8M/resolve/main/tokenizer.json",
+        ],
         bytes_expected: 683_666,
-        sha256: None,
+        sha256: Some("e67e803f624fb4d67dea1c730d06e1067e1b14d830e2c2202569e3ef0f70bb50"),
     },
     Artifact {
         name: "config.json",
-        urls: &["https://huggingface.co/minishlab/potion-base-8M/resolve/main/config.json"],
+        urls: &[
+            "https://huggingface.co/minishlab/potion-base-8M/resolve/main/config.json",
+            "https://hf-mirror.com/minishlab/potion-base-8M/resolve/main/config.json",
+        ],
         bytes_expected: 202,
-        sha256: None,
+        sha256: Some("2a6ac0e9aaa356a68a5688070db78fc3a464fefe85d2f06a1905ce3718687553"),
     },
 ];
 
@@ -224,14 +233,47 @@ fn download_missing() -> Result<(), String> {
     let dir = models_dir();
     ensure_dir(&dir)?;
 
+    let missing_bytes: u64 = ARTIFACTS
+        .iter()
+        .filter(|artifact| !dir.join(artifact.name).is_file())
+        .map(|artifact| artifact.bytes_expected)
+        .sum();
+    if missing_bytes > 0
+        && let Some(free) = free_bytes(&dir)
+        && free < missing_bytes.saturating_add(64 * 1024 * 1024)
+    {
+        return Err(format!(
+            "Not enough disk space for model files: need {} MB, have {} MB",
+            missing_bytes / (1024 * 1024),
+            free / (1024 * 1024)
+        ));
+    }
+
+    // Always verify an existing artifact. A truncated or corrupt final file is
+    // removed and downloaded again instead of being trusted by name alone.
     for artifact in ARTIFACTS.iter() {
-        if dir.join(artifact.name).is_file() {
-            continue;
-        }
         download_one(&dir, artifact)?;
     }
 
     Ok(())
+}
+
+#[cfg(unix)]
+fn free_bytes(path: &Path) -> Option<u64> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    let c_path = CString::new(path.as_os_str().as_bytes()).ok()?;
+    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) } == 0 {
+        Some(stat.f_bavail as u64 * stat.f_frsize as u64)
+    } else {
+        None
+    }
+}
+
+#[cfg(not(unix))]
+fn free_bytes(_path: &Path) -> Option<u64> {
+    None
 }
 
 fn download_one(dir: &Path, artifact: &Artifact) -> Result<(), String> {
