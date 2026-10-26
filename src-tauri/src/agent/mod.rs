@@ -129,6 +129,13 @@ impl HeadlessIndex {
     /// Compact index status shared by `kensaku-cli state` and the MCP
     /// `index_state` tool.
     pub fn state(&self) -> Result<Value, String> {
+        if let Ok(value) = crate::daemon::request("index_state", json!({})) {
+            return Ok(value);
+        }
+        self.state_local()
+    }
+
+    pub fn state_local(&self) -> Result<Value, String> {
         let mut files = 0u64;
         let mut dirs = 0u64;
         for i in 0..self.metadata.len() {

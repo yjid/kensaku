@@ -3,6 +3,7 @@ pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod crashlog;
+pub mod daemon;
 pub mod doctor;
 pub mod embed;
 pub mod indexer;
