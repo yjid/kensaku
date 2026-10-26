@@ -48,10 +48,11 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const [ocrStatus, setOcrStatus] = useState<OcrStatus | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [packError, setPackError] = useState<string | null>(null);
-  const etaRef = useRef<{ phase: string; done: number; at: number }>({
+  const etaRef = useRef<{ phase: string; done: number; at: number; total: number }>({
     phase: "",
     done: 0,
     at: 0,
+    total: 0,
   });
   const { theme, setTheme } = useTheme();
 
@@ -238,15 +239,15 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     let pct = 0;
     if (total > 0) {
       pct = Math.min(100, Math.round((done / total) * 100));
-      if (etaRef.current.phase !== phase) {
-        etaRef.current = { phase, done, at: Date.now() };
+      if (etaRef.current.phase !== phase || etaRef.current.total !== total) {
+        etaRef.current = { phase, done, at: Date.now(), total };
       }
       const dt = (Date.now() - etaRef.current.at) / 1000;
       const dd = done - etaRef.current.done;
       if (dt >= 1 && dd > 0) {
         const rate = dd / dt;
         eta = formatEta((total - done) / rate);
-        etaRef.current = { phase, done, at: Date.now() };
+        etaRef.current = { phase, done, at: Date.now(), total };
       } else if (done > 0 && total > done) {
         // Not enough sample yet — estimate from the phase start.
         const elapsed = (Date.now() - etaRef.current.at) / 1000;

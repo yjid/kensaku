@@ -267,8 +267,8 @@ impl IndexerManager {
             {
                 let mut st = status.write();
                 st.total_files = total_entries;
-                st.phase = "extracting".to_string();
-                st.current_status = "Reading file metadata...".to_string();
+                st.phase = "walking".to_string();
+                st.current_status = format!("Indexing metadata for {} entries...", total_entries);
                 Self::emit_status(&app_handle, &st);
             }
 
