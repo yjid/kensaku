@@ -63,13 +63,8 @@ data-dir: ## Print where Kensaku stores config and index
 		echo "$${XDG_CONFIG_HOME:-$$HOME/.config}/kensaku"; \
 	fi
 
-reset: ## Delete ALL local Kensaku data (config, index, models). FORCE=1 to skip prompt.
+reset: ## Delete ALL local Kensaku data (config, index, models).
 	@dir="$$( $(MAKE) --no-print-directory data-dir )"; \
-	if [ "$(FORCE)" != "1" ]; then \
-		printf 'Delete ALL Kensaku data in:\n  %s\n\nThis cannot be undone. Type "reset" to continue: ' "$$dir"; \
-		read -r answer; \
-		[ "$$answer" = "reset" ] || { echo "Aborted."; exit 1; }; \
-	fi; \
 	if [ -d "$$dir" ]; then \
 		echo "Removing $$dir"; \
 		rm -rf "$$dir"; \
@@ -78,13 +73,8 @@ reset: ## Delete ALL local Kensaku data (config, index, models). FORCE=1 to skip
 		echo "No Kensaku data found at $$dir"; \
 	fi
 
-reset-index: ## Delete only index/metadata (keeps settings). FORCE=1 to skip prompt.
+reset-index: ## Delete only index/metadata (keeps settings).
 	@dir="$$( $(MAKE) --no-print-directory data-dir )"; \
-	if [ "$(FORCE)" != "1" ]; then \
-		printf 'Delete the Kensaku index in:\n  %s\n\nSettings are kept. Type "reset" to continue: ' "$$dir"; \
-		read -r answer; \
-		[ "$$answer" = "reset" ] || { echo "Aborted."; exit 1; }; \
-	fi; \
 	if [ -d "$$dir" ]; then \
 		rm -rf "$$dir/index" "$$dir/thumbs"; \
 		rm -f "$$dir/metadata.db" "$$dir/metadata.db-wal" "$$dir/metadata.db-shm"; \
