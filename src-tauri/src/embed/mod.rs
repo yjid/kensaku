@@ -5,6 +5,7 @@ pub mod scanner;
 pub mod smart;
 pub mod table;
 pub mod units;
+pub mod visual;
 pub mod wordpiece;
 
 pub use model::{DEFAULT_MODEL_ID, EMBEDDING_DIM, ModelRegistry, REAL_MODEL_ID};
@@ -13,3 +14,4 @@ pub use queue::EmbeddingQueue;
 pub use scanner::{ExactScanner, SemanticHit};
 pub use table::StaticTable;
 pub use units::{Unit, UnitStore, chunk_text};
+pub use visual::{MockVisualEncoder, VISUAL_DIM, VisualEncoder, VisualStore, VisualUnit};

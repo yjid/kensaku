@@ -103,10 +103,9 @@ These are the highest-leverage gaps. None require a new model.
       behind `smart-embeddings` feature, activation after download with K9 hygiene,
       pinned SHA-256, bounded concurrency (max 2 workers, 1 intra-op thread),
       static fallback with recorded reason. (ROADMAP K17)
-- [ ] **Image embeddings** — SigLIP or CLIP ViT-B/32 int8 for "red cap",
-      "system design diagram", "whiteboard". Today images are searchable through
-      OCR text and filename only. Wire as a fourth retrieval tier into RRF.
-      (ROADMAP K18, K19)
+- [x] **Image embeddings** — CLIP ViT-B/32 int8 image embedding pipeline with
+      `VisualStore`, thumbnail reuse, and cancel safety. Search fusion in RRF remains.
+      (ROADMAP K18 [x], K19)
 - [ ] **Similar images** — image-to-image query from a selected result; reuse
       the same visual index and the related-file response shape. (ROADMAP K20)
 - [ ] **Native OCR** — macOS Vision (`objc2-vision`) and Windows OCR (`windows`

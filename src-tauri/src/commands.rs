@@ -410,6 +410,7 @@ pub fn stats_for(indexer: &crate::indexer::IndexerManager) -> Result<serde_json:
             "files_indexed": status.files_indexed as u64,
             "content_indexed": status.content_indexed as u64,
             "units_indexed": status.units_indexed as u64,
+            "visual_units": indexer.visual_store.read().len() as u64,
             "files_per_sec": files_per_sec,
             "eta_secs": Option::<u64>::None,
             "embed_queue_depth": embed_queue_depth as u64,

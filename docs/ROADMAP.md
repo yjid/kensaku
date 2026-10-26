@@ -41,7 +41,7 @@
 | K15 | Shipped — CJK-aware Tantivy tokenization, schema marker v2, 9.73x index size on CJK fixture |
 | K16 | Shipped — embedding provider contract, model-id isolation, doctor/stats reporting |
 | K17 | Shipped — optional ONNX smart pack (bge-small-en-v1.5 int8, smart-embeddings feature) |
-| K18 | Planned — image embedding pipeline |
+| K18 | Shipped — image embedding pipeline (VisualStore, thumbnail reuse, cancel safety) |
 | K19 | Planned — visual search tier |
 | K20 | Planned — similar-image lookup |
 | K21 | Planned — native platform OCR |
