@@ -56,8 +56,9 @@ sensitive paths); "planned" means it lives in this document.
 Two facts worth stating plainly, because older design docs can read as if they
 already shipped:
 
-- The GUI backend is **in-process**. The daemon topology in
-  [ARCHITECTURE.md](ARCHITECTURE.md) is the target, not the current state.
+- The daemon topology is **shipped**: the GUI, CLI, and MCP are clients of
+  `kensaku-daemon` over a Unix socket or Windows named pipe, with a read-only
+  fallback. Loopback HTTP/SSE and installer packaging remain planned.
 - `find_duplicates` is reachable through `/dupes`, which opens a review view
   (open/copy/reveal). Destructive deletion is intentionally not automated.
 
@@ -186,7 +187,7 @@ friend.
 | **Setup** | Guided first-run flow (folders → exclusions → preferences → optional packs → first scan → Done); downloads live in setup; Settings shows status and **Run setup again** | Vision Packs; setup-owned initial configuration refinements |
 | **Images** | OCR and filenames only | Visual search, similar images, diagrams, optional identity |
 | **LLM** | MCP config snippet | One-click connect; optional local intent compiler; cited `/ask` |
-| **Architecture** | In-process backend + per-call CLI | Warm daemon shared by GUI, CLI, and agents |
+| **Architecture** | Warm daemon shared by GUI, CLI, and agents | Loopback HTTP/SSE, installer-packaged daemon, native quick window |
 | **Voice** | Functional, editorial | Human, anticipatory, quiet; no chat assistant persona |
 
 ## What to add, prioritized
