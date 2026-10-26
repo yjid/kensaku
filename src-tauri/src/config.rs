@@ -87,6 +87,8 @@ impl Default for KensakuConfig {
             "zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz",
             // Binaries
             "exe", "dll", "so", "dylib", "bin", "o", "a", "lib", "class", "pyc", "pyo",
+            // Secrets / credentials
+            "pem", "key", "pfx", "p12", "crt", "cer",
             // Database
             "db", "sqlite", "sqlite3",
             // Lock files
@@ -113,7 +115,7 @@ impl Default for KensakuConfig {
             semantic_model: "static".to_string(),
             ocr_enabled: true,
             theme: default_theme(),
-            config_version: 3,
+            config_version: 4,
         }
     }
 }
@@ -181,6 +183,18 @@ impl KensakuConfig {
                 cfg.first_scan_done = true;
             }
             cfg.config_version = 3;
+            migrated = true;
+        }
+
+        if cfg.config_version < 4 {
+            // v4: default-deny common secret/credential file extensions.
+            const SENSITIVE_EXTS: &[&str] = &["pem", "key", "pfx", "p12", "crt", "cer"];
+            for ext in SENSITIVE_EXTS {
+                if !cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case(ext)) {
+                    cfg.excluded_extensions.push((*ext).to_string());
+                }
+            }
+            cfg.config_version = 4;
             migrated = true;
         }
 
@@ -324,7 +338,7 @@ mod tests {
     #[test]
     fn default_config_is_v2_and_paper() {
         let cfg = KensakuConfig::default();
-        assert_eq!(cfg.config_version, 3);
+        assert_eq!(cfg.config_version, 4);
         assert!(cfg.skip_hidden);
         assert!(cfg.ocr_enabled);
         assert_eq!(cfg.theme, "paper");
@@ -343,7 +357,7 @@ mod tests {
 
         let cfg = KensakuConfig::load_from_str(legacy);
 
-        assert_eq!(cfg.config_version, 3);
+        assert_eq!(cfg.config_version, 4);
         // Legacy document/image extensions are stripped (case-insensitively)...
         assert!(!cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case("pdf")));
         assert!(!cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case("png")));
@@ -370,10 +384,19 @@ mod tests {
         }"#;
 
         let cfg = KensakuConfig::load_from_str(current);
-        assert_eq!(cfg.config_version, 3);
+        assert_eq!(cfg.config_version, 4);
         assert_eq!(
             cfg.excluded_extensions,
-            vec!["rs".to_string(), "node_modules".to_string()]
+            vec![
+                "rs".to_string(),
+                "node_modules".to_string(),
+                "pem".to_string(),
+                "key".to_string(),
+                "pfx".to_string(),
+                "p12".to_string(),
+                "crt".to_string(),
+                "cer".to_string(),
+            ]
         );
     }
 
@@ -390,17 +413,26 @@ mod tests {
         }"#;
 
         let cfg = KensakuConfig::load_from_str(legacy);
-        assert_eq!(cfg.config_version, 3);
+        assert_eq!(cfg.config_version, 4);
         assert_eq!(
             cfg.excluded_extensions,
-            vec![".o".to_string(), "zip".to_string()]
+            vec![
+                ".o".to_string(),
+                "zip".to_string(),
+                "pem".to_string(),
+                "key".to_string(),
+                "pfx".to_string(),
+                "p12".to_string(),
+                "crt".to_string(),
+                "cer".to_string(),
+            ]
         );
     }
 
     #[test]
     fn corrupt_config_falls_back_to_defaults() {
         let cfg = KensakuConfig::load_from_str("{ not json");
-        assert_eq!(cfg.config_version, 3);
+        assert_eq!(cfg.config_version, 4);
         assert_eq!(cfg.theme, "paper");
     }
 
@@ -420,7 +452,7 @@ mod tests {
 
         let saved: KensakuConfig =
             serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(saved.config_version, 3);
+        assert_eq!(saved.config_version, 4);
         assert_eq!(saved.theme, "paper");
 
         // A second save replaces the existing file atomically.
