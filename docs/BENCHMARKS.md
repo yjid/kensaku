@@ -1,6 +1,6 @@
 # Benchmarks
 
-There are three in-tree harnesses:
+There are four in-tree harnesses:
 
 - `bench` measures the hot path of Kensaku: walking a directory tree, building
   the in-memory entry list, and running fuzzy filename queries. It deliberately
@@ -12,6 +12,10 @@ There are three in-tree harnesses:
 - `crawl_bench` builds a throwaway index in an isolated config directory and
   runs a fresh crawl plus an incremental re-crawl, reporting counts, wall time,
   and peak RSS (Linux).
+- `index_format_bench` generates the synthetic 1M-document corpus and compares
+  Tantivy, Tantivy + folded field, and SQLite FTS5 trigram (index time/size,
+  query p50/p95, and RSS). See
+  [the K12 decision](decisions/index-format.md).
 
 ## Running
 
@@ -24,6 +28,10 @@ cargo run --manifest-path src-tauri/Cargo.toml --example index_bench --release -
 
 # full fresh + incremental crawl in a throwaway index
 cargo run --manifest-path src-tauri/Cargo.toml --example crawl_bench --release -- ~/Pictures
+
+# K12 index-format comparison (one backend per process)
+cargo run --manifest-path src-tauri/Cargo.toml --example index_format_bench --release -- \
+  tantivy 1000000 /tmp/kensaku-k12-tantivy
 ```
 
 Always use `--release`. Debug builds are 10–50× slower and are not comparable
@@ -101,6 +109,7 @@ is dominated by the external tesseract process and is build-independent.
 | K7 scheduling + watcher | 400 ms settle and 500 ms fresh-file verification added; 6 watcher tests cover coalescing, fresh retries, rename, delete-while-paused, and overflow rescan. Keystroke p95 on a 10k-file crawl was not measured on this machine (no GUI corpus); priority is applied at crawl-thread start and can be disabled with `KENSAKU_NO_BG_PRIORITY=1`. |
 | K8 MCP v2 | Warm MCP search over stdio + daemon on a 1-file index (debug): p50 37.4 ms, p95 39.8 ms over 60 calls (acceptance < 50 ms). Local read-only MCP fallback over a 100-file fixture: p50 5.9 ms, p95 6.7 ms. Cursor pagination is tested across 5 exhaustive results; offsets are capped at 10,000 with an explicit `cursor_limit_reached` flag. Read-only tools are listed by default; `reindex` only appears when `mcp_allow_reindex=true` and the daemon is running. |
 | K10 external extractors | 19 tests: config round-trip/default-off, extension/MIME matching, relative-command rejection, odd filenames (no shell side effects), `{path}` as one argument, 150 ms timeout kills the process group, 1 KiB output cap, non-zero exit reporting, disabled-by-default enforcement, config validation, Doctor surfacing of commands and recent runtime failure reasons (recorded/cleared), a helper holding stdout after the parent exits is killed, and targeted pending marks. Integration test runs a configured plugin through `extract_document`; a manual daemon run indexed a configured `.k10ext` format on first scan and after a watcher-created file. Zero plugins by default. |
+| K12 index format | 1M synthetic docs (release, one writer thread): Tantivy baseline 4.8 s / 66.7 MB / 76 MB peak RSS; Tantivy + folded 17.0 s / 99.6 MB / 67 MB; SQLite FTS5 trigram 22.2 s / 918.4 MB / 147 MB. Broad BM25 p50 226 µs (baseline), 275 µs (folded), 258.1 ms (FTS5); folded lookalike 22 µs vs 58 µs; FTS5 query RSS 147 MB vs 61 MB. Recommendation: keep Tantivy and the folded field; no production change. See [docs/decisions/index-format.md](decisions/index-format.md). |
 | K11 search-result grouping | 10 tests (4 burst-signature/labeled-fixture, 3 SQLite burst assignment/chain merge/leader detach, 1 image/non-image collapse, 1 end-to-end burst collapse, 1 ignored release benchmark). Labeled fixture keeps identical/scrolled screenshots together and distinct pages with shared chrome apart. Release grouping over 50 results (including cloning the result list): p50 6,252 ns, p95 6,502 ns (< 0.1 ms acceptance). Backfill processes 50 images per idle batch; `/dupes` reads the same burst rows. |
 | K14 i8 embedding table | 29,528 × 256: f32 30,236,672 B (~28.8 MiB) → i8 + per-row scales 7,677,280 B (~7.3 MiB). Synthetic 96-row golden set: recall@5 1.000, MRR 1.000 (f32) / 1.000 (i8). 512-token `embed` p50 (debug): 1.227 ms f32 / 1.230 ms i8. Production model artifacts were not installed, so the real-corpus quality check remains to be run on a machine that has them. |
 | 200 screenshots, OCR | ~12 s (~17 files/s) |

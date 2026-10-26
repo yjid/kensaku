@@ -243,10 +243,10 @@ grouping costs < 0.1 ms per keystroke.
 
 ### K12. Index-format spike (timeboxed)
 
-- [ ] Benchmark Tantivy vs SQLite FTS5 trigram on the 1M corpus for name,
+- [x] Benchmark Tantivy vs SQLite FTS5 trigram on the 1M corpus for name,
   substring, BM25, and memory.
-- [ ] Decision memo: keep Tantivy, add a sidecar trigram, or replace.
-- [ ] Do not change the index without the numbers.
+- [x] Decision memo: keep Tantivy, add a sidecar trigram, or replace.
+- [x] Do not change the index without the numbers.
 
 ### K13. Native quick-search window (spike)
 

@@ -143,9 +143,11 @@ These are the highest-leverage gaps. None require a new model.
 - [~] **B4 full pushdown** — scope paths are now pushed into the Tantivy query
       as a path-prefix clause. `ext` / `size` fast fields still need schema work
       and a rebuild before those filters can be pushed too.
-- [ ] **1M-file prefilter** — 100k is ~2.8 ms; 1M is projected ~28 ms. A
-      trigram/prefix index or sharded scan is needed to hold <15 ms. Evaluate
-      Tantivy vs SQLite FTS5 trigram in [ROADMAP K12](ROADMAP.md#k12-index-format-spike-timeboxed).
+- [ ] **1M-file prefilter** — K12 measured the content-tier alternatives at
+      1M synthetic documents. FTS5 trigram used 918 MB and was ~900× slower on
+      broad BM25, so keep Tantivy + folded; a separate bounded prefilter is
+      still the next option if filename search exceeds the <15 ms budget. See
+      [the decision memo](decisions/index-format.md).
 - [ ] **Metadata arena** — still `Vec<FileEntry>` + `HashMap<PathBuf, usize>`.
       A compact arena (name bytes + parent id + attrs ≈ 40–50 B/entry) cuts the
       footprint ~3×. Target: 1M entries ≤ 100 MB (stretch 64 MB). Full task:
