@@ -26,7 +26,7 @@
 | K2 | Shipped — 92.8 MB at 1M (target ≤ 100 MB) |
 | K3 | Shipped — legacy 320 px fix, thumbnail hashing, one-decode backfill, thumbnail-only hashing |
 | K4 | Shipped — visible-only snippets, daemon read_snippet, line ranges, LRU |
-| K5 | Shipped — folded tier + verification; verification tightening pending |
+| K5 | Shipped — folded tier, OCR-lookalike verification, `internally` negative case |
 | K6 | Shipped — PP-OCRv6 tiny pack, 100% fixture recall; native platform OCR in B |
 | K7 | Shipped — default mode now `full`; measurement pending |
 | K8 | Shipped |
