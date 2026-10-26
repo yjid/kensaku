@@ -534,6 +534,17 @@ fn is_fresh(target: &Path, source: &Path) -> bool {
     let Ok(source_meta) = std::fs::metadata(source) else {
         return false;
     };
+    // Only thumbnails produced by the current 480 px policy are reusable for
+    // hashing. Legacy thumbnails are smaller and are regenerated instead.
+    let Ok((target_width, target_height)) = image::image_dimensions(target) else {
+        return false;
+    };
+    if target_width.max(target_height) != 480 {
+        return false;
+    }
+    let Ok(_) = image::image_dimensions(source) else {
+        return false;
+    };
     match (target_meta.modified(), source_meta.modified()) {
         (Ok(target_time), Ok(source_time)) => target_time >= source_time,
         _ => false,
@@ -734,6 +745,31 @@ mod tests {
         assert_eq!(
             first_mtime, second_mtime,
             "fresh thumbnail must not be rewritten"
+        );
+    }
+
+    #[test]
+    fn legacy_thumbnail_is_regenerated() {
+        let dir = TempDir::new("legacy-thumb");
+        let source = dir.join("photo.png");
+        let out_dir = dir.join("thumbs");
+        gradient(&source, false);
+
+        let thumb = thumbnail_path(&source, &out_dir);
+        std::fs::create_dir_all(&out_dir).expect("thumb dir");
+        let legacy = image::RgbImage::new(320, 240);
+        legacy
+            .save_with_format(&thumb, image::ImageFormat::Jpeg)
+            .expect("legacy thumbnail");
+        let cached = phash64_cached(&source, &out_dir).expect("regenerated hash");
+        let direct = phash64(&source).expect("direct hash");
+        assert_eq!(cached, direct);
+
+        let regenerated = image::open(&thumb).expect("regenerated thumbnail");
+        assert!(regenerated.width() <= 480 && regenerated.height() <= 480);
+        assert!(
+            regenerated.width() > 320 || regenerated.height() > 240,
+            "legacy 320 px thumbnail must be replaced"
         );
     }
 

@@ -83,12 +83,14 @@ full images and holds the buffers. `malloc_trim`/`malloc_zone_pressure_relief`
 returns pages between images.
 
 **Work**
-- [ ] K3.1 Generate the 480 px thumbnail once per image (during or just after
+- [x] K3.1 Generate the 480 px thumbnail once per image (during or just after
   extraction) and compute the dHash from it.
-- [ ] K3.2 Reuse the thumbnail for the grid/preview; never decode twice.
-- [ ] K3.3 `release_memory()` after each image/PDF: `malloc_trim(0)` (glibc),
+- [x] K3.2 Reuse the thumbnail for the grid/preview; never decode twice.
+- [x] K3.3 `release_memory()` after each image/PDF: `malloc_trim(0)` (glibc),
   `malloc_zone_pressure_relief` (macOS), `EmptyWorkingSet`/`SetProcessWorkingSetSize`
   (Windows).
+- [x] K3.4 Reject legacy 320 px thumbnails for hashing and regenerate them;
+  bump `image_hash_version` to 2 so mixed hash spaces cannot occur.
 - [ ] K3.4 Keep the backfill one-decode-at-a-time and pausable.
 - [ ] K3.5 If a thumbnail already exists, hash it without decoding the original.
 
