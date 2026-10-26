@@ -357,6 +357,55 @@ impl IndexerManager {
         }
     }
 
+    /// Read-only handle used by GUI clients that talk to a daemon. It loads the
+    /// persisted metadata and Tantivy index without taking a writer lock or
+    /// starting a watcher, so it can coexist with the daemon.
+    pub fn new_readonly(config: KensakuConfig) -> Self {
+        crate::indexer::extract::set_external_extractors(config.extractors.clone());
+        let index_dir = KensakuConfig::index_dir();
+        let content_index = ContentIndex::open_read_only(&index_dir).ok();
+        let metadata_store = Arc::new(RwLock::new(MetadataStore::new()));
+        let unit_store = Arc::new(RwLock::new(UnitStore::new(EMBEDDING_DIM)));
+        let query_in_flight = Arc::new(AtomicBool::new(false));
+
+        let mut units_count = 0;
+        if let Some(db) = metadata_store.read().db() {
+            let mut store = unit_store.write();
+            if let Ok(count) = db.load_units_into(&mut store) {
+                units_count = count;
+            }
+        }
+
+        Self {
+            metadata: metadata_store,
+            content_index: Arc::new(RwLock::new(content_index)),
+            unit_store,
+            embedding_queue: Arc::new(Mutex::new(None)),
+            query_in_flight,
+            config: Arc::new(RwLock::new(config)),
+            status: Arc::new(RwLock::new(IndexingStatus {
+                is_indexing: false,
+                files_indexed: 0,
+                content_indexed: 0,
+                current_status: "Daemon-backed (read-only client)".to_string(),
+                is_embedding: false,
+                units_indexed: units_count,
+                semantic_ready: units_count > 0,
+                phase: "idle".to_string(),
+                total_files: 0,
+                extract_done: 0,
+                extract_total: 0,
+                paused: false,
+            })),
+            crawl_start_unix_ms: Arc::new(AtomicU64::new(0)),
+            last_reconcile_unix_secs: Arc::new(AtomicU64::new(0)),
+            watcher_ok: Arc::new(AtomicBool::new(false)),
+            is_running: Arc::new(AtomicBool::new(false)),
+            watcher_handle: Arc::new(Mutex::new(None)),
+            app_handle: Arc::new(RwLock::new(None)),
+        }
+    }
+
     pub fn set_app_handle(&self, handle: tauri::AppHandle) {
         *self.app_handle.write() = Some(handle);
     }
@@ -432,6 +481,15 @@ impl IndexerManager {
     }
 
     pub fn start_indexing(&self) {
+        if !self
+            .content_index
+            .read()
+            .as_ref()
+            .map(|index| index.is_writable())
+            .unwrap_or(false)
+        {
+            return;
+        }
         if self.is_running.swap(true, Ordering::SeqCst) {
             // Already running
             return;
@@ -1151,6 +1209,67 @@ impl IndexerManager {
     /// True while a live filesystem watcher is running.
     pub fn watcher_ok(&self) -> bool {
         self.watcher_ok.load(Ordering::Relaxed)
+    }
+
+    pub fn apply_config(&self, config: KensakuConfig) -> Result<(), String> {
+        let previous = self.config.read().clone();
+        let ocr_changed = previous.ocr_enabled != config.ocr_enabled;
+        let extractors_changed = previous.extractors != config.extractors;
+
+        config.save()?;
+        *self.config.write() = config.clone();
+
+        let mut reindex = false;
+        if ocr_changed {
+            crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
+            let marked = self.metadata.write().mark_images_pending();
+            eprintln!(
+                "[Kensaku] OCR {}: {} image(s) queued for re-scan",
+                if config.ocr_enabled { "enabled" } else { "disabled" },
+                marked
+            );
+            reindex = true;
+        }
+
+        if extractors_changed {
+            crate::indexer::extract::set_external_extractors(config.extractors.clone());
+            let active: Vec<_> = previous
+                .extractors
+                .iter()
+                .chain(config.extractors.iter())
+                .filter(|extractor| extractor.enabled)
+                .collect();
+            if !active.is_empty() {
+                let extensions: Vec<String> = active
+                    .iter()
+                    .flat_map(|extractor| extractor.extensions.iter().cloned())
+                    .collect();
+                let broad = active.iter().any(|extractor| {
+                    extractor.mime.iter().any(|selector| !selector.trim().is_empty())
+                        || extractor
+                            .extensions
+                            .iter()
+                            .any(|selector| selector.trim().trim_start_matches('.') == "*")
+                });
+                let marked = if broad || extensions.is_empty() {
+                    self.metadata.write().mark_all_content_pending()
+                } else {
+                    self.metadata
+                        .write()
+                        .mark_extensions_pending(&extensions)
+                };
+                eprintln!(
+                    "[Kensaku] External extractors changed; {} file(s) queued for re-scan",
+                    marked
+                );
+                reindex = true;
+            }
+        }
+
+        if reindex {
+            self.start_indexing();
+        }
+        Ok(())
     }
 }
 

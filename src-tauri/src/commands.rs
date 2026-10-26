@@ -149,6 +149,18 @@ pub async fn search(
     let req_seq = seq.unwrap_or_else(|| CURRENT_SEARCH_SEQ.fetch_add(1, Ordering::SeqCst) + 1);
     CURRENT_SEARCH_SEQ.store(req_seq, Ordering::SeqCst);
 
+    if let Some(daemon) = state.daemon.as_ref() {
+        let mut resp = daemon.search_page(
+            query.clone(),
+            state.indexer.config.read().max_results,
+            offset.unwrap_or(0),
+            false,
+        )?;
+        resp.seq = req_seq;
+        record_query_latency(started.elapsed().as_micros() as u64);
+        return Ok(resp);
+    }
+
     let indexer = &state.indexer;
     indexer.query_in_flight.store(true, Ordering::SeqCst);
 
@@ -232,6 +244,12 @@ pub async fn legacy_search(
     state: State<'_, AppState>,
 ) -> Result<Vec<SearchResult>, String> {
     let started = Instant::now();
+    if let Some(daemon) = state.daemon.as_ref() {
+        let resp = daemon.search_page(query.clone(), state.indexer.config.read().max_results, 0, false)?;
+        record_query_latency(started.elapsed().as_micros() as u64);
+        return Ok(resp.results);
+    }
+
     let indexer = &state.indexer;
     indexer.query_in_flight.store(true, Ordering::SeqCst);
 
@@ -258,6 +276,9 @@ pub async fn legacy_search(
 
 #[tauri::command]
 pub async fn get_indexing_status(state: State<'_, AppState>) -> Result<IndexingStatus, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.get_status();
+    }
     Ok(state.indexer.get_status())
 }
 
@@ -791,83 +812,22 @@ pub async fn read_file_content(path: String) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn get_config(state: State<'_, AppState>) -> Result<KensakuConfig, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.get_config();
+    }
     Ok(state.indexer.config.read().clone())
 }
 
 #[tauri::command]
 pub async fn save_config(config: KensakuConfig, state: State<'_, AppState>) -> Result<(), String> {
-    let previous = state.indexer.config.read().clone();
-    let ocr_changed = previous.ocr_enabled != config.ocr_enabled;
-    let extractors_changed = previous.extractors != config.extractors;
-
-    config.save()?;
-    *state.indexer.config.write() = config.clone();
-
-    let mut reindex = false;
-    if ocr_changed {
-        // Apply the setting immediately, then flag only the image rows for a
-        // re-read. `start_indexing` spawns its own thread, so the IPC call
-        // returns without waiting for the crawl.
-        crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
-        let marked = state.indexer.metadata.write().mark_images_pending();
-        eprintln!(
-            "[Kensaku] OCR {}: {} image(s) queued for re-scan",
-            if config.ocr_enabled {
-                "enabled"
-            } else {
-                "disabled"
-            },
-            marked
-        );
-        reindex = true;
+    if let Some(daemon) = state.daemon.as_ref() {
+        daemon.save_config(config.clone())?;
+        *state.indexer.config.write() = config;
+        return Ok(());
     }
-
-    if extractors_changed {
-        // External extractor commands are opt-in and only ever run from config.
-        // Their cached results must not survive an edit.
-        crate::indexer::extract::set_external_extractors(config.extractors.clone());
-        let active: Vec<_> = previous
-            .extractors
-            .iter()
-            .chain(config.extractors.iter())
-            .filter(|extractor| extractor.enabled)
-            .collect();
-        if !active.is_empty() {
-            let extensions: Vec<String> = active
-                .iter()
-                .flat_map(|extractor| extractor.extensions.iter().cloned())
-                .collect();
-            // MIME selectors and `*` cannot be narrowed to an extension, so
-            // re-read every file once. Disabled-only edits need no rescan.
-            let broad = active.iter().any(|extractor| {
-                extractor.mime.iter().any(|selector| !selector.trim().is_empty())
-                    || extractor.extensions.iter().any(|selector| {
-                        selector.trim().trim_start_matches('.') == "*"
-                    })
-            });
-            let marked = if broad || extensions.is_empty() {
-                state.indexer.metadata.write().mark_all_content_pending()
-            } else {
-                state
-                    .indexer
-                    .metadata
-                    .write()
-                    .mark_extensions_pending(&extensions)
-            };
-            eprintln!(
-                "[Kensaku] External extractors changed; {} file(s) queued for re-scan",
-                marked
-            );
-            reindex = true;
-        }
-    }
-
-    if reindex {
-        state.indexer.start_indexing();
-    }
-
-    Ok(())
+    state.indexer.apply_config(config)
 }
+
 
 #[tauri::command]
 pub async fn is_setup_complete() -> Result<bool, String> {

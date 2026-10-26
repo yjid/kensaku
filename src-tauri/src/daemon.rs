@@ -119,3 +119,100 @@ mod tests {
         assert!(authenticate("good", Some("good"), Some(PROTOCOL_VERSION)).is_ok());
     }
 }
+
+#[derive(Clone, Copy)]
+pub struct DaemonClient;
+
+impl DaemonClient {
+    #[cfg(unix)]
+    pub fn ensure() -> bool {
+        if request("ping", serde_json::json!({})).is_ok() {
+            return true;
+        }
+        let Some(exe) = daemon_binary_path() else {
+            return false;
+        };
+        let mut command = std::process::Command::new(exe);
+        command
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        if command.spawn().is_err() {
+            return false;
+        }
+        for _ in 0..40 {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            if request("ping", serde_json::json!({})).is_ok() {
+                return true;
+            }
+        }
+        false
+    }
+
+    #[cfg(not(unix))]
+    pub fn ensure() -> bool {
+        false
+    }
+
+    pub fn search_page(
+        &self,
+        query: String,
+        limit: usize,
+        offset: usize,
+        snippets: bool,
+    ) -> Result<crate::search::SearchResponse, String> {
+        let value = request(
+            "search",
+            serde_json::json!({
+                "query": query,
+                "limit": limit,
+                "offset": offset,
+                "snippets": snippets,
+            }),
+        )?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
+    pub fn get_status(&self) -> Result<crate::indexer::IndexingStatus, String> {
+        let value = request("get_status", serde_json::json!({}))?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
+    pub fn get_config(&self) -> Result<KensakuConfig, String> {
+        let value = request("get_config", serde_json::json!({}))?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
+    pub fn save_config(&self, config: KensakuConfig) -> Result<(), String> {
+        request(
+            "save_config",
+            serde_json::json!({ "config": config }),
+        )?;
+        Ok(())
+    }
+
+    pub fn reindex(&self) -> Result<(), String> {
+        request("reindex", serde_json::json!({}))?;
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+fn daemon_binary_path() -> Option<std::path::PathBuf> {
+    let name = "kensaku-daemon";
+    let mut candidates = Vec::new();
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        candidates.push(dir.join(name));
+    }
+    if let Ok(path) = std::env::var("PATH") {
+        for dir in path.split(':') {
+            candidates.push(std::path::PathBuf::from(dir).join(name));
+        }
+    }
+    candidates.push(std::path::PathBuf::from("src-tauri/target/debug").join(name));
+    candidates.push(std::path::PathBuf::from("src-tauri/target/release").join(name));
+    candidates.push(std::path::PathBuf::from("cli/target/debug").join(name));
+    candidates.into_iter().find(|path| path.is_file())
+}
