@@ -1,13 +1,24 @@
 # FAQ
 
 **Is anything sent to the cloud?**
-No. There is no telemetry and no account. The only network request is the optional
-model-file download you trigger in Settings.
+No. There is no telemetry and no account. The only network request is an optional
+model or OCR language download you choose during setup (currently surfaced in
+Settings).
 
 **Why is the first launch slow?**
-It builds the index. After that, startup is search-first: the snapshot loads and a
-background reconcile keeps it honest. Large corpora can take minutes on first run;
-you can search while it works.
+It builds the index. Today you can search while it works. The planned first-run
+flow will complete the initial scan before opening the main window, showing live
+counts and ending with a Done screen; later launches stay search-first and
+instant. See [VISION.md](VISION.md).
+
+**What happens during setup?**
+Today: three screens (welcome, folders, exclusions), then indexing continues in
+the background; OCR and model downloads live in Settings. Planned: one guided
+flow covering preferences, optional packs/downloads, and a first scan that shows
+files, folders, documents, images, OCR'd images, and embeddings, then ends in a
+clear Done state before the main window opens. Downloads and initial
+configuration happen only there; Settings will link to **Run setup again**. See
+[VISION.md](VISION.md).
 
 **Why does search return nothing for a word I know is in a file?**
 Check: is the folder watched? Is the extension in the excluded list? Is the file
@@ -37,7 +48,9 @@ milestone — see [VISION.md](VISION.md).
 **OCR is on but no image text is indexed.**
 Tesseract is probably installed without language data. Settings → Search shows
 the state; click **Download English · 4 MB** (or install `tesseract-ocr-eng`),
-then save. Existing images are re-scanned. Doctor repeats the check.
+then save. Existing images are re-scanned. Doctor repeats the check. Planned:
+OCR language data moves into the first-run setup flow; Settings will show status
+and link to **Run setup again** instead of downloading separately.
 
 **Can it search across multiple drives?**
 Yes. Add each root in Settings → Folders. Unplugged drives are preserved rather

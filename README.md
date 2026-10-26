@@ -180,6 +180,8 @@ thought and a file**:
    and an optional local "this is me" identity. No image leaves the machine.
 4. **Connect** — a warm daemon that serves the GUI, CLI, and any MCP-capable
    agent, plus an optional local `/ask` with path citations.
+5. **Set up once** — a guided first run owns folders, preferences, downloads,
+   and the first scan. The main window opens when the index is actually ready.
 
 Plain language stays the default. `/` is for what you want, `@` is for where it
 lives. The existing query grammar remains for power users and agents. Full
@@ -222,9 +224,10 @@ scope, acceptance tests, and open decisions: [docs/VISION.md](docs/VISION.md).
 hybrid ranking, documents + OCR, image thumbnails and near-duplicates, agent
 CLI/MCP, two themes, Doctor, Stats for Nerds, factory reset, tests and CI.
 
-Not yet: natural-language intent, `/` + `@` interaction, instant facet counts,
-CLIP/SigLIP visual search, face identity, native platform OCR, a warm agent
-daemon, a 1M-file prefilter, signing/notarization, auto-update, final artwork.
+Not yet: guided setup and first-scan completion, natural-language intent,
+`/` + `@` interaction, instant facet counts, CLIP/SigLIP visual search, face
+identity, native platform OCR, a warm agent daemon, a 1M-file prefilter,
+signing/notarization, auto-update, final artwork.
 See [docs/REMAINING.md](docs/REMAINING.md).
 
 **Where this is going:** a memory that understands a sentence, filters like a

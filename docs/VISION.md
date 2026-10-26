@@ -48,7 +48,7 @@ lives in this document.
 | **Content** | Text, code, configs, logs; PDF, DOCX/PPTX/XLSX, EPUB/ODT/RTF; image OCR via tesseract | Native OCR; scanned-PDF OCR; video/audio content |
 | **Images** | Filename, OCR text, dimensions, thumbnails, perceptual hashes, near-duplicate groups | CLIP/SigLIP visual search; similar images; face identity; captions |
 | **Surfaces** | Desktop GUI; CLI; MCP over stdio | Warm shared daemon; local HTTP; one-click agent connect |
-| **Interaction** | Search-as-you-type, category chips, list/grid, preview, command palette, `>` commands, full filter grammar | Natural-language intent; `/` and `@`; visible interpretation; sort; aliases; facets; saved searches |
+| **Interaction** | Search-as-you-type, category chips, list/grid, preview, command palette, `>` commands, full filter grammar | Natural-language intent; `/` and `@`; visible interpretation; sort; aliases; facets; saved searches; one guided setup flow |
 | **Intelligence** | Semantic tier; frecency; recency boost | Explicit "latest" sort; version grouping; personal vocabulary; optional local LLM query compiler; `/ask` with citations |
 | **Trust** | Local-only, no telemetry, atomic config, crash log, Doctor | Default-deny sensitive files; face-data controls; cloud-consent UX |
 
@@ -110,6 +110,41 @@ docker error @Projects /week
 → duplicate cleanup, grouped by content hash and near-identical images
 ```
 
+### First run: setup owns everything
+
+The first run is **one guided flow**, not a settings scavenger hunt. Downloads,
+initial configuration, and model acquisition happen **only here**.
+
+```text
+Welcome
+  → Folders to watch
+  → Preferences (theme, shortcut, exclusions preset)
+  → Optional packs (OCR language, semantic model, Vision Pack) with sizes
+  → First scan: live counts, current path, ETA, resume if interrupted
+  → Done: summary (files, folders, docs, images, vectors) + "Start searching"
+```
+
+Rules:
+
+- **Downloads live in setup only.** OCR language data, semantic models, and
+  Vision Packs are acquired here. Settings may show installed status and offer
+  "Run setup again"; it must not duplicate download actions.
+- **Initial configuration happens in setup.** Watched folders, exclusion
+  presets, theme, shortcut, and optional packs are asked once, in context.
+  Settings shows the current values and links to "Run setup again" instead of
+  duplicating the flow.
+- **The first scan completes before the main window opens.** Show real counts
+  (files, folders, documents, images, OCR'd images, embedded units), the
+  current path, and a credible ETA. Finish with a clear **Done** state.
+- **No partial index is presented as complete.** If the scan is interrupted,
+  it resumes from a cursor; the Done screen only appears when the first index
+  is actually usable.
+- **Optional packs are truly optional.** Declining them leaves keyword search
+  working; the app never blocks on a download unless the user chose it.
+- **Subsequent launches stay search-first.** Only the *first* index waits.
+  Later boots load the snapshot instantly and reconcile in the background,
+  exactly as today.
+
 ### Response shape
 
 Every response should carry more than results:
@@ -146,6 +181,7 @@ friend.
 | **Results** | Flat list / grid | Best-guess result, grouped versions, facets, related files |
 | **Commands** | `>` prefix in the search box | `/` command menu; same capabilities, discoverable |
 | **Home** | Empty search box | Recent work, pins, suggestions, one input |
+| **Setup** | Configuration, OCR data, and model downloads scattered across Settings; first scan runs in the background | One guided first-run flow owns folders, preferences, downloads, and model packs; first scan completes before the main window opens |
 | **Images** | OCR and filenames only | Visual search, similar images, diagrams, optional identity |
 | **LLM** | MCP config snippet | One-click connect; optional local intent compiler; cited `/ask` |
 | **Architecture** | In-process backend + per-call CLI | Warm daemon shared by GUI, CLI, and agents |
@@ -163,6 +199,7 @@ friend.
 | **P0** | Facet bar with live counts | "Filter anything" feels instant | M |
 | **P0** | Saved searches / smart folders | Personal memory; repeatable intent | M |
 | **P0** | Duplicate cleanup UI | Backend already exists; high perceived value | S |
+| **P0** | Guided first-run setup flow | One place for folders, preferences, downloads, and a completed first scan | M |
 | **P0** | Default-deny sensitive files | Must precede face and vision features | S |
 | **P0** | `/` command menu and `@` scope mentions | Familiar LLM-style acceleration | S |
 | **P0** | New home and result states | Makes it feel personal before the first keystroke | M |
@@ -199,9 +236,12 @@ reviewable and testable.
 4. **Add `/` and `@` to the search input.** `/` opens the command menu, `@`
    resolves scopes through the existing directory trie. Keep the grammar
    fallback and the keyboard shortcut behavior.
-5. **Ship the home and grouped-result states**, then surface the existing
+5. **Build the guided setup flow.** Folders, preferences, optional packs, and
+   downloads live here. Gate the main window on the first scan and finish with a
+   Done summary.
+6. **Ship the home and grouped-result states**, then surface the existing
    duplicate finder as `/dupes`.
-6. **Only then** consider the optional local LLM compiler. The deterministic
+7. **Only then** consider the optional local LLM compiler. The deterministic
    path must be good without it.
 
 ### Milestone 1 — "It understands me"
@@ -218,8 +258,20 @@ learning syntax.
 - `/` command menu and `@` scope mentions
 - New home state (recent, pins, suggestions) and grouped result states
 - Duplicate cleanup view
+- Guided first-run setup: folders, preferences, optional packs, first scan with
+  live counts, and a Done summary
+- Downloads and initial configuration only in setup; Settings shows status and
+  can re-run setup
 
 **Acceptance**
+- A fresh install goes welcome → folders → preferences → optional packs → first
+  scan → Done without opening Settings. No download is initiated anywhere else.
+- The scan shows files, folders, documents, images, OCR'd images, and embedded
+  units, plus the current path and a credible ETA. The Done screen only appears
+  when the index is usable.
+- An interrupted first scan resumes; a partial index is never presented as
+  complete.
+- After setup, later launches remain search-first and instant.
 - A frozen 40-query golden set includes "latest resume", "screenshots from
   last week", "docker error in Projects", "my biggest videos", "the invoice
   from March". Top-1 or top-3 expectations are met.
@@ -324,7 +376,10 @@ gets there without refining.
 | p95 keystroke → paint at 1M files | < 40 ms |
 | Interpretation visible | 100% of queries |
 | Silent filters / silent zero-results | 0 |
-| First run decisions | ≤ 2 (folder + start) |
+| First-run path | One guided flow: folders → preferences → packs → scan → Done |
+| Downloads outside setup | 0 |
+| First scan completion | Counts shown; resumes after interruption; no partial index marked complete |
+| First run decisions | Folders + optional packs, all inside the guided flow |
 | MCP search p95, warm | < 50 ms |
 | Network calls in default configuration | 0 |
 | Facet toggle → repaint at 100k files | < 50 ms |
@@ -348,6 +403,11 @@ existing latency gates. Product quality that is not measured will regress.
 **Guardrails**
 
 - Local-only by default. Any cloud call is explicit, per-use, and visible.
+- Downloads and initial configuration happen in the guided setup flow only.
+  Settings shows status and can re-run setup; it never adds a parallel download
+  path.
+- A partial first index is never presented as complete. The Done state appears
+  only when the index is usable.
 - Sensitive paths are default-deny before vision or face features ship:
   `~/.ssh`, `~/.gnupg`, browser profiles, password managers, `.env`, `*.pem`,
   `*.key`.
@@ -379,6 +439,10 @@ existing latency gates. Product quality that is not measured will regress.
    queries? If auto, never create silently.
 8. **Version grouping.** Heuristics by name + size + time, or explicit user
    merging? False grouping is worse than no grouping.
+9. **First scan on very large drives.** Block the main window with progress and
+   an ETA, or offer an explicit "continue in background" escape hatch? Default:
+   block. The escape hatch, if any, must be visible and must not mark the index
+   complete.
 
 ---
 

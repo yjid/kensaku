@@ -63,6 +63,19 @@ These are the highest-leverage gaps. None require a new model.
       suggestions, best-guess card, grouped versions, related files.
 - [ ] **Duplicate cleanup UI** — `find_duplicates` already groups exact content
       duplicates and near-duplicate images; nothing in the frontend calls it.
+- [ ] **Guided first-run setup flow** — welcome → folders → preferences →
+      optional packs → first scan → Done. Replace the current three-screen modal
+      that closes immediately.
+- [ ] **Setup-owned downloads and configuration** — OCR language, semantic
+      models, and Vision Packs are acquired only in setup. Settings shows
+      current values, installed status, and a "Run setup again" entry point, not
+      a parallel setup or download UI. Watched folders, exclusions, theme, and
+      shortcut are asked in context.
+- [ ] **First-scan completion gate** — persist `first_scan_done`; `is_setup_complete`
+      returns true only after the initial crawl finishes. Show files, folders,
+      documents, images, OCR'd images, and embedded units with current path and
+      ETA; resume after interruption; never show Done on a partial index.
+      Subsequent launches remain search-first.
 - [ ] **Voice and microcopy pass** — human, anticipatory, quiet. No chat
       persona, no "How can I help you today?".
 
