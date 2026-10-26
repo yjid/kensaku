@@ -17,7 +17,7 @@ import { Switch } from "./kit";
    reserved so resolving the status never shifts the row. */
 
 const OCR_DESCRIPTION =
-  "Read text from screenshots, scans and photos using Tesseract. Existing images are re-scanned after saving.";
+  "Read text from screenshots, scans and photos. Tesseract is the fast default; PP-OCRv6 is an optional slower engine. Existing images are re-scanned after saving.";
 
 const INSTALL_COMMANDS = [
   {
@@ -113,11 +113,25 @@ export function OcrField({
     }
   };
 
-  const unavailable = status !== null && !status.available;
-  const engineMissing = status !== null && !status.engine_present;
-  const noLanguages = !engineMissing && status !== null && !status.available;
+  const engine = config.ocr_engine ?? "tesseract";
+  const usingPpocr = engine === "accurate";
+  const ppocrReady = !!status?.accurate_compiled && !!pack?.ready;
+  const unavailable = usingPpocr
+    ? !ppocrReady
+    : status !== null && !status.available;
+  const engineMissing = !usingPpocr && status !== null && !status.engine_present;
+  const noLanguages = !usingPpocr && !engineMissing && status !== null && !status.available;
 
-  const hint: React.ReactNode | null = engineMissing ? (
+  const hint: React.ReactNode | null = usingPpocr ? (
+    ppocrReady ? (
+      <span className="font-mono text-muted">PP-OCRv6 ready</span>
+    ) : (
+      <>
+        <TriangleAlert className="h-3 w-3 shrink-0 text-warning" />
+        <span className="text-warning">PP-OCRv6 pack is not downloaded yet.</span>
+      </>
+    )
+  ) : engineMissing ? (
     <>
       <TriangleAlert className="h-3 w-3 shrink-0 text-warning" />
       <span className="text-warning">tesseract not found or not runnable.</span>
@@ -151,13 +165,36 @@ export function OcrField({
         />
       </div>
 
-      {status?.accurate_compiled ? (
+      <div className="mt-3 flex items-center justify-between gap-4 border-t border-line pt-3">
+        <div>
+          <p className="text-[11px] font-medium text-fg">OCR engine</p>
+          <p className="text-[10px] text-muted">Pick one. Both read images; they are alternatives.</p>
+        </div>
+        <select
+          aria-label="OCR engine"
+          value={engine}
+          onChange={(e) =>
+            setConfig((c) =>
+              c ? { ...c, ocr_engine: e.target.value as "tesseract" | "accurate" } : c,
+            )
+          }
+          className="h-8 rounded-[10px] border border-line bg-elevated px-2 text-[11px] text-fg"
+        >
+          <option value="tesseract">Tesseract — fast, smaller</option>
+          <option value="accurate" disabled={!status?.accurate_compiled}>
+            PP-OCRv6 — slower, UI text
+          </option>
+          <option disabled>Native — not available yet</option>
+        </select>
+      </div>
+
+      {usingPpocr && (status?.accurate_compiled ? (
         <div className="mt-3 border-t border-line pt-3">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-[11px] font-medium text-fg">Accurate OCR pack</p>
+              <p className="text-[11px] font-medium text-fg">PP-OCRv6 pack</p>
               <p className="text-[10px] leading-relaxed text-muted">
-                PP-OCRv6 tiny · about 6 MB · higher recall on UI text · uses PP-OCRv6.
+                About 6 MB · slower, in-process · may read small UI text better.
               </p>
               <p className="mt-0.5 font-mono text-[10px] text-subtle">
                 {pack?.downloading
@@ -172,21 +209,6 @@ export function OcrField({
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <select
-                aria-label="OCR engine"
-                value={config.ocr_engine ?? "tesseract"}
-                onChange={(e) =>
-                  setConfig((c) =>
-                    c ? { ...c, ocr_engine: e.target.value as "tesseract" | "accurate" } : c,
-                  )
-                }
-                className="h-8 rounded-[10px] border border-line bg-elevated px-2 text-[11px] text-fg"
-              >
-                <option value="tesseract">Tesseract</option>
-                <option value="accurate" disabled={!pack?.ready}>
-                  Accurate
-                </option>
-              </select>
               {!pack?.ready && (
                 <button
                   type="button"
@@ -226,10 +248,10 @@ export function OcrField({
       ) : (
         <div className="mt-3 border-t border-line pt-3">
           <p className="text-[11px] leading-relaxed text-muted">
-            Accurate OCR pack (PP-OCRv6) is not included in this build.
+            PP-OCRv6 is not compiled into this build. Rebuild with default features to enable it.
           </p>
         </div>
-      )}
+      ))}
 
       {!unavailable ? null : engineMissing ? (
         /* tesseract absent — show the install command for this platform,

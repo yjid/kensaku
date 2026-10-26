@@ -47,6 +47,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const [ocrPackStatus, setOcrPackStatus] = useState<ModelsStatus | null>(null);
   const [ocrStatus, setOcrStatus] = useState<OcrStatus | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrEngine, setOcrEngine] = useState<"tesseract" | "accurate">("tesseract");
   const [packError, setPackError] = useState<string | null>(null);
   const etaRef = useRef<{ phase: string; done: number; at: number; total: number }>({
     phase: "",
@@ -181,6 +182,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         watchedDirs: selectedDirs,
         excludedDirs: excludedDirs,
         shortcut: shortcut,
+        ocrEngine,
       });
       setScanning(true);
     } catch (err) {
@@ -537,6 +539,46 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             </div>
             <div className="space-y-2">
               <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+                <span className="block text-[12px] font-medium text-fg">Choose one OCR engine</span>
+                <span className="block text-[11px] text-muted">
+                  Download only the engine you want. Both read images; they are alternatives.
+                </span>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setOcrEngine("tesseract")}
+                    className={`rounded-[12px] border px-3 py-2 text-left transition-colors ${
+                      ocrEngine === "tesseract"
+                        ? "border-accent bg-accent/10"
+                        : "border-line hover:border-line-strong"
+                    }`}
+                  >
+                    <span className="block text-[11px] font-medium text-fg">Tesseract</span>
+                    <span className="block text-[10px] text-muted">Fast · smaller · default</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!ocrStatus?.accurate_compiled}
+                    onClick={() => setOcrEngine("accurate")}
+                    className={`rounded-[12px] border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+                      ocrEngine === "accurate"
+                        ? "border-accent bg-accent/10"
+                        : "border-line hover:border-line-strong"
+                    }`}
+                  >
+                    <span className="block text-[11px] font-medium text-fg">PP-OCRv6</span>
+                    <span className="block text-[10px] text-muted">Slower · may read small UI text better</span>
+                  </button>
+                </div>
+                {!ocrStatus?.accurate_compiled && (
+                  <p className="pt-2 text-[10px] text-subtle">
+                    PP-OCRv6 is not compiled into this build. Rebuild with default features to enable it.
+                  </p>
+                )}
+              </div>
+
+              {ocrEngine === "tesseract" && (
+              <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <span className="block text-[12px] font-medium text-fg">OCR language data</span>
@@ -584,16 +626,17 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                   </p>
                 )}
               </div>
+              )}
 
-              {ocrStatus?.accurate_compiled ? (
+              {ocrEngine === "accurate" && (ocrStatus?.accurate_compiled ? (
                 <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <span className="block text-[12px] font-medium text-fg">
-                        Accurate OCR pack
+                        PP-OCRv6 pack
                       </span>
                       <span className="block text-[11px] text-muted">
-                        PP-OCRv6 tiny detector + recognizer, ~6 MB · uses PP-OCRv6
+                        ~6 MB · slower, in-process · may read small UI text better
                       </span>
                     </div>
                     {ocrPackStatus?.ready ? (
@@ -611,7 +654,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                               await invoke<ModelsStatus>("download_ocr_pack"),
                             );
                           } catch (e) {
-                            setPackError(`Accurate OCR download failed: ${String(e)}`);
+                            setPackError(`PP-OCRv6 download failed: ${String(e)}`);
                           }
                         }}
                         className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
@@ -635,11 +678,11 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               ) : (
                 <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
                   <div>
-                    <span className="block text-[12px] font-medium text-fg">Accurate OCR pack (PP-OCRv6)</span>
-                    <span className="block text-[11px] text-muted">Not included in this build.</span>
+                    <span className="block text-[12px] font-medium text-fg">PP-OCRv6 pack</span>
+                    <span className="block text-[11px] text-muted">Not compiled into this build.</span>
                   </div>
                 </div>
-              )}
+              ))}
 
               <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
                 <div className="flex items-center justify-between gap-4">

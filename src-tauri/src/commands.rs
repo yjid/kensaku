@@ -944,6 +944,7 @@ pub async fn complete_setup(
     watched_dirs: Vec<String>,
     excluded_dirs: Vec<String>,
     shortcut: Option<String>,
+    ocr_engine: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let mut config = KensakuConfig::load();
@@ -953,6 +954,11 @@ pub async fn complete_setup(
         && !sc.trim().is_empty()
     {
         config.shortcut = sc;
+    }
+    if let Some(engine) = ocr_engine
+        && (engine == crate::ocr::TESSERACT || engine == crate::ocr::ACCURATE)
+    {
+        config.ocr_engine = engine;
     }
     config.is_setup_complete = true;
     config.first_scan_done = false;

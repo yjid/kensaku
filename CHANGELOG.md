@@ -7,9 +7,12 @@ versioning: [SemVer](https://semver.org/).
 
 ### Fixed
 - PP-OCRv6 is now compiled into normal app builds via the default `accurate-ocr`
-  feature, so Setup/Settings no longer show "not included in this build". The
-  model pack is still an explicit download and Tesseract remains the default
-  engine until the user selects Accurate.
+  feature, so Setup/Settings no longer show "not included in this build".
+- Setup and Settings now treat Tesseract and PP-OCRv6 as an either/or choice:
+  pick one engine and only its download is offered. Tesseract is described as
+  fast/smaller; PP-OCRv6 as slower with possible small-UI-text benefits.
+- Settings shows a disabled `Native — not available yet` OCR option. Native
+  macOS/Windows OCR remains blocked; no fake implementation is exposed.
 - Removed the fake visual and native-OCR paths introduced by the automated
   K18–K21 pass. Visual search is now a Settings → Beta model-download experiment
   only and is not wired into search; `similar_images` is hidden from MCP when
@@ -68,7 +71,7 @@ versioning: [SemVer](https://semver.org/).
   (`--features quick-ui`) backed by the daemon. Debug measurements: 8.6 ms to
   first UI, 46 ms daemon round-trip, ~223 MB hidden RSS versus ~350 MB for the
   Tauri debug window. Not wired into the product.
-- K6 optional accurate OCR pack: PP-OCRv6 tiny detector + recognizer behind
+- K6 optional PP-OCRv6 OCR pack: PP-OCRv6 tiny detector + recognizer behind
   the `accurate-ocr` feature, downloaded with pinned SHA-256 and selectable in
   Settings/Setup with automatic Tesseract fallback. A frozen 104-image UI-text
   fixture scores 104/104 exact lines. Native macOS/Windows OCR remains future
