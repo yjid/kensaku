@@ -173,6 +173,81 @@ impl DaemonClient {
         serde_json::from_value(value).map_err(|e| e.to_string())
     }
 
+    pub fn get_snippets(
+        &self,
+        paths: Vec<String>,
+        query: &str,
+    ) -> Result<Vec<crate::commands::SnippetDto>, String> {
+        let value = request(
+            "get_snippets",
+            serde_json::json!({
+                "paths": paths,
+                "query": query,
+            }),
+        )?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
+    pub fn read_snippet(
+        &self,
+        path: &str,
+        query: Option<&str>,
+        max_tokens: usize,
+    ) -> Result<Value, String> {
+        request(
+            "read_snippet",
+            serde_json::json!({
+                "path": path,
+                "query": query,
+                "max_tokens": max_tokens,
+            }),
+        )
+    }
+
+    pub fn get_stats(&self) -> Result<Value, String> {
+        request("get_stats", serde_json::json!({}))
+    }
+
+    pub fn get_home_data(&self) -> Result<crate::commands::HomeData, String> {
+        let value = request("get_home_data", serde_json::json!({}))?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
+    pub fn toggle_pin(&self, path: String) -> Result<bool, String> {
+        let value = request("toggle_pin", serde_json::json!({ "path": path }))?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
+    pub fn get_scope_suggestions(
+        &self,
+        prefix: Option<String>,
+        limit: Option<usize>,
+    ) -> Result<Vec<String>, String> {
+        let value = request(
+            "get_scope_suggestions",
+            serde_json::json!({
+                "prefix": prefix,
+                "limit": limit,
+            }),
+        )?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
+    pub fn find_duplicates(
+        &self,
+        max_distance: Option<u32>,
+        limit: Option<usize>,
+    ) -> Result<Vec<crate::commands::DuplicateGroup>, String> {
+        let value = request(
+            "find_duplicates",
+            serde_json::json!({
+                "max_distance": max_distance,
+                "limit": limit,
+            }),
+        )?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
     pub fn get_status(&self) -> Result<crate::indexer::IndexingStatus, String> {
         let value = request("get_status", serde_json::json!({}))?;
         serde_json::from_value(value).map_err(|e| e.to_string())
