@@ -31,7 +31,7 @@
 4. Freshness is always visible (`12 ms · 1.2M files · index 2 s old`).
 5. Filters are visible chips you can click off. An invisible filter is a bug report.
 6. Every capability is a `filter:` or a `>` command — never a new screen.
-7. First run is one question and one button.
+7. First run is one guided flow: folders, preferences, optional packs, first scan, Done.
 
 ---
 
@@ -323,7 +323,8 @@ State machine: `pending → ok | skipped(reason) | failed(reason)`, max 3 attemp
 
 ### 9.1 GUI — "super simple" is a spec, not a vibe
 
-- **First run:** one screen. "Index your home folder?" → `[Start]` (or pick folders). Nothing else required.
+- **First run (shipped):** three screens — welcome, folders, exclusions + start. Indexing begins in the background.
+- **First run (planned, §18.8):** one guided flow that also covers preferences, optional packs/downloads, and a first scan that finishes with counts and a Done summary before the main window opens.
 - **Default screen:** input + list + right-side preview. No tabs, no sidebar, no modes.
 - **Chips** under the input appear only when a filter/scope is active; click to remove.
 - **`⌘K` / `Ctrl+K`** on a result: Open · Open at line · Reveal · Copy path · Copy content · Ask about this · Find similar.
@@ -331,7 +332,7 @@ State machine: `pending → ok | skipped(reason) | failed(reason)`, max 3 attemp
 - **Bottom bar:** `12 ms · 1,204,553 files · 2 s old · semantic ✓`.
 - **Preview:** monospace text with highlighted matches for code/text; page render for PDF; thumbnail for images. Virtualized list, fixed row height, no layout shift.
 - **Semantic badge:** a subtle `≈` on results that only the vector tier found. No mode switch — semantics are part of the one box.
-- **Settings:** four controls. Folders, exclusions preset, shortcut, AI toggle. Everything else is a config file, documented, not a UI.
+- **Settings:** progressive disclosure. Watched folders, exclusions preset, shortcut, and AI toggle stay visible. Today downloads and some setup controls live here; planned: setup owns initial configuration and downloads (§18.8). Everything else is a config file, documented, not a UI.
 
 > This is the **shipped `v0.3.x`** surface. The planned zero-syntax interaction —
 > plain-language intent, `/` commands, `@` scopes, interpretation chips, facet
@@ -681,3 +682,58 @@ a field is added. The CLI default output stays `path<TAB>score<TAB>snippet`.
 - **Privacy tests:** default configuration makes zero network calls; sensitive
   paths never enter an index; face data delete-all is verified.
 - **Migration tests:** index/model version changes never mix vector spaces.
+
+### 18.8 Setup and first-run flow
+
+Today `SetupModal` has three screens, `complete_setup` saves config and calls
+`start_indexing`, and the modal closes immediately. Downloads (OCR language,
+semantic models, future Vision Packs) live in Settings. The target is one guided
+first-run flow that owns all of it.
+
+**State machine**
+
+```text
+Welcome → Folders → Preferences → Optional packs → Scanning → Done
+                                        │             │
+                                        └─ skipped ───┘
+Scanning ── interrupted → resume on next launch
+Scanning ── failed → actionable error + retry, never Done
+```
+
+**Rules**
+
+- **Setup owns downloads.** `download_ocr_language`, `download_models`, and
+  future pack downloads are invoked from setup only. Settings shows installed
+  status and a "Run setup again" entry point; it does not grow a second download
+  or setup UI.
+- **Setup owns initial configuration.** Watched folders, exclusion preset,
+  theme, shortcut, and optional packs are asked in context. `complete_setup`
+  persists them atomically. Changing them later means re-running setup; Settings
+  shows the current values and links there.
+- **Gate on the first scan.** Add a persisted `first_scan_done` marker (config
+  or `meta` table). `is_setup_complete()` returns true only when both setup is
+  configured and the first crawl finished. `complete_setup` starts the crawl but
+  does not mark the first scan complete.
+- **Resume, don't lie.** If the app exits mid-scan, the next launch resumes the
+  crawl and re-enters the Scanning state. A partial index is never reported as
+  Done. Persist the setup config before starting the crawl; on launch, config
+  present + `first_scan_done == false` routes straight to Scanning, not Welcome.
+- **Show real progress.** The Scanning screen reads `get_indexing_status` and
+  the metadata/content counts: files, folders, documents, images, OCR'd images,
+  and embedded units, plus the current path and an ETA. The Done screen shows
+  the final summary and "Start searching".
+- **Optional means optional.** Declining packs leaves keyword + lexical search
+  fully usable. The flow never blocks on a download the user did not choose.
+- **Only the first scan waits.** After `first_scan_done`, startup is the
+  existing search-first + background reconcile path. Do not regress
+  warm-start latency for returning users.
+- **Re-running setup** resets the setup markers, not the index, unless the user
+  explicitly chooses a rebuild.
+
+**Acceptance**
+
+- A fresh install reaches Done without opening Settings and without any download
+  initiated elsewhere.
+- Killing the app during Scanning resumes and eventually reaches Done.
+- Done is unreachable while the index is unusable.
+- Second launch paints results while reconcile runs in the background.

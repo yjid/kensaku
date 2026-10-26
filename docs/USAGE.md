@@ -83,6 +83,13 @@ Results are deterministic: score, then path.
 
 ## Settings
 
+> **Planned (see [VISION.md](VISION.md)):** the guided first-run setup will own
+> watched folders, preferences, OCR/model downloads, and the initial scan.
+> Settings will show current values and offer **Run setup again** instead of
+> duplicating setup or download actions. The first scan will finish with counts
+> and a Done screen before the main window opens; later launches stay
+> search-first.
+
 - **General** — theme (`paper` / `void`), global shortcut, max results, start at login.
 - **Folders** — watched roots, add/remove, drag-and-drop.
 - **Exclusions** — presets (Developer, Creative, All-round), directories, extensions.
@@ -101,15 +108,17 @@ Results are deterministic: score, then path.
 - **Incremental** — unchanged files (same size + mtime) are not re-read.
 - **Renames** are tracked by `(device, inode)`, so moves do not duplicate entries.
 - **Startup** is search-first: the snapshot loads, then a stat-only reconcile runs
-  in the background. Until it finishes the app reports how old the index is.
+  in the background. This applies **after the first completed scan**; the
+  planned first-run flow waits for the initial scan and ends with a Done screen.
+  Until it finishes the app reports how old the index is.
 - **Unavailable roots** (unplugged drive, unmounted share) are preserved, not pruned.
 - **Documents** — PDF, DOCX/PPTX/XLSX, EPUB/ODT, RTF; malformed files are skipped
   after an 8-second timeout.
 - **Images** — OCR via `tesseract` when the engine and language data are present
-  (Settings → Search shows the status and can download `eng.traineddata`); the
-  toggle controls whether image text is indexed, and saving re-scans existing
-  images. Thumbnails and dimensions are cached; near-duplicates use a perceptual
-  hash.
+  (today Settings → Search shows the status and can download `eng.traineddata`;
+  planned: setup owns this download); the toggle controls whether image text is
+  indexed, and saving re-scans existing images. Thumbnails and dimensions are
+  cached; near-duplicates use a perceptual hash.
 - **Cloud placeholders** (Windows OneDrive/iCloud) are indexed by name only, so
   reading doesn't hydrate the file.
 
