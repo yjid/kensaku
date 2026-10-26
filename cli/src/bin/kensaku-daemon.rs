@@ -106,7 +106,7 @@ fn main() {
     }
 }
 
-fn handle_client(mut stream: UnixStream, token: &str, _manager: &Arc<IndexerManager>) {
+fn handle_client(mut stream: UnixStream, token: &str, manager: &Arc<IndexerManager>) {
     let reader = stream.try_clone().unwrap();
     let buf = BufReader::new(reader);
     for line in buf.lines() {
@@ -140,7 +140,13 @@ fn handle_client(mut stream: UnixStream, token: &str, _manager: &Arc<IndexerMana
         }
 
         let result = match method {
-            "health" => Ok(json!({"ok": true})),
+            "health" => Ok(json!({"ok": true, "protocol_version": 1})),
+            "get_status" => serde_json::to_value(manager.get_status())
+                .map_err(|e| e.to_string()),
+            "reindex" => {
+                manager.start_indexing();
+                Ok(json!({"started": true}))
+            }
             "index_state" => match HeadlessIndex::open() {
                 Ok(idx) => idx.state_local(),
                 Err(e) => Err(e),
