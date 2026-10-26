@@ -8,6 +8,7 @@ import {
   ActiveFilter,
   IndexingStatus,
   CommandOutput,
+  InterpretationChip,
 } from "./types";
 import { SetupModal } from "./components/SetupModal";
 import { DuplicatesModal } from "./components/DuplicatesModal";
@@ -57,6 +58,7 @@ function App() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
   const [hints, setHints] = useState<string[]>([]);
+  const [interpretation, setInterpretation] = useState<InterpretationChip[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [indexingStatus, setIndexingStatus] = useState<IndexingStatus | null>(null);
   const [isSearching, setIsSearching] = useState(false);
@@ -154,6 +156,7 @@ function App() {
       setResults([]);
       setActiveFilters([]);
       setHints([]);
+      setInterpretation([]);
       setSelectedIndex(0);
       setIsSearching(false);
       return;
@@ -163,6 +166,7 @@ function App() {
       setResults([]);
       setActiveFilters([]);
       setHints([]);
+      setInterpretation([]);
       setIsSearching(false);
       return;
     }
@@ -194,6 +198,7 @@ function App() {
           setResults(merged);
           setActiveFilters(res.active_filters);
           setHints(res.hints);
+          setInterpretation(res.interpretation ?? []);
           setSelectedIndex(0);
 
           /* Phase 2 — the fast results are on screen; content snippets
@@ -679,6 +684,28 @@ function App() {
               {/* Category chips */}
               {!isCommandMode && (
                 <CategoryChips query={query} results={results} onPick={handleChip} />
+              )}
+
+              {!isCommandMode && interpretation.length > 0 && (
+                <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line px-4 py-1.5">
+                  <span className="text-[10px] uppercase tracking-wider text-subtle">Interpreted</span>
+                  {interpretation.map((c, i) => (
+                    <button
+                      key={`${c.raw}-${i}`}
+                      type="button"
+                      title={`Remove “${c.source}”`}
+                      onClick={() =>
+                        setQuery((prev) =>
+                          prev.replace(c.source, "").replace(/\s+/g, " ").trim(),
+                        )
+                      }
+                      className="group flex h-6 items-center gap-1.5 rounded-full bg-accent-soft px-2.5 text-[10px] text-fg transition-colors hover:text-danger"
+                    >
+                      {c.label}
+                      <X className="h-2.5 w-2.5 opacity-50 group-hover:opacity-100" />
+                    </button>
+                  ))}
+                </div>
               )}
 
               {!isCommandMode && results.length > 0 && (

@@ -31,19 +31,19 @@ and OCR language download.
 
 These are the highest-leverage gaps. None require a new model.
 
-- [ ] **Natural-language intent compiler** — deterministic, local, no LLM:
-      recency words ("latest", "newest", "old download"), size words ("big",
-      "huge", "under 1 MB"), time windows ("last week", "in March"), place
-      phrases ("in Projects"), media/document nouns, error/log nouns. Emits the
-      existing `Query` AST plus `Sort`.
+- [x] **Natural-language intent compiler** — deterministic, local, no LLM:
+      recency words ("latest", "newest"), size words ("big", "under 1 MB"),
+      time windows ("today", "last week", "last month", "last year"), place
+      phrases ("in Projects"), and media/document nouns. Emits the existing
+      `Query` AST plus `Sort`. Month names and aliases remain.
 - [ ] **Aliases and personal vocabulary** — `resume → resume, cv, curriculum`;
       `invoice → invoice, receipt, bill`; user-editable; seeded by use-case
       preset. Suggestions from behavior, never silent rewrites.
 - [x] **First-class sort** — `Best match | Newest | Oldest | Largest | Name`,
       applied server-side before the result limit.
-- [ ] **Interpretation chips** — expose the parsed intent as removable chips,
-      including sort, scope, type, and aliases. Low confidence asks with chips,
-      not a chat message.
+- [x] **Interpretation chips** — every natural-language inference is shown as a
+      removable chip (sort, scope, type, time, size). Explicit grammar is never
+      reinterpreted.
 - [ ] **Version grouping** — collapse `resume_v1`, `resume_final`,
       `resume_final_final` into one row with a version count. False grouping is
       worse than none; ship conservative heuristics.
