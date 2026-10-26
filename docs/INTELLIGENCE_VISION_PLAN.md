@@ -101,13 +101,17 @@ contract.
   mode.
 - Ensure a missing or invalid optional provider falls back to the static table
   and records why.
-- Add tests for selection, persistence, and fallback.
+- Filter semantic units by the active `model_id` so vectors from different
+  models or dimensions can never be mixed in one scan.
+- Add tests for selection, persistence, fallback, and model-id isolation.
 
 **Acceptance**
 
 - `semantic_model` changes actual behavior and is persisted.
 - Missing optional models do not break indexing or search.
 - Status surfaces provider, model id, and fallback reason in Doctor/stats.
+- Changing models never mixes incompatible vectors; the store is rebuilt or
+  filtered by `model_id`.
 - No new model download and no new dependency in this task.
 
 **Files:** `embed/mod.rs`, `embed/model.rs`, `embed/table.rs`, `config.rs`, `models.rs`.
@@ -125,7 +129,8 @@ semantic recall while remaining optional and local.
 - Download a pinned multilingual model (bge-small or EmbeddingGemma-Q4) with
   SHA-256, resume, disk precheck, and mirror support.
 - Run inference in the existing embedding queue with bounded concurrency.
-- Add an i8 quantization path and golden-set quality comparison.
+- Prefer an already-quantized int8 ONNX artifact; if only f32 is available,
+  quantize the output vectors with per-vector scales and validate quality.
 - Keep the static table as the default and fallback.
 
 **Acceptance**
