@@ -6,6 +6,8 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Instrumented fast-search test proving the Tauri path never reads or returns
+  snippets; snippets remain a separate batched `get_snippets` round-trip.
 - Thumbnail-based perceptual hashing (480 px thumbnails reused for dHash and
   previews), `image_hash_version` invalidation, and best-effort
   `release_memory()` after image/PDF/Office work.
