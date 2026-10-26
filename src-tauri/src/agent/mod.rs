@@ -131,8 +131,8 @@ impl HeadlessIndex {
     pub fn state(&self) -> Result<Value, String> {
         let mut files = 0u64;
         let mut dirs = 0u64;
-        for entry in self.metadata.get_entries() {
-            if entry.is_dir {
+        for i in 0..self.metadata.len() {
+            if self.metadata.node(i as u32).is_dir() {
                 dirs += 1;
             } else {
                 files += 1;

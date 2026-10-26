@@ -1,3 +1,4 @@
+use kensaku_lib::indexer::arena::Node as ArenaNode;
 use kensaku_lib::indexer::walker;
 use kensaku_lib::search::fuzzy::FuzzySearcher;
 use std::path::PathBuf;
@@ -65,4 +66,5 @@ fn main() {
     println!("\n--- Memory Estimate ---");
     println!("  FileEntry size: {} bytes", std::mem::size_of::<walker::FileEntry>());
     println!("  Entries: {} x {} bytes = {:.1} MB", entries.len(), std::mem::size_of::<walker::FileEntry>(), entries.len() as f64 * std::mem::size_of::<walker::FileEntry>() as f64 / 1_048_576.0);
+    println!("  Node (arena) size: {} bytes", std::mem::size_of::<ArenaNode>());
 }

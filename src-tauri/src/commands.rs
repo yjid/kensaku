@@ -270,8 +270,8 @@ pub async fn get_stats(state: State<'_, AppState>) -> Result<serde_json::Value, 
         let metadata = indexer.metadata.read();
         let mut files = 0u64;
         let mut dirs = 0u64;
-        for entry in metadata.get_entries() {
-            if entry.is_dir {
+        for i in 0..metadata.len() {
+            if metadata.node(i as u32).is_dir() {
                 dirs += 1;
             } else {
                 files += 1;
@@ -865,17 +865,19 @@ pub struct HomeData {
 pub async fn get_home_data(state: State<'_, AppState>) -> Result<HomeData, String> {
     let metadata = state.indexer.metadata.read();
     let config = state.indexer.config.read().clone();
-    let mut recent: Vec<HomeItem> = metadata
-        .get_entries()
-        .iter()
-        .filter(|e| !e.is_dir)
-        .filter(|e| e.modified > 0)
-        .map(|e| HomeItem {
-            path: e.path.to_string_lossy().to_string(),
-            filename: e.name.clone(),
-            size: e.size,
-            modified: e.modified,
-            is_dir: e.is_dir,
+    let mut recent: Vec<HomeItem> = (0..metadata.len())
+        .filter_map(|i| {
+            let e = metadata.materialize(i as u32);
+            if e.is_dir || e.modified == 0 {
+                return None;
+            }
+            Some(HomeItem {
+                path: e.path.to_string_lossy().to_string(),
+                filename: e.name.clone(),
+                size: e.size,
+                modified: e.modified,
+                is_dir: e.is_dir,
+            })
         })
         .collect();
     recent.sort_by_key(|a| std::cmp::Reverse(a.modified));
@@ -941,7 +943,11 @@ pub async fn get_scope_suggestions(
     let limit = limit.unwrap_or(12).clamp(1, 50);
     let metadata = state.indexer.metadata.read();
     let mut matches: Vec<(u8, String)> = Vec::new();
-    for entry in metadata.get_entries().iter().filter(|e| e.is_dir) {
+    for i in 0..metadata.len() {
+        let entry = metadata.materialize(i as u32);
+        if !entry.is_dir {
+            continue;
+        }
         let name = entry.name.to_lowercase();
         let path = entry.path.to_string_lossy().to_string();
         let score = if prefix.is_empty() || name.starts_with(&prefix) {

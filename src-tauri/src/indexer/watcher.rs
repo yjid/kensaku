@@ -474,11 +474,15 @@ fn handle_path_remove(
 
     let descendants: Vec<PathBuf> = {
         let store = metadata.read();
-        store
-            .get_entries()
-            .iter()
-            .filter(|entry| entry.path != path && entry.path.starts_with(path))
-            .map(|entry| entry.path.clone())
+        (0..store.len())
+            .filter_map(|i| {
+                let e = store.materialize(i as u32);
+                if e.path != path && e.path.starts_with(path) {
+                    Some(e.path)
+                } else {
+                    None
+                }
+            })
             .collect()
     };
 

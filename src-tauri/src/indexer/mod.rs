@@ -1,3 +1,4 @@
+pub mod arena;
 pub mod content;
 pub mod extract;
 pub mod metadata;
@@ -416,7 +417,7 @@ impl IndexerManager {
                     let store = metadata.read();
                     store
                         .get(&entry.path)
-                        .is_some_and(|existing| is_unchanged(existing, &entry))
+                        .is_some_and(|existing| is_unchanged(&existing, &entry))
                 };
                 if unchanged {
                     continue;
@@ -718,14 +719,17 @@ impl IndexerManager {
             // Drop metadata entries for files that no longer exist on disk.
             let stale_paths: Vec<PathBuf> = {
                 let store = metadata.read();
-                store
-                    .get_entries()
-                    .iter()
-                    .filter(|entry| {
-                        !crawled_paths.contains(&entry.path)
-                            && !belongs_to_unavailable_root(&entry.path)
+                (0..store.len())
+                    .filter_map(|i| {
+                        let e = store.materialize(i as u32);
+                        if !crawled_paths.contains(&e.path)
+                            && !belongs_to_unavailable_root(&e.path)
+                        {
+                            Some(e.path)
+                        } else {
+                            None
+                        }
                     })
-                    .map(|entry| entry.path.clone())
                     .collect()
             };
 

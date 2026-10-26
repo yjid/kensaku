@@ -488,12 +488,15 @@ impl SearchDispatcher {
             .unwrap_or(0);
 
         let trie = metadata.get_directory_trie();
-        let entries = metadata.get_entries();
-        let path_index = metadata.get_path_index();
+        let entries: Vec<FileEntry> = (0..metadata.len())
+            .map(|i| metadata.materialize(i as u32))
+            .collect();
+        let path_index: HashMap<PathBuf, usize> =
+            entries.iter().enumerate().map(|(i, e)| (e.path.clone(), i)).collect();
         let generation = metadata.generation();
 
         // 1. Parse AST from query
-        let mut parsed = parse_query(effective_query, entries, path_index, Some(&trie), generation);
+        let mut parsed = parse_query(effective_query, &entries, &path_index, Some(&trie), generation);
         let route = crate::query::router::route_query(&parsed);
 
         // Pre-compile filters once per query (lowercase strings, intern extensions)
@@ -619,8 +622,8 @@ impl SearchDispatcher {
             let mut hints = parsed.hints;
             let mut results = exhaustive_results(
                 content_index,
-                entries,
-                path_index,
+                &entries,
+                &path_index,
                 &candidate_set,
                 &candidate_indices,
                 &bm25_groups,
@@ -660,7 +663,7 @@ impl SearchDispatcher {
             let mut fuzzy_searcher = FuzzySearcher::new();
             // Search across candidate entries by index (no clone needed)
             let fuzzy_matches =
-                fuzzy_searcher.search(&fuzzy_text, entries, &candidate_indices, limit * 3);
+                fuzzy_searcher.search(&fuzzy_text, &entries, &candidate_indices, limit * 3);
             for (rank, (orig_idx, _score)) in fuzzy_matches.into_iter().enumerate() {
                 fuzzy_ranks.insert(orig_idx, rank + 1);
             }
