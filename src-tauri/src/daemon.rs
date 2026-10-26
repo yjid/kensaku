@@ -31,22 +31,34 @@ pub fn read_token() -> Option<String> {
 }
 
 #[cfg(unix)]
+fn socket_name() -> std::io::Result<interprocess::local_socket::Name<'static>> {
+    use interprocess::local_socket::{GenericFilePath, ToFsName};
+    socket_path().to_fs_name::<GenericFilePath>()
+}
+
+#[cfg(windows)]
+fn socket_name() -> std::io::Result<interprocess::local_socket::Name<'static>> {
+    use interprocess::local_socket::{GenericNamespaced, ToNsName};
+    "kensaku".to_ns_name::<GenericNamespaced>()
+}
+
 pub fn request(method: &str, mut params: Value) -> Result<Value, String> {
+    use interprocess::local_socket::prelude::*;
     use std::io::{BufRead, BufReader, Write};
-    use std::os::unix::net::UnixStream;
     use std::time::Duration;
 
     if std::env::var_os("KENSAKU_NO_DAEMON").is_some() {
         return Err("daemon disabled by KENSAKU_NO_DAEMON".to_string());
     }
     let token = read_token().ok_or_else(|| "daemon token missing".to_string())?;
-    let stream = UnixStream::connect(socket_path())
+    let name = socket_name().map_err(|e| format!("daemon socket name: {}", e))?;
+    let stream = LocalSocketStream::connect(name)
         .map_err(|e| format!("daemon unavailable: {}", e))?;
     stream
-        .set_read_timeout(Some(Duration::from_secs(30)))
+        .set_recv_timeout(Some(Duration::from_secs(30)))
         .map_err(|e| e.to_string())?;
-    let mut reader = BufReader::new(stream.try_clone().map_err(|e| e.to_string())?);
-    let mut writer = stream;
+    let mut reader = BufReader::new(&stream);
+    let mut writer = &stream;
 
     if let Value::Object(map) = &mut params {
         map.insert("token".into(), Value::String(token));
@@ -66,11 +78,6 @@ pub fn request(method: &str, mut params: Value) -> Result<Value, String> {
             .to_string());
     }
     Ok(response.get("result").cloned().unwrap_or(Value::Null))
-}
-
-#[cfg(not(unix))]
-pub fn request(_method: &str, _params: Value) -> Result<Value, String> {
-    Err("daemon client is only implemented on Unix".to_string())
 }
 
 pub fn health() -> bool {

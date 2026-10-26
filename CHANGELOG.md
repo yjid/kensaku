@@ -17,8 +17,10 @@ versioning: [SemVer](https://semver.org/).
   platform work.
 - K1 daemon parity: the GUI now fetches snippets, `read_snippet`, stats, home
   data, duplicate groups, scope suggestions and pin toggles through the daemon
-  instead of opening metadata in-process. K4 visible-row snippets now use a
-  bounded insertion-order LRU, and `read_snippet` returns line ranges.
+  instead of opening metadata in-process. IPC now uses `interprocess` local
+  sockets, giving the same protocol a Unix socket and a Windows named pipe.
+  K4 visible-row snippets use a bounded insertion-order LRU, and
+  `read_snippet` returns line ranges.
 - K14 startup quantization drops the temporary f32 matrix after quantizing.
   Validated on real Potion artifacts: 7,559,168-byte i8 matrix + 118,112 bytes
   of scales, with MRR 1.000 for both f32 and i8 on the labelled set.
