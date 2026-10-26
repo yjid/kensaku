@@ -205,6 +205,8 @@ pub struct IndexerManager {
 
 impl IndexerManager {
     pub fn new(config: KensakuConfig) -> Self {
+        // Apply the opt-in external extractor registry before any crawl starts.
+        crate::indexer::extract::set_external_extractors(config.extractors.clone());
         let index_dir = KensakuConfig::index_dir();
         let content_index = match ContentIndex::new(&index_dir) {
             Ok(idx) => Some(idx),
@@ -532,7 +534,8 @@ impl IndexerManager {
                 // hydrate (download) them.
                 if !entry.is_dir
                     && (is_indexable_extension(entry.extension.as_deref())
-                        || is_indexable_file_name(&entry.name))
+                        || is_indexable_file_name(&entry.name)
+                        || crate::indexer::extract::external::handles(&entry.path))
                     && !is_cloud_placeholder_path(&entry.path)
                 {
                     to_extract.push(ExtractJob {

@@ -1,7 +1,10 @@
+pub mod external;
 pub mod image;
 pub mod office;
 pub mod pdf;
 pub mod text;
+
+use crate::config::ExternalExtractor;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
@@ -26,6 +29,22 @@ pub fn set_ocr_enabled(enabled: bool) {
 /// True when image OCR is allowed.
 pub fn ocr_enabled() -> bool {
     OCR_ENABLED.load(Ordering::SeqCst)
+}
+
+/// Replaces the opt-in external extractor registry and drops cached results so
+/// a config change is visible immediately.
+pub fn set_external_extractors(extractors: Vec<ExternalExtractor>) {
+    external::set_extractors(extractors);
+    clear_extraction_cache();
+}
+
+fn clear_extraction_cache() {
+    if let Some(cache) = EXTRACTION_CACHE.get()
+        && let Ok(mut cache) = cache.lock()
+    {
+        cache.map.clear();
+        cache.order.clear();
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -341,6 +360,28 @@ fn warn_extraction_timeout(path: &Path) {
     }
 }
 
+/// Reported once per path, and at most a handful of times per process, so a
+/// broken plugin does not flood the log during a crawl.
+fn warn_external_failure(path: &Path, error: &str) {
+    external::record_failure(path, error);
+    use std::sync::Mutex;
+    use std::sync::atomic::AtomicUsize;
+    static WARNED: std::sync::OnceLock<Mutex<HashSet<PathBuf>>> = std::sync::OnceLock::new();
+    static COUNT: AtomicUsize = AtomicUsize::new(0);
+    let warned = WARNED.get_or_init(|| Mutex::new(HashSet::new()));
+    let mut warned = warned.lock().unwrap();
+    if warned.len() >= 4096 {
+        warned.clear();
+    }
+    if warned.insert(path.to_path_buf()) && COUNT.fetch_add(1, Ordering::Relaxed) < 20 {
+        eprintln!(
+            "[Kensaku] External extraction failed for {}: {}",
+            path.display(),
+            error
+        );
+    }
+}
+
 /// Reported at most a handful of times so a saturated crawl does not flood the
 /// log once per file.
 fn warn_slot_saturation(path: &Path) {
@@ -370,11 +411,16 @@ pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> 
         return None;
     }
 
+    // External extractors are opt-in and keyed by extension/MIME. Resolve
+    // them before the OCR gate so a user-supplied plugin can still process an
+    // image when the built-in OCR tier is disabled.
+    let external = external::find(path);
+
     // OCR is a user setting: when it is off, images must never produce text.
     // This runs before the cache lookup so a previously cached OCR result is
     // not reused after the setting is turned off. The sniff is only needed on
     // this path; the normal flow below still checks the cache first.
-    if !ocr_enabled() && sniff_format(path) == DocumentFormat::Image {
+    if external.is_none() && !ocr_enabled() && sniff_format(path) == DocumentFormat::Image {
         return None;
     }
 
@@ -400,6 +446,7 @@ pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> 
         (Some(pool), Some(slot)) => {
             let (tx, rx) = std::sync::mpsc::channel();
             let worker_path = path.to_path_buf();
+            let worker_external = external.clone();
             pool.spawn(move || {
                 // Keep the slot alive for the real duration of the work, even
                 // if the caller stopped waiting.
@@ -408,7 +455,13 @@ pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> 
                 // reaches rayon's panic handler (which aborts by default), and
                 // a malformed document must never take the app down.
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    extract_document_inner(&worker_path, capped_bytes, format, file_size)
+                    extract_document_inner(
+                        &worker_path,
+                        capped_bytes,
+                        format,
+                        file_size,
+                        worker_external,
+                    )
                 }))
                 .unwrap_or_else(|_| {
                     eprintln!(
@@ -443,7 +496,7 @@ pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> 
             None
         }
         // Pool creation failed (rare); fall back to inline extraction.
-        (None, _) => extract_document_inner(path, capped_bytes, format, file_size),
+        (None, _) => extract_document_inner(path, capped_bytes, format, file_size, external),
     };
 
     // Cache the result. Very large documents are skipped: the cache exists for
@@ -465,7 +518,18 @@ fn extract_document_inner(
     capped_bytes: usize,
     format: DocumentFormat,
     file_size: u64,
+    external: Option<ExternalExtractor>,
 ) -> Option<DocumentExtract> {
+    if let Some(extractor) = external {
+        return match extractor.run(path, capped_bytes) {
+            Ok(document) => Some(document),
+            Err(error) => {
+                warn_external_failure(path, &error);
+                None
+            }
+        };
+    }
+
     match format {
         DocumentFormat::Pdf => {
             let res = pdf::extract_pdf(path, capped_bytes)?;

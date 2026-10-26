@@ -845,6 +845,28 @@ impl MetadataDb {
         .map_err(|e| format!("Failed to mark images pending: {}", e))
     }
 
+    /// Marks files with any of `extensions` (already normalized, no dot) for
+    /// a content re-read.
+    pub fn mark_extensions_pending(&self, extensions: &[String]) -> Result<usize, String> {
+        if extensions.is_empty() {
+            return Ok(0);
+        }
+        let conn = self.conn.lock();
+        let mut statement = conn
+            .prepare(
+                "UPDATE nodes SET content_pending = 1
+                 WHERE is_dir = 0 AND lower(extension) = ?1",
+            )
+            .map_err(|e| format!("Failed to prepare extension re-read: {}", e))?;
+        let mut marked = 0;
+        for extension in extensions {
+            marked += statement
+                .execute([extension])
+                .map_err(|e| format!("Failed to mark extension '{}' pending: {}", extension, e))?;
+        }
+        Ok(marked)
+    }
+
     /// Marks every file as needing a content re-read.
     pub fn mark_all_content_pending(&self) -> Result<usize, String> {
         let conn = self.conn.lock();
@@ -1240,6 +1262,42 @@ mod tests {
             reloaded.content_pending,
             "upsert must not reset a pending flag"
         );
+    }
+
+    #[test]
+    fn mark_extensions_pending_targets_only_matching_files() {
+        let temp = TempDb::new("mark-extensions");
+        let db = temp.db();
+        let stl = temp.dir.join("part.STL");
+        let obj = temp.dir.join("scene.obj");
+        let stl_lower = temp.dir.join("other.stl");
+        let doc = temp.dir.join("notes.txt");
+        let dir = temp.dir.join("folder.stl");
+
+        for path in [&stl, &obj, &stl_lower, &doc, &dir] {
+            db.upsert(&entry(path, path == &dir)).expect("insert row");
+        }
+
+        let marked = db
+            .mark_extensions_pending(&["stl".to_string(), "obj".to_string()])
+            .expect("mark extensions");
+        assert_eq!(marked, 3);
+
+        let loaded = db.load_all().expect("load nodes");
+        for path in [&stl, &obj, &stl_lower] {
+            assert!(
+                loaded.iter().find(|e| e.path == *path).unwrap().content_pending,
+                "{} should be pending",
+                path.display()
+            );
+        }
+        for path in [&doc, &dir] {
+            assert!(
+                !loaded.iter().find(|e| e.path == *path).unwrap().content_pending,
+                "{} should not be pending",
+                path.display()
+            );
+        }
     }
 
     #[test]

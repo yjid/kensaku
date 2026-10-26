@@ -339,7 +339,8 @@ This is the section that makes the speed claims true.
 ## 8. Extraction
 
 ```
-magic-byte sniff ─► dispatcher ─► extractor (isolated worker, timeout) ─► state machine
+magic-byte sniff ─► dispatcher ─► built-in or opt-in external extractor
+                                      (isolated worker, timeout) ─► state machine
 ```
 
 | Format | Path | Notes |
@@ -349,8 +350,9 @@ magic-byte sniff ─► dispatcher ─► extractor (isolated worker, timeout) �
 | PDF | `pdf-extract` first; `pdfium` feature flag if quality fails | page-level offsets → "jump to page"; encrypted/scanned → explicit state |
 | Images | platform OCR (Vision / Windows OCR / optional tesseract) → text units | OCR before CLIP; screenshots prioritized |
 | Archives | metadata only (v2) | no recursive indexing |
+| External | config-defined executable, extension/MIME allowlist | no shell, cleared env, 100–7000 ms timeout, bounded stdout, process-group kill; zero plugins by default |
 
-State machine: `pending → ok | skipped(reason) | failed(reason)`, max 3 attempts with backoff. Counts are surfaced ("38 files could not be read"), never silently dropped. Each extractor runs with a timeout and a panic boundary in its own worker — a malformed PDF must never take down the daemon.
+State machine: `pending → ok | skipped(reason) | failed(reason)`, max 3 attempts with backoff. Counts are surfaced ("38 files could not be read"), never silently dropped. Each extractor runs with a timeout and a panic boundary in its own worker — a malformed PDF must never take down the daemon. External extractors are opt-in, never shell-interpreted, and bounded by timeout/output/process-group limits; failures are logged and surfaced in Doctor, and a disabled entry never runs. See [EXTRACTORS.md](EXTRACTORS.md).
 
 ---
 
@@ -465,7 +467,7 @@ crates/
   kensaku-core/      model, snapshot, sqlite, watcher, reconcile, config
   kensaku-index/     metadata arena, fuzzy, tantivy, semantic
   kensaku-query/     lexer, ast, router, planner, fusion, rank, snippet
-  kensaku-extract/   text, encoding, docx/pptx/xlsx/epub, pdf, ocr
+  kensaku-extract/   text, encoding, docx/pptx/xlsx/epub, pdf, ocr, external
   kensaku-embed/     model2vec, optional ort/fastembed, model registry
   kensaku-proto/     request/response types (shared by CLI, GUI, MCP)
   kensaku-daemon/    server, scheduler, lifecycle, MCP, HTTP
@@ -481,10 +483,11 @@ Rule: **`kensaku-core` must not depend on Tauri.** The GUI must not depend on in
 ## 13. Phase plan (each phase ships something usable)
 
 **Status (v0.3.x):** the foundation, query layer, semantic tier, document
-extraction, and OCR/thumbnail work are implemented. The daemon/agent split
-(Phase 4) is not: the GUI still owns the indexer in-process. The next slice is
-the landscape-derived [ROADMAP](ROADMAP.md) P0/P1 (daemon, compact arena,
-thumbnail hashing, lazy snippets, folded tier, optional OCR pack, scheduling).
+extraction, OCR/thumbnail work, and opt-in external extractors are implemented.
+The daemon/agent split (Phase 4) is partial: CLI and MCP use the daemon, but the
+GUI still owns its indexer in-process. The next slice is the landscape-derived
+[ROADMAP](ROADMAP.md) P0/P1 (GUI daemon client, optional OCR pack, model
+download hygiene).
 The phases below are the original plan; use ROADMAP for current ordering.
 
 ### Phase 0 — Trustworthy foundation · ~2 weeks

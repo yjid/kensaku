@@ -64,6 +64,7 @@ impl HeadlessIndex {
 
         // The headless surface must honor the same OCR setting as the GUI.
         crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
+        crate::indexer::extract::set_external_extractors(config.extractors.clone());
 
         // Read-write is fine: WAL lets the GUI writer and this connection
         // coexist. Nothing on the headless path writes.

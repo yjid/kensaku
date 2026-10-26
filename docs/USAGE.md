@@ -151,9 +151,11 @@ Results are deterministic: score, then path.
 - **Search** — semantic toggle, OCR status, aliases, filter cheat sheet.
 - **AI & Semantic** — active model, embed queue, re-embed, model status (downloads
   are acquired in setup; use **About → Run setup again**).
-- **Agents** — MCP config and CLI examples for external agents.
-- **Doctor** — nine checks: config writability, DB integrity, index size, semantic
-  units, watched roots, watcher health, inotify limit, model files, crash log.
+- **Agents** — MCP config and CLI examples for external agents. External
+  format extractors are config-only; see [EXTRACTORS.md](EXTRACTORS.md).
+- **Doctor** — on-demand checks: config writability, DB integrity, index size,
+  semantic units, watched roots, watcher health, inotify limit, model files,
+  OCR, external extractors, crash log, and version.
 - **Stats for Nerds** — p50/p95/p99 + sparkline, index composition and on-disk
   sizes, ingestion phase/files-per-second/queue depth, uptime, RSS, model ids.
 - **About** — version, thesis, and **Reset everything**.

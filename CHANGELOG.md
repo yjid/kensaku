@@ -6,6 +6,13 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Opt-in external extractors: config-defined commands keyed by extension or
+  MIME selector, with an absolute-executable allowlist, no shell, cleared
+  environment, 100–7000 ms timeout, 1 KiB–4 MiB stdout cap, and process-group
+  kill. Zero plugins ship by default and each entry requires `enabled: true`;
+  changing the registry clears cached results and queues affected files for
+  re-extraction. Doctor lists configured commands and recent failure reasons.
+  See [docs/EXTRACTORS.md](docs/EXTRACTORS.md).
 - MCP v2: daemon-first sessions avoid opening SQLite, Tantivy or the embedding
   table in the agent process; `health_check`, bounded `regex_search`, cursor +
   `page_size` pagination, per-tool token budgets, `truncated` snippet flags, and

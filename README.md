@@ -193,7 +193,7 @@ Full threat model: [SECURITY.md](SECURITY.md).
 
 ## Project status
 
-**Available today:** desktop app, CLI, daemon-backed MCP, semantic + lexical + folded/trigram hybrid search, full query grammar, PDF/Office/EPUB/ODT/RTF extraction, tesseract OCR, image thumbnails and near-duplicate grouping, incremental indexing, rename/delete tracking, two themes, Doctor, factory reset, guided first-run setup, and 138 Rust tests.
+**Available today:** desktop app, CLI, daemon-backed MCP, semantic + lexical + folded/trigram hybrid search, config-only external extractors, full query grammar, PDF/Office/EPUB/ODT/RTF extraction, tesseract OCR, image thumbnails and near-duplicate grouping, incremental indexing, rename/delete tracking, two themes, Doctor, factory reset, guided first-run setup, and 157 Rust tests.
 
 **Planned:** Tauri GUI client for the daemon, optional high-accuracy OCR, native platform OCR, CLIP/SigLIP visual search, face identity, 1M-file prefilter, signing/notarization, and auto-update. See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/REMAINING.md](docs/REMAINING.md), [docs/VISION.md](docs/VISION.md), and the [landscape notes](docs/LANDSCAPE.md).
 
@@ -208,4 +208,4 @@ Useful contributions: reproducible bug reports, platform testing (especially uns
 
 ---
 
-**More:** [USAGE.md](docs/USAGE.md) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [FAQ.md](docs/FAQ.md) · [INSTALL.md](docs/INSTALL.md) · [BENCHMARKS.md](docs/BENCHMARKS.md)
+**More:** [USAGE.md](docs/USAGE.md) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [EXTRACTORS.md](docs/EXTRACTORS.md) · [FAQ.md](docs/FAQ.md) · [INSTALL.md](docs/INSTALL.md) · [BENCHMARKS.md](docs/BENCHMARKS.md)
