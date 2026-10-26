@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>Find anything on your computer. Let your AI find it too.</b><br/>
-  <i>Fast, local-first search for files, source code, documents, and images — with a desktop app, CLI, and MCP access for compatible AI agents.</i>
+  <i>Fast, local-first search for files, source code, documents, and images — semantic search, OCR, hybrid ranking, and MCP access for compatible AI agents.</i>
 </p>
 
 <p align="center">
@@ -48,10 +48,12 @@ Ordinary filename search fails when the name is forgotten, the folder is wrong, 
 
 ## Core capabilities
 
-- **Find by content, not just name.** Full-text search across supported files, with snippets.
+- **Find by meaning, not just words.** Semantic search via local embeddings finds conceptually related files even when exact terms don't match.
+- **Full-text content search.** Across supported files, with snippets and line-level context.
 - **Supported documents.** PDF, DOCX/PPTX/XLSX, EPUB/ODT/ODS/ODP, RTF, plain text and code.
-- **Image text.** OCR via tesseract where installed; thumbnails, dimensions, and near-duplicate grouping.
-- **Ranking.** Hybrid lexical + semantic retrieval with recency and path signals.
+- **Image understanding.** OCR text extraction (tesseract), thumbnails, dimensions, and perceptual near-duplicate grouping.
+- **Hybrid ranking.** Lexical + semantic + recency + path signals fused via RRF.
+- **Query language.** `type:`, `ext:`, `in:`, `path:`, `modified:`, `size:`, `is:`, `lang:`, `name:`, `content:`, `re:`, negation, `mode:exhaustive`.
 - **Programmatic access.** `kensaku-cli search` with text or JSON output, filters, and exhaustive enumeration.
 - **AI-agent access.** MCP server exposing `search`, `read_snippet`, and `index_state` over stdio.
 - **Local-first.** Indexes and config stay on your machine; no telemetry.
