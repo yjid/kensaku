@@ -6,6 +6,10 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- PP-OCRv6 is now compiled into normal app builds via the default `accurate-ocr`
+  feature, so Setup/Settings no longer show "not included in this build". The
+  model pack is still an explicit download and Tesseract remains the default
+  engine until the user selects Accurate.
 - Removed the fake visual and native-OCR paths introduced by the automated
   K18–K21 pass. Visual search is now a Settings → Beta model-download experiment
   only and is not wired into search; `similar_images` is hidden from MCP when

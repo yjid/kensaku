@@ -10,7 +10,8 @@
 Kensaku has two working OCR paths:
 
 1. **Tesseract** — the default, external binary.
-2. **PP-OCRv6 tiny** — optional `accurate-ocr` feature plus a downloaded pack.
+2. **PP-OCRv6 tiny** — compiled into default app builds via `accurate-ocr`, plus
+   a downloaded model pack that the user opts into.
 
 The retired `ocr_engine = "native"` value falls back to Tesseract. There are no
 `native-ocr-macos` or `native-ocr-windows` Cargo features in the tree.

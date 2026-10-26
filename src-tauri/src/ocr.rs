@@ -74,10 +74,11 @@ pub fn engine_name() -> &'static str {
 pub fn extract_image_ocr(path: &Path) -> Option<String> {
     #[cfg(feature = "accurate-ocr")]
     {
-        if engine_name() == ACCURATE && pack_present() {
-            if let Some(text) = extract_accurate_ocr(path) {
-                return Some(text);
-            }
+        if engine_name() == ACCURATE
+            && pack_present()
+            && let Some(text) = extract_accurate_ocr(path)
+        {
+            return Some(text);
         }
     }
 

@@ -185,11 +185,12 @@ the same check.
 
 ### Accurate OCR pack (optional)
 
-Build with `--features accurate-ocr` to include the PP-OCRv6 tiny engine, then
-download the pack from **Setup → Optional packs** or Settings → Search. The pack
-is ~6.1 MB (detector 1.7 MB, recognizer 4.3 MB, dictionary 27 KB) and is verified
-against pinned SHA-256 checksums. If it is missing or the feature is disabled,
-Kensaku falls back to Tesseract.
+Normal app builds compile the PP-OCRv6 tiny engine via the default
+`accurate-ocr` feature. Download the pack from **Setup → Optional packs** or
+Settings → Search, then select **Accurate** as the OCR engine. The pack is
+~6.1 MB (detector 1.7 MB, recognizer 4.3 MB, dictionary 27 KB) and is verified
+against pinned SHA-256 checksums. If it is missing, or the build uses
+`--no-default-features`, Kensaku falls back to Tesseract.
 
 Models: PaddleOCR PP-OCRv6 tiny (Apache-2.0), published by PaddlePaddle. The Rust
 ONNX wrapper is `paddleocr_rs_onnx` (MIT).
