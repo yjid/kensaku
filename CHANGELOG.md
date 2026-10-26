@@ -13,7 +13,8 @@ versioning: [SemVer](https://semver.org/).
   the daemon and fall back to direct read-only access when it is absent.
   Search remains local until the daemon search method lands. The daemon also
   exposes `get_status` and `reindex`, handles SIGTERM/SIGINT, validates the
-  token/protocol handshake, and clients can opt out with `KENSAKU_NO_DAEMON=1`.
+  token/protocol handshake, removes its socket/PID on SIGTERM and shutdown, and
+  clients can opt out with `KENSAKU_NO_DAEMON=1`.
   CLI/MCP search now prefers the warm daemon and falls back locally. The Tauri
   app still runs the in-process indexer (the `--no-daemon` fallback).
 - Compact metadata arena (`NodeArena`/`NameArena`): per-entry node is 64 bytes

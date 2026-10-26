@@ -41,9 +41,24 @@ fn ensure_token(config_dir: &Path) -> std::io::Result<String> {
     Ok(token)
 }
 
+use std::ffi::CString;
+use std::sync::OnceLock;
+
+static SOCKET_C: OnceLock<CString> = OnceLock::new();
+static PID_C: OnceLock<CString> = OnceLock::new();
+
+fn cleanup_paths() {
+    if let Some(path) = SOCKET_C.get() {
+        unsafe { libc::unlink(path.as_ptr()) };
+    }
+    if let Some(path) = PID_C.get() {
+        unsafe { libc::unlink(path.as_ptr()) };
+    }
+}
+
 extern "C" fn handle_term(_sig: libc::c_int) {
-    // The OS releases the lock when the process exits; the next start removes
-    // stale sockets and pid files.
+    // `unlink` is async-signal-safe; paths were precomputed at startup.
+    cleanup_paths();
     std::process::exit(0);
 }
 
@@ -103,6 +118,12 @@ fn main() {
 
     let pid_path = config_dir.join("daemon.pid");
     let _ = fs::write(&pid_path, std::process::id().to_string());
+    if let Ok(c) = CString::new(sock.to_string_lossy().as_bytes()) {
+        let _ = SOCKET_C.set(c);
+    }
+    if let Ok(c) = CString::new(pid_path.to_string_lossy().as_bytes()) {
+        let _ = PID_C.set(c);
+    }
 
     // Start indexer
     let cfg = KensakuConfig::load();
@@ -180,6 +201,7 @@ fn handle_client(mut stream: UnixStream, token: &str, manager: &Arc<IndexerManag
                 Err(e) => Err(e),
             },
             "shutdown" => {
+                cleanup_paths();
                 std::process::exit(0);
             }
             _ => Err(format!("unknown method {}", method)),
