@@ -192,7 +192,7 @@ Full threat model: [SECURITY.md](SECURITY.md).
 
 **Available today:** desktop app, CLI, MCP, semantic + lexical hybrid search, full query grammar, PDF/Office/EPUB/ODT/RTF extraction, tesseract OCR, image thumbnails and near-duplicate grouping, incremental indexing, rename/delete tracking, two themes, Doctor, factory reset, guided first-run setup, and 102 Rust tests.
 
-**Planned:** natural-language intent without syntax, `/` commands and `@` scopes, facet counts, saved searches, CLIP/SigLIP visual search, face identity, native platform OCR, warm shared daemon, 1M-file prefilter, signing/notarization, auto-update. See [docs/REMAINING.md](docs/REMAINING.md) and [docs/VISION.md](docs/VISION.md).
+**Planned:** warm shared daemon and compact metadata arena, lazy snippets and folded substring search, optional high-accuracy OCR, native platform OCR, CLIP/SigLIP visual search, face identity, 1M-file prefilter, signing/notarization, and auto-update. See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/REMAINING.md](docs/REMAINING.md), [docs/VISION.md](docs/VISION.md), and the [landscape notes](docs/LANDSCAPE.md).
 
 ## Contributing
 
