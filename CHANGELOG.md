@@ -6,6 +6,15 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- K16 embedding provider contract: real provider selection supporting `Static`
+  (quantized Potion table / hashing estimator), `Smart` (reserved for ONNX),
+  and `None` (lexical-only mode). Reads `semantic_enabled`, `semantic_model`, and
+  `semantic_f32_table`. Disabling semantic indexing or selecting `none` completely
+  bypasses semantic scoring. Incompatible or missing model configurations fall back
+  to `Static` with an explicit reason string. Added model-id isolation in `ExactScanner`
+  and `UnitStore`, ensuring units from different models/dimensions can never be
+  compared or mixed. Surfaced provider, model id, dimension, and fallback reason in
+  Doctor checks and stats.
 - K15 CJK-aware Tantivy tokenization: custom "kensaku" tokenizer decomposing Han,
   Hiragana, Katakana, and Hangul into interleaved unigram and bigram tokens with
   exact byte offsets while preserving standard SimpleTokenizer behavior on Latin,

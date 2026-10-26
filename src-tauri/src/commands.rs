@@ -252,7 +252,12 @@ pub async fn legacy_search(
 ) -> Result<Vec<SearchResult>, String> {
     let started = Instant::now();
     if let Some(daemon) = state.daemon.as_ref() {
-        let resp = daemon.search_page(query.clone(), state.indexer.config.read().max_results, 0, false)?;
+        let resp = daemon.search_page(
+            query.clone(),
+            state.indexer.config.read().max_results,
+            0,
+            false,
+        )?;
         record_query_latency(started.elapsed().as_micros() as u64);
         return Ok(resp.results);
     }
@@ -289,9 +294,7 @@ pub async fn get_indexing_status(state: State<'_, AppState>) -> Result<IndexingS
     Ok(state.indexer.get_status())
 }
 
-pub fn stats_for(
-    indexer: &crate::indexer::IndexerManager,
-) -> Result<serde_json::Value, String> {
+pub fn stats_for(indexer: &crate::indexer::IndexerManager) -> Result<serde_json::Value, String> {
     let status = indexer.get_status();
 
     let (files, dirs) = {
@@ -417,6 +420,9 @@ pub fn stats_for(
             "watcher_ok": watcher_ok,
             "semantic_ready": status.semantic_ready,
             "model_id": model_id,
+            "semantic_provider": crate::embed::ModelRegistry::global().provider_name(),
+            "semantic_dim": crate::embed::ModelRegistry::global().dim,
+            "semantic_fallback_reason": crate::embed::ModelRegistry::global().fallback_reason.clone(),
         },
     }))
 }
@@ -869,7 +875,6 @@ pub async fn save_config(config: KensakuConfig, state: State<'_, AppState>) -> R
     state.indexer.apply_config(config)
 }
 
-
 #[tauri::command]
 pub async fn is_setup_complete() -> Result<bool, String> {
     Ok(KensakuConfig::is_setup_done())
@@ -933,9 +938,7 @@ pub struct HomeData {
     pub saved_searches: Vec<crate::config::SavedSearch>,
 }
 
-pub fn home_data_for(
-    indexer: &crate::indexer::IndexerManager,
-) -> Result<HomeData, String> {
+pub fn home_data_for(indexer: &crate::indexer::IndexerManager) -> Result<HomeData, String> {
     let metadata = indexer.metadata.read();
     let config = indexer.config.read().clone();
     let mut recent: Vec<HomeItem> = (0..metadata.len())
@@ -1056,7 +1059,11 @@ pub fn scope_suggestions_for(
             .then_with(|| a.1.len().cmp(&b.1.len()))
             .then_with(|| a.1.cmp(&b.1))
     });
-    Ok(matches.into_iter().take(limit).map(|(_, path)| path).collect())
+    Ok(matches
+        .into_iter()
+        .take(limit)
+        .map(|(_, path)| path)
+        .collect())
 }
 
 #[tauri::command]
