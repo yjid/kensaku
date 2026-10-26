@@ -32,6 +32,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanStatus, setScanStatus] = useState<IndexingStatus | null>(null);
+  const [done, setDone] = useState(false);
   const { theme, setTheme } = useTheme();
 
   useEffect(() => {
@@ -53,16 +54,19 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
 
   // Poll indexing status while scanning; finish when the crawl completes.
   useEffect(() => {
-    if (!scanning) return;
+    if (!scanning || done) return;
     let cancelled = false;
     const tick = async () => {
       try {
         const st = await invoke<IndexingStatus>("get_indexing_status");
         if (cancelled) return;
         setScanStatus(st);
-        const done = await invoke<boolean>("is_setup_complete");
-        if (done) {
-          if (!cancelled) onSetupCompleted();
+        const isDone = await invoke<boolean>("is_setup_complete");
+        if (isDone) {
+          if (!cancelled) {
+            setScanStatus(st);
+            setDone(true);
+          }
         }
       } catch (err) {
         console.error("Scan status error:", err);
@@ -74,7 +78,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
       cancelled = true;
       clearInterval(interval);
     };
-  }, [scanning, onSetupCompleted]);
+  }, [scanning, done, onSetupCompleted]);
 
   const toggleDir = (dir: string) =>
     setSelectedDirs((prev) =>
@@ -106,6 +110,49 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
       setIsSubmitting(false);
     }
   };
+
+  if (done) {
+    const st = scanStatus;
+    const files = st?.files_indexed ?? 0;
+    const content = st?.content_indexed ?? 0;
+    const units = st?.units_indexed ?? 0;
+    return (
+      <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-bg px-8 text-center">
+        <div className="flex flex-col items-center gap-2">
+          <span className="text-[15px] font-semibold tracking-tight text-fg">Kensaku</span>
+          <span className="font-serif text-[13px] italic text-subtle">検索 — to search</span>
+        </div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-accent-fg">
+          <Check className="h-5 w-5" />
+        </div>
+        <div className="space-y-1">
+          <h1 className="text-[18px] font-semibold tracking-tight text-fg">Done.</h1>
+          <p className="text-[12px] text-muted">Your index is ready. Start searching.</p>
+        </div>
+        <div className="grid grid-cols-3 gap-6 text-center">
+          <div>
+            <div className="font-mono text-[20px] font-semibold text-fg">{files.toLocaleString()}</div>
+            <div className="text-[10px] uppercase tracking-wider text-subtle">files</div>
+          </div>
+          <div>
+            <div className="font-mono text-[20px] font-semibold text-fg">{content.toLocaleString()}</div>
+            <div className="text-[10px] uppercase tracking-wider text-subtle">documents</div>
+          </div>
+          <div>
+            <div className="font-mono text-[20px] font-semibold text-fg">{units.toLocaleString()}</div>
+            <div className="text-[10px] uppercase tracking-wider text-subtle">embedded</div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onSetupCompleted}
+          className="flex h-9 items-center gap-1.5 rounded-[10px] bg-accent px-5 text-[12px] font-medium text-accent-fg transition-opacity hover:opacity-90"
+        >
+          Start searching <ArrowRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    );
+  }
 
   if (scanning) {
     const st = scanStatus;
