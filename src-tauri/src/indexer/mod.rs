@@ -17,11 +17,13 @@ use crate::indexer::walker::{FileEntry, is_cloud_placeholder_path, walk_director
 use crate::indexer::watcher::{WatcherHandle, start_file_watcher};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
+use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexingStatus {
@@ -47,6 +49,9 @@ pub struct IndexingStatus {
     /// Files queued for text extraction in the current crawl.
     #[serde(default)]
     pub extract_total: usize,
+    /// True while the user has paused background indexing.
+    #[serde(default)]
+    pub paused: bool,
 }
 
 fn default_phase() -> String {
@@ -80,6 +85,11 @@ struct ExtractJob {
     modified: u64,
     size: u64,
     is_image: bool,
+}
+
+/// Crawl order: text before images, newest first within each class, then size.
+fn extract_sort_key(job: &ExtractJob) -> (bool, Reverse<u64>, u64) {
+    (job.is_image, Reverse(job.modified), job.size)
 }
 
 /// A file that has been extracted, together with any semantic vectors.
@@ -281,6 +291,7 @@ impl IndexerManager {
                 total_files: 0,
                 extract_done: 0,
                 extract_total: 0,
+                paused: false,
             })),
             crawl_start_unix_ms: Arc::new(AtomicU64::new(0)),
             last_reconcile_unix_secs: Arc::new(AtomicU64::new(0)),
@@ -300,6 +311,69 @@ impl IndexerManager {
             use tauri::Emitter;
             let _ = handle.emit("indexing-status", status);
         }
+    }
+
+    /// Blocks extraction workers while the user has paused indexing.
+    ///
+    /// The watcher is a separate thread and keeps applying renames/deletes, so
+    /// pausing never makes the index stale about files that disappeared.
+    fn wait_while_paused(
+        config: &Arc<RwLock<KensakuConfig>>,
+        status: &Arc<RwLock<IndexingStatus>>,
+        app_handle: &Arc<RwLock<Option<tauri::AppHandle>>>,
+    ) {
+        loop {
+            let paused = config.read().pause_indexing;
+            if !paused {
+                let mut st = status.write();
+                if st.paused {
+                    st.paused = false;
+                    st.phase = "extracting".to_string();
+                    st.current_status = "Resuming indexing…".to_string();
+                    Self::emit_status(app_handle, &st);
+                }
+                return;
+            }
+
+            let mut st = status.write();
+            if !st.paused {
+                st.paused = true;
+                st.phase = "paused".to_string();
+                st.current_status = "Indexing paused".to_string();
+                Self::emit_status(app_handle, &st);
+            }
+            drop(st);
+            thread::sleep(Duration::from_millis(150));
+        }
+    }
+
+    /// Eco mode limits how often extraction jobs start while on battery.
+    /// Documents already in flight finish normally; fresh watcher events are
+    /// handled by the watcher thread and are not paced.
+    fn pace_on_battery(
+        config: &Arc<RwLock<KensakuConfig>>,
+        battery: &Mutex<(Instant, bool)>,
+        gate: &Mutex<Instant>,
+    ) {
+        let crawl_mode = config.read().crawl_mode;
+        let should_pace = {
+            let mut cached = battery.lock();
+            if cached.0.elapsed() >= Duration::from_secs(30) {
+                cached.1 = crate::util::power::should_pace(crawl_mode);
+                cached.0 = Instant::now();
+            }
+            cached.1
+        };
+        if !should_pace {
+            return;
+        }
+
+        let mut last = gate.lock();
+        let interval = Duration::from_millis(75);
+        if let Some(wait) = interval.checked_sub(last.elapsed()) {
+            thread::sleep(wait);
+        }
+        *last = Instant::now();
     }
 
     pub fn start_indexing(&self) {
@@ -337,14 +411,19 @@ impl IndexerManager {
         let watcher_ok = Arc::clone(&self.watcher_ok);
 
         thread::spawn(move || {
-            let (watched_dirs, excluded_dirs, excluded_exts) = {
+            let (watched_dirs, excluded_dirs, excluded_exts, crawl_mode) = {
                 let cfg = config_arc.read();
                 (
                     cfg.watched_dirs.clone(),
                     cfg.excluded_dirs.clone(),
                     cfg.excluded_extensions.clone(),
+                    cfg.crawl_mode,
                 )
             };
+
+            // Balanced/eco keep the crawl thread in the OS idle class; full
+            // leaves it at normal priority. Failures are advisory.
+            crate::util::priority::apply(crawl_mode);
 
             crawl_start_unix_ms.store(now_unix_ms(), Ordering::Relaxed);
             watcher_ok.store(false, Ordering::Relaxed);
@@ -352,6 +431,7 @@ impl IndexerManager {
             {
                 let mut st = status.write();
                 st.is_indexing = true;
+                st.paused = false;
                 st.phase = "walking".to_string();
                 st.current_status = "Scanning files...".to_string();
                 Self::emit_status(&app_handle, &st);
@@ -468,8 +548,9 @@ impl IndexerManager {
 
             // Index text and small files first. Images (OCR) are the slow tail,
             // so this makes the lexical index useful earlier in the crawl while
-            // the same total amount of work is done.
-            to_extract.sort_unstable_by_key(|job| (job.is_image, job.size));
+            // the same total amount of work is done. Within each class, newest
+            // files win so a just-saved document is searchable first.
+            to_extract.sort_unstable_by_key(extract_sort_key);
 
             // Phase 2b: streaming extraction → lexical index → semantic index.
             //
@@ -529,12 +610,22 @@ impl IndexerManager {
             // the consumer (this thread) keeps using the originals.
             let producer_status = Arc::clone(&status);
             let producer_app = Arc::clone(&app_handle);
+            let producer_config = Arc::clone(&config_arc);
+            let battery_state = Arc::new(Mutex::new((Instant::now(), false)));
+            let pace_gate = Arc::new(Mutex::new(Instant::now()));
 
             rayon::scope(|scope| {
                 use rayon::prelude::*;
 
                 scope.spawn(move |_| {
                     to_extract.par_iter().for_each_with(tx, |tx, job| {
+                        Self::wait_while_paused(
+                            &producer_config,
+                            &producer_status,
+                            &producer_app,
+                        );
+                        Self::pace_on_battery(&producer_config, &battery_state, &pace_gate);
+
                         // Image dimensions come from the file header, which is
                         // cheap. Perceptual hashing needs a full decode; doing
                         // it here would serialize the whole crawl behind a
@@ -773,6 +864,7 @@ impl IndexerManager {
             {
                 let mut st = status.write();
                 st.is_indexing = false;
+                st.paused = false;
                 st.phase = "idle".to_string();
                 st.files_indexed = files_count;
                 st.content_indexed = content_count;
@@ -859,6 +951,35 @@ mod tests {
             char_bloom: 0,
             content_pending,
         }
+    }
+
+    #[test]
+    fn crawl_orders_text_first_then_newest_then_smallest() {
+        let job = |path: &str, modified: u64, size: u64, is_image: bool| ExtractJob {
+            node_id: 0,
+            path: PathBuf::from(path),
+            name: path.to_string(),
+            modified,
+            size,
+            is_image,
+        };
+        let mut jobs = [
+            job("/old-image", 10, 10, true),
+            job("/old-text", 10, 10, false),
+            job("/new-text", 20, 50, false),
+            job("/new-small-text", 20, 5, false),
+        ];
+        jobs.sort_unstable_by_key(extract_sort_key);
+        let order: Vec<&str> = jobs.iter().map(|job| job.path.to_str().unwrap()).collect();
+        assert_eq!(
+            order,
+            vec![
+                "/new-small-text",
+                "/new-text",
+                "/old-text",
+                "/old-image"
+            ]
+        );
     }
 
     #[test]

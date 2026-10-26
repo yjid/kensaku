@@ -10,12 +10,13 @@ use crate::indexer::walker::{
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use parking_lot::RwLock;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::channel;
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 /// Handle to a running filesystem watcher thread.
 ///
@@ -41,6 +42,117 @@ impl Drop for WatcherHandle {
     fn drop(&mut self) {
         self.stop();
     }
+}
+
+/// How long a path must be quiet before the watcher reads it.
+const SETTLE: Duration = Duration::from_millis(400);
+/// Extra observation for files whose mtime is still inside the retry window.
+const FRESH_RETRY: Duration = Duration::from_millis(500);
+/// A file written this recently is re-checked before its content is trusted.
+const FRESH_WINDOW: Duration = Duration::from_secs(10);
+
+struct PendingUpsert {
+    deadline: Instant,
+    first_seen: Instant,
+    /// `(size, mtime_secs)` from the previous settle attempt. A changing
+    /// fingerprint means the writer is still active, so keep waiting.
+    fingerprint: Option<(u64, u64)>,
+}
+
+/// Coalesces create/modify events per path and delays them until they settle.
+#[derive(Default)]
+struct PendingUpserts {
+    paths: HashMap<PathBuf, PendingUpsert>,
+}
+
+impl PendingUpserts {
+    fn note(&mut self, path: PathBuf, now: Instant) {
+        self.paths
+            .entry(path)
+            .and_modify(|pending| pending.deadline = now + SETTLE)
+            .or_insert(PendingUpsert {
+                deadline: now + SETTLE,
+                first_seen: now,
+                fingerprint: None,
+            });
+    }
+
+    fn due(&mut self, now: Instant) -> Vec<(PathBuf, PendingUpsert)> {
+        let ready: Vec<PathBuf> = self
+            .paths
+            .iter()
+            .filter(|(_, pending)| pending.deadline <= now)
+            .map(|(path, _)| path.clone())
+            .collect();
+        ready
+            .into_iter()
+            .filter_map(|path| self.paths.remove(&path).map(|pending| (path, pending)))
+            .collect()
+    }
+
+    fn next_deadline(&self) -> Option<Instant> {
+        self.paths.values().map(|pending| pending.deadline).min()
+    }
+
+    fn len(&self) -> usize {
+        self.paths.len()
+    }
+}
+
+fn modified_secs(meta: &std::fs::Metadata) -> u64 {
+    meta.modified()
+        .ok()
+        .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
+/// Applies a settled path, re-queueing fresh files until their size and mtime
+/// stop moving (browser saves often create then keep writing).
+fn apply_settled(
+    path: PathBuf,
+    pending: PendingUpsert,
+    now: Instant,
+    cfg: &KensakuConfig,
+    metadata: &Arc<RwLock<MetadataStore>>,
+    content_index: &Arc<RwLock<Option<ContentIndex>>>,
+    queue: &mut PendingUpserts,
+) {
+    let Ok(meta) = std::fs::metadata(&path) else {
+        handle_path_remove(&path, metadata, content_index);
+        return;
+    };
+
+    let fingerprint = (meta.len(), modified_secs(&meta));
+    let fresh = now
+        .checked_duration_since(pending.first_seen)
+        .is_some_and(|elapsed| elapsed < FRESH_WINDOW)
+        && SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .ok()
+            .map(|now| now.as_secs().saturating_sub(fingerprint.1) < FRESH_WINDOW.as_secs())
+            .unwrap_or(false);
+
+    if fresh && meta.is_file() && pending.fingerprint != Some(fingerprint) {
+        queue.paths.insert(
+            path,
+            PendingUpsert {
+                deadline: now + FRESH_RETRY,
+                first_seen: pending.first_seen,
+                fingerprint: Some(fingerprint),
+            },
+        );
+        return;
+    }
+
+    if is_path_excluded(&path, cfg) || !path.exists() {
+        if !path.exists() {
+            handle_path_remove(&path, metadata, content_index);
+        }
+        return;
+    }
+
+    handle_file_upsert(&path, metadata, content_index);
 }
 
 pub fn start_file_watcher(
@@ -102,22 +214,59 @@ fn run_watcher(
         }
     }
 
+    let mut pending = PendingUpserts::default();
     let mut pending_commits = 0;
     let mut last_commit = SystemTime::now();
+    let rescan_running = Arc::new(AtomicBool::new(false));
 
     loop {
         if stop.load(Ordering::SeqCst) {
             break;
         }
 
+        let cfg = config.read().clone();
+        let now = Instant::now();
+
+        // Apply paths that have been quiet for the settle window. Pausing only
+        // gates reads/indexing; removes and renames are still applied below.
+        if !cfg.pause_indexing {
+            for (path, entry) in pending.due(now) {
+                apply_settled(
+                    path,
+                    entry,
+                    now,
+                    &cfg,
+                    &metadata,
+                    &content_index,
+                    &mut pending,
+                );
+                pending_commits += 1;
+            }
+        }
+
         // Drain all available events in a batch (coalescing) instead of
         // one-at-a-time. Read config once per batch, not per event.
-        let cfg = config.read().clone();
         let mut batch_count = 0;
         loop {
             match rx.try_recv() {
                 Ok(Ok(event)) => {
-                    pending_commits += handle_event(&event, &cfg, &metadata, &content_index);
+                    pending_commits += handle_event(
+                        &event,
+                        &cfg,
+                        &metadata,
+                        &content_index,
+                        &mut pending,
+                        Instant::now(),
+                    );
+                    if event.need_rescan() {
+                        spawn_rescan(
+                            &watched_dirs,
+                            &cfg,
+                            &metadata,
+                            &content_index,
+                            &rescan_running,
+                        );
+                    }
                     batch_count += 1;
                     if batch_count >= 100 {
                         break; // Process max 100 per batch to avoid blocking
@@ -136,12 +285,37 @@ fn run_watcher(
             }
         }
 
-        // If no events were drained, wait for one with timeout
+        // If no events were drained, wait until the next settle deadline (or a
+        // short timeout so pause/unpause and shutdown stay responsive).
         if batch_count == 0 {
-            match rx.recv_timeout(Duration::from_millis(500)) {
+            let wait = if cfg.pause_indexing {
+                Duration::from_millis(500)
+            } else {
+                pending
+                    .next_deadline()
+                    .map(|deadline| deadline.saturating_duration_since(Instant::now()))
+                    .unwrap_or(Duration::from_millis(500))
+                    .clamp(Duration::from_millis(50), Duration::from_millis(500))
+            };
+            match rx.recv_timeout(wait) {
                 Ok(Ok(event)) => {
-                    let cfg = config.read().clone();
-                    pending_commits += handle_event(&event, &cfg, &metadata, &content_index);
+                    pending_commits += handle_event(
+                        &event,
+                        &cfg,
+                        &metadata,
+                        &content_index,
+                        &mut pending,
+                        Instant::now(),
+                    );
+                    if event.need_rescan() {
+                        spawn_rescan(
+                            &watched_dirs,
+                            &cfg,
+                            &metadata,
+                            &content_index,
+                            &rescan_running,
+                        );
+                    }
                 }
                 Ok(Err(e)) => {
                     eprintln!("[Kensaku Watcher] Error event: {:?}", e);
@@ -156,7 +330,9 @@ fn run_watcher(
         // Periodic Tantivy commit if needed
         if pending_commits > 0
             && let Ok(elapsed) = last_commit.elapsed()
-            && (elapsed >= Duration::from_secs(3) || pending_commits > 50)
+            && (elapsed >= Duration::from_secs(3)
+                || pending_commits > 50
+                || (pending.len() == 0 && pending_commits > 0))
         {
             if let Some(c_index) = content_index.read().as_ref() {
                 let _ = c_index.commit();
@@ -172,6 +348,79 @@ fn run_watcher(
     {
         let _ = c_index.commit();
     }
+}
+
+/// Reconciles the whole watched tree after a platform overflow/rescan signal.
+fn spawn_rescan(
+    watched_dirs: &[PathBuf],
+    cfg: &KensakuConfig,
+    metadata: &Arc<RwLock<MetadataStore>>,
+    content_index: &Arc<RwLock<Option<ContentIndex>>>,
+    running: &Arc<AtomicBool>,
+) {
+    if running.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let dirs = watched_dirs.to_vec();
+    let cfg = cfg.clone();
+    let metadata = Arc::clone(metadata);
+    let content_index = Arc::clone(content_index);
+    let running = Arc::clone(running);
+    thread::spawn(move || {
+        let changed = rescan_watched_dirs(&dirs, &cfg, &metadata, &content_index);
+        if changed > 0 {
+            eprintln!("[Kensaku Watcher] Rescan reconciled {} paths", changed);
+        }
+        running.store(false, Ordering::SeqCst);
+    });
+}
+
+fn rescan_watched_dirs(
+    watched_dirs: &[PathBuf],
+    cfg: &KensakuConfig,
+    metadata: &Arc<RwLock<MetadataStore>>,
+    content_index: &Arc<RwLock<Option<ContentIndex>>>,
+) -> usize {
+    let entries = walk_directories(watched_dirs, &cfg.excluded_dirs);
+    let seen: HashSet<PathBuf> = entries.iter().map(|entry| entry.path.clone()).collect();
+
+    let mut changed = 0;
+    for entry in &entries {
+        if is_path_excluded(&entry.path, cfg) {
+            continue;
+        }
+        handle_file_upsert(&entry.path, metadata, content_index);
+        changed += 1;
+    }
+
+    // Only roots that can be read can prove a path is gone; unmounted drives
+    // keep their metadata.
+    let available: Vec<&PathBuf> = watched_dirs
+        .iter()
+        .filter(|root| std::fs::read_dir(root).is_ok())
+        .collect();
+    let stale: Vec<PathBuf> = {
+        let store = metadata.read();
+        (0..store.len())
+            .filter_map(|index| {
+                let path = store.path(index as u32);
+                if available.iter().any(|root| path.starts_with(root)) && !seen.contains(&path) {
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    };
+    for path in &stale {
+        handle_path_remove(path, metadata, content_index);
+        changed += 1;
+    }
+
+    if let Some(c_index) = content_index.read().as_ref() {
+        let _ = c_index.commit();
+    }
+    changed
 }
 
 fn is_path_excluded(path: &Path, cfg: &KensakuConfig) -> bool {
@@ -194,6 +443,8 @@ fn handle_event(
     cfg: &KensakuConfig,
     metadata: &Arc<RwLock<MetadataStore>>,
     content_index: &Arc<RwLock<Option<ContentIndex>>>,
+    pending: &mut PendingUpserts,
+    now: Instant,
 ) -> usize {
     let mut changes = 0;
 
@@ -225,13 +476,14 @@ fn handle_event(
                         changes += 1;
                     }
                     if !new_excluded {
-                        handle_file_upsert(new_path, metadata, content_index);
+                        pending.note(new_path.clone(), now);
                         changes += 1;
                     }
                 }
             }
         }
         EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
+            // Removes are safe during a pause: they only drop stale rows.
             for path in &event.paths {
                 if !is_path_excluded(path, cfg) {
                     handle_path_remove(path, metadata, content_index);
@@ -242,7 +494,7 @@ fn handle_event(
         EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
             for path in &event.paths {
                 if !is_path_excluded(path, cfg) {
-                    handle_file_upsert(path, metadata, content_index);
+                    pending.note(path.clone(), now);
                     changes += 1;
                 }
             }
@@ -254,7 +506,7 @@ fn handle_event(
                     continue;
                 }
                 if path.exists() {
-                    handle_file_upsert(path, metadata, content_index);
+                    pending.note(path.clone(), now);
                 } else {
                     handle_path_remove(path, metadata, content_index);
                 }
@@ -272,7 +524,7 @@ fn handle_event(
         EventKind::Create(_) | EventKind::Modify(_) => {
             for path in &event.paths {
                 if !is_path_excluded(path, cfg) {
-                    handle_file_upsert(path, metadata, content_index);
+                    pending.note(path.clone(), now);
                     changes += 1;
                 }
             }
@@ -501,5 +753,232 @@ fn handle_path_remove(
         for descendant in &descendants {
             let _ = c_index.remove(descendant);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::indexer::metadata_db::MetadataDb;
+    use notify::event::{CreateKind, RemoveKind};
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "kensaku-watcher-{}-{}-{}",
+            tag,
+            std::process::id(),
+            nanos
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn store(dir: &Path) -> Arc<RwLock<MetadataStore>> {
+        let db = MetadataDb::open_in_dir(dir).expect("open metadata db");
+        Arc::new(RwLock::new(MetadataStore::with_db(db)))
+    }
+
+    fn no_content() -> Arc<RwLock<Option<ContentIndex>>> {
+        Arc::new(RwLock::new(None))
+    }
+
+    fn event(kind: EventKind, paths: &[&Path]) -> Event {
+        let mut event = Event::new(kind);
+        for path in paths {
+            event = event.add_path(path.to_path_buf());
+        }
+        event
+    }
+
+    fn settle_old(
+        path: PathBuf,
+        cfg: &KensakuConfig,
+        metadata: &Arc<RwLock<MetadataStore>>,
+        content_index: &Arc<RwLock<Option<ContentIndex>>>,
+    ) {
+        let now = Instant::now();
+        let pending = PendingUpsert {
+            deadline: now,
+            first_seen: now - FRESH_WINDOW - Duration::from_secs(1),
+            fingerprint: None,
+        };
+        let mut queue = PendingUpserts::default();
+        apply_settled(path, pending, now, cfg, metadata, content_index, &mut queue);
+        assert!(queue.len() == 0, "old files settle immediately");
+    }
+
+    #[test]
+    fn events_are_coalesced_until_the_settle_deadline() {
+        let now = Instant::now();
+        let mut queue = PendingUpserts::default();
+        queue.note(PathBuf::from("/tmp/a"), now);
+        queue.note(PathBuf::from("/tmp/a"), now + Duration::from_millis(100));
+
+        assert_eq!(queue.len(), 1);
+        assert!(queue.due(now + Duration::from_millis(499)).is_empty());
+        assert_eq!(queue.due(now + Duration::from_millis(501)).len(), 1);
+        assert_eq!(queue.len(), 0);
+    }
+
+    #[test]
+    fn create_event_waits_for_settle_before_indexing() {
+        let dir = temp_dir("settle");
+        let file = dir.join("note.txt");
+        std::fs::write(&file, "hello").unwrap();
+        let cfg = KensakuConfig::default();
+        let metadata = store(&dir);
+        let content_index = no_content();
+        let mut queue = PendingUpserts::default();
+
+        let now = Instant::now();
+        handle_event(
+            &event(EventKind::Create(CreateKind::File), &[&file]),
+            &cfg,
+            &metadata,
+            &content_index,
+            &mut queue,
+            now,
+        );
+        assert_eq!(queue.len(), 1);
+        assert_eq!(metadata.read().len(), 0, "must not read before settle");
+    }
+
+    #[test]
+    fn fresh_file_is_requeued_until_its_fingerprint_is_stable() {
+        let dir = temp_dir("fresh");
+        let file = dir.join("download.part");
+        std::fs::write(&file, "partial").unwrap();
+        let cfg = KensakuConfig::default();
+        let metadata = store(&dir);
+        let content_index = no_content();
+        let now = Instant::now();
+        let mut queue = PendingUpserts::default();
+
+        apply_settled(
+            file.clone(),
+            PendingUpsert {
+                deadline: now,
+                first_seen: now,
+                fingerprint: None,
+            },
+            now,
+            &cfg,
+            &metadata,
+            &content_index,
+            &mut queue,
+        );
+        assert_eq!(queue.len(), 1, "fresh file must be observed again");
+        assert_eq!(metadata.read().len(), 0);
+
+        let queued = queue.due(now + FRESH_RETRY).pop().unwrap().1;
+        apply_settled(
+            file,
+            queued,
+            now + FRESH_RETRY,
+            &cfg,
+            &metadata,
+            &content_index,
+            &mut queue,
+        );
+        assert_eq!(queue.len(), 0, "stable file should stop retrying");
+        assert_eq!(metadata.read().len(), 1);
+    }
+
+    #[test]
+    fn rename_event_moves_metadata_and_delete_event_removes_it() {
+        let dir = temp_dir("rename");
+        let old = dir.join("old.txt");
+        let new = dir.join("new.txt");
+        std::fs::write(&old, "hello").unwrap();
+        let cfg = KensakuConfig::default();
+        let metadata = store(&dir);
+        let content_index = no_content();
+
+        handle_file_upsert(&old, &metadata, &content_index);
+        assert!(metadata.read().get(&old).is_some());
+
+        std::fs::rename(&old, &new).unwrap();
+        let mut queue = PendingUpserts::default();
+        handle_event(
+            &event(
+                EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+                &[&old, &new],
+            ),
+            &cfg,
+            &metadata,
+            &content_index,
+            &mut queue,
+            Instant::now(),
+        );
+        assert!(metadata.read().get(&old).is_none());
+        settle_old(new.clone(), &cfg, &metadata, &content_index);
+        assert!(metadata.read().get(&new).is_some());
+
+        std::fs::remove_file(&new).unwrap();
+        handle_event(
+            &event(EventKind::Remove(RemoveKind::File), &[&new]),
+            &cfg,
+            &metadata,
+            &content_index,
+            &mut queue,
+            Instant::now(),
+        );
+        assert!(metadata.read().get(&new).is_none());
+    }
+
+    #[test]
+    fn pause_still_applies_deletes_and_renames() {
+        let dir = temp_dir("pause-delete");
+        let file = dir.join("gone.txt");
+        std::fs::write(&file, "hello").unwrap();
+        let cfg = KensakuConfig {
+            pause_indexing: true,
+            ..KensakuConfig::default()
+        };
+        let metadata = store(&dir);
+        let content_index = no_content();
+        handle_file_upsert(&file, &metadata, &content_index);
+        std::fs::remove_file(&file).unwrap();
+
+        let mut queue = PendingUpserts::default();
+        handle_event(
+            &event(EventKind::Remove(RemoveKind::File), &[&file]),
+            &cfg,
+            &metadata,
+            &content_index,
+            &mut queue,
+            Instant::now(),
+        );
+        assert!(metadata.read().get(&file).is_none());
+    }
+
+    #[test]
+    fn overflow_rescan_adds_missing_and_drops_ghosts() {
+        let dir = temp_dir("rescan");
+        let live = dir.join("live.txt");
+        let ghost = dir.join("ghost.txt");
+        std::fs::write(&live, "live").unwrap();
+        std::fs::write(&ghost, "ghost").unwrap();
+        let cfg = KensakuConfig {
+            watched_dirs: vec![dir.clone()],
+            ..KensakuConfig::default()
+        };
+        let metadata = store(&dir);
+        let content_index = no_content();
+        handle_file_upsert(&ghost, &metadata, &content_index);
+        std::fs::remove_file(&ghost).unwrap();
+
+        let changed =
+            rescan_watched_dirs(std::slice::from_ref(&dir), &cfg, &metadata, &content_index);
+        assert!(changed >= 2);
+        assert!(metadata.read().get(&live).is_some());
+        assert!(
+            metadata.read().get(&ghost).is_none(),
+            "overflow rescan must remove ghosts"
+        );
     }
 }

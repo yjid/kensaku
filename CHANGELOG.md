@@ -6,6 +6,13 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Background indexing policy: `crawl_mode` (`full` / `balanced` / `eco`) and a
+  persisted `pause_indexing` switch, both in Settings → Search. Balanced/eco use
+  OS idle CPU/I/O priority; eco also paces new extraction jobs on battery.
+  Pausing still applies renames and deletes.
+- Watcher hardening: 400 ms settle per path, coalesced events, fresh-file
+  fingerprint retries for 10 s, overflow rescan that reconciles missing and
+  ghost paths, and newest-first ordering within text/image classes.
 - Instrumented fast-search test proving the Tauri path never reads or returns
   snippets; snippets remain a separate batched `get_snippets` round-trip.
 - Thumbnail-based perceptual hashing (480 px thumbnails reused for dHash and

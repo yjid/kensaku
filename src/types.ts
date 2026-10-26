@@ -117,10 +117,17 @@ export interface IndexingStatus {
   is_embedding?: boolean;
   units_indexed?: number;
   semantic_ready?: boolean;
-  phase?: "idle" | "walking" | "extracting" | "embedding" | "committing";
+  phase?:
+    | "idle"
+    | "walking"
+    | "extracting"
+    | "embedding"
+    | "committing"
+    | "paused";
   total_files?: number;
   extract_done?: number;
   extract_total?: number;
+  paused?: boolean;
 }
 
 export interface KensakuConfig {
@@ -132,6 +139,9 @@ export interface KensakuConfig {
   is_setup_complete: boolean;
   semantic_enabled?: boolean;
   semantic_model?: string;
+  semantic_f32_table?: boolean;
+  crawl_mode?: "full" | "balanced" | "eco";
+  pause_indexing?: boolean;
   skip_hidden?: boolean;
   ocr_enabled?: boolean;
   theme?: "paper" | "void";

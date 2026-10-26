@@ -725,6 +725,46 @@ function SearchSection({
         <OcrField config={config} setConfig={setConfig} />
       </Card>
 
+      <Card title="Background indexing">
+        <Field
+          label="Crawl mode"
+          description="Balanced uses idle I/O and CPU priority. Eco also paces work on battery. Full speed keeps normal priority."
+        >
+          <select
+            value={config.crawl_mode ?? "balanced"}
+            onChange={(e) =>
+              setConfig((c) =>
+                c
+                  ? {
+                      ...c,
+                      crawl_mode: e.target.value as
+                        | "full"
+                        | "balanced"
+                        | "eco",
+                    }
+                  : c,
+              )
+            }
+            className="h-8 rounded-[8px] border border-line bg-elevated px-2 text-[12px] text-fg outline-none focus:border-accent"
+          >
+            <option value="full">Full speed</option>
+            <option value="balanced">Balanced</option>
+            <option value="eco">Eco</option>
+          </select>
+        </Field>
+        <Field
+          label="Pause indexing"
+          description="Stops reading new files. Renames and deletes still update the index while paused."
+        >
+          <Switch
+            checked={config.pause_indexing ?? false}
+            onChange={(v) =>
+              setConfig((c) => (c ? { ...c, pause_indexing: v } : c))
+            }
+          />
+        </Field>
+      </Card>
+
       <Card title="Aliases">
         <div className="space-y-2 p-4">
           <p className="text-[11px] leading-relaxed text-muted">
