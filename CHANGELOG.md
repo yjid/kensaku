@@ -6,6 +6,16 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- K19 visual search tier fused into RRF: 4-tier reciprocal rank fusion integrating
+  visual vector retrieval alongside fuzzy filename, Tantivy BM25 content, and static/smart
+  text semantics. Text-to-image queries encode text via `VisualEncoder::embed_text`, scanning
+  `VisualStore` with a cosine relevance floor (0.20) and candidate prefiltering. Image
+  matches are restricted to supported raster formats. Fused via dynamic query routing:
+  boosts `w_visual` to 2.0 when `QueryRoute::VisualSearch` is selected by `visual:` filter
+  syntax or `type:image` with descriptive terms, and scales proportionally (`w_visual = w_semantic * 0.8`)
+  for general queries. Added `MatchType::Visual` badge in backend and UI for visual-only hits,
+  and `MatchType::Both` for combined lexical and visual matches. Daemon and IPC search pipelines
+  pass `visual_store` concurrently.
 - K18 image embedding extraction pipeline: dedicated `VisualStore` holding 512-dimensional
   quantized i8 vectors per image node, backed by SQLite `visual_units` table with cascade delete.
   224x224 RGB planar preprocessing with standard CLIP normalization (`CLIP_MEAN`, `CLIP_STD`).

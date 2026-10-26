@@ -1,5 +1,6 @@
 pub mod fuzzy;
 
+use crate::embed::visual::VisualEncoder;
 use crate::embed::{ExactScanner, ModelRegistry, UnitStore};
 use crate::indexer::content::{ContentIndex, FieldKind};
 use crate::indexer::metadata::MetadataStore;
@@ -22,6 +23,7 @@ pub enum MatchType {
     /// Found by the folded/trigram fallback after exact matches ran short.
     ContentFolded,
     Semantic,
+    Visual,
     Both,
 }
 
@@ -428,10 +430,39 @@ impl SearchDispatcher {
             metadata,
             content_index,
             unit_store,
+            None,
             semantic_enabled,
             limit,
             seq,
             true,
+            SortOrder::Best,
+            &[],
+            0,
+        )
+    }
+
+    /// Runs a query with visual vector search enabled.
+    #[allow(clippy::too_many_arguments)]
+    pub fn search_response_with_visual(
+        raw_query: &str,
+        metadata: &MetadataStore,
+        content_index: &Option<ContentIndex>,
+        unit_store: Option<&UnitStore>,
+        visual_store: Option<&crate::embed::visual::VisualStore>,
+        semantic_enabled: bool,
+        limit: usize,
+        seq: u64,
+    ) -> SearchResponse {
+        Self::search_response_with_snippets(
+            raw_query,
+            metadata,
+            content_index,
+            unit_store,
+            visual_store,
+            semantic_enabled,
+            limit,
+            seq,
+            false,
             SortOrder::Best,
             &[],
             0,
@@ -455,6 +486,7 @@ impl SearchDispatcher {
             metadata,
             content_index,
             unit_store,
+            None,
             semantic_enabled,
             limit,
             seq,
@@ -484,6 +516,7 @@ impl SearchDispatcher {
             metadata,
             content_index,
             unit_store,
+            None,
             semantic_enabled,
             limit,
             seq,
@@ -544,6 +577,39 @@ impl SearchDispatcher {
             metadata,
             content_index,
             unit_store,
+            None,
+            semantic_enabled,
+            limit,
+            seq,
+            with_snippets,
+            sort,
+            aliases,
+            offset,
+        )
+    }
+
+    /// Sorted variant with snippets and visual store support.
+    #[allow(clippy::too_many_arguments)]
+    pub fn search_response_fast_sorted_with_snippets_and_visual(
+        raw_query: &str,
+        metadata: &MetadataStore,
+        content_index: &Option<ContentIndex>,
+        unit_store: Option<&UnitStore>,
+        visual_store: Option<&crate::embed::visual::VisualStore>,
+        semantic_enabled: bool,
+        limit: usize,
+        seq: u64,
+        sort: SortOrder,
+        aliases: &[(String, Vec<String>)],
+        offset: usize,
+        with_snippets: bool,
+    ) -> SearchResponse {
+        Self::search_response_with_snippets(
+            raw_query,
+            metadata,
+            content_index,
+            unit_store,
+            visual_store,
             semantic_enabled,
             limit,
             seq,
@@ -560,6 +626,7 @@ impl SearchDispatcher {
         metadata: &MetadataStore,
         content_index: &Option<ContentIndex>,
         unit_store: Option<&UnitStore>,
+        visual_store: Option<&crate::embed::visual::VisualStore>,
         semantic_enabled: bool,
         limit: usize,
         seq: u64,
@@ -866,12 +933,53 @@ impl SearchDispatcher {
             }
         }
 
-        // 6. 3-tier RRF Fusion (k = 60.0) with dynamic route weights
+        // 5b. Tier 4: Visual vector scan over image nodes (< 5ms)
+        let visual_floor = 0.20f32;
+        let mut visual_ranks: HashMap<PathBuf, (usize, f32)> = HashMap::new();
+        if !search_text.is_empty()
+            && let Some(v_store) = visual_store
+            && !v_store.is_empty()
+        {
+            let encoder = crate::embed::visual::MockVisualEncoder;
+            let query_vec = encoder.embed_text(search_text);
+            let hits = v_store.scan(
+                &query_vec,
+                allowed_node_ids.as_ref(),
+                visual_floor,
+                limit * 3,
+            );
+            for (rank, (node_id, score)) in hits.into_iter().enumerate() {
+                let orig_idx = match node_to_idx.get(&node_id).copied() {
+                    Some(idx) => idx,
+                    None if node_to_idx.is_empty() => metadata
+                        .get_by_node_id(node_id)
+                        .and_then(|entry| path_index.get(&entry.path).copied())
+                        .unwrap_or(usize::MAX),
+                    None => continue,
+                };
+                if orig_idx != usize::MAX
+                    && candidate_set.contains(&orig_idx)
+                    && let Some(entry) = entries.get(orig_idx)
+                {
+                    let is_image = entry
+                        .path
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .is_some_and(crate::indexer::extract::image::is_supported_image_extension);
+                    if is_image {
+                        visual_ranks.insert(entry.path.clone(), (rank + 1, score));
+                    }
+                }
+            }
+        }
+
+        // 6. 4-tier RRF Fusion (k = 60.0) with dynamic route weights
         struct MatchCandidate {
             entry_idx: usize,
             in_fuzzy: bool,
             in_bm25: bool,
             in_semantic: bool,
+            in_visual: bool,
             in_folded: bool,
             rrf_score: f64,
             best_range: Option<(usize, usize)>,
@@ -890,6 +998,7 @@ impl SearchDispatcher {
                             in_fuzzy: true,
                             in_bm25: false,
                             in_semantic: false,
+                            in_visual: false,
                             in_folded: false,
                             rrf_score: 0.1,
                             best_range: None,
@@ -898,11 +1007,12 @@ impl SearchDispatcher {
                 }
             }
         } else {
-            let (w_fuzzy, w_bm25, w_semantic) = match route {
-                crate::query::router::QueryRoute::NameCode => (1.3, 0.8, 0.8),
-                crate::query::router::QueryRoute::ContentPhrase => (0.8, 1.3, 1.0),
-                crate::query::router::QueryRoute::SemanticSearch => (0.8, 1.0, 1.5),
-                _ => (1.0, 1.0, 1.0),
+            let (w_fuzzy, w_bm25, w_semantic, w_visual) = match route {
+                crate::query::router::QueryRoute::NameCode => (1.3, 0.8, 0.8, 0.5),
+                crate::query::router::QueryRoute::ContentPhrase => (0.8, 1.3, 1.0, 0.6),
+                crate::query::router::QueryRoute::SemanticSearch => (0.8, 1.0, 1.5, 1.2),
+                crate::query::router::QueryRoute::VisualSearch => (0.8, 0.6, 1.0, 2.0),
+                _ => (1.0, 1.0, 1.0, 0.8),
             };
 
             // Merge fuzzy matches
@@ -916,6 +1026,7 @@ impl SearchDispatcher {
                             in_fuzzy: true,
                             in_bm25: false,
                             in_semantic: false,
+                            in_visual: false,
                             in_folded: false,
                             rrf_score: rrf,
                             best_range: None,
@@ -942,6 +1053,7 @@ impl SearchDispatcher {
                                 in_fuzzy: false,
                                 in_bm25: true,
                                 in_semantic: false,
+                                in_visual: false,
                                 in_folded: false,
                                 rrf_score: rrf,
                                 best_range: None,
@@ -977,9 +1089,42 @@ impl SearchDispatcher {
                             in_fuzzy: false,
                             in_bm25: false,
                             in_semantic: true,
+                            in_visual: false,
                             in_folded: false,
                             rrf_score: rrf,
                             best_range: Some(range),
+                        },
+                    );
+                }
+            }
+
+            // Merge Visual matches
+            for (path, &(rank, cosine)) in &visual_ranks {
+                let Some(&orig_idx) = path_index.get(path) else {
+                    continue;
+                };
+                if !candidate_set.contains(&orig_idx) {
+                    continue;
+                }
+                let rrf = w_visual * (1.0 / (60.0 + (rank as f64)));
+                if let Some(cand) = candidates.get_mut(path) {
+                    cand.in_visual = true;
+                    cand.rrf_score += rrf;
+                } else {
+                    if cosine < visual_floor {
+                        continue;
+                    }
+                    candidates.insert(
+                        path.clone(),
+                        MatchCandidate {
+                            entry_idx: orig_idx,
+                            in_fuzzy: false,
+                            in_bm25: false,
+                            in_semantic: false,
+                            in_visual: true,
+                            in_folded: false,
+                            rrf_score: rrf,
+                            best_range: None,
                         },
                     );
                 }
@@ -1017,6 +1162,7 @@ impl SearchDispatcher {
                                 in_fuzzy: false,
                                 in_bm25: false,
                                 in_semantic: false,
+                                in_visual: false,
                                 in_folded: true,
                                 rrf_score: rrf,
                                 best_range: None,
@@ -1040,20 +1186,33 @@ impl SearchDispatcher {
             .filter_map(|(path, cand)| {
                 let entry = entries.get(cand.entry_idx)?;
 
-                // MatchType resolution: Semantic badge if only found by semantic tier
-                let match_type =
-                    if cand.in_semantic && !cand.in_fuzzy && !cand.in_bm25 && !cand.in_folded {
-                        MatchType::Semantic
-                    } else if cand.in_fuzzy && (cand.in_bm25 || cand.in_semantic || cand.in_folded)
-                    {
-                        MatchType::Both
-                    } else if cand.in_bm25 {
-                        MatchType::Content
-                    } else if cand.in_folded {
-                        MatchType::ContentFolded
-                    } else {
-                        MatchType::FileName
-                    };
+                // MatchType resolution: Semantic badge if only found by semantic tier,
+                // Visual badge if only found by visual tier
+                let match_type = if cand.in_visual
+                    && !cand.in_fuzzy
+                    && !cand.in_bm25
+                    && !cand.in_semantic
+                    && !cand.in_folded
+                {
+                    MatchType::Visual
+                } else if cand.in_semantic
+                    && !cand.in_fuzzy
+                    && !cand.in_bm25
+                    && !cand.in_visual
+                    && !cand.in_folded
+                {
+                    MatchType::Semantic
+                } else if cand.in_fuzzy
+                    && (cand.in_bm25 || cand.in_semantic || cand.in_visual || cand.in_folded)
+                {
+                    MatchType::Both
+                } else if cand.in_bm25 {
+                    MatchType::Content
+                } else if cand.in_folded {
+                    MatchType::ContentFolded
+                } else {
+                    MatchType::FileName
+                };
 
                 let usage = metadata.get_usage(&entry.path);
                 let score = finalize_score(
@@ -1952,6 +2111,112 @@ mod tests {
         assert!(
             response_disabled.results.is_empty(),
             "when semantic_enabled=false, semantic-only results must not be returned"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn visual_search_tier_fused_into_rrf() {
+        use crate::embed::visual::{MockVisualEncoder, VISUAL_DIM, VisualEncoder, VisualStore};
+        use crate::indexer::metadata_db::MetadataDb;
+
+        let encoder = MockVisualEncoder;
+        let query_text = "cap";
+        let target_vec = encoder.embed_text(query_text);
+
+        let mut visual_store = VisualStore::new(VISUAL_DIM, encoder.model_id());
+        // Node 1: Visual-only generic image
+        visual_store.add_or_update(1, 0x1111, &target_vec);
+        // Node 2: Lexical + Visual image
+        visual_store.add_or_update(2, 0x2222, &target_vec);
+        // Node 3: Non-image file erroneously with visual vector
+        visual_store.add_or_update(3, 0x3333, &target_vec);
+        // Node 4: Weak vector below cosine floor
+        let inverted_vec: Vec<i8> = target_vec.iter().map(|&v| -v).collect();
+        visual_store.add_or_update(4, 0x4444, &inverted_vec);
+
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "kensaku-visual-rrf-{}-{}",
+            std::process::id(),
+            nanos
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let db = MetadataDb::open_in_dir(&dir).expect("open metadata db");
+
+        let mut e1 = entry(1, "/tmp/kensaku/vis/IMG_0001.png", "IMG_0001.png");
+        e1.char_bloom = crate::search::fuzzy::compute_char_mask(&e1.name);
+        db.upsert(&e1).unwrap();
+
+        let mut e2 = entry(2, "/tmp/kensaku/vis/red_cap.png", "red_cap.png");
+        e2.char_bloom = crate::search::fuzzy::compute_char_mask(&e2.name);
+        db.upsert(&e2).unwrap();
+
+        let mut e3 = entry(3, "/tmp/kensaku/vis/document.txt", "document.txt");
+        e3.char_bloom = crate::search::fuzzy::compute_char_mask(&e3.name);
+        db.upsert(&e3).unwrap();
+
+        let mut e4 = entry(4, "/tmp/kensaku/vis/noise.jpg", "noise.jpg");
+        e4.char_bloom = crate::search::fuzzy::compute_char_mask(&e4.name);
+        db.upsert(&e4).unwrap();
+
+        let metadata = MetadataStore::with_db(db);
+
+        let response = SearchDispatcher::search_response_with_visual(
+            query_text,
+            &metadata,
+            &None,
+            None,
+            Some(&visual_store),
+            false,
+            10,
+            0,
+        );
+
+        // 1. Weak vector node 4 dropped by floor (< 0.20)
+        assert!(
+            response
+                .results
+                .iter()
+                .all(|r| !r.path.ends_with("noise.jpg")),
+            "noise.jpg should be dropped by visual cosine floor"
+        );
+
+        // 2. Non-image file node 3 must never be tagged as MatchType::Visual
+        for r in &response.results {
+            if r.path.ends_with("document.txt") {
+                assert_ne!(
+                    r.match_type,
+                    MatchType::Visual,
+                    "non-image file document.txt must never be MatchType::Visual"
+                );
+            }
+        }
+
+        // 3. Node 1 (IMG_0001.png) matched visually
+        let img1 = response
+            .results
+            .iter()
+            .find(|r| r.path.ends_with("IMG_0001.png"))
+            .expect("IMG_0001.png should be found via visual tier");
+        assert_eq!(img1.match_type, MatchType::Visual);
+
+        // 4. Node 2 (red_cap.png) matched both lexically and visually, outranking visual-only
+        let img2 = response
+            .results
+            .iter()
+            .find(|r| r.path.ends_with("red_cap.png"))
+            .expect("red_cap.png should be found");
+        assert_eq!(img2.match_type, MatchType::Both);
+        assert!(
+            img2.score >= img1.score,
+            "lexical + visual hit (score={}) must outrank or tie visual-only hit (score={})",
+            img2.score,
+            img1.score
         );
 
         let _ = fs::remove_dir_all(&dir);

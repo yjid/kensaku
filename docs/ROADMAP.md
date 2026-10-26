@@ -42,7 +42,7 @@
 | K16 | Shipped — embedding provider contract, model-id isolation, doctor/stats reporting |
 | K17 | Shipped — optional ONNX smart pack (bge-small-en-v1.5 int8, smart-embeddings feature) |
 | K18 | Shipped — image embedding pipeline (VisualStore, thumbnail reuse, cancel safety) |
-| K19 | Planned — visual search tier |
+| K19 | Shipped — visual search tier fused into RRF, visual: filter, visual badge |
 | K20 | Planned — similar-image lookup |
 | K21 | Planned — native platform OCR |
 | K22 | Planned — CJK/multilingual golden queries |

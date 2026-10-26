@@ -42,6 +42,8 @@ function MatchBadge({ matchType }: { matchType: SearchResult["match_type"] }) {
         return "name + content";
       case "Semantic":
         return "≈ semantic";
+      case "Visual":
+        return "👁 visual";
       default:
         return null;
     }

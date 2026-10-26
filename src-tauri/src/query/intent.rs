@@ -61,9 +61,9 @@ pub fn compile(raw: &str) -> Intent {
 pub fn compile_with_aliases(raw: &str, aliases: &[(String, Vec<String>)]) -> Intent {
     // Explicit grammar is authoritative: never reinterpret a query that
     // already contains a filter token.
-    let has_explicit_filter = raw.split_whitespace().any(|t| {
-        t.contains(':') && !t.starts_with("http") && !t.starts_with("https")
-    });
+    let has_explicit_filter = raw
+        .split_whitespace()
+        .any(|t| t.contains(':') && !t.starts_with("http") && !t.starts_with("https"));
 
     let mut work = raw.to_string();
     let mut appends: Vec<String> = Vec::new();
@@ -81,7 +81,10 @@ pub fn compile_with_aliases(raw: &str, aliases: &[(String, Vec<String>)]) -> Int
                 && let Ok(re) = Regex::new(pat)
                 && re.is_match(&work)
             {
-                let source = re.find(&work).map(|m| m.as_str().to_string()).unwrap_or_default();
+                let source = re
+                    .find(&work)
+                    .map(|m| m.as_str().to_string())
+                    .unwrap_or_default();
                 work = re.replace(&work, " ").to_string();
                 sort = Some(order.to_string());
                 chips.push(InterpretationChip {
@@ -96,18 +99,43 @@ pub fn compile_with_aliases(raw: &str, aliases: &[(String, Vec<String>)]) -> Int
         // --- Time windows ----------------------------------------------
         for (pat, filter, label) in [
             (r"(?i)\btoday\b", "modified:<1d", "Modified: today"),
-            (r"(?i)\byesterday\b", "modified:1d..2d", "Modified: yesterday"),
-            (r"(?i)\b(?:this|last|past) week\b", "modified:<7d", "Modified: last 7 days"),
-            (r"(?i)\b(?:this|last|past) month\b", "modified:<30d", "Modified: last 30 days"),
-            (r"(?i)\b(?:this|last|past) year\b", "modified:<365d", "Modified: last year"),
+            (
+                r"(?i)\byesterday\b",
+                "modified:1d..2d",
+                "Modified: yesterday",
+            ),
+            (
+                r"(?i)\b(?:this|last|past) week\b",
+                "modified:<7d",
+                "Modified: last 7 days",
+            ),
+            (
+                r"(?i)\b(?:this|last|past) month\b",
+                "modified:<30d",
+                "Modified: last 30 days",
+            ),
+            (
+                r"(?i)\b(?:this|last|past) year\b",
+                "modified:<365d",
+                "Modified: last year",
+            ),
         ] {
             if let Ok(re) = Regex::new(pat) {
-                take(&mut work, &re, "time", label, filter, &mut appends, &mut chips);
+                take(
+                    &mut work,
+                    &re,
+                    "time",
+                    label,
+                    filter,
+                    &mut appends,
+                    &mut chips,
+                );
             }
         }
 
         // --- Size -------------------------------------------------------
-        if let Ok(re) = Regex::new(r"(?i)\b(?:under|less than|smaller than)\s+(\d+(?:\.\d+)?)\s*(kb|mb|gb)\b")
+        if let Ok(re) =
+            Regex::new(r"(?i)\b(?:under|less than|smaller than)\s+(\d+(?:\.\d+)?)\s*(kb|mb|gb)\b")
             && let Some(c) = re.captures(&work)
         {
             let number = c[1].to_string();
@@ -123,8 +151,9 @@ pub fn compile_with_aliases(raw: &str, aliases: &[(String, Vec<String>)]) -> Int
                 source,
             });
         }
-        if let Ok(re) = Regex::new(r"(?i)\b(?:over|more than|larger than|bigger than)\s+(\d+(?:\.\d+)?)\s*(kb|mb|gb)\b")
-            && let Some(c) = re.captures(&work)
+        if let Ok(re) = Regex::new(
+            r"(?i)\b(?:over|more than|larger than|bigger than)\s+(\d+(?:\.\d+)?)\s*(kb|mb|gb)\b",
+        ) && let Some(c) = re.captures(&work)
         {
             let number = c[1].to_string();
             let unit = c[2].to_string();
@@ -140,30 +169,103 @@ pub fn compile_with_aliases(raw: &str, aliases: &[(String, Vec<String>)]) -> Int
             });
         }
         for (pat, filter, label) in [
-            (r"(?i)\b(?:huge|big|large)\b", "size:>100mb", "Size: over 100 MB"),
+            (
+                r"(?i)\b(?:huge|big|large)\b",
+                "size:>100mb",
+                "Size: over 100 MB",
+            ),
             (r"(?i)\b(?:tiny|small)\b", "size:<1mb", "Size: under 1 MB"),
         ] {
             if let Ok(re) = Regex::new(pat) {
-                take(&mut work, &re, "size", label, filter, &mut appends, &mut chips);
+                take(
+                    &mut work,
+                    &re,
+                    "size",
+                    label,
+                    filter,
+                    &mut appends,
+                    &mut chips,
+                );
+            }
+        }
+
+        // --- Visual search intent --------------------------------------
+        for pat in [r"(?i)\b(?:visual search|search visually for|visually)\b"] {
+            if let Ok(re) = Regex::new(pat)
+                && re.is_match(&work)
+            {
+                let source = re
+                    .find(&work)
+                    .map(|m| m.as_str().to_string())
+                    .unwrap_or_default();
+                work = re.replace(&work, " ").to_string();
+                appends.push("type:image".to_string());
+                chips.push(InterpretationChip {
+                    kind: "visual".to_string(),
+                    label: "Visual: images".to_string(),
+                    raw: "type:image".to_string(),
+                    source,
+                });
+                break;
             }
         }
 
         // --- Media / document nouns ------------------------------------
         for (pat, filter, label) in [
-            (r"(?i)\b(?:screenshots?|images?|photos?|pictures?)\b", "type:image", "Type: images"),
+            (
+                r"(?i)\b(?:screenshots?|images?|photos?|pictures?)\b",
+                "type:image",
+                "Type: images",
+            ),
             (r"(?i)\bpdfs?\b", "ext:pdf", "Type: PDF"),
-            (r"(?i)\b(?:videos?|movies?|clips?)\b", "type:media", "Type: media"),
-            (r"(?i)\b(?:audio|music|songs?)\b", "type:media", "Type: media"),
+            (
+                r"(?i)\b(?:videos?|movies?|clips?)\b",
+                "type:media",
+                "Type: media",
+            ),
+            (
+                r"(?i)\b(?:audio|music|songs?)\b",
+                "type:media",
+                "Type: media",
+            ),
             (r"(?i)\b(?:code|source)\b", "type:code", "Type: code"),
-            (r"(?i)\b(?:documents?|docs?)\b", "type:doc", "Type: documents"),
-            (r"(?i)\b(?:spreadsheets?|excel)\b", "type:doc", "Type: documents"),
-            (r"(?i)\b(?:presentations?|slides?)\b", "type:doc", "Type: documents"),
-            (r"(?i)\b(?:folders?|directories|directory)\b", "type:dir", "Type: folders"),
-            (r"(?i)\b(?:archives?|zips?)\b", "type:archive", "Type: archives"),
+            (
+                r"(?i)\b(?:documents?|docs?)\b",
+                "type:doc",
+                "Type: documents",
+            ),
+            (
+                r"(?i)\b(?:spreadsheets?|excel)\b",
+                "type:doc",
+                "Type: documents",
+            ),
+            (
+                r"(?i)\b(?:presentations?|slides?)\b",
+                "type:doc",
+                "Type: documents",
+            ),
+            (
+                r"(?i)\b(?:folders?|directories|directory)\b",
+                "type:dir",
+                "Type: folders",
+            ),
+            (
+                r"(?i)\b(?:archives?|zips?)\b",
+                "type:archive",
+                "Type: archives",
+            ),
             (r"(?i)\blogs?\b", "ext:log", "Type: logs"),
         ] {
             if let Ok(re) = Regex::new(pat) {
-                take(&mut work, &re, "type", label, filter, &mut appends, &mut chips);
+                take(
+                    &mut work,
+                    &re,
+                    "type",
+                    label,
+                    filter,
+                    &mut appends,
+                    &mut chips,
+                );
             }
         }
 
@@ -249,11 +351,7 @@ pub fn compile_with_aliases(raw: &str, aliases: &[(String, Vec<String>)]) -> Int
         query = raw.to_string();
     }
 
-    Intent {
-        query,
-        sort,
-        chips,
-    }
+    Intent { query, sort, chips }
 }
 
 #[cfg(test)]
