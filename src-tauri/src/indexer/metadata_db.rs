@@ -132,7 +132,7 @@ impl MetadataDb {
 
         // Image hash space version. Bumping it invalidates stored hashes so
         // `/dupes` never mixes hashes computed from different sources.
-        const IMAGE_HASH_VERSION: &str = "1";
+        const IMAGE_HASH_VERSION: &str = "2";
         let _ = conn.execute(
             "INSERT OR IGNORE INTO meta (key, value) VALUES ('image_hash_version', ?1)",
             [IMAGE_HASH_VERSION],

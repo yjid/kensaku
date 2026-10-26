@@ -6,6 +6,8 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- K3 thumbnail version fix: legacy 320 px thumbnails are no longer hashed;
+  `image_hash_version` bumped to 2.
 - K2 metadata memory fix: replaced the `HashMap` path/id/burst maps with a
   compact open-addressed path index, lazy id index, and lazy burst vector.
   1M synthetic entries now measure 92.8 MB RSS (target ≤ 100 MB); path lookup
