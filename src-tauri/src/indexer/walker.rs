@@ -89,6 +89,16 @@ pub fn walk_directories(
     let mut result = Vec::new();
     let excluded_set: HashSet<String> = excluded_dirs.iter().map(|s| s.to_lowercase()).collect();
 
+    // Default-deny sensitive paths. These are skipped even if the user has not
+    // added them to exclusions. Hidden entries (names starting with '.') are
+    // already skipped above, which covers ~/.ssh, ~/.gnupg, ~/.aws, etc.
+    const SENSITIVE_NAMES: &[&str] = &[
+        ".ssh", ".gnupg", ".gpg", ".aws", ".azure", ".kube", ".docker",
+        ".password-store", "1password", "bitwarden", "keepass", "keepassxc",
+        ".env", ".env.local", ".env.production", ".env.development",
+    ];
+    let sensitive_set: HashSet<String> = SENSITIVE_NAMES.iter().map(|s| s.to_string()).collect();
+
     for root in dirs {
         if !root.exists() {
             continue;
@@ -99,6 +109,7 @@ pub fn walk_directories(
             .skip_hidden(true)
             .process_read_dir({
                 let excluded_set = excluded_set.clone();
+                let sensitive_set = sensitive_set.clone();
                 move |_depth, _path, _read_dir_state, children| {
                     children.retain(|dir_entry_result| {
                         if let Ok(entry) = dir_entry_result {
@@ -109,6 +120,9 @@ pub fn walk_directories(
                                 return false;
                             }
                             if excluded_set.contains(&name) {
+                                return false;
+                            }
+                            if sensitive_set.contains(&name) {
                                 return false;
                             }
                         }
