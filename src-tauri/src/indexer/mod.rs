@@ -127,6 +127,7 @@ fn start_phash_backfill(
     }
 
     thread::spawn(move || {
+        let thumbs_dir = KensakuConfig::config_dir().join("thumbs");
         struct ResetOnExit;
         impl Drop for ResetOnExit {
             fn drop(&mut self) {
@@ -160,9 +161,10 @@ fn start_phash_backfill(
                 if crawl_running.load(Ordering::Relaxed) {
                     break;
                 }
-                let hash =
-                    crate::indexer::extract::image::phash64(&path).unwrap_or(u64::MAX);
+                let hash = crate::indexer::extract::image::phash64_cached(&path, &thumbs_dir)
+                    .unwrap_or(u64::MAX);
                 let _ = db.set_image_phash(&path, hash);
+                crate::util::memory::release_memory();
                 // One decode at a time, with a small yield between images so
                 // typing stays responsive.
                 thread::sleep(std::time::Duration::from_millis(20));

@@ -456,6 +456,7 @@ pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> 
         cache.insert(cache_key, res.clone());
     }
 
+    crate::util::memory::release_memory();
     result
 }
 

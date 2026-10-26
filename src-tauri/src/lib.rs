@@ -10,6 +10,7 @@ pub mod indexer;
 pub mod models;
 pub mod query;
 pub mod search;
+pub mod util;
 
 use config::KensakuConfig;
 use indexer::IndexerManager;
