@@ -32,7 +32,7 @@ statistic and setting lives in Settings, so the search surface stays quiet.
 | <kbd>Shift</kbd>+<kbd>Enter</kbd> | reveal in folder |
 | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+<kbd>Enter</kbd> | open (line-aware when available) |
 | <kbd>Tab</kbd> | toggle preview |
-| <kbd>⌘K</kbd>/<kbd>Ctrl</kbd>+<kbd>K</kbd> | command palette |
+| <kbd>/</kbd> | open the command menu (type `/`) |
 | <kbd>⌘,</kbd>/<kbd>Ctrl</kbd>+<kbd>,</kbd> | settings |
 | <kbd>Esc</kbd> | clear, then dismiss |
 
@@ -137,12 +137,19 @@ kensaku-cli mcp
 
 ## Commands
 
-Type `>` in the search box to run an action:
+Type `/` in the search box to open the command menu, then filter and press Enter:
 
 | Command | Action |
 |---|---|
-| `>reindex` | Re-scan watched folders |
-| `>doctor` | Print an index health summary |
-| `>model` | Show the active semantic model and unit count |
-| `>dupes` | Open the duplicate review view |
-| `>settings` | Open Settings |
+| `/images` | Filter to images |
+| `/pdf` | Filter to PDF files |
+| `/docs` | Filter to documents |
+| `/code` | Filter to source and config files |
+| `/media` | Filter to audio and video |
+| `/recent` | Files changed in the last 7 days |
+| `/errors` | Search for error text |
+| `/diagrams` | Search for diagrams |
+| `/dupes` | Open the duplicate review view |
+| `/reindex` | Re-scan watched folders |
+| `/doctor` | Print an index health summary |
+| `/settings` | Open Settings |
