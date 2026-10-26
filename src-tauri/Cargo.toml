@@ -61,5 +61,8 @@ opt-level = 2
 debug = false
 
 [features]
+# Compile the accurate PP-OCRv6 path into normal app builds. The engine still
+# defaults to Tesseract; the model pack is downloaded only when the user opts in.
+default = ["accurate-ocr"]
 accurate-ocr = ["dep:paddleocr_rs_onnx"]
 smart-embeddings = ["dep:ort"]

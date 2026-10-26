@@ -204,7 +204,10 @@ default and offer the accurate path.
 - License/attribution for models recorded.
 
 **Measured:** PP-OCRv6 tiny pack, 104/104 lines exact (100% recall); pack size
-~6.1 MB; feature-gated behind `accurate-ocr` so the default build is unchanged.
+~6.1 MB. The `accurate-ocr` feature is compiled into default app builds; the
+model pack itself remains an explicit download and Tesseract stays the default
+engine until the user selects Accurate. Minimal builds can use
+`--no-default-features`.
 
 **Files:** `indexer/extract/image.rs`, `models.rs`, new `ocr/`, setup UI.
 
