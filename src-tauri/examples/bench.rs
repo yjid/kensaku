@@ -14,20 +14,28 @@ fn main() {
     // Phase 1: Walk
     let t0 = Instant::now();
     let excluded: Vec<String> = vec![
-        "node_modules".into(), ".git".into(), "target".into(), "dist".into(),
+        "node_modules".into(),
+        ".git".into(),
+        "target".into(),
+        "dist".into(),
     ];
     let entries = walker::walk_directories(std::slice::from_ref(&root), &excluded);
     let walk_ms = t0.elapsed().as_secs_f64() * 1000.0;
     println!("\n--- Indexing ---");
     println!("Files walked: {}", entries.len());
     println!("Walk time: {:.1} ms", walk_ms);
-    println!("Files/sec: {:.0}", entries.len() as f64 / (walk_ms / 1000.0));
+    println!(
+        "Files/sec: {:.0}",
+        entries.len() as f64 / (walk_ms / 1000.0)
+    );
 
     // Phase 2: Use entries directly (skip SQLite for benchmark speed)
     println!("Metadata store build: skipped (using entries directly)");
 
     // Phase 3: Fuzzy search benchmarks
-    let queries = ["main", "index", "config", "search", "mod", "content", "metadata", "watcher"];
+    let queries = [
+        "main", "index", "config", "search", "mod", "content", "metadata", "watcher",
+    ];
     println!("\n--- Fuzzy Search ({} files) ---", entries.len());
 
     let all_entries = &entries;
@@ -58,13 +66,28 @@ fn main() {
         println!("  {:>12} → avg {:.3} ms (best {:.3} ms)", q, avg, best);
     }
 
-    println!("\n  Average across {} queries: {:.3} ms", queries.len(), total_ms / queries.len() as f64);
+    println!(
+        "\n  Average across {} queries: {:.3} ms",
+        queries.len(),
+        total_ms / queries.len() as f64
+    );
     println!("  Best single query: {:.3} ms", min_ms);
     println!("  Worst single query: {:.3} ms", max_ms);
 
     // Phase 4: Memory estimate
     println!("\n--- Memory Estimate ---");
-    println!("  FileEntry size: {} bytes", std::mem::size_of::<walker::FileEntry>());
-    println!("  Entries: {} x {} bytes = {:.1} MB", entries.len(), std::mem::size_of::<walker::FileEntry>(), entries.len() as f64 * std::mem::size_of::<walker::FileEntry>() as f64 / 1_048_576.0);
-    println!("  Node (arena) size: {} bytes", std::mem::size_of::<ArenaNode>());
+    println!(
+        "  FileEntry size: {} bytes",
+        std::mem::size_of::<walker::FileEntry>()
+    );
+    println!(
+        "  Entries: {} x {} bytes = {:.1} MB",
+        entries.len(),
+        std::mem::size_of::<walker::FileEntry>(),
+        entries.len() as f64 * std::mem::size_of::<walker::FileEntry>() as f64 / 1_048_576.0
+    );
+    println!(
+        "  Node (arena) size: {} bytes",
+        std::mem::size_of::<ArenaNode>()
+    );
 }

@@ -1,8 +1,10 @@
-//! Visual embedding storage and inference pipeline (K18).
+//! Visual embedding storage and inference pipeline (K18 scaffolding).
 //!
 //! Provides `VisualStore` for holding 512-dimensional quantized i8 vectors
-//! per image node, image preprocessing (224x224 RGB with CLIP normalization),
-//! and vision encoder inference (ONNX with deterministic mock fallback).
+//! per image node and image preprocessing (224x224 RGB with CLIP normalization).
+//! The deterministic mock encoder is test-only. Production builds return no
+//! encoder until a real ONNX vision/text pack is wired, so the visual tier stays
+//! disabled instead of surfacing fake results.
 
 use crate::embed::model::ModelRegistry;
 use image::{DynamicImage, imageops::FilterType};
@@ -311,6 +313,30 @@ impl VisualEncoder for MockVisualEncoder {
             .map(|&v| (v * 127.0).round().clamp(-127.0, 127.0) as i8)
             .collect()
     }
+}
+
+/// Returns the encoder used by the live indexer/search path.
+///
+/// The deterministic mock exists only for unit tests. There is no production
+/// ONNX visual encoder yet, so live builds return `None` and the visual tier is
+/// skipped rather than returning fake similarities from a hash projection.
+pub fn active_encoder() -> Option<&'static dyn VisualEncoder> {
+    #[cfg(test)]
+    {
+        static MOCK: MockVisualEncoder = MockVisualEncoder;
+        Some(&MOCK)
+    }
+    #[cfg(not(test))]
+    {
+        // Beta model download is available in Settings, but search integration
+        // is intentionally not wired in this release.
+        None
+    }
+}
+
+/// True when a real visual encoder is available for indexing/search.
+pub fn visual_available() -> bool {
+    active_encoder().is_some()
 }
 
 /// Checks `cancel_signal` during processing.

@@ -82,10 +82,7 @@ pub fn is_cloud_placeholder_path(path: &std::path::Path) -> bool {
     }
 }
 
-pub fn walk_directories(
-    dirs: &[PathBuf],
-    excluded_dirs: &[String],
-) -> Vec<FileEntry> {
+pub fn walk_directories(dirs: &[PathBuf], excluded_dirs: &[String]) -> Vec<FileEntry> {
     let mut result = Vec::new();
     let excluded_set: HashSet<String> = excluded_dirs.iter().map(|s| s.to_lowercase()).collect();
 
@@ -93,9 +90,22 @@ pub fn walk_directories(
     // added them to exclusions. Hidden entries (names starting with '.') are
     // already skipped above, which covers ~/.ssh, ~/.gnupg, ~/.aws, etc.
     const SENSITIVE_NAMES: &[&str] = &[
-        ".ssh", ".gnupg", ".gpg", ".aws", ".azure", ".kube", ".docker",
-        ".password-store", "1password", "bitwarden", "keepass", "keepassxc",
-        ".env", ".env.local", ".env.production", ".env.development",
+        ".ssh",
+        ".gnupg",
+        ".gpg",
+        ".aws",
+        ".azure",
+        ".kube",
+        ".docker",
+        ".password-store",
+        "1password",
+        "bitwarden",
+        "keepass",
+        "keepassxc",
+        ".env",
+        ".env.local",
+        ".env.production",
+        ".env.development",
     ];
     let sensitive_set: HashSet<String> = SENSITIVE_NAMES.iter().map(|s| s.to_string()).collect();
 

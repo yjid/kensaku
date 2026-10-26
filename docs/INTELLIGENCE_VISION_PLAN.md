@@ -13,7 +13,7 @@ The baseline was verified against the code before this plan was written:
 
 | Task | Current state | Gap the task closes |
 |---|---|---|
-| K15 | Shipped: CJK-aware Tantivy tokenizer ("kensaku") with interleaved unigram + bigram segmentation; schema v2 marker; 9.73x index size on 50-doc CJK fixture. | Closed: CJK queries now match full words, substrings, and single characters. |
+| K15 | `filename`/`content` use Tantivy's default `SimpleTokenizer`; a no-space CJK run becomes one token. | CJK queries cannot match words inside a longer run. |
 | K16 | `semantic_model = "static"` exists in config, but the provider is hard-wired to the static table. | No provider abstraction or fallback contract for a second model. |
 | K17 | Only the Potion static table exists; there is no `ort`/ONNX inference path. | No higher-quality semantic tier. |
 | K18 | Images feed OCR text and thumbnails only; no visual vectors are produced. | Text cannot describe image content. |
@@ -25,6 +25,19 @@ The baseline was verified against the code before this plan was written:
 If any of these assumptions changes before a task starts, re-check the code and
 update this table rather than implementing duplicate behavior.
 
+## Implementation status after the automated pass
+
+| Task | Status | Notes |
+|---|---|---|
+| K15 | Shipped | CJK tokenizer, schema v2, tests. Index-size growth measured on a small fixture. |
+| K16 | Shipped | Provider selection and model-id isolation. |
+| K17 | Code shipped, unmeasured | Optional `smart-embeddings` path; real-model recall not run. |
+| K18 | Beta only | Settings → Beta can download the pinned CLIP vision/text pack. Not wired into search; mock is test-only. |
+| K19 | Deferred | RRF plumbing exists but the visual tier is disabled. |
+| K20 | Deferred | Command/daemon/MCP plumbing returns "not available". |
+| K21 | Blocked | Fake `osascript`/Windows stubs removed. Scanned-PDF image-stream OCR is partial. |
+| K22 | Shipped (non-visual) | 43 queries, Recall@5 1.0, MRR 0.988; visual cases are skipped until K18 is real. |
+
 ## Scope
 
 In scope:
@@ -32,9 +45,9 @@ In scope:
 - CJK-aware lexical search.
 - Multilingual embedding readiness.
 - Optional ONNX smart embedding pack.
-- Visual image embeddings and text-to-image search.
-- Similar-image lookup.
-- Native platform OCR, including scanned PDFs.
+- Beta-only visual model download (no search integration in this slice).
+- Similar-image lookup is deferred behind the beta visual tier.
+- Native platform OCR remains blocked; scanned-PDF image-stream OCR is partial.
 
 Out of scope for this slice:
 
@@ -147,6 +160,10 @@ semantic recall while remaining optional and local.
 
 ### K18. Image embedding extraction pipeline
 
+> **Status: beta only.** Settings → Beta can download the pinned CLIP pack with
+> checksum/resume. Search integration is intentionally not wired. The mock
+> encoder is test-only and must not be used in live search.
+
 **Why:** Images are currently searchable only by OCR and filename. Visual
 embeddings require a decode/resize/inference path that reuses thumbnails.
 
@@ -170,6 +187,9 @@ embeddings require a decode/resize/inference path that reuses thumbnails.
 
 ### K19. Visual search tier and RRF integration
 
+> **Status: deferred.** RRF plumbing exists, but the tier is not wired into the
+> product. Unit tests inject the test-only mock.
+
 **Why:** Text-to-image search needs a fourth retrieval tier fused with lexical,
 folded, and semantic text results.
 
@@ -192,6 +212,9 @@ folded, and semantic text results.
 **Effort:** 2 weeks.
 
 ### K20. Similar-image lookup
+
+> **Status: deferred.** Command/daemon/MCP plumbing exists but returns
+> "not available" and the MCP tool is hidden in production.
 
 **Why:** Once a visual index exists, image-to-image search is a natural and
 cheap extension.

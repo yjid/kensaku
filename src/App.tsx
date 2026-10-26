@@ -24,7 +24,6 @@ import { FilterChips } from "./components/FilterChips";
 import { PreviewPane } from "./components/PreviewPane";
 import { SearchBar } from "./components/SearchBar";
 import { CategoryChips } from "./components/CategoryChips";
-import { EmptyState } from "./components/EmptyState";
 import { useTheme } from "./hooks/useTheme";
 import { classify } from "./lib/categories";
 import {
@@ -95,7 +94,7 @@ function App() {
     () => (localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "list") as ResultView,
   );
   const [previewOpen, setPreviewOpen] = useState<boolean>(
-    () => localStorage.getItem(PREVIEW_KEY) !== "off",
+    () => localStorage.getItem(PREVIEW_KEY) === "on",
   );
 
   const { theme, toggle: toggleTheme } = useTheme();
@@ -591,7 +590,13 @@ function App() {
         // control (theme/settings buttons) — then native focus cycling runs
         // so chrome stays reachable by keyboard. The / menu covers commands and filters.
         const t = e.target;
-        if (t instanceof HTMLElement && t.closest("button")) return;
+        // Result cards (and their inner action buttons) live inside the
+        // results container: Tab should still toggle the details pane there.
+        // Only real chrome controls (theme/settings/etc.) keep native focus
+        // cycling so they stay keyboard-reachable.
+        const inResults =
+          t instanceof HTMLElement && !!resultsContainerRef.current?.contains(t);
+        if (t instanceof HTMLElement && t.closest("button") && !inResults) return;
         e.preventDefault();
         setPreviewOpen((p) => !p);
         return;
@@ -1016,8 +1021,11 @@ function App() {
                       ))
                     )
                   ) : noResults ? (
-                    <EmptyState variant="noresults" caption={`Nothing matches ${query.trim()}`}>
-                      <div className="flex flex-wrap items-center justify-center gap-1.5">
+                    <div className="flex h-full flex-col items-center justify-center gap-1 p-8 text-center select-none">
+                      <p className="font-serif text-[17px] italic text-muted">
+                        {`Nothing matches ${query.trim()}`}
+                      </p>
+                      <div className="flex flex-wrap items-center justify-center gap-1.5 mt-3">
                         {hasActiveFilters(query) && (
                           <SuggestChip label="Remove filters" onClick={() => setQuery("")} />
                         )}
@@ -1036,7 +1044,7 @@ function App() {
                           }}
                         />
                       </div>
-                    </EmptyState>
+                    </div>
                   ) : (
                     <HomeView
                       data={home}

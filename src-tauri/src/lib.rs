@@ -228,6 +228,8 @@ pub fn run() {
             commands::download_ocr_pack,
             commands::get_smart_pack_status,
             commands::download_smart_pack,
+            commands::get_visual_pack_status,
+            commands::download_visual_pack,
             commands::find_duplicates,
             commands::find_similar_images,
             commands::execute_command,

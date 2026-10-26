@@ -114,15 +114,36 @@ pub const SMART_ARTIFACTS: [Artifact; 3] = [
 ];
 
 /// Optional ONNX visual embedding pack (CLIP ViT-B/32 int8).
-pub const VISUAL_ARTIFACTS: [Artifact; 2] = [
+///
+/// The vision and text encoders must share one embedding space. `tokenizer.json`
+/// is the matching CLIP byte-level BPE tokenizer.
+pub const VISUAL_ARTIFACTS: [Artifact; 4] = [
     Artifact {
-        name: "visual_image.onnx",
+        name: "vision_model.onnx",
         urls: &[
-            "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/onnx/model_quantized.onnx",
-            "https://hf-mirror.com/Xenova/clip-vit-base-patch32/resolve/main/onnx/model_quantized.onnx",
+            "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/onnx/vision_model_quantized.onnx",
+            "https://hf-mirror.com/Xenova/clip-vit-base-patch32/resolve/main/onnx/vision_model_quantized.onnx",
         ],
-        bytes_expected: 151_223_344,
-        sha256: Some("f92ec768b556f874bc05658bdf0bb86214ec042e6bc82654f15d706a13242ea8"),
+        bytes_expected: 89_117_001,
+        sha256: Some("98ae9acf1f7e3233fac66f3b965e5e0b1ebe744527dcf5e3b5ff0e4ef80617be"),
+    },
+    Artifact {
+        name: "text_model.onnx",
+        urls: &[
+            "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/onnx/text_model_quantized.onnx",
+            "https://hf-mirror.com/Xenova/clip-vit-base-patch32/resolve/main/onnx/text_model_quantized.onnx",
+        ],
+        bytes_expected: 64_504_507,
+        sha256: Some("c5caef8bde14268ad23f01116dd72135abbf6182d14b407e375336838372bd58"),
+    },
+    Artifact {
+        name: "tokenizer.json",
+        urls: &[
+            "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/tokenizer.json",
+            "https://hf-mirror.com/Xenova/clip-vit-base-patch32/resolve/main/tokenizer.json",
+        ],
+        bytes_expected: 2_224_119,
+        sha256: Some("f7f3b7af117d467b58374797691a6438d3e6b9e9cef800dfd5dced7f697a90cd"),
     },
     Artifact {
         name: "config.json",
@@ -130,8 +151,8 @@ pub const VISUAL_ARTIFACTS: [Artifact; 2] = [
             "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/config.json",
             "https://hf-mirror.com/Xenova/clip-vit-base-patch32/resolve/main/config.json",
         ],
-        bytes_expected: 4_338,
-        sha256: Some("5893ce7e4f9b89793540c49ba9c1e028b03e2c34cb35bc7329d91fbb9c2401f0"),
+        bytes_expected: 4_524,
+        sha256: Some("493ef57ff783e42d1530c91b53469b7fdf8db8a9c1408e86998fcb7899a4f495"),
     },
 ];
 
@@ -252,7 +273,11 @@ pub fn visual_dir() -> PathBuf {
 }
 
 pub fn visual_pack_present() -> bool {
-    visual_dir().join("visual_image.onnx").is_file() && visual_dir().join("config.json").is_file()
+    let dir = visual_dir();
+    dir.join("vision_model.onnx").is_file()
+        && dir.join("text_model.onnx").is_file()
+        && dir.join("tokenizer.json").is_file()
+        && dir.join("config.json").is_file()
 }
 
 pub fn visual_status() -> ModelsStatus {
@@ -636,7 +661,7 @@ mod tests {
 
     #[test]
     fn visual_artifacts_manifest_sanity() {
-        assert_eq!(VISUAL_ARTIFACTS.len(), 2);
+        assert_eq!(VISUAL_ARTIFACTS.len(), 4);
         assert!(VISUAL_ARTIFACTS.iter().all(|a| a.sha256.is_some()));
         assert!(VISUAL_ARTIFACTS.iter().all(|a| a.bytes_expected > 0));
         assert!(VISUAL_ARTIFACTS.iter().all(|a| !a.urls.is_empty()));

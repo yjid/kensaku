@@ -144,7 +144,10 @@ pub fn handle_request_session(
         "initialize" => Ok(initialize_result()),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({
-            "tools": tool_definitions(reindex_enabled)
+            "tools": tool_definitions(
+                reindex_enabled,
+                crate::embed::visual::visual_available(),
+            )
         })),
         "tools/call" => call_tool(session, object.get("params"), reindex_enabled),
         other => Err((METHOD_NOT_FOUND, format!("Method not found: {}", other))),
@@ -176,7 +179,7 @@ fn initialize_result() -> Value {
     })
 }
 
-fn tool_definitions(reindex_enabled: bool) -> Vec<Value> {
+fn tool_definitions(reindex_enabled: bool, visual_available: bool) -> Vec<Value> {
     let mut tools = vec![
         json!({
             "name": "health_check",
@@ -273,28 +276,6 @@ fn tool_definitions(reindex_enabled: bool) -> Vec<Value> {
             }
         }),
         json!({
-            "name": "similar_images",
-            "description": "Find visually similar images to a given indexed image path using 512-dimensional visual vector embeddings.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Absolute path of the source image to compare."
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 50,
-                        "default": 10,
-                        "description": "Maximum number of similar images to return."
-                    }
-                },
-                "required": ["path"],
-                "additionalProperties": false
-            }
-        }),
-        json!({
             "name": "regex_search",
             "description": "Bounded regular-expression search over indexed content. Read-only; returns the same pagination and snippet budget as search.",
             "inputSchema": {
@@ -333,6 +314,30 @@ fn tool_definitions(reindex_enabled: bool) -> Vec<Value> {
             }
         }),
     ];
+    if visual_available {
+        tools.push(json!({
+            "name": "similar_images",
+            "description": "Find visually similar images to a given indexed image path using visual vector embeddings.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path of the source image to compare."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50,
+                        "default": 10,
+                        "description": "Maximum number of similar images to return."
+                    }
+                },
+                "required": ["path"],
+                "additionalProperties": false
+            }
+        }));
+    }
     if reindex_enabled {
         tools.push(json!({
             "name": "reindex",
@@ -995,8 +1000,8 @@ mod tests {
                 "search",
                 "read_snippet",
                 "index_state",
-                "similar_images",
-                "regex_search"
+                "regex_search",
+                "similar_images"
             ]
         );
 

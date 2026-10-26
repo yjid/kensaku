@@ -6,7 +6,7 @@ pub mod router;
 pub mod scope_trie;
 
 pub use ast::{ActiveFilterDto, FileKind, Filter, Mode, Query, RangeOp, Scope, Term, TermField};
-pub use intent::{compile, Intent, InterpretationChip};
+pub use intent::{Intent, InterpretationChip, compile};
 pub use parser::parse_query;
-pub use router::{route_query, QueryRoute};
+pub use router::{QueryRoute, route_query};
 pub use scope_trie::{DirectoryTrie, ScopeResolution, TrieMatchResult};

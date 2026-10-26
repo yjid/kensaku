@@ -6,6 +6,7 @@ import {
   Check,
   Copy,
   Filter,
+  FlaskConical,
   FolderTree,
   Info,
   Plus,
@@ -20,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { KensakuConfig } from "../types";
+import { KensakuConfig, ModelsStatus } from "../types";
 import { useTheme } from "../hooks/useTheme";
 import { useStats } from "../hooks/useStats";
 import { Card, Field, Switch, Stepper, SectionHeader, reasonFrom } from "./settings/kit";
@@ -42,6 +43,7 @@ type SectionId =
   | "exclusions"
   | "search"
   | "ai"
+  | "beta"
   | "agents"
   | "stats"
   | "doctor"
@@ -53,6 +55,7 @@ const SECTIONS: { id: SectionId; label: string; icon: LucideIcon }[] = [
   { id: "exclusions", label: "Exclusions", icon: Filter },
   { id: "search", label: "Search", icon: Search },
   { id: "ai", label: "AI & Semantic", icon: Sparkles },
+  { id: "beta", label: "Beta", icon: FlaskConical },
   { id: "agents", label: "Agents", icon: Bot },
   { id: "stats", label: "Stats for Nerds", icon: Activity },
   { id: "doctor", label: "Doctor", icon: Stethoscope },
@@ -65,6 +68,7 @@ const SECTION_META: Record<SectionId, { title: string; description: string }> = 
   exclusions: { title: "Exclusions", description: "Names and extensions kept out of the index." },
   search: { title: "Search", description: "Ranking, OCR and the query language." },
   ai: { title: "AI & Semantic", description: "Embedding model, vector tier and model files." },
+  beta: { title: "Beta", description: "Optional experiments that are not part of the default search path." },
   agents: { title: "Agents", description: "Read-only access for MCP clients and the CLI." },
   stats: { title: "Stats for Nerds", description: "Live telemetry from the running index." },
   doctor: { title: "Doctor", description: "Health checks across index, watcher and models." },
@@ -265,7 +269,9 @@ function renderSection(
     case "search":
       return <SearchSection config={config} setConfig={setConfig} />;
     case "ai":
-      return <AiSection config={config} />;
+      return <AiSection config={config} setConfig={setConfig} />;
+    case "beta":
+      return <BetaSection config={config} setConfig={setConfig} />;
     case "agents":
       return <AgentsSection config={config} setConfig={setConfig} />;
     case "stats":
@@ -682,6 +688,18 @@ function ExclusionsSection({
           />
         </div>
       </Card>
+
+      <Card title="Hidden files">
+        <Field
+          label="Skip hidden files"
+          description="Skip files and folders whose name starts with a dot. Turn off to index hidden files."
+        >
+          <Switch
+            checked={config.skip_hidden ?? true}
+            onChange={(v) => setConfig((c) => (c ? { ...c, skip_hidden: v } : c))}
+          />
+        </Field>
+      </Card>
     </>
   );
 }
@@ -856,7 +874,7 @@ function SearchSection({
 /* AI & Semantic                                                     */
 /* ---------------------------------------------------------------- */
 
-function AiSection({ config }: { config: KensakuConfig }) {
+function AiSection({ config, setConfig }: { config: KensakuConfig; setConfig: React.Dispatch<React.SetStateAction<KensakuConfig | null>> }) {
   const { stats, live } = useStats(2000);
   const [reembedState, setReembedState] = useState<"idle" | "pending">("idle");
 
@@ -894,6 +912,18 @@ function AiSection({ config }: { config: KensakuConfig }) {
           >
             {stats?.runtime?.semantic_ready ? "ready" : live ? "warming up" : "pending backend"}
           </span>
+        </Field>
+      </Card>
+
+      <Card title="Embedding table">
+        <Field
+          label="Use f32 table"
+          description="Keep the static embedding table in f32 instead of the compact i8 table. For quality comparisons only."
+        >
+          <Switch
+            checked={config.semantic_f32_table ?? false}
+            onChange={(v) => setConfig((c) => (c ? { ...c, semantic_f32_table: v } : c))}
+          />
         </Field>
       </Card>
 
@@ -982,6 +1012,119 @@ function CopyRow({
         {copied ? <Check className="h-3 w-3 text-accent" /> : <Copy className="h-3 w-3" />}
       </button>
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+/* Beta                                                              */
+/* ---------------------------------------------------------------- */
+
+function BetaSection({
+  config,
+  setConfig,
+}: {
+  config: KensakuConfig;
+  setConfig: React.Dispatch<React.SetStateAction<KensakuConfig | null>>;
+}) {
+  const [pack, setPack] = useState<ModelsStatus | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  const refresh = async () => {
+    try {
+      setPack(await invoke<ModelsStatus>("get_visual_pack_status"));
+    } catch {
+      setPack(null);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+    const timer = window.setInterval(refresh, 2000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const download = async () => {
+    setDownloadError(null);
+    try {
+      setPack(await invoke<ModelsStatus>("download_visual_pack"));
+    } catch (err) {
+      setDownloadError(String(err));
+    }
+  };
+
+  return (
+    <>
+      <Card title="Visual search (beta)">
+        <Field
+          label="Enable beta visual search"
+          description="Stores the preference and unlocks the model pack below. Search integration is not enabled in this build."
+        >
+          <Switch
+            checked={config.visual_search_beta_enabled ?? false}
+            onChange={(v) =>
+              setConfig((c) => (c ? { ...c, visual_search_beta_enabled: v } : c))
+            }
+          />
+        </Field>
+        <div className="space-y-3 border-t border-line px-4 py-3">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium text-fg">CLIP ViT-B/32 pack</p>
+              <p className="text-[10px] leading-relaxed text-muted">
+                Vision + text encoders, int8. About 150 MB. Download only for now.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={download}
+              disabled={!config.visual_search_beta_enabled || pack?.downloading}
+              className="flex h-7 shrink-0 items-center gap-1.5 rounded-[10px] border border-line px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <RefreshCw className={`h-3 w-3 ${pack?.downloading ? "animate-spin" : ""}`} />
+              {pack?.ready ? "Re-check" : pack?.downloading ? "Downloading…" : "Download"}
+            </button>
+          </div>
+          {pack?.progress && (
+            <div className="space-y-1">
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-sunken">
+                <div
+                  className="h-full rounded-full bg-accent transition-[width] duration-500"
+                  style={{
+                    width: `${pack.progress.total > 0 ? Math.min(100, (pack.progress.downloaded / pack.progress.total) * 100) : 0}%`,
+                  }}
+                />
+              </div>
+              <p className="truncate font-mono text-[10px] text-subtle">
+                {pack.progress.file} · {formatBytes(pack.progress.downloaded)} /{" "}
+                {formatBytes(pack.progress.total)}
+              </p>
+            </div>
+          )}
+          {pack && (
+            <div className="space-y-1">
+              <p className="truncate font-mono text-[10px] text-subtle">{pack.dir}</p>
+              {pack.artifacts.map((artifact) => (
+                <div key={artifact.name + artifact.url} className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                        artifact.present ? "bg-success" : "bg-subtle"
+                      }`}
+                    />
+                    <code className="font-mono text-[10px] text-fg">{artifact.name}</code>
+                  </div>
+                  <span className="font-mono text-[10px] text-subtle">
+                    {formatBytes(artifact.present ? artifact.bytes_on_disk || artifact.bytes_expected : artifact.bytes_expected)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {downloadError && <p className="text-[11px] text-warning">{downloadError}</p>}
+          {pack?.error && <p className="text-[11px] text-warning">{pack.error}</p>}
+        </div>
+      </Card>
+    </>
   );
 }
 
@@ -1299,7 +1442,7 @@ function AboutSection() {
             <p className="text-[15px] font-semibold text-fg">
               Kensaku <span className="font-normal text-muted">検索</span>
             </p>
-            <p className="font-mono text-[11px] text-subtle">0.1.0</p>
+            <p className="font-mono text-[11px] text-subtle">0.3.3</p>
           </div>
           <div className="flex items-center gap-1.5">
             {["Rust", "Tauri 2", "MIT"].map((b) => (
@@ -1311,6 +1454,23 @@ function AboutSection() {
               </span>
             ))}
           </div>
+        </div>
+      </Card>
+
+      <Card title="How to use Kensaku">
+        <div className="space-y-2 p-4 text-[12px] leading-relaxed text-muted">
+          <p className="text-fg">A few simple tricks make search feel instant:</p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li><b>Tab</b> shows or hides the details pane next to results.</li>
+            <li><b>Aliases</b> let a word like “resume” also find “cv” and “curriculum”.</li>
+            <li><b>Filters</b> such as <code className="font-mono text-[10.5px] text-fg">type:pdf</code>, <code className="font-mono text-[10.5px] text-fg">ext:png</code>, <code className="font-mono text-[10.5px] text-fg">in:~/Projects</code>, <code className="font-mono text-[10.5px] text-fg">modified:&lt;7d</code> narrow results.</li>
+            <li><b>/</b> opens the command menu for quick actions like <code className="font-mono text-[10.5px] text-fg">/dupes</code>, <code className="font-mono text-[10.5px] text-fg">/doctor</code>, <code className="font-mono text-[10.5px] text-fg">/settings</code>.</li>
+            <li><b>@</b> mentions a folder to search inside it.</li>
+            <li><b>Sort</b> and <b>saved searches</b> keep your best queries one click away.</li>
+            <li><b>Pin</b> important files so they stay on the home screen.</li>
+            <li><b>OCR</b> reads text inside images and screenshots.</li>
+          </ul>
+          <p>Everything stays on your computer. Nothing is sent anywhere.</p>
         </div>
       </Card>
 

@@ -1,8 +1,8 @@
-use crate::indexer::arena::{IdIndex, Node, NodeArena, NO_PARENT, PathIndex};
-use parking_lot::RwLock;
+use crate::indexer::arena::{IdIndex, NO_PARENT, Node, NodeArena, PathIndex};
 use crate::indexer::metadata_db::MetadataDb;
 use crate::indexer::walker::FileEntry;
 use crate::query::scope_trie::DirectoryTrie;
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -670,11 +670,7 @@ impl MetadataStore {
             entries.push(e);
         }
 
-        let new_trie = Arc::new(DirectoryTrie::build(
-            &entries,
-            &path_index,
-            current_gen,
-        ));
+        let new_trie = Arc::new(DirectoryTrie::build(&entries, &path_index, current_gen));
         let mut cache = self.cached_trie.write();
         *cache = Some((current_gen, Arc::clone(&new_trie)));
         new_trie
@@ -762,11 +758,7 @@ impl MetadataStore {
             return None;
         }
         let burst = bursts[idx as usize];
-        if burst == 0 {
-            None
-        } else {
-            Some(burst)
-        }
+        if burst == 0 { None } else { Some(burst) }
     }
 
     /// Assigned burst for a path. The hash lookup is the same one search
@@ -828,7 +820,11 @@ impl MetadataStore {
     }
 
     pub fn bursts_allocated(&self) -> usize {
-        self.bursts.read().as_ref().map(|bursts| bursts.len()).unwrap_or(0)
+        self.bursts
+            .read()
+            .as_ref()
+            .map(|bursts| bursts.len())
+            .unwrap_or(0)
     }
 
     pub fn len(&self) -> usize {

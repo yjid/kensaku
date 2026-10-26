@@ -198,8 +198,10 @@ impl NodeArena {
     /// Compares an arena node's reconstructed path with `path` without
     /// allocating a `PathBuf`.
     pub fn path_eq(&self, idx: u32, path: &Path) -> bool {
-        let components: Vec<&std::ffi::OsStr> =
-            path.components().map(|component| component.as_os_str()).collect();
+        let components: Vec<&std::ffi::OsStr> = path
+            .components()
+            .map(|component| component.as_os_str())
+            .collect();
         let mut current = Some(idx);
         let mut position = components.len();
         let mut guard = 0usize;
@@ -243,7 +245,6 @@ pub fn path_hash(path: &Path) -> u64 {
     }
     h
 }
-
 
 const PATH_INDEX_EMPTY: u32 = u32::MAX;
 const PATH_INDEX_TOMBSTONE: u32 = u32::MAX - 1;

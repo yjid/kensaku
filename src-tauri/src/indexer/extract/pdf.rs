@@ -68,7 +68,10 @@ pub fn extract_pdf(path: &Path, max_bytes: usize) -> Option<PdfExtractResult> {
     match res {
         Ok(opt) => opt,
         Err(_) => {
-            eprintln!("[Kensaku PDF] Panic caught while parsing PDF {}", path.display());
+            eprintln!(
+                "[Kensaku PDF] Panic caught while parsing PDF {}",
+                path.display()
+            );
             None
         }
     }
@@ -109,9 +112,7 @@ fn extract_scanned_pdf_ocr(doc: &Document, max_bytes: usize) -> Option<String> {
             nanos
         ));
         if img.save(&tmp_path).is_ok() {
-            if let Some(ocr_text) =
-                crate::indexer::extract::image::extract_image_ocr(&tmp_path)
-            {
+            if let Some(ocr_text) = crate::indexer::extract::image::extract_image_ocr(&tmp_path) {
                 let trimmed = ocr_text.trim();
                 if !trimmed.is_empty() {
                     if !collected.is_empty() {

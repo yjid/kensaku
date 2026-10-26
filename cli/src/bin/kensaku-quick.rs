@@ -122,8 +122,7 @@ impl eframe::App for QuickApp {
             .fill(egui::Color32::from_rgb(24, 24, 27))
             .inner_margin(16.0)
             .show(ui, |ui| {
-                ui.visuals_mut().override_text_color =
-                    Some(egui::Color32::from_rgb(230, 230, 235));
+                ui.visuals_mut().override_text_color = Some(egui::Color32::from_rgb(230, 230, 235));
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut self.query)
                         .hint_text("Search files…")

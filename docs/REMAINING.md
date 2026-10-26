@@ -22,7 +22,7 @@ EPUB/ODT/RTF extraction · tesseract OCR + optional PP-OCRv6 accurate pack ·
 image thumbnails, dimensions, and perceptual duplicates · CLI + MCP · warm daemon
 with Unix socket / Windows named pipe · `/` command menu · two themes · Doctor ·
 Stats for Nerds · factory reset · extraction timeout · cloud-placeholder guard ·
-single-instance lock · 177 Rust tests and CI.
+single-instance lock · 200 Rust tests, a golden-query integration test, and CI.
 
 Also shipped in the `v0.3.x` hardening cycle and K1–K14 pass: compact metadata
 arena (91.3 MB at 1M entries), folded/trigram content tier, visible-row snippets,
@@ -84,8 +84,8 @@ These are the highest-leverage gaps. None require a new model.
       interrupted scan.
 - [x] **Setup-owned downloads and configuration** — folders, exclusions, theme,
       and shortcut are asked in setup; OCR/model downloads are offered there.
-      Settings shows status only and links to **Run setup again**. Vision Packs
-      remain (ROADMAP K9, K6).
+      Settings shows status only and links to **Run setup again**. Visual-search
+      models live only in Settings → Beta and are not offered in setup.
 - [x] **First-scan completion gate** — `first_scan_done` gates `is_setup_complete`;
       the scan shows live counts and a Done summary, resumes after interruption,
       and later launches stay search-first. Progress bar and ETA are shown for
@@ -103,13 +103,18 @@ These are the highest-leverage gaps. None require a new model.
       behind `smart-embeddings` feature, activation after download with K9 hygiene,
       pinned SHA-256, bounded concurrency (max 2 workers, 1 intra-op thread),
       static fallback with recorded reason. (ROADMAP K17)
-- [x] **Image embeddings & visual search** — CLIP ViT-B/32 int8 image embedding pipeline with
-      `VisualStore`, thumbnail reuse, cancel safety, and 4-tier RRF fusion with `visual:` filter.
-      (ROADMAP K18, K19)
-- [x] **Similar images** — image-to-image query from a selected result; reuse
-      the same visual index, exclude query image, apply cosine floor, exposed via Tauri
-      command, daemon IPC, and read-only MCP tool. (ROADMAP K20)
-- [x] **Native OCR** — macOS Vision (`objc2-vision` / `native-ocr-macos`) and Windows OCR (`windows` / `native-ocr-windows`). Transparent dispatch fallback to accurate PP-OCRv6 and Tesseract. Scanned PDFs routed through OCR. (ROADMAP K21)
+- [~] **Image embeddings & visual search** — moved to an opt-in Beta settings
+      surface. The Beta tab can enable the experiment and download the pinned
+      CLIP ViT-B/32 vision + text pack (~150 MB) with checksum/resume. The pack is
+      **not wired into search**; K18/K19 remain off by default and the mock
+      encoder is test-only. (ROADMAP K18, K19; beta model-download only.)
+- [ ] **Similar images** — command/daemon/MCP plumbing exists but returns
+      "not available" until the beta visual tier is wired. Hidden from MCP tools
+      when unavailable. (ROADMAP K20)
+- [ ] **Native OCR** — not implemented. An automated pass added an `osascript`
+      shim and a Windows stub; both were removed. Real macOS Vision and Windows
+      Media OCR require platform bindings and platform CI. Scanned-PDF embedded
+      image-stream OCR is partial. (ROADMAP K21; blocked.)
 - [-] **"This is me" identity** — skipped for now; revisit after the vision
       tier and sensitive-data controls. Local face embeddings + clustering,
       opt-in enrollment with 3–5 photos, explainable matches, delete-all.
@@ -117,9 +122,11 @@ These are the highest-leverage gaps. None require a new model.
 - [-] **VLM captions (optional)** — skipped for now. Idle-time captions for
       diagrams and screenshots, stored as searchable text. Complements CLIP
       where short text queries are weak.
-- [~] **Multilingual embeddings + CJK tokenization** — K15 CJK Tantivy
-      tokenization shipped with unigrams/bigrams and schema v2; K17 ONNX smart pack
-      shipped; evaluation remains. (ROADMAP K15 [x], K17 [x], K22)
+- [x] **CJK tokenization + multilingual golden coverage** — K15 CJK Tantivy
+      tokenization shipped with unigrams/bigrams and schema v2. K22 adds a
+      43-query non-visual golden set with CJK and accented-Latin cases.
+      Multilingual **embeddings** remain open: K17 adds an English `bge-small`
+      pack, not a multilingual model. (ROADMAP K15 [x], K17 [x], K22 [x])
 
 ## C. Agent, LLM & runtime
 

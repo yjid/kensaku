@@ -159,6 +159,7 @@ export interface KensakuConfig {
   semantic_enabled?: boolean;
   semantic_model?: string;
   semantic_f32_table?: boolean;
+  visual_search_beta_enabled?: boolean;
   crawl_mode?: "full" | "balanced" | "eco";
   pause_indexing?: boolean;
   mcp_allow_reindex?: boolean;

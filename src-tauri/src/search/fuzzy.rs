@@ -39,7 +39,13 @@ impl FuzzySearcher {
         }
     }
 
-    pub fn search(&mut self, query: &str, all_entries: &[FileEntry], candidate_indices: &[usize], limit: usize) -> Vec<(usize, u32)> {
+    pub fn search(
+        &mut self,
+        query: &str,
+        all_entries: &[FileEntry],
+        candidate_indices: &[usize],
+        limit: usize,
+    ) -> Vec<(usize, u32)> {
         let trimmed = query.trim();
         if trimmed.is_empty() {
             return Vec::new();

@@ -195,18 +195,13 @@ fn start_phash_backfill(
                             && let Ok(Some(node_id)) = db.get_node_id_by_path(&path)
                         {
                             let needs = visual_store.read().needs_embedding(node_id, hash);
-                            if needs {
-                                use crate::embed::visual::VisualEncoder;
-                                let encoder = crate::embed::visual::MockVisualEncoder;
-                                if let Some(vec) = encoder.embed_image_from_thumbnail(&thumb) {
-                                    visual_store.write().add_or_update(node_id, hash, &vec);
-                                    let _ = db.save_visual_unit(
-                                        node_id,
-                                        encoder.model_id(),
-                                        hash,
-                                        &vec,
-                                    );
-                                }
+                            if needs
+                                && let Some(encoder) = crate::embed::visual::active_encoder()
+                                && let Some(vec) = encoder.embed_image_from_thumbnail(&thumb)
+                            {
+                                visual_store.write().add_or_update(node_id, hash, &vec);
+                                let _ =
+                                    db.save_visual_unit(node_id, encoder.model_id(), hash, &vec);
                             }
                         }
                     }
@@ -1194,10 +1189,12 @@ impl IndexerManager {
         let query_vec = match query_vec {
             Some(v) => v,
             None => {
+                let encoder = crate::embed::visual::active_encoder().ok_or_else(|| {
+                    "Visual embeddings are not available in this build; install the visual model pack"
+                        .to_string()
+                })?;
                 let thumbs_dir = KensakuConfig::config_dir().join("thumbs");
                 let thumb = crate::indexer::extract::image::thumbnail_path(path, &thumbs_dir);
-                let encoder = crate::embed::visual::MockVisualEncoder;
-                use crate::embed::visual::VisualEncoder;
                 if thumb.is_file()
                     && let Some(v) = encoder.embed_image_from_thumbnail(&thumb)
                 {
