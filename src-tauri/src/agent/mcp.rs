@@ -1,10 +1,16 @@
 //! Model Context Protocol server over stdio.
 //!
 //! Transport: newline-delimited JSON-RPC 2.0 on stdin/stdout. **stdout is
-//! reserved for protocol messages**; diagnostics go to stderr. The index is
-//! opened once per process, so per-call cost is just the query.
+//! reserved for protocol messages**; diagnostics go to stderr.
+//!
+//! When `kensaku-daemon` is running the session forwards searches and state
+//! reads to it and never opens SQLite, Tantivy or the embedding table here.
+//! Without a daemon the read-only local index is used as a fallback. The only
+//! write-capable tool (`reindex`) is disabled unless `mcp_allow_reindex` is
+//! explicitly enabled in config.
 
-use super::{HeadlessIndex, NO_INDEX_MESSAGE, compose_query, now_unix_secs, truncate_chars};
+use super::{AgentSession, HeadlessIndex, compose_query, now_unix_secs, truncate_chars};
+use crate::config::KensakuConfig;
 use crate::indexer::content::read_text_content;
 use crate::indexer::extract::extract_document;
 use serde_json::{Value, json};
@@ -18,17 +24,49 @@ const INVALID_REQUEST: i64 = -32600;
 const METHOD_NOT_FOUND: i64 = -32601;
 const INVALID_PARAMS: i64 = -32602;
 
+const DEFAULT_PAGE_SIZE: usize = 10;
+const MAX_PAGE_SIZE: usize = 50;
+/// Result offsets are capped alongside the 10k exhaustive result cap. A cursor
+/// beyond this point starts from scratch instead of materialising another
+/// 10k-page in memory.
+const MAX_OFFSET: usize = 10_000;
+const SNIPPET_CHARS: usize = 100;
+const SEARCH_TOKEN_BUDGET: usize = 1_500;
+
 /// Serves MCP over stdin/stdout until EOF.
 pub fn serve() -> Result<(), String> {
     // A missing index is not fatal: `initialize` must still answer, and tool
     // calls return a clear "no index" error until the GUI has run once.
-    let index = match HeadlessIndex::open() {
-        Ok(index) => Some(index),
-        Err(e) => {
-            eprintln!("[Kensaku MCP] {}", e);
-            None
+    //
+    // Prefer the daemon: it owns the only writer and already has the index
+    // hot. Only fall back to the local read-only open when ping fails. The
+    // ping is intentionally lightweight (no dir walk or DB load).
+    let daemon_ready = crate::daemon::request("ping", json!({})).is_ok();
+    let local = if daemon_ready {
+        None
+    } else {
+        match HeadlessIndex::open() {
+            Ok(index) => Some(index),
+            Err(e) => {
+                eprintln!("[Kensaku MCP] {}", e);
+                None
+            }
         }
     };
+    let session = if daemon_ready {
+        AgentSession::Daemon
+    } else if let Some(index) = local.as_ref() {
+        AgentSession::Local(index)
+    } else {
+        AgentSession::None
+    };
+    let mut reindex_enabled = KensakuConfig::load().mcp_allow_reindex;
+    if reindex_enabled && !session.is_daemon() {
+        eprintln!(
+            "[Kensaku MCP] mcp_allow_reindex is set but no daemon is running; reindex stays disabled"
+        );
+        reindex_enabled = false;
+    }
 
     let stdin = io::stdin();
     let stdout = io::stdout();
@@ -41,7 +79,7 @@ pub fn serve() -> Result<(), String> {
         }
 
         let response = match serde_json::from_str::<Value>(&line) {
-            Ok(request) => handle_request(index.as_ref(), &request),
+            Ok(request) => handle_request_session(&session, &request, reindex_enabled),
             Err(e) => Some(error_response(
                 Value::Null,
                 PARSE_ERROR,
@@ -61,12 +99,27 @@ pub fn serve() -> Result<(), String> {
     Ok(())
 }
 
-/// Handles one decoded JSON-RPC message.
-///
-/// Returns `None` for notifications (no reply is allowed). `index` is `None`
-/// when the local index could not be opened, which keeps `initialize` usable
-/// while tool calls fail with a helpful message.
+/// Compatibility wrapper for tests and local callers.
 pub fn handle_request(index: Option<&HeadlessIndex>, request: &Value) -> Option<Value> {
+    let session = match index {
+        Some(index) => AgentSession::Local(index),
+        None => AgentSession::None,
+    };
+    let reindex_enabled = index
+        .map(|index| index.config.mcp_allow_reindex)
+        .unwrap_or(false);
+    handle_request_session(&session, request, reindex_enabled)
+}
+
+/// Handles one decoded JSON-RPC message for a daemon or local session.
+///
+/// Returns `None` for notifications (no reply is allowed). A `None` backend
+/// keeps `initialize` usable while tool calls fail with a helpful message.
+pub fn handle_request_session(
+    session: &AgentSession<'_>,
+    request: &Value,
+    reindex_enabled: bool,
+) -> Option<Value> {
     let Some(object) = request.as_object() else {
         return Some(error_response(
             Value::Null,
@@ -90,8 +143,10 @@ pub fn handle_request(index: Option<&HeadlessIndex>, request: &Value) -> Option<
     let outcome: Result<Value, (i64, String)> = match method {
         "initialize" => Ok(initialize_result()),
         "ping" => Ok(json!({})),
-        "tools/list" => Ok(json!({ "tools": tool_definitions() })),
-        "tools/call" => call_tool(index, object.get("params")),
+        "tools/list" => Ok(json!({
+            "tools": tool_definitions(reindex_enabled)
+        })),
+        "tools/call" => call_tool(session, object.get("params"), reindex_enabled),
         other => Err((METHOD_NOT_FOUND, format!("Method not found: {}", other))),
     };
 
@@ -117,15 +172,24 @@ fn initialize_result() -> Value {
             "name": "kensaku",
             "version": env!("CARGO_PKG_VERSION"),
         },
-        "instructions": "Search the local Kensaku file index. Call tools/list to discover tools.",
+        "instructions": "Search the local Kensaku file index. Call tools/list to discover tools. Read-only by default; reindex requires mcp_allow_reindex.",
     })
 }
 
-fn tool_definitions() -> Vec<Value> {
-    vec![
+fn tool_definitions(reindex_enabled: bool) -> Vec<Value> {
+    let mut tools = vec![
+        json!({
+            "name": "health_check",
+            "description": "Check daemon, database, index and embedding-model health. Returns ok=false with a reason instead of failing the call.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }
+        }),
         json!({
             "name": "search",
-            "description": "Search the local Kensaku index (file names, paths and document contents). Returns ranked results with snippets.",
+            "description": "Search the local Kensaku index (file names, paths and document contents). Read-only. Returns ranked results with bounded snippets and a cursor for the next page.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -133,12 +197,22 @@ fn tool_definitions() -> Vec<Value> {
                         "type": "string",
                         "description": "Search query. Supports Kensaku syntax (ext:, in:, content:, re:, modified:)."
                     },
-                    "limit": {
+                    "page_size": {
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 50,
                         "default": 10,
-                        "description": "Maximum number of results."
+                        "description": "Results per page."
+                    },
+                    "cursor": {
+                        "type": "string",
+                        "description": "Opaque next_cursor returned by the previous page."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50,
+                        "description": "Deprecated alias for page_size."
                     },
                     "mode": {
                         "type": "string",
@@ -191,16 +265,67 @@ fn tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "index_state",
-            "description": "Report index freshness and size: file/dir counts, content documents, semantic units and watched roots.",
+            "description": "Report index freshness/progress and size: file/dir counts, content documents, semantic units, model ids, phase and watched roots.",
             "inputSchema": {
                 "type": "object",
                 "properties": {},
                 "additionalProperties": false
             }
         }),
-    ]
+        json!({
+            "name": "regex_search",
+            "description": "Bounded regular-expression search over indexed content. Read-only; returns the same pagination and snippet budget as search.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Rust regex pattern (max 512 bytes)."
+                    },
+                    "page_size": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50,
+                        "default": 10,
+                        "description": "Results per page."
+                    },
+                    "cursor": {
+                        "type": "string",
+                        "description": "Opaque next_cursor returned by the previous page."
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Only return results under this directory."
+                    },
+                    "ext": {
+                        "type": "string",
+                        "description": "Only return files with this extension (e.g. rs or .rs)."
+                    },
+                    "modified_after": {
+                        "type": "string",
+                        "description": "Only files modified within this duration (e.g. 1h, 7d, 30d)."
+                    }
+                },
+                "required": ["pattern"],
+                "additionalProperties": false
+            }
+        }),
+    ];
+    if reindex_enabled {
+        tools.push(json!({
+            "name": "reindex",
+            "description": "Opt-in write action: ask the daemon to start a full reindex. Only listed when mcp_allow_reindex is true in config.json; disabled by default.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }
+        }));
+    }
+    tools
 }
 
+#[derive(Debug)]
 enum ToolFailure {
     /// Protocol-level invalid arguments (mapped to JSON-RPC -32602).
     Invalid(String),
@@ -209,8 +334,9 @@ enum ToolFailure {
 }
 
 fn call_tool(
-    index: Option<&HeadlessIndex>,
+    session: &AgentSession<'_>,
     params: Option<&Value>,
+    reindex_enabled: bool,
 ) -> Result<Value, (i64, String)> {
     let Some(params) = params.and_then(Value::as_object) else {
         return Err((
@@ -232,9 +358,24 @@ fn call_tool(
         .unwrap_or_else(|| json!({}));
 
     let outcome: Result<Value, ToolFailure> = match name {
-        "search" => tool_search(index, &arguments),
+        "health_check" => Ok(tool_health_check(session)),
+        "search" => tool_search(session, &arguments),
         "read_snippet" => tool_read_snippet(&arguments),
-        "index_state" => tool_index_state(index),
+        "index_state" => tool_index_state(session),
+        "regex_search" => tool_regex_search(session, &arguments),
+        "reindex" => {
+            if !reindex_enabled {
+                Err(ToolFailure::Execution(
+                    "reindex is disabled. Set \"mcp_allow_reindex\": true in config.json and restart the MCP server; it also requires the daemon."
+                        .to_string(),
+                ))
+            } else {
+                session
+                    .reindex()
+                    .map(|value| json!({ "started": value["started"].as_bool().unwrap_or(false), "as_of": now_unix_secs() }))
+                    .map_err(ToolFailure::Execution)
+            }
+        }
         other => {
             return Err((INVALID_PARAMS, format!("Unknown tool: {}", other)));
         }
@@ -253,7 +394,35 @@ fn call_tool(
     })
 }
 
-fn tool_search(index: Option<&HeadlessIndex>, args: &Value) -> Result<Value, ToolFailure> {
+fn tool_health_check(session: &AgentSession<'_>) -> Value {
+    let health = session.health();
+    let state = health.get("state").cloned().unwrap_or_else(|| json!({}));
+    let bool_field =
+        |value: &Value, key: &str| value.get(key).and_then(Value::as_bool).unwrap_or(false);
+    let state_field = |key: &str| state.get(key).cloned().unwrap_or(Value::Null);
+
+    json!({
+        "ok": bool_field(&health, "ok"),
+        "daemon": bool_field(&health, "daemon"),
+        "protocol_version": health.get("protocol_version").cloned().unwrap_or(Value::Null),
+        "db": bool_field(&health, "db"),
+        "index": bool_field(&health, "index"),
+        "model": bool_field(&health, "model"),
+        "model_real": state_field("model_real"),
+        "model_name": state_field("model_name"),
+        "watcher_ok": bool_field(&health, "watcher_ok"),
+        "files": state_field("files"),
+        "content_docs": state_field("content_docs"),
+        "semantic_units": state_field("semantic_units"),
+        "phase": state_field("phase"),
+        "is_indexing": state_field("is_indexing"),
+        "paused": state_field("paused"),
+        "error": health.get("error").cloned().unwrap_or(Value::Null),
+        "as_of": now_unix_secs(),
+    })
+}
+
+fn tool_search(session: &AgentSession<'_>, args: &Value) -> Result<Value, ToolFailure> {
     let query = args
         .get("query")
         .and_then(Value::as_str)
@@ -261,69 +430,131 @@ fn tool_search(index: Option<&HeadlessIndex>, args: &Value) -> Result<Value, Too
         .filter(|query| !query.is_empty())
         .ok_or_else(|| ToolFailure::Invalid("Invalid params: 'query' is required".to_string()))?;
 
-    let limit = match args.get("limit") {
-        None | Some(Value::Null) => 10,
-        Some(value) => value
-            .as_u64()
-            .filter(|limit| (1..=50).contains(limit))
-            .map(|limit| limit as usize)
-            .ok_or_else(|| {
-                ToolFailure::Invalid(
-                    "Invalid params: 'limit' must be an integer between 1 and 50".to_string(),
-                )
-            })?,
-    };
+    let mode = parse_mode(args)?;
+    run_search(session, args, query, Some(query), &mode)
+}
 
-    let mode = match args.get("mode") {
-        None | Some(Value::Null) => "ranked".to_string(),
-        Some(Value::String(mode)) if mode == "ranked" || mode == "exhaustive" => mode.clone(),
-        Some(_) => {
-            return Err(ToolFailure::Invalid(
-                "Invalid params: 'mode' must be \"ranked\" or \"exhaustive\"".to_string(),
-            ));
-        }
-    };
+fn tool_regex_search(session: &AgentSession<'_>, args: &Value) -> Result<Value, ToolFailure> {
+    let pattern = args
+        .get("pattern")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|pattern| !pattern.is_empty())
+        .ok_or_else(|| ToolFailure::Invalid("Invalid params: 'pattern' is required".to_string()))?;
+    if pattern.len() > 512 {
+        return Err(ToolFailure::Invalid(
+            "Invalid params: 'pattern' must be at most 512 bytes".to_string(),
+        ));
+    }
+    if pattern.chars().any(char::is_control) {
+        return Err(ToolFailure::Invalid(
+            "Invalid params: 'pattern' must not contain control characters".to_string(),
+        ));
+    }
+    regex::Regex::new(pattern)
+        .map_err(|e| ToolFailure::Invalid(format!("Invalid params: invalid regex: {}", e)))?;
+
+    let mode = parse_mode(args)?;
+    let composed = format!("re:{}", pattern);
+    let snippet_query = regex_snippet_literal(pattern);
+    let mut payload = run_search(session, args, &composed, snippet_query.as_deref(), &mode)?;
+    if let Some(object) = payload.as_object_mut() {
+        object.insert("pattern".to_string(), json!(pattern));
+    }
+    Ok(payload)
+}
+
+/// Best-effort literal for centering regex snippets. Alternations such as
+/// `needle|omega` yield `needle`; symbolic patterns yield no snippet instead
+/// of a misleading window.
+fn regex_snippet_literal(pattern: &str) -> Option<String> {
+    pattern.split('|').find_map(|part| {
+        let literal = part.trim_matches(|ch: char| !ch.is_alphanumeric() && ch != '_' && ch != '-');
+        (!literal.is_empty()
+            && literal
+                .chars()
+                .all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '-'))
+        .then(|| literal.to_string())
+    })
+}
+
+fn run_search(
+    session: &AgentSession<'_>,
+    args: &Value,
+    base_query: &str,
+    snippet_query: Option<&str>,
+    mode: &str,
+) -> Result<Value, ToolFailure> {
+    let page_size = parse_page_size(args)?;
+    let offset = parse_cursor(args)?;
+    if offset > MAX_OFFSET {
+        return Err(ToolFailure::Invalid(format!(
+            "Invalid params: cursor is beyond the {} result pagination cap; start a new search",
+            MAX_OFFSET
+        )));
+    }
 
     let path = optional_string(args, "path")?;
     let ext = optional_string(args, "ext")?;
     let modified_after = optional_string(args, "modified_after")?;
 
     let composed = compose_query(
-        query,
+        base_query,
         path.as_deref(),
         ext.as_deref(),
         modified_after.as_deref(),
         mode == "exhaustive",
     );
 
-    let index = index.ok_or_else(|| ToolFailure::Execution(NO_INDEX_MESSAGE.to_string()))?;
-    let response = index
-        .search(&composed, limit)
+    let response = session
+        .search_page(&composed, page_size, offset)
         .map_err(ToolFailure::Execution)?;
 
-    // `search_response` already uses the extraction-free snippet path, but
-    // filling any gaps here keeps agents receiving snippets even if a result
-    // was produced by a tier that does not attach one.
-    let paths: Vec<String> = response
-        .results
-        .iter()
-        .map(|result| result.path.clone())
-        .collect();
-    let snippets = index.snippets(&paths, query);
+    // Ranked results already applied the offset in the dispatcher.
+    // Exhaustive mode intentionally ignores the display limit, so slice here.
+    let page: Vec<&crate::search::SearchResult> = if response.mode == "exhaustive" {
+        response
+            .results
+            .iter()
+            .skip(offset)
+            .take(page_size)
+            .collect()
+    } else {
+        response.results.iter().collect()
+    };
 
-    let results: Vec<Value> = response
-        .results
+    let paths: Vec<String> = page.iter().map(|result| result.path.clone()).collect();
+    let snippets = snippet_query
+        .map(str::trim)
+        .filter(|query| !query.is_empty())
+        .map(|query| session.snippets(&paths, query))
+        .unwrap_or_else(|| vec![None; paths.len()]);
+
+    let mut snippet_budget_chars = SEARCH_TOKEN_BUDGET.saturating_mul(4);
+    let results: Vec<Value> = page
         .iter()
         .enumerate()
         .map(|(idx, result)| {
-            let snippet = result
+            let full = result
                 .snippet
                 .as_deref()
                 .or_else(|| snippets.get(idx).and_then(|snippet| snippet.as_deref()));
+            let (snippet, snippet_truncated) = match full {
+                None => (None, false),
+                Some(_) if snippet_budget_chars == 0 => (None, true),
+                Some(full) => {
+                    let allowed = SNIPPET_CHARS.min(snippet_budget_chars);
+                    let truncated = full.chars().count() > allowed;
+                    let snippet = truncate_chars(full, allowed);
+                    snippet_budget_chars = snippet_budget_chars.saturating_sub(allowed);
+                    (Some(snippet), truncated)
+                }
+            };
             json!({
                 "path": result.path,
                 "score": result.score,
-                "snippet": snippet.map(|snippet| truncate_chars(snippet, 400)),
+                "snippet": snippet,
+                "snippet_truncated": snippet_truncated,
                 "match_type": result.match_type,
                 "size": result.file_size,
                 "modified": result.modified,
@@ -331,10 +562,26 @@ fn tool_search(index: Option<&HeadlessIndex>, args: &Value) -> Result<Value, Too
         })
         .collect();
 
+    let returned = results.len();
+    let consumed = offset.saturating_add(returned);
+    let has_more = consumed < response.total;
+    let cursor_limit_reached = has_more && consumed >= MAX_OFFSET;
+    let next_cursor = if has_more && !cursor_limit_reached {
+        Value::String(encode_cursor(consumed))
+    } else {
+        Value::Null
+    };
+
     Ok(json!({
         "results": results,
+        "returned": returned,
         "total": response.total,
         "mode": response.mode,
+        "page_size": page_size,
+        "next_cursor": next_cursor,
+        "has_more": has_more,
+        "cursor_limit_reached": cursor_limit_reached,
+        "token_budget": SEARCH_TOKEN_BUDGET,
         "as_of": now_unix_secs(),
     }))
 }
@@ -376,25 +623,95 @@ fn tool_read_snippet(args: &Value) -> Result<Value, ToolFailure> {
         "line_end": line_end,
         "text": window,
         "truncated": truncated,
+        "token_budget": max_tokens,
     }))
 }
 
-fn tool_index_state(index: Option<&HeadlessIndex>) -> Result<Value, ToolFailure> {
-    let index = index.ok_or_else(|| ToolFailure::Execution(NO_INDEX_MESSAGE.to_string()))?;
-    let state = index.state().map_err(ToolFailure::Execution)?;
+fn tool_index_state(session: &AgentSession<'_>) -> Result<Value, ToolFailure> {
+    let state = session.state().map_err(ToolFailure::Execution)?;
+    let field = |key: &str| state.get(key).cloned().unwrap_or(Value::Null);
 
     Ok(json!({
-        "files": state["files"],
-        "dirs": state["dirs"],
-        "content_docs": state["content_docs"],
-        "semantic_units": state["semantic_units"],
-        "index_bytes": state["index_bytes"],
-        "model_id": state["model_id"],
-        "active_model_id": state["active_model_id"],
-        "model_name": state["model_name"],
-        "roots": state["roots"],
+        "files": field("files"),
+        "dirs": field("dirs"),
+        "content_docs": field("content_docs"),
+        "semantic_units": field("semantic_units"),
+        "index_bytes": field("index_bytes"),
+        "model_id": field("model_id"),
+        "active_model_id": field("active_model_id"),
+        "model_name": field("model_name"),
+        "model_real": field("model_real"),
+        "roots": field("roots"),
+        "last_reconcile": field("last_reconcile"),
+        "phase": field("phase"),
+        "is_indexing": field("is_indexing"),
+        "paused": field("paused"),
+        "files_indexed": field("files_indexed"),
+        "content_indexed": field("content_indexed"),
+        "extract_done": field("extract_done"),
+        "extract_total": field("extract_total"),
         "as_of": now_unix_secs(),
     }))
+}
+
+fn parse_mode(args: &Value) -> Result<String, ToolFailure> {
+    match args.get("mode") {
+        None | Some(Value::Null) => Ok("ranked".to_string()),
+        Some(Value::String(mode)) if mode == "ranked" || mode == "exhaustive" => Ok(mode.clone()),
+        Some(_) => Err(ToolFailure::Invalid(
+            "Invalid params: 'mode' must be \"ranked\" or \"exhaustive\"".to_string(),
+        )),
+    }
+}
+
+fn parse_page_size(args: &Value) -> Result<usize, ToolFailure> {
+    for key in ["page_size", "limit"] {
+        match args.get(key) {
+            None | Some(Value::Null) => {}
+            Some(value) => {
+                return value
+                    .as_u64()
+                    .filter(|size| (1..=MAX_PAGE_SIZE as u64).contains(size))
+                    .map(|size| size as usize)
+                    .ok_or_else(|| {
+                        ToolFailure::Invalid(format!(
+                            "Invalid params: '{}' must be an integer between 1 and {}",
+                            key, MAX_PAGE_SIZE
+                        ))
+                    });
+            }
+        }
+    }
+    Ok(DEFAULT_PAGE_SIZE)
+}
+
+fn parse_cursor(args: &Value) -> Result<usize, ToolFailure> {
+    match args.get("cursor") {
+        None | Some(Value::Null) => Ok(0),
+        Some(Value::String(cursor)) => decode_cursor(cursor),
+        Some(_) => Err(ToolFailure::Invalid(
+            "Invalid params: 'cursor' must be a string".to_string(),
+        )),
+    }
+}
+
+fn encode_cursor(offset: usize) -> String {
+    format!("k1-{:x}", offset)
+}
+
+fn decode_cursor(cursor: &str) -> Result<usize, ToolFailure> {
+    if cursor.len() > 32 {
+        return Err(ToolFailure::Invalid(
+            "Invalid params: 'cursor' is malformed".to_string(),
+        ));
+    }
+    let Some(hex) = cursor.strip_prefix("k1-") else {
+        return Err(ToolFailure::Invalid(
+            "Invalid params: 'cursor' is malformed".to_string(),
+        ));
+    };
+    usize::from_str_radix(hex, 16)
+        .map_err(|_| ToolFailure::Invalid("Invalid params: 'cursor' is malformed".to_string()))
 }
 
 fn optional_string(args: &Value, key: &str) -> Result<Option<String>, ToolFailure> {
@@ -498,6 +815,16 @@ mod tests {
     }
 
     fn fixture(tag: &str) -> Fixture {
+        fixture_with_files(
+            tag,
+            &[(
+                "notes.txt",
+                "alpha line\nbeta line with needle\nomega line\n",
+            )],
+        )
+    }
+
+    fn fixture_with_files(tag: &str, files: &[(&str, &str)]) -> Fixture {
         let seq = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -512,17 +839,6 @@ mod tests {
         ));
         fs::create_dir_all(&dir).unwrap();
 
-        let file = dir.join("notes.txt");
-        let content = "alpha line\nbeta line with needle\nomega line\n";
-        fs::write(&file, content).unwrap();
-        let modified = fs::metadata(&file)
-            .unwrap()
-            .modified()
-            .unwrap()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
         let config = KensakuConfig {
             watched_dirs: vec![dir.clone()],
             ..KensakuConfig::default()
@@ -530,30 +846,43 @@ mod tests {
         config.save_to(&dir).unwrap();
 
         let db = MetadataDb::open_in_dir(&dir).unwrap();
-        db.upsert(&FileEntry {
-            id: 1,
-            path: file.clone(),
-            name: "notes.txt".to_string(),
-            extension: Some("txt".to_string()),
-            size: content.len() as u64,
-            modified,
-            is_dir: false,
-            dev: 0,
-            ino: 0,
-            char_bloom: crate::search::fuzzy::compute_char_mask("notes.txt"),
-            content_pending: false,
-        })
-        .unwrap();
-        drop(db);
-
         {
             let index_dir = dir.join("index");
             let content_index = ContentIndex::new(&index_dir).unwrap();
-            content_index
-                .add_or_update(&file, "notes.txt", content, modified)
+            for (idx, (name, content)) in files.iter().enumerate() {
+                let file = dir.join(name);
+                fs::write(&file, content).unwrap();
+                let modified = fs::metadata(&file)
+                    .unwrap()
+                    .modified()
+                    .unwrap()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                db.upsert(&FileEntry {
+                    id: idx as u64 + 1,
+                    path: file.clone(),
+                    name: name.to_string(),
+                    extension: Path::new(name)
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(|ext| ext.to_ascii_lowercase()),
+                    size: content.len() as u64,
+                    modified,
+                    is_dir: false,
+                    dev: 0,
+                    ino: 0,
+                    char_bloom: crate::search::fuzzy::compute_char_mask(name),
+                    content_pending: false,
+                })
                 .unwrap();
+                content_index
+                    .add_or_update(&file, name, content, modified)
+                    .unwrap();
+            }
             content_index.commit().unwrap();
         }
+        drop(db);
 
         let index = HeadlessIndex::open_at(&dir).expect("open headless index");
         Fixture {
@@ -595,7 +924,7 @@ mod tests {
     }
 
     #[test]
-    fn tools_list_exposes_three_tools_with_valid_schemas() {
+    fn tools_list_exposes_read_only_tools_and_valid_schemas() {
         let fixture = fixture("tools-list");
         let response = handle_request(
             fixture.index.as_ref(),
@@ -604,15 +933,46 @@ mod tests {
         .expect("tools/list must reply");
 
         let tools = response["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 3);
+        assert_eq!(tools.len(), 5);
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-        assert_eq!(names, vec!["search", "read_snippet", "index_state"]);
+        assert_eq!(
+            names,
+            vec![
+                "health_check",
+                "search",
+                "read_snippet",
+                "index_state",
+                "regex_search"
+            ]
+        );
 
         for tool in tools {
             let schema = &tool["inputSchema"];
             assert_eq!(schema["type"], "object", "tool {:?}", tool["name"]);
             assert!(schema["properties"].is_object());
+            assert_eq!(schema["additionalProperties"], false);
         }
+    }
+
+    #[test]
+    fn reindex_is_hidden_by_default_and_listed_when_enabled() {
+        let fixture = fixture("reindex-list");
+        let response = handle_request(
+            fixture.index.as_ref(),
+            &request(json!({"jsonrpc": "2.0", "id": 21, "method": "tools/list"})),
+        )
+        .expect("tools/list must reply");
+        let tools = response["result"]["tools"].as_array().unwrap();
+        assert!(!tools.iter().any(|tool| tool["name"] == "reindex"));
+
+        let response = handle_request_session(
+            &AgentSession::None,
+            &request(json!({"jsonrpc": "2.0", "id": 22, "method": "tools/list"})),
+            true,
+        )
+        .expect("tools/list must reply");
+        let tools = response["result"]["tools"].as_array().unwrap();
+        assert!(tools.iter().any(|tool| tool["name"] == "reindex"));
     }
 
     #[test]
@@ -744,6 +1104,236 @@ mod tests {
         )
         .expect("tools/call must reply");
 
+        assert_eq!(response["error"]["code"], INVALID_PARAMS);
+    }
+
+    fn call(fixture: &Fixture, name: &str, arguments: Value) -> Value {
+        handle_request(
+            fixture.index.as_ref(),
+            &request(json!({
+                "jsonrpc": "2.0",
+                "id": 100,
+                "method": "tools/call",
+                "params": {"name": name, "arguments": arguments}
+            })),
+        )
+        .expect("tools/call must reply")
+    }
+
+    fn payload(response: &Value) -> Value {
+        serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn health_check_reports_local_health_without_error() {
+        let fixture = fixture("health");
+        let response = call(&fixture, "health_check", json!({}));
+        assert_eq!(response["result"]["isError"], false);
+        let payload = payload(&response);
+        assert_eq!(payload["ok"], true);
+        assert_eq!(payload["daemon"], false);
+        assert_eq!(payload["db"], true);
+        assert_eq!(payload["index"], true);
+        assert_eq!(payload["files"], 1);
+        assert_eq!(payload["model"], true);
+    }
+
+    #[test]
+    fn health_check_without_index_reports_unhealthy_not_tool_error() {
+        let response = handle_request(
+            None,
+            &request(json!({
+                "jsonrpc": "2.0",
+                "id": 101,
+                "method": "tools/call",
+                "params": {"name": "health_check", "arguments": {}}
+            })),
+        )
+        .expect("tools/call must reply");
+        assert_eq!(response["result"]["isError"], false);
+        let payload = payload(&response);
+        assert_eq!(payload["ok"], false);
+        assert_eq!(payload["db"], false);
+        assert!(
+            payload["error"]
+                .as_str()
+                .unwrap()
+                .contains("No Kensaku index")
+        );
+    }
+
+    #[test]
+    fn exhaustive_search_paginates_with_stable_cursor() {
+        let fixture = fixture_with_files(
+            "pagination",
+            &[
+                ("a.txt", "needle alpha"),
+                ("b.txt", "needle beta"),
+                ("c.txt", "needle gamma"),
+                ("d.txt", "needle delta"),
+                ("e.txt", "needle epsilon"),
+            ],
+        );
+
+        let first = payload(&call(
+            &fixture,
+            "search",
+            json!({"query": "needle", "mode": "exhaustive", "page_size": 2}),
+        ));
+        assert_eq!(first["total"], 5);
+        assert_eq!(first["returned"], 2);
+        assert_eq!(first["has_more"], true);
+        let cursor = first["next_cursor"].as_str().unwrap().to_string();
+
+        let second = payload(&call(
+            &fixture,
+            "search",
+            json!({"query": "needle", "mode": "exhaustive", "page_size": 2, "cursor": cursor}),
+        ));
+        assert_eq!(second["returned"], 2);
+        assert_eq!(second["has_more"], true);
+        let cursor = second["next_cursor"].as_str().unwrap().to_string();
+
+        let third = payload(&call(
+            &fixture,
+            "search",
+            json!({"query": "needle", "mode": "exhaustive", "page_size": 2, "cursor": cursor}),
+        ));
+        assert_eq!(third["returned"], 1);
+        assert_eq!(third["has_more"], false);
+        assert!(third["next_cursor"].is_null());
+
+        let mut paths: Vec<String> = Vec::new();
+        for page in [&first, &second, &third] {
+            for result in page["results"].as_array().unwrap() {
+                paths.push(result["path"].as_str().unwrap().to_string());
+            }
+        }
+        assert_eq!(paths.len(), 5);
+        paths.sort();
+        paths.dedup();
+        assert_eq!(paths.len(), 5);
+    }
+
+    #[test]
+    fn search_snippet_budget_marks_truncation() {
+        let long = format!("{} needle {}", "x".repeat(200), "y".repeat(2_000));
+        let fixture = fixture_with_files("snippet-budget", &[("long.txt", &long)]);
+        let payload = payload(&call(
+            &fixture,
+            "search",
+            json!({"query": "needle", "page_size": 5}),
+        ));
+        let result = &payload["results"][0];
+        let snippet = result["snippet"].as_str().unwrap();
+        assert!(snippet.chars().count() <= SNIPPET_CHARS);
+        assert_eq!(result["snippet_truncated"], true);
+        assert_eq!(payload["token_budget"], SEARCH_TOKEN_BUDGET);
+    }
+
+    #[test]
+    fn regex_search_returns_results_and_rejects_invalid_patterns() {
+        let fixture = fixture("regex");
+        let response = call(&fixture, "regex_search", json!({"pattern": "needle|omega"}));
+        assert_eq!(response["result"]["isError"], false);
+        let payload = payload(&response);
+        assert_eq!(payload["pattern"], "needle|omega");
+        assert_eq!(payload["returned"], 1);
+        assert!(
+            payload["results"][0]["snippet"]
+                .as_str()
+                .unwrap()
+                .contains("needle")
+        );
+
+        let response = call(&fixture, "regex_search", json!({"pattern": "["}));
+        assert_eq!(response["error"]["code"], INVALID_PARAMS);
+    }
+
+    #[test]
+    fn reindex_tool_is_disabled_by_default() {
+        let fixture = fixture("reindex-disabled");
+        let response = call(&fixture, "reindex", json!({}));
+        assert_eq!(response["result"]["isError"], true);
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("reindex is disabled"), "got: {text}");
+    }
+
+    #[test]
+    fn cursor_codec_rejects_malformed_and_caps_offsets() {
+        assert_eq!(decode_cursor(&encode_cursor(1_234)).unwrap(), 1_234);
+        assert!(decode_cursor("nope").is_err());
+        assert!(decode_cursor("k1-").is_err());
+        assert!(decode_cursor("k1-zz").is_err());
+
+        let request = json!({"cursor": encode_cursor(MAX_OFFSET + 1)});
+        let error = run_search(&AgentSession::None, &request, "x", None, "ranked")
+            .expect_err("offset beyond the cap must be rejected");
+        match error {
+            ToolFailure::Invalid(message) => assert!(message.contains("pagination cap")),
+            ToolFailure::Execution(message) => panic!("unexpected execution error: {message}"),
+        }
+    }
+
+    #[test]
+    #[ignore = "reports warm MCP search p50/p95; run with --ignored --nocapture"]
+    fn mcp_search_latency() {
+        let names: Vec<String> = (0..100).map(|i| format!("doc-{i}.txt")).collect();
+        let contents: Vec<String> = (0..100)
+            .map(|i| format!("alpha beta gamma needle line {i}\n"))
+            .collect();
+        let files: Vec<(&str, &str)> = names
+            .iter()
+            .zip(contents.iter())
+            .map(|(name, content)| (name.as_str(), content.as_str()))
+            .collect();
+        let fixture = fixture_with_files("latency", &files);
+
+        let mut samples = Vec::with_capacity(200);
+        for _ in 0..200 {
+            let start = std::time::Instant::now();
+            let response = handle_request(
+                fixture.index.as_ref(),
+                &request(json!({
+                    "jsonrpc": "2.0",
+                    "id": 200,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "search",
+                        "arguments": {"query": "needle", "page_size": 10}
+                    }
+                })),
+            )
+            .expect("search must reply");
+            std::hint::black_box(response);
+            samples.push(start.elapsed().as_micros() as u64);
+        }
+        samples.sort_unstable();
+        println!(
+            "K8 MCP search latency over 100 files: p50={}µs p95={}µs",
+            samples[samples.len() / 2],
+            samples[samples.len() * 95 / 100]
+        );
+    }
+
+    #[test]
+    fn malformed_cursor_and_unknown_tool_are_invalid_params() {
+        let fixture = fixture("bad-cursor");
+        let response = call(
+            &fixture,
+            "search",
+            json!({"query": "needle", "cursor": "not-a-cursor"}),
+        );
+        assert_eq!(response["error"]["code"], INVALID_PARAMS);
+
+        let response = call(&fixture, "does_not_exist", json!({}));
+        assert_eq!(response["error"]["code"], INVALID_PARAMS);
+
+        let response = call(
+            &fixture,
+            "search",
+            json!({"query": "needle", "page_size": 51}),
+        );
         assert_eq!(response["error"]["code"], INVALID_PARAMS);
     }
 

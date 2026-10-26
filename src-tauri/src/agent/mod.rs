@@ -102,19 +102,54 @@ impl HeadlessIndex {
 
     /// Runs a query against the loaded index.
     pub fn search(&self, query: &str, limit: usize) -> Result<SearchResponse, String> {
+        self.search_page(query, limit, 0)
+    }
+
+    /// Runs a query with a stable result offset (MCP pagination).
+    pub fn search_page(
+        &self,
+        query: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<SearchResponse, String> {
         if let Ok(value) = crate::daemon::request(
             "search",
-            serde_json::json!({"query": query, "limit": limit}),
+            serde_json::json!({
+                "query": query,
+                "limit": limit,
+                "offset": offset,
+                "snippets": true
+            }),
         ) && let Ok(response) = serde_json::from_value::<SearchResponse>(value)
         {
             return Ok(response);
         }
-        self.search_local(query, limit)
+        self.search_local_page_with_snippets(query, limit, offset, true)
     }
 
     pub fn search_local(&self, query: &str, limit: usize) -> Result<SearchResponse, String> {
+        self.search_local_page_with_snippets(query, limit, 0, true)
+    }
+
+    /// No-snippet local path used by MCP, which batches its own extraction.
+    pub fn search_local_page(
+        &self,
+        query: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<SearchResponse, String> {
+        self.search_local_page_with_snippets(query, limit, offset, false)
+    }
+
+    pub fn search_local_page_with_snippets(
+        &self,
+        query: &str,
+        limit: usize,
+        offset: usize,
+        with_snippets: bool,
+    ) -> Result<SearchResponse, String> {
         let aliases = self.config.alias_pairs();
-        Ok(SearchDispatcher::search_response_with_aliases(
+        Ok(SearchDispatcher::search_response_fast_sorted_with_snippets(
             query,
             &self.metadata,
             &self.content,
@@ -122,7 +157,10 @@ impl HeadlessIndex {
             self.config.semantic_enabled,
             limit,
             0,
+            crate::search::SortOrder::Best,
             &aliases,
+            offset,
+            with_snippets,
         ))
     }
 
@@ -130,11 +168,35 @@ impl HeadlessIndex {
     /// path (plain text is read directly, documents only hit the extraction
     /// cache). The result is aligned with `paths`.
     pub fn snippets(&self, paths: &[String], query: &str) -> Vec<Option<String>> {
-        use rayon::prelude::*;
-        paths
-            .par_iter()
-            .map(|path| crate::indexer::content::snippet_for_path(Path::new(path), query))
-            .collect()
+        snippets_for_paths(paths, query)
+    }
+
+    /// Health snapshot without a daemon: the local stores were opened at
+    /// startup, so this is cheap.
+    pub fn health_local(&self) -> Value {
+        let state = match self.state_local() {
+            Ok(state) => state,
+            Err(error) => {
+                return json!({
+                    "ok": false,
+                    "daemon": false,
+                    "db": false,
+                    "index": false,
+                    "model": false,
+                    "error": error,
+                });
+            }
+        };
+        json!({
+            "ok": true,
+            "daemon": false,
+            "protocol_version": null,
+            "watcher_ok": false,
+            "db": self.dir.join("metadata.db").exists(),
+            "index": self.content.is_some(),
+            "model": state["active_model_id"].as_u64().is_some(),
+            "state": state,
+        })
     }
 
     /// Compact index status shared by `kensaku-cli state` and the MCP
@@ -179,6 +241,10 @@ impl HeadlessIndex {
             None => None,
         };
 
+        let model_dir = self.dir.join("models");
+        let model_real = model_dir.join("model.safetensors").is_file()
+            && model_dir.join("tokenizer.json").is_file();
+
         Ok(json!({
             "files": files,
             "dirs": dirs,
@@ -188,9 +254,110 @@ impl HeadlessIndex {
             "model_id": units_model_id,
             "active_model_id": self.model.model_id,
             "model_name": self.model.name,
+            "model_real": model_real,
             "roots": roots,
             "last_reconcile": last_reconcile,
         }))
+    }
+}
+
+/// Computes extraction-free snippets for a page of results.
+pub fn snippets_for_paths(paths: &[String], query: &str) -> Vec<Option<String>> {
+    use rayon::prelude::*;
+    paths
+        .par_iter()
+        .map(|path| crate::indexer::content::snippet_for_path(Path::new(path), query))
+        .collect()
+}
+
+/// Backend selected for one MCP session.
+///
+/// `Daemon` never opens SQLite, Tantivy or the embedding table in this
+/// process; tool calls are forwarded to the single writer. `Local` is the
+/// read-only fallback used when no daemon is running. `None` still answers
+/// `initialize` and returns actionable errors from tools.
+pub enum AgentSession<'a> {
+    Daemon,
+    Local(&'a HeadlessIndex),
+    None,
+}
+
+impl AgentSession<'_> {
+    pub fn is_daemon(&self) -> bool {
+        matches!(self, Self::Daemon)
+    }
+
+    pub fn search_page(
+        &self,
+        query: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<SearchResponse, String> {
+        match self {
+            Self::Daemon => {
+                let value = crate::daemon::request(
+                    "search",
+                    json!({
+                        "query": query,
+                        "limit": limit,
+                        "offset": offset,
+                        "snippets": false
+                    }),
+                )?;
+                serde_json::from_value(value).map_err(|e| e.to_string())
+            }
+            Self::Local(index) => index.search_local_page(query, limit, offset),
+            Self::None => Err(NO_INDEX_MESSAGE.to_string()),
+        }
+    }
+
+    pub fn state(&self) -> Result<Value, String> {
+        match self {
+            Self::Daemon => crate::daemon::request("index_state", json!({})),
+            Self::Local(index) => index.state_local(),
+            Self::None => Err(NO_INDEX_MESSAGE.to_string()),
+        }
+    }
+
+    pub fn health(&self) -> Value {
+        match self {
+            Self::Daemon => crate::daemon::request("health", json!({})).unwrap_or_else(|error| {
+                json!({
+                    "ok": false,
+                    "daemon": true,
+                    "db": false,
+                    "index": false,
+                    "model": false,
+                    "error": error,
+                })
+            }),
+            Self::Local(index) => index.health_local(),
+            Self::None => json!({
+                "ok": false,
+                "daemon": false,
+                "db": false,
+                "index": false,
+                "model": false,
+                "error": NO_INDEX_MESSAGE,
+            }),
+        }
+    }
+
+    pub fn snippets(&self, paths: &[String], query: &str) -> Vec<Option<String>> {
+        snippets_for_paths(paths, query)
+    }
+
+    /// `reindex` is the only write tool. It requires both the config opt-in
+    /// and a running daemon, so read-only fallback can never write.
+    pub fn reindex(&self) -> Result<Value, String> {
+        match self {
+            Self::Daemon => crate::daemon::request("reindex", json!({})),
+            Self::Local(_) => Err(
+                "reindex requires the Kensaku daemon; start it before enabling this tool"
+                    .to_string(),
+            ),
+            Self::None => Err(NO_INDEX_MESSAGE.to_string()),
+        }
     }
 }
 

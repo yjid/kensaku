@@ -93,6 +93,10 @@ pub struct KensakuConfig {
     /// deletes still apply while paused.
     #[serde(default)]
     pub pause_indexing: bool,
+    /// Allow MCP agents to call the opt-in `reindex` write tool. Disabled by
+    /// default; read-only tools are always available.
+    #[serde(default)]
+    pub mcp_allow_reindex: bool,
     #[serde(default = "default_true")]
     pub ocr_enabled: bool,
     /// Persisted UI theme ("paper" or "void").
@@ -195,6 +199,7 @@ impl Default for KensakuConfig {
             semantic_f32_table: false,
             crawl_mode: CrawlMode::Balanced,
             pause_indexing: false,
+            mcp_allow_reindex: false,
             ocr_enabled: true,
             theme: default_theme(),
             aliases: default_aliases(),

@@ -142,6 +142,7 @@ export interface KensakuConfig {
   semantic_f32_table?: boolean;
   crawl_mode?: "full" | "balanced" | "eco";
   pause_indexing?: boolean;
+  mcp_allow_reindex?: boolean;
   skip_hidden?: boolean;
   ocr_enabled?: boolean;
   theme?: "paper" | "void";
