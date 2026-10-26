@@ -108,7 +108,7 @@ bun install
 bun run tauri build
 ```
 
-Prerequisites: Rust stable, Bun 1.1+ (Node 18+ works), plus platform webview libraries — see [docs/INSTALL.md](docs/INSTALL.md).
+Prerequisites: Rust stable, Bun 1.1+ (Node 18+ works), plus platform webview libraries — see [docs/INSTALL.md](docs/INSTALL.md). A `Makefile` wraps the common tasks: `make dev`, `make build`, `make test`, `make reset`.
 
 **First run:** choose folders, pick an exclusion preset, optionally download OCR/model packs. The first scan finishes with a Done summary; later launches are instant. You can search while indexing runs.
 

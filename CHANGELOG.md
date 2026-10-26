@@ -3,6 +3,40 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Guided first-run setup: folders → exclusions → preferences → optional packs →
+  first scan → Done. The first scan is gated by `first_scan_done`; interrupted
+  scans resume. Settings → About offers **Run setup again**.
+- Deterministic plain-language compiler ("latest resume", "screenshots from last
+  week", "big videos in Projects") with removable interpretation chips.
+- Personal aliases (`resume → cv`, seeded + editable in Settings → Search).
+- Inline `/` command menu and `@` directory scope picker.
+- Explicit sort: Best match / Newest / Oldest / Largest / Name, applied
+  server-side before the result limit.
+- Server-side facet counts and multi-select/exclude category facets.
+- Version grouping (`resume_v2`, `resume_final`, `(1)`, `-copy`).
+- Home screen with pins, recent files, saved searches, and suggested queries.
+- Pagination / **Load more**.
+- Duplicate review view (`/dupes`).
+- Default-deny sensitive paths and credential extensions.
+- `Makefile` with dev/build/test/bench and `reset` / `reset-index` targets.
+
+### Changed
+- Removed the `Ctrl/Cmd+K` command palette and the old `>` commands; `/` replaces
+  them. The full query grammar remains for power users, CLI, and MCP.
+- Setup owns OCR/model downloads. Settings shows installed status and links to
+  **Run setup again**.
+- First-run scanning shows live counts, a progress bar, and an ETA for metadata
+  indexing and extraction.
+
+### Fixed
+- Shortcut recording now captures a real key combo (modifiers accumulate across
+  key presses) instead of staying on the default.
+- Optional-pack downloads show live progress, success, and errors.
+- React hook-order crash after setup gating that blanked the window.
+
 ## [0.3.3] — 2026-10-26
 
 ### Fixed

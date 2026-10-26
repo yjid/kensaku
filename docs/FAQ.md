@@ -43,9 +43,10 @@ milestone — see [VISION.md](VISION.md).
 
 **OCR is on but no image text is indexed.**
 Tesseract is probably installed without language data. Settings → Search shows
-the state; click **Download English · 4 MB** (or install `tesseract-ocr-eng`),
-then save. Existing images are re-scanned. Doctor repeats the check. OCR
-language data is also offered as an optional pack in the guided setup flow.
+the state; download the English language pack in the guided setup flow
+(**About → Run setup again → Optional packs**) or install `tesseract-ocr-eng`.
+Existing images are re-scanned. Doctor repeats the check. The setup pack button
+shows download state, success, or the backend error.
 
 **Can it search across multiple drives?**
 Yes. Add each root in Settings → Folders. Unplugged drives are preserved rather
