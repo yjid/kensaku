@@ -141,12 +141,10 @@ fn handle_client(mut stream: UnixStream, token: &str, _manager: &Arc<IndexerMana
 
         let result = match method {
             "health" => Ok(json!({"ok": true})),
-            "index_state" => {
-                match HeadlessIndex::open() {
-                    Ok(idx) => idx.state().map_err(|e| e),
-                    Err(e) => Err(e),
-                }
-            }
+            "index_state" => match HeadlessIndex::open() {
+                Ok(idx) => idx.state_local(),
+                Err(e) => Err(e),
+            },
             "shutdown" => {
                 std::process::exit(0);
             }
