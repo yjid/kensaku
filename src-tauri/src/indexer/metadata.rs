@@ -351,6 +351,52 @@ impl MetadataStore {
         marked
     }
 
+    /// Marks files with any of `extensions` for a content re-read. Used when
+    /// external extractors are added, removed or changed.
+    pub fn mark_extensions_pending(&mut self, extensions: &[String]) -> usize {
+        let wanted: std::collections::HashSet<String> = extensions
+            .iter()
+            .map(|extension| {
+                extension
+                    .trim()
+                    .trim_start_matches('.')
+                    .to_ascii_lowercase()
+            })
+            .filter(|extension| !extension.is_empty())
+            .collect();
+        if wanted.is_empty() {
+            return 0;
+        }
+
+        let mut marked = 0;
+        for i in 0..self.arena.len() {
+            let idx = i as u32;
+            if self.arena.node(idx).is_dir() {
+                continue;
+            }
+            let matches = self
+                .arena
+                .extension(idx)
+                .is_some_and(|extension| wanted.contains(&extension.to_ascii_lowercase()));
+            if matches {
+                self.arena.node_mut(idx).set_content_pending(true);
+                marked += 1;
+            }
+        }
+        if marked > 0 {
+            self.generation.fetch_add(1, Ordering::SeqCst);
+        }
+
+        if let Some(db) = self.db.as_ref() {
+            let extensions: Vec<String> = wanted.into_iter().collect();
+            if let Err(e) = db.mark_extensions_pending(&extensions) {
+                eprintln!("[Kensaku] Failed to mark extensions pending: {}", e);
+            }
+        }
+
+        marked
+    }
+
     /// Forces a content re-read for every file (used after a content-index
     /// schema migration). Directories keep their metadata.
     pub fn mark_all_content_pending(&mut self) -> usize {

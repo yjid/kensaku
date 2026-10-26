@@ -19,6 +19,44 @@ pub struct SavedSearch {
     pub sort: Option<String>,
 }
 
+/// Opt-in external text extractor. Commands are executed directly (never
+/// through a shell), with a cleared environment and a hard timeout.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalExtractor {
+    /// Shown in extraction metadata and warnings.
+    pub name: String,
+    /// Lowercase extensions without the dot, e.g. `["stl", "obj"]`.
+    #[serde(default)]
+    pub extensions: Vec<String>,
+    /// Optional MIME selectors, e.g. `["model/*"]`. Matched alongside
+    /// `extensions` when either matches. `mime_types` is accepted as an alias.
+    #[serde(default, alias = "mime_types")]
+    pub mime: Vec<String>,
+    /// Absolute path to an executable file. PATH lookup is never used.
+    pub command: String,
+    /// Individual arguments. `{path}` is replaced with the file path; if no
+    /// argument contains it, the path is appended as the last argument.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Wall-clock limit; clamped to 100..=7000 ms by the runner.
+    #[serde(default = "default_extractor_timeout_ms")]
+    pub timeout_ms: u64,
+    /// Maximum captured stdout; clamped to 1 KiB..=4 MiB.
+    #[serde(default = "default_extractor_output_bytes")]
+    pub max_output_bytes: u64,
+    /// External commands never run unless this is explicitly true.
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+pub fn default_extractor_timeout_ms() -> u64 {
+    5_000
+}
+
+pub fn default_extractor_output_bytes() -> u64 {
+    1_000_000
+}
+
 pub fn default_aliases() -> Vec<Alias> {
     [
         ("resume", &["cv", "curriculum vitae"][..]),
@@ -99,6 +137,10 @@ pub struct KensakuConfig {
     pub mcp_allow_reindex: bool,
     #[serde(default = "default_true")]
     pub ocr_enabled: bool,
+    /// Opt-in external extractors keyed by extension or MIME type. Empty by
+    /// default: no external command ever runs without explicit configuration.
+    #[serde(default)]
+    pub extractors: Vec<ExternalExtractor>,
     /// Persisted UI theme ("paper" or "void").
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -200,6 +242,7 @@ impl Default for KensakuConfig {
             crawl_mode: CrawlMode::Balanced,
             pause_indexing: false,
             mcp_allow_reindex: false,
+            extractors: Vec::new(),
             ocr_enabled: true,
             theme: default_theme(),
             aliases: default_aliases(),
@@ -562,6 +605,28 @@ mod tests {
                 "cer".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn external_extractors_default_to_off_with_safe_limits() {
+        let default = KensakuConfig::default();
+        assert!(default.extractors.is_empty(), "no plugins ship by default");
+
+        let extractor: ExternalExtractor =
+            serde_json::from_str(r#"{"name":"sample","extensions":[".STL"],"command":"/bin/cat"}"#)
+                .expect("minimal extractor should parse");
+        assert!(!extractor.enabled, "plugins require explicit opt-in");
+        assert_eq!(extractor.timeout_ms, 5_000);
+        assert_eq!(extractor.max_output_bytes, 1_000_000);
+        assert!(extractor.mime.is_empty());
+        assert!(extractor.args.is_empty());
+
+        let enabled: ExternalExtractor = serde_json::from_str(
+            r#"{"name":"sample","extensions":["stl"],"mime":["model/*"],"command":"/bin/cat","enabled":true}"#,
+        )
+        .expect("explicitly enabled extractor should parse");
+        assert!(enabled.enabled);
+        assert_eq!(enabled.mime, vec!["model/*".to_string()]);
     }
 
     #[test]

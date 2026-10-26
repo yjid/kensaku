@@ -28,6 +28,17 @@ export interface HomeItem {
   is_dir: boolean;
 }
 
+export interface ExternalExtractor {
+  name: string;
+  extensions?: string[];
+  mime?: string[];
+  command: string;
+  args?: string[];
+  timeout_ms?: number;
+  max_output_bytes?: number;
+  enabled?: boolean;
+}
+
 export interface SavedSearch {
   name: string;
   query: string;
@@ -143,6 +154,7 @@ export interface KensakuConfig {
   crawl_mode?: "full" | "balanced" | "eco";
   pause_indexing?: boolean;
   mcp_allow_reindex?: boolean;
+  extractors?: ExternalExtractor[];
   skip_hidden?: boolean;
   ocr_enabled?: boolean;
   theme?: "paper" | "void";

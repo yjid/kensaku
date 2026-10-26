@@ -775,10 +775,12 @@ pub async fn get_config(state: State<'_, AppState>) -> Result<KensakuConfig, Str
 pub async fn save_config(config: KensakuConfig, state: State<'_, AppState>) -> Result<(), String> {
     let previous = state.indexer.config.read().clone();
     let ocr_changed = previous.ocr_enabled != config.ocr_enabled;
+    let extractors_changed = previous.extractors != config.extractors;
 
     config.save()?;
     *state.indexer.config.write() = config.clone();
 
+    let mut reindex = false;
     if ocr_changed {
         // Apply the setting immediately, then flag only the image rows for a
         // re-read. `start_indexing` spawns its own thread, so the IPC call
@@ -794,6 +796,50 @@ pub async fn save_config(config: KensakuConfig, state: State<'_, AppState>) -> R
             },
             marked
         );
+        reindex = true;
+    }
+
+    if extractors_changed {
+        // External extractor commands are opt-in and only ever run from config.
+        // Their cached results must not survive an edit.
+        crate::indexer::extract::set_external_extractors(config.extractors.clone());
+        let active: Vec<_> = previous
+            .extractors
+            .iter()
+            .chain(config.extractors.iter())
+            .filter(|extractor| extractor.enabled)
+            .collect();
+        if !active.is_empty() {
+            let extensions: Vec<String> = active
+                .iter()
+                .flat_map(|extractor| extractor.extensions.iter().cloned())
+                .collect();
+            // MIME selectors and `*` cannot be narrowed to an extension, so
+            // re-read every file once. Disabled-only edits need no rescan.
+            let broad = active.iter().any(|extractor| {
+                extractor.mime.iter().any(|selector| !selector.trim().is_empty())
+                    || extractor.extensions.iter().any(|selector| {
+                        selector.trim().trim_start_matches('.') == "*"
+                    })
+            });
+            let marked = if broad || extensions.is_empty() {
+                state.indexer.metadata.write().mark_all_content_pending()
+            } else {
+                state
+                    .indexer
+                    .metadata
+                    .write()
+                    .mark_extensions_pending(&extensions)
+            };
+            eprintln!(
+                "[Kensaku] External extractors changed; {} file(s) queued for re-scan",
+                marked
+            );
+            reindex = true;
+        }
+    }
+
+    if reindex {
         state.indexer.start_indexing();
     }
 
@@ -839,6 +885,7 @@ pub async fn complete_setup(
     config.save()?;
 
     crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
+    crate::indexer::extract::set_external_extractors(config.extractors.clone());
     *state.indexer.config.write() = config;
     state.indexer.start_indexing();
 

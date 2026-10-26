@@ -573,7 +573,8 @@ fn handle_directory_rename(
         for entry in entries {
             let is_indexable = !entry.is_dir
                 && (is_indexable_extension(entry.extension.as_deref())
-                    || is_indexable_file_name(&entry.name));
+                    || is_indexable_file_name(&entry.name)
+                    || crate::indexer::extract::external::handles(&entry.path));
             let path = entry.path.clone();
             let name = entry.name.clone();
             let modified = entry.modified;
@@ -691,7 +692,9 @@ fn handle_file_upsert(
     }
 
     if !is_dir
-        && (is_indexable_extension(extension.as_deref()) || is_indexable_file_name(&name))
+        && (is_indexable_extension(extension.as_deref())
+            || is_indexable_file_name(&name)
+            || crate::indexer::extract::external::handles(path))
         && !is_cloud_placeholder(&meta)
         && let Some(content) = read_text_content(path, 100_000)
         && let Some(c_index) = content_index.read().as_ref()

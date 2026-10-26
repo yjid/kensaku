@@ -220,10 +220,13 @@ resumes; no unverified artifact is loaded.
 
 ### K10. Pluggable extractors
 
-- [ ] External command registry keyed by MIME/extension, with timeout, output
-  cap, and a sandbox/allowlist.
-- [ ] Ship zero plugins by default; optional packs for extra formats.
-- [ ] Document the plugin contract; never execute a plugin without user consent.
+- [x] External command registry keyed by MIME/extension, with timeout, output
+  cap, allowlist, cleared environment and process-group kill. An OS-level
+  sandbox remains future work; only explicitly configured absolute executables
+  run.
+- [x] Ship zero plugins by default; [docs/EXTRACTORS.md](EXTRACTORS.md) carries
+  an optional pack example.
+- [x] Document the plugin contract; never execute a plugin without user consent.
 
 **Acceptance:** a new format can be added without recompiling Kensaku; a hung
 plugin is killed and marked failed; no shell injection from file names.

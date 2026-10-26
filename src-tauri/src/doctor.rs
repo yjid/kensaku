@@ -4,7 +4,8 @@
 //! being propagated as errors, and no check is allowed to panic.
 
 use crate::AppState;
-use crate::config::KensakuConfig;
+use crate::config::{ExternalExtractor, KensakuConfig};
+use crate::indexer::extract::external;
 use crate::models;
 use serde::Serialize;
 use std::path::Path;
@@ -457,6 +458,117 @@ fn check_version() -> DoctorCheck {
     )
 }
 
+fn check_external_extractors(
+    extractors: &[ExternalExtractor],
+    failures: &[(std::path::PathBuf, String)],
+) -> DoctorCheck {
+    const ID: &str = "external_extractors";
+    const LABEL: &str = "External extractors";
+
+    if extractors.is_empty() {
+        return ok(
+            ID,
+            LABEL,
+            "No external extractors configured (none ship by default).".to_string(),
+        );
+    }
+
+    let commands = extractors
+        .iter()
+        .map(|extractor| {
+            let command = if extractor.command.chars().count() > 160 {
+                let mut short: String = extractor.command.chars().take(157).collect();
+                short.push_str("...");
+                short
+            } else {
+                extractor.command.clone()
+            };
+            format!(
+                "{} → {} ({})",
+                extractor.name.trim(),
+                command,
+                if extractor.enabled {
+                    "enabled"
+                } else {
+                    "disabled"
+                }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" · ");
+
+    let invalid = extractors
+        .iter()
+        .filter_map(|extractor| {
+            extractor
+                .validate()
+                .err()
+                .map(|error| format!("{}: {}", extractor.name.trim(), error))
+        })
+        .collect::<Vec<_>>();
+    if !invalid.is_empty() {
+        return fail(
+            ID,
+            LABEL,
+            format!("Invalid configuration: {}", invalid.join("; ")),
+            Some(
+                "Fix the command, selectors or executable permissions in config.json.".to_string(),
+            ),
+        );
+    }
+
+    let enabled = extractors
+        .iter()
+        .filter(|extractor| extractor.enabled)
+        .count();
+    let failure_detail = if failures.is_empty() {
+        String::new()
+    } else {
+        let shown = failures
+            .iter()
+            .rev()
+            .take(3)
+            .map(|(path, reason)| {
+                let reason = if reason.chars().count() > 140 {
+                    let mut short: String = reason.chars().take(137).collect();
+                    short.push_str("...");
+                    short
+                } else {
+                    reason.clone()
+                };
+                format!("{} — {}", path.display(), reason)
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        format!(" · {} recent failure(s): {}", failures.len(), shown)
+    };
+    if enabled == 0 {
+        return warn(
+            ID,
+            LABEL,
+            format!(
+                "{} configured but none enabled: {}",
+                extractors.len(),
+                commands
+            ),
+            Some("Review each command, then set enabled: true in config.json.".to_string()),
+        );
+    }
+
+    if !failure_detail.is_empty() {
+        return warn(
+            ID,
+            LABEL,
+            format!("{} enabled: {}{}", enabled, commands, failure_detail),
+            Some(
+                "Fix the plugin, then save its config or run a full reindex to retry.".to_string(),
+            ),
+        );
+    }
+
+    ok(ID, LABEL, format!("{} enabled: {}", enabled, commands))
+}
+
 /// Runs every doctor check. Never panics; each check degrades to a status.
 pub fn run(state: &AppState) -> DoctorReport {
     let config_dir = KensakuConfig::config_dir();
@@ -472,6 +584,10 @@ pub fn run(state: &AppState) -> DoctorReport {
         check_semantic_index(units),
         check_watched_folders(state),
         check_watcher(state),
+        check_external_extractors(
+            &state.indexer.config.read().extractors,
+            &external::recent_failures(),
+        ),
     ];
     #[cfg(target_os = "linux")]
     checks.push(check_inotify_limit());
@@ -496,5 +612,63 @@ pub fn run(state: &AppState) -> DoctorReport {
         checks,
         ran_at: now_unix_secs(),
         summary,
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    fn extractor(command: &str, enabled: bool) -> ExternalExtractor {
+        ExternalExtractor {
+            name: "sample".to_string(),
+            extensions: vec!["k10ext".to_string()],
+            mime: Vec::new(),
+            command: command.to_string(),
+            args: Vec::new(),
+            timeout_ms: 1_000,
+            max_output_bytes: 1_000,
+            enabled,
+        }
+    }
+
+    #[test]
+    fn external_check_is_ok_when_nothing_is_configured() {
+        let check = check_external_extractors(&[], &[]);
+        assert_eq!(check.status, "ok");
+        assert!(check.detail.contains("none ship by default"));
+    }
+
+    #[test]
+    fn external_check_shows_the_command_while_disabled() {
+        let check = check_external_extractors(&[extractor("/bin/cat", false)], &[]);
+        assert_eq!(check.status, "warn");
+        assert!(check.detail.contains("/bin/cat"), "got: {}", check.detail);
+    }
+
+    #[test]
+    fn external_check_fails_broken_enabled_commands() {
+        let check =
+            check_external_extractors(&[extractor("/definitely/missing/plugin", true)], &[]);
+        assert_eq!(check.status, "fail");
+        assert!(check.fix.is_some());
+    }
+
+    #[test]
+    fn external_check_accepts_a_reviewed_enabled_command() {
+        let check = check_external_extractors(&[extractor("/bin/cat", true)], &[]);
+        assert_eq!(check.status, "ok");
+    }
+
+    #[test]
+    fn external_check_surfaces_runtime_failures() {
+        let failures = vec![(
+            std::path::PathBuf::from("/docs/model.k10ext"),
+            "timed out after 200 ms".to_string(),
+        )];
+        let check = check_external_extractors(&[extractor("/bin/cat", true)], &failures);
+        assert_eq!(check.status, "warn");
+        assert!(check.detail.contains("model.k10ext"));
+        assert!(check.detail.contains("timed out"));
     }
 }
