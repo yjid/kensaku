@@ -68,23 +68,36 @@ pub fn verify_folded(raw: &str, query: &str) -> bool {
 
 fn term_matches(raw_lower: &str, term: &str) -> bool {
     let term_lower = term.to_lowercase();
+    let folded_term = fold(&term_lower);
     if raw_lower.contains(&term_lower) {
         return true;
     }
-    let budget = match term_lower.chars().count() {
+    let budget = match folded_term.chars().count() {
         4..=7 => 1,
         8.. => 2,
         _ => 0,
     };
     if budget == 0 {
-        return false;
+        // The two-character to one-character folds are exact mappings, so a
+        // one-character folded term still has to match a whole folded word.
+        return raw_lower
+            .split(|ch: char| !ch.is_alphanumeric())
+            .filter(|word| !word.is_empty())
+            .any(|word| fold(word) == folded_term);
     }
-    let needle: Vec<char> = term_lower.chars().collect();
+    let needle: Vec<char> = folded_term.chars().collect();
     raw_lower
         .split(|ch: char| !ch.is_alphanumeric())
         .filter(|word| !word.is_empty())
-        .filter(|word| word.chars().count().abs_diff(needle.len()) <= budget)
-        .any(|word| edit_distance_within(&needle, word, budget))
+        .filter(|word| {
+            let folded_word = fold(word);
+            folded_word.chars().count().abs_diff(needle.len()) <= budget
+        })
+        .any(|word| {
+            let folded_word = fold(word);
+            let hay: Vec<char> = folded_word.chars().collect();
+            edit_distance_within(&needle, &hay.iter().collect::<String>(), budget)
+        })
 }
 
 fn edit_distance_within(needle: &[char], haystack: &str, budget: usize) -> bool {
@@ -1304,6 +1317,18 @@ mod tests {
     }
 
     #[test]
+    fn verify_folded_accepts_lookalike_mappings() {
+        assert!(verify_folded("the clerk signed it", "the derk signed it"));
+        assert!(verify_folded("vvindow", "window"));
+        assert!(verify_folded("rnment", "mment"));
+        assert!(verify_folded("5tr", "str"));
+        assert!(verify_folded("8ig", "big"));
+        assert!(verify_folded("f1le", "fiie"));
+        assert!(verify_folded("0rder", "order"));
+        assert!(!verify_folded("internally consistent", "email"));
+    }
+
+    #[test]
     fn folded_search_handles_cjk_and_skips_short_terms() {
         let temp = temp_index("folded-cjk");
         let index = temp.index.as_ref().unwrap();
@@ -1426,14 +1451,16 @@ mod tests {
         );
         index.commit().unwrap();
 
-        // d/cl folding makes "clock" a trigram candidate for "dock", but raw
-        // verification rejects the two-edit word match.
-        assert!(index.search_folded("dock", 10, None).is_empty());
+        // d/cl folding makes "clock" fold to "dock", so the folded tier
+        // accepts it. "email" still has no folded match in "internally".
+        let dock = index.search_folded("dock", 10, None);
+        assert_eq!(dock.len(), 1);
+        assert!(dock[0].path.ends_with("clock.txt"));
         assert!(index.search_folded("email", 10, None).is_empty());
         assert!(verify_folded("the order shipped", "0RDER"));
         assert!(verify_folded("donutsmp.net", "nutsmp"));
         assert!(!verify_folded("internally consistent", "email"));
-        assert!(!verify_folded("the clock tower", "dock"));
+        assert!(verify_folded("the clock tower", "dock"));
     }
 
     #[test]
