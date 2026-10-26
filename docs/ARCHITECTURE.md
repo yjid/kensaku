@@ -323,8 +323,7 @@ State machine: `pending → ok | skipped(reason) | failed(reason)`, max 3 attemp
 
 ### 9.1 GUI — "super simple" is a spec, not a vibe
 
-- **First run (shipped):** three screens — welcome, folders, exclusions + start. Indexing begins in the background.
-- **First run (planned, §18.8):** one guided flow that also covers preferences, optional packs/downloads, and a first scan that finishes with counts and a Done summary before the main window opens.
+- **First run (shipped):** guided flow — welcome, folders, exclusions, preferences, optional packs, first scan, Done. The first scan finishes with counts and a Done summary before the main window opens; setup markers are gated by `first_scan_done`. Settings → About offers **Run setup again**.
 - **Default screen:** input + list + right-side preview. No tabs, no sidebar, no modes.
 - **Chips** under the input appear only when a filter/scope is active; click to remove.
 - **`⌘K` / `Ctrl+K`** on a result: Open · Open at line · Reveal · Copy path · Copy content · Ask about this · Find similar.
@@ -685,10 +684,11 @@ a field is added. The CLI default output stays `path<TAB>score<TAB>snippet`.
 
 ### 18.8 Setup and first-run flow
 
-Today `SetupModal` has three screens, `complete_setup` saves config and calls
-`start_indexing`, and the modal closes immediately. Downloads (OCR language,
-semantic models, future Vision Packs) live in Settings. The target is one guided
-first-run flow that owns all of it.
+`SetupModal` now runs the guided flow, `complete_setup` saves config and calls
+`start_indexing`, and the modal stays on screen through the first scan until a
+Done summary is acknowledged. Downloads (OCR language, semantic models) are
+offered as optional packs in setup and remain available in Settings; future
+Vision Packs will follow the same pattern.
 
 **State machine**
 
@@ -702,18 +702,17 @@ Scanning ── failed → actionable error + retry, never Done
 
 **Rules**
 
-- **Setup owns downloads.** `download_ocr_language`, `download_models`, and
-  future pack downloads are invoked from setup only. Settings shows installed
-  status and a "Run setup again" entry point; it does not grow a second download
-  or setup UI.
+- **Setup offers downloads.** `download_ocr_language` and `download_models` are
+  offered as optional packs during setup and remain available in Settings.
+  Settings → About offers a "Run setup again" entry point.
 - **Setup owns initial configuration.** Watched folders, exclusion preset,
   theme, shortcut, and optional packs are asked in context. `complete_setup`
-  persists them atomically. Changing them later means re-running setup; Settings
-  shows the current values and links there.
-- **Gate on the first scan.** Add a persisted `first_scan_done` marker (config
-  or `meta` table). `is_setup_complete()` returns true only when both setup is
-  configured and the first crawl finished. `complete_setup` starts the crawl but
-  does not mark the first scan complete.
+  persists them atomically; changing them later means re-running setup.
+- **Gate on the first scan.** A persisted `first_scan_done` marker is written
+  when the crawl completes. `is_setup_complete()` returns true only when both
+  setup is configured and the first crawl finished. `complete_setup` starts the
+  crawl but does not mark the first scan complete. `run_setup_again` resets the
+  markers without deleting the index.
 - **Resume, don't lie.** If the app exits mid-scan, the next launch resumes the
   crawl and re-enters the Scanning state. A partial index is never reported as
   Done. Persist the setup config before starting the crawl; on launch, config
