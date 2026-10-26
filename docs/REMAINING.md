@@ -109,9 +109,7 @@ These are the highest-leverage gaps. None require a new model.
 - [x] **Similar images** — image-to-image query from a selected result; reuse
       the same visual index, exclude query image, apply cosine floor, exposed via Tauri
       command, daemon IPC, and read-only MCP tool. (ROADMAP K20)
-- [ ] **Native OCR** — macOS Vision (`objc2-vision`) and Windows OCR (`windows`
-      crate). Today it shells out to `tesseract`, which may not be installed.
-      Scanned PDFs need the same path. (ROADMAP K21)
+- [x] **Native OCR** — macOS Vision (`objc2-vision` / `native-ocr-macos`) and Windows OCR (`windows` / `native-ocr-windows`). Transparent dispatch fallback to accurate PP-OCRv6 and Tesseract. Scanned PDFs routed through OCR. (ROADMAP K21)
 - [-] **"This is me" identity** — skipped for now; revisit after the vision
       tier and sensitive-data controls. Local face embeddings + clustering,
       opt-in enrollment with 3–5 photos, explainable matches, delete-all.

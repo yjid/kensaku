@@ -44,7 +44,7 @@
 | K18 | Shipped — image embedding pipeline (VisualStore, thumbnail reuse, cancel safety) |
 | K19 | Shipped — visual search tier fused into RRF, visual: filter, visual badge |
 | K20 | Shipped — similar-image lookup, daemon method, MCP tool |
-| K21 | Planned — native platform OCR |
+| K21 | Shipped — native platform OCR (macOS Vision / Windows OCR features, Tesseract fallback, scanned PDF routing) |
 | K22 | Planned — CJK/multilingual golden queries |
 
 ## P0 — foundation

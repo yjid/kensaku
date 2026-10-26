@@ -6,6 +6,14 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- K21 native platform OCR: platform-native OCR integration support for macOS
+  (Apple Vision framework via `VNRecognizeTextRequest`) behind `native-ocr-macos`
+  and Windows (`Windows.Media.Ocr.OcrEngine`) behind `native-ocr-windows`.
+  Features zero-external-dependency OCR when compiled on supported platforms.
+  Integrated transparent dispatch hierarchy: Native -> Accurate (PP-OCRv6 tiny pack) ->
+  Tesseract (default/fallback). Routed scanned PDF extraction through the unified OCR
+  pipeline when pages lack textual content. Provided comprehensive verification guide
+  in `docs/NATIVE_OCR_VERIFICATION.md`.
 - K20 similar-image lookup: nearest-neighbor image-to-image search using cosine distance
   over 512-dimensional visual vector embeddings in `VisualStore`. Excludes the query image node,
   applies a cosine floor (0.30) to reject weak or unrelated candidates, and returns ranked
