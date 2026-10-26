@@ -41,7 +41,21 @@ fn ensure_token(config_dir: &Path) -> std::io::Result<String> {
     Ok(token)
 }
 
+extern "C" fn handle_term(_sig: libc::c_int) {
+    // The OS releases the lock when the process exits; the next start removes
+    // stale sockets and pid files.
+    std::process::exit(0);
+}
+
+fn install_signal_handlers() {
+    unsafe {
+        libc::signal(libc::SIGTERM, handle_term as *const () as libc::sighandler_t);
+        libc::signal(libc::SIGINT, handle_term as *const () as libc::sighandler_t);
+    }
+}
+
 fn main() {
+    install_signal_handlers();
     let config_dir = KensakuConfig::config_dir();
     let _ = fs::create_dir_all(&config_dir);
     let token = match ensure_token(&config_dir) {
@@ -58,6 +72,7 @@ fn main() {
         .read(true)
         .write(true)
         .create(true)
+        .truncate(false)
         .open(&lock_path)
     {
         Ok(f) => f,
