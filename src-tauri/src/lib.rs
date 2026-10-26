@@ -3,12 +3,15 @@ pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod crashlog;
+pub mod daemon;
 pub mod doctor;
 pub mod embed;
 pub mod indexer;
 pub mod models;
+pub mod ocr;
 pub mod query;
 pub mod search;
+pub mod util;
 
 use config::KensakuConfig;
 use indexer::IndexerManager;
@@ -24,6 +27,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 pub struct AppState {
     pub indexer: Arc<IndexerManager>,
+    pub daemon: Option<crate::daemon::DaemonClient>,
 }
 
 /// Owns the single-instance lock for the whole process lifetime: the OS releases
@@ -140,36 +144,50 @@ pub fn run() {
 
     commands::init_process_start();
 
-    // Single-instance guard. Acquire it before touching any state so a second
-    // launch can never race the first one on the database, index or config.
-    let mut instance_lock = acquire_instance_lock_or_exit();
-
     maybe_apply_pending_reset();
 
-    // A pending reset deletes the config directory, which removes the lock
-    // file. Re-acquire so the recreated directory is protected as well.
+    #[cfg(unix)]
+    let daemon_available = crate::daemon::DaemonClient::ensure();
+    #[cfg(not(unix))]
+    let daemon_available = false;
+
+    // The daemon owns the single-instance lock and the writer. The GUI only
+    // takes it in the explicit fallback mode.
+    let mut instance_lock = if daemon_available {
+        None
+    } else {
+        acquire_instance_lock_or_exit()
+    };
+
     if instance_lock.is_some() && !instance_lock_path().exists() {
         instance_lock = acquire_instance_lock_or_exit();
     }
 
     if let Some(file) = instance_lock {
-        // Deliberately kept alive until the process exits.
         let _ = INSTANCE_LOCK.set(file);
     }
 
     let config = KensakuConfig::load();
-    // OCR is enforced through the extraction layer's process-wide flag.
     indexer::extract::set_ocr_enabled(config.ocr_enabled);
+    ocr::set_engine(&config.ocr_engine);
     let is_setup = config.is_setup_complete;
-    let indexer_manager = Arc::new(IndexerManager::new(config.clone()));
 
-    // If setup was completed previously, automatically start indexing on startup
-    if is_setup {
-        indexer_manager.start_indexing();
-    }
+    let (indexer_manager, daemon_client) = if daemon_available {
+        (
+            Arc::new(IndexerManager::new_readonly(config.clone())),
+            Some(crate::daemon::DaemonClient),
+        )
+    } else {
+        let manager = Arc::new(IndexerManager::new(config.clone()));
+        if is_setup {
+            manager.start_indexing();
+        }
+        (manager, None)
+    };
 
     let app_state = AppState {
         indexer: indexer_manager,
+        daemon: daemon_client,
     };
 
     let shortcut_str = config.shortcut.clone();
@@ -206,7 +224,14 @@ pub fn run() {
             commands::get_thumbnail,
             commands::get_ocr_status,
             commands::download_ocr_language,
+            commands::get_ocr_pack_status,
+            commands::download_ocr_pack,
+            commands::get_smart_pack_status,
+            commands::download_smart_pack,
+            commands::get_visual_pack_status,
+            commands::download_visual_pack,
             commands::find_duplicates,
+            commands::find_similar_images,
             commands::execute_command,
             commands::read_file_content,
             commands::get_config,
@@ -230,9 +255,11 @@ pub fn run() {
             models::delete_models,
         ])
         .setup(move |app| {
-            app.state::<AppState>()
-                .indexer
-                .set_app_handle(app.handle().clone());
+            if app.state::<AppState>().daemon.is_none() {
+                app.state::<AppState>()
+                    .indexer
+                    .set_app_handle(app.handle().clone());
+            }
 
             // 1. Register global shortcut (e.g. Alt+Space)
             if let Ok(shortcut) = Shortcut::from_str(&shortcut_str) {

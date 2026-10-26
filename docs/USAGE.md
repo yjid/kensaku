@@ -115,7 +115,10 @@ category row and AND against the text query. When more ranked results exist, a
 **Load more** control appends the next page.
 
 Version groups appear as one row with a `N versions` badge (for example
-`resume`, `resume_v2`, `resume_final` in the same folder).
+`resume`, `resume_v2`, `resume_final` in the same folder). Near-identical
+screenshots taken within ten minutes in the same folder also collapse into one
+row; the badge count is the burst size. Existing images are grouped in the
+background 50 at a time, and `/dupes` shows the same screenshot bursts.
 
 ### Scopes and sort
 
@@ -151,9 +154,11 @@ Results are deterministic: score, then path.
 - **Search** — semantic toggle, OCR status, aliases, filter cheat sheet.
 - **AI & Semantic** — active model, embed queue, re-embed, model status (downloads
   are acquired in setup; use **About → Run setup again**).
-- **Agents** — MCP config and CLI examples for external agents.
-- **Doctor** — nine checks: config writability, DB integrity, index size, semantic
-  units, watched roots, watcher health, inotify limit, model files, crash log.
+- **Agents** — MCP config and CLI examples for external agents. External
+  format extractors are config-only; see [EXTRACTORS.md](EXTRACTORS.md).
+- **Doctor** — on-demand checks: config writability, DB integrity, index size,
+  semantic units, watched roots, watcher health, inotify limit, model files,
+  OCR, external extractors, crash log, and version.
 - **Stats for Nerds** — p50/p95/p99 + sparkline, index composition and on-disk
   sizes, ingestion phase/files-per-second/queue depth, uptime, RSS, model ids.
 - **About** — version, thesis, and **Reset everything**.
@@ -179,7 +184,8 @@ Results are deterministic: score, then path.
   The setup flow offers `eng.traineddata` as an optional pack; Settings → Search
   shows status and links to **Run setup again**. The toggle controls whether image
   text is indexed, and saving re-scans existing images. Thumbnails and dimensions
-  are cached; near-duplicates use a perceptual hash.
+  are cached; near-duplicates use a perceptual hash, and screenshot bursts also
+  compare OCR line overlap so a shared sidebar does not merge distinct pages.
 - **Cloud placeholders** (Windows OneDrive/iCloud) are indexed by name only, so
   reading doesn't hydrate the file.
 

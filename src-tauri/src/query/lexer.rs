@@ -76,7 +76,9 @@ pub fn tokenize(input: &str) -> Vec<Token> {
         }
 
         if has_colon {
-            let key = chars[start_pos..colon_pos.unwrap()].iter().collect::<String>();
+            let key = chars[start_pos..colon_pos.unwrap()]
+                .iter()
+                .collect::<String>();
             if i < len && chars[i] == '"' {
                 i += 1; // skip opening quote
                 let mut val = String::new();
@@ -103,7 +105,9 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     });
                 }
             } else {
-                let val = chars[(colon_pos.unwrap() + 1)..i].iter().collect::<String>();
+                let val = chars[(colon_pos.unwrap() + 1)..i]
+                    .iter()
+                    .collect::<String>();
                 let trimmed_val = val.trim_matches(|c| c == '(' || c == ')').to_string();
                 if key.eq_ignore_ascii_case("re") {
                     tokens.push(Token::Regex(trimmed_val));

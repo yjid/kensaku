@@ -149,6 +149,18 @@ pub async fn search(
     let req_seq = seq.unwrap_or_else(|| CURRENT_SEARCH_SEQ.fetch_add(1, Ordering::SeqCst) + 1);
     CURRENT_SEARCH_SEQ.store(req_seq, Ordering::SeqCst);
 
+    if let Some(daemon) = state.daemon.as_ref() {
+        let mut resp = daemon.search_page(
+            query.clone(),
+            state.indexer.config.read().max_results,
+            offset.unwrap_or(0),
+            false,
+        )?;
+        resp.seq = req_seq;
+        record_query_latency(started.elapsed().as_micros() as u64);
+        return Ok(resp);
+    }
+
     let indexer = &state.indexer;
     indexer.query_in_flight.store(true, Ordering::SeqCst);
 
@@ -166,17 +178,20 @@ pub async fn search(
         .as_deref()
         .map(crate::search::SortOrder::parse)
         .unwrap_or_default();
-    let resp = SearchDispatcher::search_response_fast_sorted(
+    let visual_store = indexer.visual_store.read();
+    let resp = SearchDispatcher::search_response_fast_sorted_with_snippets_and_visual(
         &query,
         &metadata,
         &content_index,
         Some(&unit_store),
+        Some(&visual_store),
         semantic_enabled,
         max_results,
         req_seq,
         sort,
         &aliases,
         offset.unwrap_or(0),
+        false,
     );
 
     indexer.query_in_flight.store(false, Ordering::SeqCst);
@@ -202,14 +217,21 @@ const MAX_SNIPPET_PATHS: usize = 50;
 /// formats are served from the extraction cache, so a preview request can
 /// never trigger OCR or PDF parsing.
 #[tauri::command]
-pub async fn get_snippets(paths: Vec<String>, query: String) -> Result<Vec<SnippetDto>, String> {
+pub async fn get_snippets(
+    paths: Vec<String>,
+    query: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<SnippetDto>, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.get_snippets(paths, &query);
+    }
     // File reads stay off the async runtime even though they are cheap.
     tauri::async_runtime::spawn_blocking(move || compute_snippets(paths, &query))
         .await
         .map_err(|e| format!("Snippet task failed: {}", e))
 }
 
-fn compute_snippets(paths: Vec<String>, query: &str) -> Vec<SnippetDto> {
+pub fn compute_snippets(paths: Vec<String>, query: &str) -> Vec<SnippetDto> {
     use rayon::prelude::*;
 
     let paths: Vec<String> = paths.into_iter().take(MAX_SNIPPET_PATHS).collect();
@@ -232,6 +254,17 @@ pub async fn legacy_search(
     state: State<'_, AppState>,
 ) -> Result<Vec<SearchResult>, String> {
     let started = Instant::now();
+    if let Some(daemon) = state.daemon.as_ref() {
+        let resp = daemon.search_page(
+            query.clone(),
+            state.indexer.config.read().max_results,
+            0,
+            false,
+        )?;
+        record_query_latency(started.elapsed().as_micros() as u64);
+        return Ok(resp.results);
+    }
+
     let indexer = &state.indexer;
     indexer.query_in_flight.store(true, Ordering::SeqCst);
 
@@ -258,20 +291,21 @@ pub async fn legacy_search(
 
 #[tauri::command]
 pub async fn get_indexing_status(state: State<'_, AppState>) -> Result<IndexingStatus, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.get_status();
+    }
     Ok(state.indexer.get_status())
 }
 
-#[tauri::command]
-pub async fn get_stats(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let indexer = &state.indexer;
+pub fn stats_for(indexer: &crate::indexer::IndexerManager) -> Result<serde_json::Value, String> {
     let status = indexer.get_status();
 
     let (files, dirs) = {
         let metadata = indexer.metadata.read();
         let mut files = 0u64;
         let mut dirs = 0u64;
-        for entry in metadata.get_entries() {
-            if entry.is_dir {
+        for i in 0..metadata.len() {
+            if metadata.node(i as u32).is_dir() {
                 dirs += 1;
             } else {
                 files += 1;
@@ -292,7 +326,10 @@ pub async fn get_stats(state: State<'_, AppState>) -> Result<serde_json::Value, 
 
     let metadata_db_bytes = config_prefixed_bytes("metadata.db", false);
     let tantivy_bytes = dir_size_bytes(&KensakuConfig::index_dir());
-    let vector_bytes = config_prefixed_bytes("vectors", true);
+    let vector_bytes = {
+        let db = indexer.metadata.read().db();
+        db.map(|db| db.vector_bytes().unwrap_or(0)).unwrap_or(0)
+    };
 
     let embed_queue_depth = {
         let db = indexer.metadata.read().db();
@@ -362,6 +399,8 @@ pub async fn get_stats(state: State<'_, AppState>) -> Result<serde_json::Value, 
             "files": files,
             "dirs": dirs,
             "content_docs": content_docs,
+            "content_rebuilt": indexer.content_index.read().as_ref().map(|i| i.rebuilt).unwrap_or(false),
+            "rebuild_reason": indexer.content_index.read().as_ref().and_then(|i| i.rebuild_reason.clone()),
             "semantic_units": semantic_units,
             "metadata_db_bytes": metadata_db_bytes,
             "tantivy_bytes": tantivy_bytes,
@@ -374,6 +413,8 @@ pub async fn get_stats(state: State<'_, AppState>) -> Result<serde_json::Value, 
             "files_indexed": status.files_indexed as u64,
             "content_indexed": status.content_indexed as u64,
             "units_indexed": status.units_indexed as u64,
+            "visual_units": indexer.visual_store.read().len() as u64,
+            "visual_available": crate::embed::visual::visual_available(),
             "files_per_sec": files_per_sec,
             "eta_secs": Option::<u64>::None,
             "embed_queue_depth": embed_queue_depth as u64,
@@ -384,8 +425,19 @@ pub async fn get_stats(state: State<'_, AppState>) -> Result<serde_json::Value, 
             "watcher_ok": watcher_ok,
             "semantic_ready": status.semantic_ready,
             "model_id": model_id,
+            "semantic_provider": crate::embed::ModelRegistry::global().provider_name(),
+            "semantic_dim": crate::embed::ModelRegistry::global().dim,
+            "semantic_fallback_reason": crate::embed::ModelRegistry::global().fallback_reason.clone(),
         },
     }))
+}
+
+#[tauri::command]
+pub async fn get_stats(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.get_stats();
+    }
+    stats_for(&state.indexer)
 }
 
 #[tauri::command]
@@ -633,6 +685,45 @@ pub async fn download_ocr_language() -> Result<OcrStatus, String> {
     .map_err(|e| format!("OCR download task failed: {}", e))?
 }
 
+/// Reports the optional accurate OCR pack inventory.
+#[tauri::command]
+pub async fn get_ocr_pack_status() -> Result<crate::models::ModelsStatus, String> {
+    Ok(crate::models::ocr_status())
+}
+
+/// Starts the background download of the accurate OCR pack.
+#[tauri::command]
+pub async fn download_ocr_pack() -> Result<crate::models::ModelsStatus, String> {
+    crate::models::download_ocr_pack();
+    Ok(crate::models::ocr_status())
+}
+
+/// Reports the optional smart embedding pack inventory.
+#[tauri::command]
+pub async fn get_smart_pack_status() -> Result<crate::models::ModelsStatus, String> {
+    Ok(crate::models::smart_status())
+}
+
+/// Starts the background download of the smart embedding pack.
+#[tauri::command]
+pub async fn download_smart_pack() -> Result<crate::models::ModelsStatus, String> {
+    crate::models::download_smart_pack();
+    Ok(crate::models::smart_status())
+}
+
+/// Reports the optional beta visual-search model pack inventory.
+#[tauri::command]
+pub async fn get_visual_pack_status() -> Result<crate::models::ModelsStatus, String> {
+    Ok(crate::models::visual_status())
+}
+
+/// Starts the background download of the beta visual-search model pack.
+#[tauri::command]
+pub async fn download_visual_pack() -> Result<crate::models::ModelsStatus, String> {
+    crate::models::download_visual_pack();
+    Ok(crate::models::visual_status())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DuplicateGroup {
     /// `"content"` for exact extracted-content matches, `"image"` for
@@ -644,13 +735,12 @@ pub struct DuplicateGroup {
 }
 
 /// Finds exact content duplicates and near-duplicate images.
-#[tauri::command]
-pub async fn find_duplicates(
-    state: State<'_, AppState>,
+pub fn duplicates_for(
+    indexer: &crate::indexer::IndexerManager,
     max_distance: Option<u32>,
     limit: Option<usize>,
 ) -> Result<Vec<DuplicateGroup>, String> {
-    let db = state.indexer.metadata.read().db();
+    let db = indexer.metadata.read().db();
     let Some(db) = db else {
         return Ok(Vec::new());
     };
@@ -658,8 +748,15 @@ pub async fn find_duplicates(
     let limit = limit.unwrap_or(200).clamp(1, 1_000);
     let max_distance = max_distance.unwrap_or(10).min(64);
     let mut groups = Vec::new();
+    let mut seen: std::collections::HashSet<Vec<String>> = std::collections::HashSet::new();
+    let group_key = |paths: &[String]| {
+        let mut key = paths.to_vec();
+        key.sort();
+        key
+    };
 
     for (hash, paths) in db.exact_duplicate_groups(limit)? {
+        seen.insert(group_key(&paths));
         groups.push(DuplicateGroup {
             kind: "content".to_string(),
             hash,
@@ -667,7 +764,23 @@ pub async fn find_duplicates(
         });
     }
 
+    // Screenshot bursts are the primary version grouping. A near-duplicate
+    // group covering exactly the same paths would be redundant.
+    for (look, paths) in db.burst_duplicate_groups(limit)? {
+        if !seen.insert(group_key(&paths)) {
+            continue;
+        }
+        groups.push(DuplicateGroup {
+            kind: "burst".to_string(),
+            hash: format!("{:016x}", look),
+            paths,
+        });
+    }
+
     for (phash, paths) in db.near_duplicate_groups(max_distance, limit)? {
+        if !seen.insert(group_key(&paths)) {
+            continue;
+        }
         groups.push(DuplicateGroup {
             kind: "image".to_string(),
             hash: format!("{:016x}", phash),
@@ -676,6 +789,32 @@ pub async fn find_duplicates(
     }
 
     Ok(groups)
+}
+
+#[tauri::command]
+pub async fn find_duplicates(
+    state: State<'_, AppState>,
+    max_distance: Option<u32>,
+    limit: Option<usize>,
+) -> Result<Vec<DuplicateGroup>, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.find_duplicates(max_distance, limit);
+    }
+    duplicates_for(&state.indexer, max_distance, limit)
+}
+
+#[tauri::command]
+pub async fn find_similar_images(
+    state: State<'_, AppState>,
+    path: String,
+    limit: Option<usize>,
+) -> Result<Vec<crate::embed::visual::SimilarImageResult>, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.find_similar_images(&path, limit);
+    }
+    state
+        .indexer
+        .find_similar_images(Path::new(&path), limit.unwrap_or(20))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -765,36 +904,20 @@ pub async fn read_file_content(path: String) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn get_config(state: State<'_, AppState>) -> Result<KensakuConfig, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.get_config();
+    }
     Ok(state.indexer.config.read().clone())
 }
 
 #[tauri::command]
 pub async fn save_config(config: KensakuConfig, state: State<'_, AppState>) -> Result<(), String> {
-    let previous = state.indexer.config.read().clone();
-    let ocr_changed = previous.ocr_enabled != config.ocr_enabled;
-
-    config.save()?;
-    *state.indexer.config.write() = config.clone();
-
-    if ocr_changed {
-        // Apply the setting immediately, then flag only the image rows for a
-        // re-read. `start_indexing` spawns its own thread, so the IPC call
-        // returns without waiting for the crawl.
-        crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
-        let marked = state.indexer.metadata.write().mark_images_pending();
-        eprintln!(
-            "[Kensaku] OCR {}: {} image(s) queued for re-scan",
-            if config.ocr_enabled {
-                "enabled"
-            } else {
-                "disabled"
-            },
-            marked
-        );
-        state.indexer.start_indexing();
+    if let Some(daemon) = state.daemon.as_ref() {
+        daemon.save_config(config.clone())?;
+        *state.indexer.config.write() = config;
+        return Ok(());
     }
-
-    Ok(())
+    state.indexer.apply_config(config)
 }
 
 #[tauri::command]
@@ -836,6 +959,8 @@ pub async fn complete_setup(
     config.save()?;
 
     crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
+    crate::ocr::set_engine(&config.ocr_engine);
+    crate::indexer::extract::set_external_extractors(config.extractors.clone());
     *state.indexer.config.write() = config;
     state.indexer.start_indexing();
 
@@ -858,24 +983,25 @@ pub struct HomeData {
     pub saved_searches: Vec<crate::config::SavedSearch>,
 }
 
-#[tauri::command]
-pub async fn get_home_data(state: State<'_, AppState>) -> Result<HomeData, String> {
-    let metadata = state.indexer.metadata.read();
-    let config = state.indexer.config.read().clone();
-    let mut recent: Vec<HomeItem> = metadata
-        .get_entries()
-        .iter()
-        .filter(|e| !e.is_dir)
-        .filter(|e| e.modified > 0)
-        .map(|e| HomeItem {
-            path: e.path.to_string_lossy().to_string(),
-            filename: e.name.clone(),
-            size: e.size,
-            modified: e.modified,
-            is_dir: e.is_dir,
+pub fn home_data_for(indexer: &crate::indexer::IndexerManager) -> Result<HomeData, String> {
+    let metadata = indexer.metadata.read();
+    let config = indexer.config.read().clone();
+    let mut recent: Vec<HomeItem> = (0..metadata.len())
+        .filter_map(|i| {
+            let e = metadata.materialize(i as u32);
+            if e.is_dir || e.modified == 0 {
+                return None;
+            }
+            Some(HomeItem {
+                path: e.path.to_string_lossy().to_string(),
+                filename: e.name.clone(),
+                size: e.size,
+                modified: e.modified,
+                is_dir: e.is_dir,
+            })
         })
         .collect();
-    recent.sort_by(|a, b| b.modified.cmp(&a.modified));
+    recent.sort_by_key(|a| std::cmp::Reverse(a.modified));
     recent.truncate(12);
 
     let pins = config
@@ -913,8 +1039,18 @@ pub async fn get_home_data(state: State<'_, AppState>) -> Result<HomeData, Strin
 }
 
 #[tauri::command]
-pub async fn toggle_pin(path: String, state: State<'_, AppState>) -> Result<bool, String> {
-    let mut config = state.indexer.config.read().clone();
+pub async fn get_home_data(state: State<'_, AppState>) -> Result<HomeData, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.get_home_data();
+    }
+    home_data_for(&state.indexer)
+}
+
+pub fn toggle_pin_for(
+    indexer: &crate::indexer::IndexerManager,
+    path: String,
+) -> Result<bool, String> {
+    let mut config = indexer.config.read().clone();
     let pinned = if let Some(pos) = config.pins.iter().position(|p| p == &path) {
         config.pins.remove(pos);
         false
@@ -923,27 +1059,36 @@ pub async fn toggle_pin(path: String, state: State<'_, AppState>) -> Result<bool
         true
     };
     config.save()?;
-    *state.indexer.config.write() = config;
+    *indexer.config.write() = config;
     Ok(pinned)
 }
 
-/// Directory suggestions for the `@` scope menu, derived from indexed dirs.
 #[tauri::command]
-pub async fn get_scope_suggestions(
+pub async fn toggle_pin(path: String, state: State<'_, AppState>) -> Result<bool, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.toggle_pin(path);
+    }
+    toggle_pin_for(&state.indexer, path)
+}
+
+/// Directory suggestions for the `@` scope menu, derived from indexed dirs.
+pub fn scope_suggestions_for(
+    indexer: &crate::indexer::IndexerManager,
     prefix: Option<String>,
     limit: Option<usize>,
-    state: State<'_, AppState>,
 ) -> Result<Vec<String>, String> {
     let prefix = prefix.unwrap_or_default().trim().to_lowercase();
     let limit = limit.unwrap_or(12).clamp(1, 50);
-    let metadata = state.indexer.metadata.read();
+    let metadata = indexer.metadata.read();
     let mut matches: Vec<(u8, String)> = Vec::new();
-    for entry in metadata.get_entries().iter().filter(|e| e.is_dir) {
+    for i in 0..metadata.len() {
+        let entry = metadata.materialize(i as u32);
+        if !entry.is_dir {
+            continue;
+        }
         let name = entry.name.to_lowercase();
         let path = entry.path.to_string_lossy().to_string();
-        let score = if prefix.is_empty() {
-            0
-        } else if name.starts_with(&prefix) {
+        let score = if prefix.is_empty() || name.starts_with(&prefix) {
             0
         } else if name.contains(&prefix) {
             1
@@ -959,7 +1104,23 @@ pub async fn get_scope_suggestions(
             .then_with(|| a.1.len().cmp(&b.1.len()))
             .then_with(|| a.1.cmp(&b.1))
     });
-    Ok(matches.into_iter().take(limit).map(|(_, path)| path).collect())
+    Ok(matches
+        .into_iter()
+        .take(limit)
+        .map(|(_, path)| path)
+        .collect())
+}
+
+#[tauri::command]
+pub async fn get_scope_suggestions(
+    prefix: Option<String>,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        return daemon.get_scope_suggestions(prefix, limit);
+    }
+    scope_suggestions_for(&state.indexer, prefix, limit)
 }
 
 #[tauri::command]

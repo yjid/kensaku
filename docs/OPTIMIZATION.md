@@ -1,5 +1,11 @@
 # Kensaku — Optimization & Correctness Pass
 
+> **Historical document.** This was a code-review plan written before the
+> current v0.3.x hardening cycle. Several items below have since shipped (see
+> [REMAINING.md](REMAINING.md) for the live backlog and
+> [BENCHMARKS.md](BENCHMARKS.md) for current numbers); treat the code references
+> as historical, not as a description of today's implementation.
+>
 > Source: deep code review of post-PR1–5 codebase (see `docs/PROGRESS.md`).  
 > Goal: make search faster, more correct, and more relevant. Ordered by impact.
 

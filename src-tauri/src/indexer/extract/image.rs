@@ -41,6 +41,12 @@ pub struct OcrStatus {
     pub tessdata_dir: String,
     /// Last error line when the engine is missing or failing.
     pub error: Option<String>,
+    /// Currently selected backend (`tesseract` or `accurate`).
+    pub engine: String,
+    /// Whether the optional accurate pack is installed and compiled in.
+    pub accurate_available: bool,
+    /// Whether this binary was compiled with the accurate engine.
+    pub accurate_compiled: bool,
 }
 
 /// Directory holding language data downloaded by Kensaku.
@@ -63,6 +69,9 @@ fn build_status(
         languages,
         tessdata_dir: tessdata_dir.to_string_lossy().to_string(),
         error,
+        engine: crate::ocr::engine_name().to_string(),
+        accurate_available: crate::ocr::accurate_available(),
+        accurate_compiled: crate::ocr::accurate_compiled(),
     }
 }
 
@@ -194,7 +203,15 @@ fn fallback_tesseract_paths() -> Vec<PathBuf> {
 }
 
 fn tesseract_command() -> Command {
-    Command::new(tesseract_program())
+    let mut command = Command::new(tesseract_program());
+    // Tesseract links OpenMP and, left alone, starts one thread per core in
+    // every process. Kensaku already runs several OCR processes concurrently,
+    // so that oversubscribes the CPU badly (a crawl with 8 workers behaved as
+    // if it had one). Pin each child to a single thread; the outer worker pool
+    // provides the parallelism instead.
+    command.env("OMP_THREAD_LIMIT", "1");
+    command.env("OMP_NUM_THREADS", "1");
+    command
 }
 
 /// Inspects the tesseract binary and its language data. Never panics.
@@ -341,6 +358,12 @@ fn download_eng_tessdata_to(dir: &Path) -> Result<PathBuf, String> {
 /// On Linux: shells out to tesseract.
 /// Returns None if OCR fails or produces no text.
 pub fn extract_image_ocr(path: &Path) -> Option<String> {
+    if crate::ocr::engine_name() == crate::ocr::ACCURATE
+        && let Some(text) = crate::ocr::extract_image_ocr(path)
+    {
+        return Some(text);
+    }
+
     // Try tesseract (available on Linux and macOS with Homebrew)
     let mut command = tesseract_command();
     command.arg(path).arg("stdout").arg("--psm").arg("3"); // Fully automatic page segmentation
@@ -409,7 +432,10 @@ fn decode_guarded(path: &Path) -> Option<DynamicImage> {
 /// that fail to decode, or exceed the pixel budget, return `None` instead of
 /// panicking.
 pub fn phash64(path: &Path) -> Option<u64> {
-    let image = decode_guarded(path)?;
+    hash_image(&decode_guarded(path)?)
+}
+
+fn hash_image(image: &DynamicImage) -> Option<u64> {
     let small = image
         .resize_exact(9, 8, image::imageops::FilterType::Triangle)
         .into_luma8();
@@ -428,13 +454,40 @@ pub fn phash64(path: &Path) -> Option<u64> {
     Some(hash)
 }
 
+/// Hashes a cached thumbnail without touching the source image.
+pub fn phash64_from_thumbnail(thumb: &Path) -> Option<u64> {
+    let image = image::open(thumb).ok()?;
+    hash_image(&image)
+}
+
+/// Reuses a *fresh* thumbnail if one already exists, otherwise returns `None`.
+///
+/// Unlike [`phash64_cached`], this never decodes or writes the source image, so
+/// the crawl can opportunistically group already-thumbnailed screenshots
+/// without paying the full-image cost that K3 removed from the crawl path.
+pub fn phash64_reusing_fresh_thumbnail(path: &Path, thumbs_dir: &Path) -> Option<u64> {
+    let thumb = thumbnail_path(path, thumbs_dir);
+    if is_fresh(&thumb, path) {
+        phash64_from_thumbnail(&thumb)
+    } else {
+        None
+    }
+}
+
+/// Returns a perceptual hash, reusing a fresh thumbnail when one exists and
+/// otherwise decoding the source once, writing the thumbnail, and hashing it.
+pub fn phash64_cached(path: &Path, thumbs_dir: &Path) -> Option<u64> {
+    let thumb = thumbnail(path, thumbs_dir)?;
+    phash64_from_thumbnail(&thumb)
+}
+
 /// Absolute path of the cached thumbnail for `path` inside `out_dir`.
 pub fn thumbnail_path(path: &Path, out_dir: &Path) -> PathBuf {
     let hash = fnv1a(path.to_string_lossy().as_bytes());
     out_dir.join(format!("{:016x}.jpg", hash))
 }
 
-/// Generates (or reuses) a 320px JPEG thumbnail for `path`.
+/// Generates (or reuses) a 480px JPEG thumbnail for `path`.
 ///
 /// Existing thumbnails that are at least as new as the source are returned
 /// unchanged, which makes repeated calls idempotent. New thumbnails are
@@ -456,7 +509,7 @@ pub fn thumbnail(path: &Path, out_dir: &Path) -> Option<PathBuf> {
     ));
 
     let result = (|| -> Option<()> {
-        let rgb = image.thumbnail(320, 320).to_rgb8();
+        let rgb = image.thumbnail(480, 480).to_rgb8();
         let mut writer = BufWriter::new(File::create(&temp).ok()?);
         let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, 80);
         encoder
@@ -494,6 +547,17 @@ fn is_fresh(target: &Path, source: &Path) -> bool {
         return false;
     };
     let Ok(source_meta) = std::fs::metadata(source) else {
+        return false;
+    };
+    // Only thumbnails produced by the current 480 px policy are reusable for
+    // hashing. Legacy thumbnails are smaller and are regenerated instead.
+    let Ok((target_width, target_height)) = image::image_dimensions(target) else {
+        return false;
+    };
+    if target_width.max(target_height) != 480 {
+        return false;
+    }
+    let Ok(_) = image::image_dimensions(source) else {
         return false;
     };
     match (target_meta.modified(), source_meta.modified()) {
@@ -680,7 +744,7 @@ mod tests {
         assert_eq!(first.extension().and_then(|e| e.to_str()), Some("jpg"));
 
         let decoded = image::open(&first).expect("decode thumbnail");
-        assert!(decoded.width() <= 320 && decoded.height() <= 320);
+        assert!(decoded.width() <= 480 && decoded.height() <= 480);
 
         let first_mtime = std::fs::metadata(&first)
             .and_then(|meta| meta.modified())
@@ -697,6 +761,83 @@ mod tests {
             first_mtime, second_mtime,
             "fresh thumbnail must not be rewritten"
         );
+    }
+
+    #[test]
+    fn legacy_thumbnail_is_regenerated() {
+        let dir = TempDir::new("legacy-thumb");
+        let source = dir.join("photo.png");
+        let out_dir = dir.join("thumbs");
+        gradient(&source, false);
+
+        let thumb = thumbnail_path(&source, &out_dir);
+        std::fs::create_dir_all(&out_dir).expect("thumb dir");
+        let legacy = image::RgbImage::new(320, 240);
+        legacy
+            .save_with_format(&thumb, image::ImageFormat::Jpeg)
+            .expect("legacy thumbnail");
+        let cached = phash64_cached(&source, &out_dir).expect("regenerated hash");
+        let direct = phash64(&source).expect("direct hash");
+        assert_eq!(cached, direct);
+
+        let regenerated = image::open(&thumb).expect("regenerated thumbnail");
+        assert!(regenerated.width() <= 480 && regenerated.height() <= 480);
+        assert!(
+            regenerated.width() > 320 || regenerated.height() > 240,
+            "legacy 320 px thumbnail must be replaced"
+        );
+    }
+
+    #[test]
+    fn cached_hash_uses_thumbnail_and_is_deterministic() {
+        let dir = TempDir::new("phash-cache");
+        let source = dir.join("photo.png");
+        let thumbs = dir.join("thumbs");
+        gradient(&source, false);
+
+        let cached = phash64_cached(&source, &thumbs).expect("cached hash");
+        let direct = phash64(&source).expect("direct hash");
+        assert_eq!(cached, direct);
+        let thumb = thumbnail_path(&source, &thumbs);
+        assert!(thumb.exists());
+
+        let mtime = std::fs::metadata(&thumb)
+            .and_then(|m| m.modified())
+            .expect("mtime");
+        std::thread::sleep(Duration::from_millis(60));
+        let again = phash64_cached(&source, &thumbs).expect("cached hash again");
+        assert_eq!(cached, again);
+        let mtime2 = std::fs::metadata(&thumb)
+            .and_then(|m| m.modified())
+            .expect("mtime");
+        assert_eq!(mtime, mtime2, "fresh thumbnail must be reused");
+    }
+
+    #[test]
+    fn reusing_fresh_thumbnail_does_not_decode_source() {
+        let dir = TempDir::new("phash-reuse");
+        let source = dir.join("photo.png");
+        let thumbs = dir.join("thumbs");
+        gradient(&source, false);
+
+        let cached = phash64_cached(&source, &thumbs).expect("cached hash");
+        let reused =
+            phash64_reusing_fresh_thumbnail(&source, &thumbs).expect("fresh thumbnail hash");
+        assert_eq!(cached, reused);
+
+        // The thumbnail mtime must be untouched, proving the source was not
+        // re-decoded and the thumbnail was not rewritten.
+        let mtime = std::fs::metadata(thumbnail_path(&source, &thumbs))
+            .and_then(|m| m.modified())
+            .expect("mtime");
+        std::thread::sleep(Duration::from_millis(60));
+        let reused_again =
+            phash64_reusing_fresh_thumbnail(&source, &thumbs).expect("thumbnail-only hash");
+        assert_eq!(cached, reused_again);
+        let mtime2 = std::fs::metadata(thumbnail_path(&source, &thumbs))
+            .and_then(|m| m.modified())
+            .expect("mtime");
+        assert_eq!(mtime, mtime2, "fresh thumbnail must be reused");
     }
 
     #[test]

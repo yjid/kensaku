@@ -99,33 +99,73 @@ impl UnitStore {
     }
 
     pub fn remove_units_for_node(&mut self, node_id: u64) {
-        if let Some(indices) = self.node_to_units.remove(&node_id) {
-            let remove_set: std::collections::HashSet<usize> = indices.into_iter().collect();
-            let mut new_units = Vec::with_capacity(self.units.len().saturating_sub(remove_set.len()));
-            let mut new_vectors = Vec::with_capacity(self.vectors.len().saturating_sub(remove_set.len() * self.dim));
-            let mut new_node_map: HashMap<u64, Vec<usize>> = HashMap::new();
+        let mut set = std::collections::HashSet::new();
+        set.insert(node_id);
+        self.remove_units_for_nodes(&set);
+    }
 
-            for (old_idx, unit) in self.units.drain(..).enumerate() {
-                if !remove_set.contains(&old_idx) {
-                    let new_idx = new_units.len();
-                    new_node_map.entry(unit.node_id).or_default().push(new_idx);
-                    new_units.push(unit);
-                    let v_start = old_idx * self.dim;
-                    let v_end = v_start + self.dim;
-                    new_vectors.extend_from_slice(&self.vectors[v_start..v_end]);
-                }
-            }
-
-            self.units = new_units;
-            self.vectors = new_vectors;
-            self.node_to_units = new_node_map;
+    /// Removes every unit belonging to any node in `node_ids` in one pass.
+    ///
+    /// The crawl uses this to clear the semantic state of all files it is about
+    /// to re-extract. Doing it in one pass keeps a full re-index O(units)
+    /// instead of O(units × files), which matters on large corpora.
+    pub fn remove_units_for_nodes(&mut self, node_ids: &std::collections::HashSet<u64>) {
+        if node_ids.is_empty() || self.units.is_empty() {
+            return;
         }
+
+        let mut new_units = Vec::with_capacity(self.units.len());
+        let mut new_vectors = Vec::with_capacity(self.vectors.len());
+        let mut new_node_map: HashMap<u64, Vec<usize>> = HashMap::new();
+
+        for (old_idx, unit) in self.units.drain(..).enumerate() {
+            if node_ids.contains(&unit.node_id) {
+                continue;
+            }
+            let new_idx = new_units.len();
+            new_node_map.entry(unit.node_id).or_default().push(new_idx);
+            new_units.push(unit);
+            let v_start = old_idx * self.dim;
+            let v_end = v_start + self.dim;
+            new_vectors.extend_from_slice(&self.vectors[v_start..v_end]);
+        }
+
+        self.units = new_units;
+        self.vectors = new_vectors;
+        self.node_to_units = new_node_map;
     }
 
     pub fn clear(&mut self) {
         self.units.clear();
         self.vectors.clear();
         self.node_to_units.clear();
+    }
+
+    /// Retains only units matching `expected_model_id`, discarding any units
+    /// produced by a previous or incompatible embedding model.
+    pub fn retain_model(&mut self, expected_model_id: u32) {
+        if self.units.iter().all(|u| u.model_id == expected_model_id) {
+            return;
+        }
+        let mut new_units = Vec::new();
+        let mut new_vectors = Vec::new();
+        let mut new_node_to_units: HashMap<u64, Vec<usize>> = HashMap::new();
+        for (idx, unit) in self.units.iter().enumerate() {
+            if unit.model_id == expected_model_id {
+                let start = idx * self.dim;
+                let end = start + self.dim;
+                let new_idx = new_units.len();
+                new_node_to_units
+                    .entry(unit.node_id)
+                    .or_default()
+                    .push(new_idx);
+                new_units.push(unit.clone());
+                new_vectors.extend_from_slice(&self.vectors[start..end]);
+            }
+        }
+        self.units = new_units;
+        self.vectors = new_vectors;
+        self.node_to_units = new_node_to_units;
     }
 
     pub fn len(&self) -> usize {

@@ -30,6 +30,7 @@ pub struct HeadlessIndex {
     pub metadata: MetadataStore,
     pub content: Option<ContentIndex>,
     pub units: UnitStore,
+    pub visual: crate::embed::visual::VisualStore,
     pub model: &'static ModelRegistry,
     dir: PathBuf,
 }
@@ -64,6 +65,8 @@ impl HeadlessIndex {
 
         // The headless surface must honor the same OCR setting as the GUI.
         crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
+        crate::ocr::set_engine(&config.ocr_engine);
+        crate::indexer::extract::set_external_extractors(config.extractors.clone());
 
         // Read-write is fine: WAL lets the GUI writer and this connection
         // coexist. Nothing on the headless path writes.
@@ -72,6 +75,7 @@ impl HeadlessIndex {
 
         let model = ModelRegistry::global();
         let mut units = UnitStore::new(model.dim);
+        let mut visual = crate::embed::visual::VisualStore::default();
         if let Some(db) = metadata.db() {
             match db.load_all_units() {
                 Ok(loaded) => {
@@ -81,6 +85,7 @@ impl HeadlessIndex {
                 }
                 Err(e) => eprintln!("[Kensaku] Failed to load semantic units: {}", e),
             }
+            let _ = db.load_visual_units_into(&mut visual);
         }
 
         let index_dir = dir.join("index");
@@ -95,6 +100,7 @@ impl HeadlessIndex {
             metadata,
             content,
             units,
+            visual,
             model,
             dir: dir.to_path_buf(),
         })
@@ -102,8 +108,54 @@ impl HeadlessIndex {
 
     /// Runs a query against the loaded index.
     pub fn search(&self, query: &str, limit: usize) -> Result<SearchResponse, String> {
+        self.search_page(query, limit, 0)
+    }
+
+    /// Runs a query with a stable result offset (MCP pagination).
+    pub fn search_page(
+        &self,
+        query: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<SearchResponse, String> {
+        if let Ok(value) = crate::daemon::request(
+            "search",
+            serde_json::json!({
+                "query": query,
+                "limit": limit,
+                "offset": offset,
+                "snippets": true
+            }),
+        ) && let Ok(response) = serde_json::from_value::<SearchResponse>(value)
+        {
+            return Ok(response);
+        }
+        self.search_local_page_with_snippets(query, limit, offset, true)
+    }
+
+    pub fn search_local(&self, query: &str, limit: usize) -> Result<SearchResponse, String> {
+        self.search_local_page_with_snippets(query, limit, 0, true)
+    }
+
+    /// No-snippet local path used by MCP, which batches its own extraction.
+    pub fn search_local_page(
+        &self,
+        query: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<SearchResponse, String> {
+        self.search_local_page_with_snippets(query, limit, offset, false)
+    }
+
+    pub fn search_local_page_with_snippets(
+        &self,
+        query: &str,
+        limit: usize,
+        offset: usize,
+        with_snippets: bool,
+    ) -> Result<SearchResponse, String> {
         let aliases = self.config.alias_pairs();
-        Ok(SearchDispatcher::search_response_with_aliases(
+        Ok(SearchDispatcher::search_response_fast_sorted_with_snippets(
             query,
             &self.metadata,
             &self.content,
@@ -111,7 +163,10 @@ impl HeadlessIndex {
             self.config.semantic_enabled,
             limit,
             0,
+            crate::search::SortOrder::Best,
             &aliases,
+            offset,
+            with_snippets,
         ))
     }
 
@@ -119,20 +174,114 @@ impl HeadlessIndex {
     /// path (plain text is read directly, documents only hit the extraction
     /// cache). The result is aligned with `paths`.
     pub fn snippets(&self, paths: &[String], query: &str) -> Vec<Option<String>> {
-        use rayon::prelude::*;
-        paths
-            .par_iter()
-            .map(|path| crate::indexer::content::snippet_for_path(Path::new(path), query))
-            .collect()
+        snippets_for_paths(paths, query)
+    }
+
+    /// Looks up visually similar images in the local visual store.
+    pub fn find_similar_images_local(
+        &self,
+        path: &str,
+        limit: usize,
+    ) -> Result<Vec<crate::embed::visual::SimilarImageResult>, String> {
+        let p = Path::new(path);
+        let (source_node_id, query_vec) = if let Some(entry) = self.metadata.get(p) {
+            let vec_opt = self.visual.get_vector(entry.id).map(|v| v.to_vec());
+            (Some(entry.id), vec_opt)
+        } else {
+            (None, None)
+        };
+
+        let query_vec = match query_vec {
+            Some(v) => v,
+            None => {
+                let thumbs_dir = self.dir.join("thumbs");
+                let thumb = crate::indexer::extract::image::thumbnail_path(p, &thumbs_dir);
+                let encoder = crate::embed::visual::MockVisualEncoder;
+                use crate::embed::visual::VisualEncoder;
+                if thumb.is_file()
+                    && let Some(v) = encoder.embed_image_from_thumbnail(&thumb)
+                {
+                    v
+                } else if p.is_file() {
+                    let img = image::open(p)
+                        .map_err(|e| format!("Failed to open image {}: {}", p.display(), e))?;
+                    encoder.embed_image(&img)
+                } else {
+                    return Err(format!("Image not found or not readable: {}", p.display()));
+                }
+            }
+        };
+
+        let floor = 0.30f32;
+        let hits = self
+            .visual
+            .find_similar(&query_vec, source_node_id, floor, limit);
+
+        let mut results = Vec::new();
+        for (node_id, similarity) in hits {
+            if let Some(entry) = self.metadata.get_by_node_id(node_id) {
+                let is_image = entry
+                    .path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(crate::indexer::extract::image::is_supported_image_extension);
+                if is_image {
+                    results.push(crate::embed::visual::SimilarImageResult {
+                        path: entry.path.to_string_lossy().to_string(),
+                        filename: entry.name,
+                        similarity,
+                        file_size: entry.size,
+                        modified: entry.modified,
+                    });
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Health snapshot without a daemon: the local stores were opened at
+    /// startup, so this is cheap.
+    pub fn health_local(&self) -> Value {
+        let state = match self.state_local() {
+            Ok(state) => state,
+            Err(error) => {
+                return json!({
+                    "ok": false,
+                    "daemon": false,
+                    "db": false,
+                    "index": false,
+                    "model": false,
+                    "error": error,
+                });
+            }
+        };
+        json!({
+            "ok": true,
+            "daemon": false,
+            "protocol_version": null,
+            "watcher_ok": false,
+            "db": self.dir.join("metadata.db").exists(),
+            "index": self.content.is_some(),
+            "model": state["active_model_id"].as_u64().is_some(),
+            "state": state,
+        })
     }
 
     /// Compact index status shared by `kensaku-cli state` and the MCP
     /// `index_state` tool.
     pub fn state(&self) -> Result<Value, String> {
+        if let Ok(value) = crate::daemon::request("index_state", json!({})) {
+            return Ok(value);
+        }
+        self.state_local()
+    }
+
+    pub fn state_local(&self) -> Result<Value, String> {
         let mut files = 0u64;
         let mut dirs = 0u64;
-        for entry in self.metadata.get_entries() {
-            if entry.is_dir {
+        for i in 0..self.metadata.len() {
+            if self.metadata.node(i as u32).is_dir() {
                 dirs += 1;
             } else {
                 files += 1;
@@ -161,6 +310,10 @@ impl HeadlessIndex {
             None => None,
         };
 
+        let model_dir = self.dir.join("models");
+        let model_real = model_dir.join("model.safetensors").is_file()
+            && model_dir.join("tokenizer.json").is_file();
+
         Ok(json!({
             "files": files,
             "dirs": dirs,
@@ -170,9 +323,132 @@ impl HeadlessIndex {
             "model_id": units_model_id,
             "active_model_id": self.model.model_id,
             "model_name": self.model.name,
+            "model_real": model_real,
             "roots": roots,
             "last_reconcile": last_reconcile,
         }))
+    }
+}
+
+/// Computes extraction-free snippets for a page of results.
+pub fn snippets_for_paths(paths: &[String], query: &str) -> Vec<Option<String>> {
+    use rayon::prelude::*;
+    paths
+        .par_iter()
+        .map(|path| crate::indexer::content::snippet_for_path(Path::new(path), query))
+        .collect()
+}
+
+/// Backend selected for one MCP session.
+///
+/// `Daemon` never opens SQLite, Tantivy or the embedding table in this
+/// process; tool calls are forwarded to the single writer. `Local` is the
+/// read-only fallback used when no daemon is running. `None` still answers
+/// `initialize` and returns actionable errors from tools.
+pub enum AgentSession<'a> {
+    Daemon,
+    Local(&'a HeadlessIndex),
+    None,
+}
+
+impl AgentSession<'_> {
+    pub fn is_daemon(&self) -> bool {
+        matches!(self, Self::Daemon)
+    }
+
+    pub fn search_page(
+        &self,
+        query: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<SearchResponse, String> {
+        match self {
+            Self::Daemon => {
+                let value = crate::daemon::request(
+                    "search",
+                    json!({
+                        "query": query,
+                        "limit": limit,
+                        "offset": offset,
+                        "snippets": false
+                    }),
+                )?;
+                serde_json::from_value(value).map_err(|e| e.to_string())
+            }
+            Self::Local(index) => index.search_local_page(query, limit, offset),
+            Self::None => Err(NO_INDEX_MESSAGE.to_string()),
+        }
+    }
+
+    pub fn state(&self) -> Result<Value, String> {
+        match self {
+            Self::Daemon => crate::daemon::request("index_state", json!({})),
+            Self::Local(index) => index.state_local(),
+            Self::None => Err(NO_INDEX_MESSAGE.to_string()),
+        }
+    }
+
+    pub fn health(&self) -> Value {
+        match self {
+            Self::Daemon => crate::daemon::request("health", json!({})).unwrap_or_else(|error| {
+                json!({
+                    "ok": false,
+                    "daemon": true,
+                    "db": false,
+                    "index": false,
+                    "model": false,
+                    "error": error,
+                })
+            }),
+            Self::Local(index) => index.health_local(),
+            Self::None => json!({
+                "ok": false,
+                "daemon": false,
+                "db": false,
+                "index": false,
+                "model": false,
+                "error": NO_INDEX_MESSAGE,
+            }),
+        }
+    }
+
+    pub fn snippets(&self, paths: &[String], query: &str) -> Vec<Option<String>> {
+        snippets_for_paths(paths, query)
+    }
+
+    /// Looks up visually similar images.
+    pub fn find_similar_images(
+        &self,
+        path: &str,
+        limit: usize,
+    ) -> Result<Vec<crate::embed::visual::SimilarImageResult>, String> {
+        match self {
+            Self::Daemon => {
+                let value = crate::daemon::request(
+                    "find_similar_images",
+                    json!({
+                        "path": path,
+                        "limit": limit,
+                    }),
+                )?;
+                serde_json::from_value(value).map_err(|e| e.to_string())
+            }
+            Self::Local(index) => index.find_similar_images_local(path, limit),
+            Self::None => Err(NO_INDEX_MESSAGE.to_string()),
+        }
+    }
+
+    /// `reindex` is the only write tool. It requires both the config opt-in
+    /// and a running daemon, so read-only fallback can never write.
+    pub fn reindex(&self) -> Result<Value, String> {
+        match self {
+            Self::Daemon => crate::daemon::request("reindex", json!({})),
+            Self::Local(_) => Err(
+                "reindex requires the Kensaku daemon; start it before enabling this tool"
+                    .to_string(),
+            ),
+            Self::None => Err(NO_INDEX_MESSAGE.to_string()),
+        }
     }
 }
 

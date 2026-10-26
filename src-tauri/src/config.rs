@@ -19,6 +19,44 @@ pub struct SavedSearch {
     pub sort: Option<String>,
 }
 
+/// Opt-in external text extractor. Commands are executed directly (never
+/// through a shell), with a cleared environment and a hard timeout.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalExtractor {
+    /// Shown in extraction metadata and warnings.
+    pub name: String,
+    /// Lowercase extensions without the dot, e.g. `["stl", "obj"]`.
+    #[serde(default)]
+    pub extensions: Vec<String>,
+    /// Optional MIME selectors, e.g. `["model/*"]`. Matched alongside
+    /// `extensions` when either matches. `mime_types` is accepted as an alias.
+    #[serde(default, alias = "mime_types")]
+    pub mime: Vec<String>,
+    /// Absolute path to an executable file. PATH lookup is never used.
+    pub command: String,
+    /// Individual arguments. `{path}` is replaced with the file path; if no
+    /// argument contains it, the path is appended as the last argument.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Wall-clock limit; clamped to 100..=7000 ms by the runner.
+    #[serde(default = "default_extractor_timeout_ms")]
+    pub timeout_ms: u64,
+    /// Maximum captured stdout; clamped to 1 KiB..=4 MiB.
+    #[serde(default = "default_extractor_output_bytes")]
+    pub max_output_bytes: u64,
+    /// External commands never run unless this is explicitly true.
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+pub fn default_extractor_timeout_ms() -> u64 {
+    5_000
+}
+
+pub fn default_extractor_output_bytes() -> u64 {
+    1_000_000
+}
+
 pub fn default_aliases() -> Vec<Alias> {
     [
         ("resume", &["cv", "curriculum vitae"][..]),
@@ -34,6 +72,30 @@ pub fn default_aliases() -> Vec<Alias> {
         expansions: expansions.iter().map(|s| s.to_string()).collect(),
     })
     .collect()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum CrawlMode {
+    Full,
+    #[default]
+    Balanced,
+    Eco,
+}
+
+impl CrawlMode {
+    /// True when indexing should run at background priority.
+    pub fn is_background(self) -> bool {
+        !matches!(self, Self::Full)
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Balanced => "balanced",
+            Self::Eco => "eco",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,8 +118,37 @@ pub struct KensakuConfig {
     pub semantic_enabled: bool,
     #[serde(default = "default_semantic_model")]
     pub semantic_model: String,
+    /// Keep the static embedding table in f32 for one release. The default is
+    /// the compact i8 table; this switch exists for quality comparisons and
+    /// rollback without rebuilding.
+    #[serde(default)]
+    pub semantic_f32_table: bool,
+    /// Background indexing policy. `balanced` uses idle priority; `eco` also
+    /// paces work on battery. `full` stays at normal priority.
+    #[serde(default)]
+    pub crawl_mode: CrawlMode,
+    /// Pause background crawling without stopping the watcher. Renames and
+    /// deletes still apply while paused.
+    #[serde(default)]
+    pub pause_indexing: bool,
+    /// Allow MCP agents to call the opt-in `reindex` write tool. Disabled by
+    /// default; read-only tools are always available.
+    #[serde(default)]
+    pub mcp_allow_reindex: bool,
     #[serde(default = "default_true")]
     pub ocr_enabled: bool,
+    /// OCR backend: `tesseract` (fast default) or `accurate` (optional
+    /// PP-OCRv6 pack). Falls back to Tesseract when the pack is absent.
+    #[serde(default = "default_ocr_engine")]
+    pub ocr_engine: String,
+    /// Opt-in external extractors keyed by extension or MIME type. Empty by
+    /// default: no external command ever runs without explicit configuration.
+    #[serde(default)]
+    pub extractors: Vec<ExternalExtractor>,
+    /// Beta visual-search model pack. This only gates the Beta settings tab and
+    /// model download; it is intentionally not wired into search yet.
+    #[serde(default)]
+    pub visual_search_beta_enabled: bool,
     /// Persisted UI theme ("paper" or "void").
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -79,6 +170,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_ocr_engine() -> String {
+    "tesseract".to_string()
+}
+
 fn default_semantic_model() -> String {
     "static".to_string()
 }
@@ -96,23 +191,59 @@ impl Default for KensakuConfig {
 
         let default_excluded_dirs: Vec<String> = vec![
             // Version control
-            ".git", ".svn", ".hg", ".bzr",
+            ".git",
+            ".svn",
+            ".hg",
+            ".bzr",
             // Package managers / dependencies
-            "node_modules", "vendor", "Pods", ".bundle",
+            "node_modules",
+            "vendor",
+            "Pods",
+            ".bundle",
             // Build outputs
-            "target", "build", "dist", "out", ".output", ".next", ".nuxt", ".svelte-kit", ".turbo",
-            ".vercel", ".netlify",
+            "target",
+            "build",
+            "dist",
+            "out",
+            ".output",
+            ".next",
+            ".nuxt",
+            ".svelte-kit",
+            ".turbo",
+            ".vercel",
+            ".netlify",
             // Caches
-            ".cache", ".npm", ".yarn", ".pnpm", ".cargo", ".rustup", ".gradle", ".m2", "__pycache__",
-            ".pytest_cache", ".mypy_cache", ".tox", ".nox",
+            ".cache",
+            ".npm",
+            ".yarn",
+            ".pnpm",
+            ".cargo",
+            ".rustup",
+            ".gradle",
+            ".m2",
+            "__pycache__",
+            ".pytest_cache",
+            ".mypy_cache",
+            ".tox",
+            ".nox",
             // Virtual environments
-            "venv", ".venv", "env", ".env",
+            "venv",
+            ".venv",
+            "env",
+            ".env",
             // IDE / editor
-            ".vscode", ".idea", ".vs", ".eclipse",
+            ".vscode",
+            ".idea",
+            ".vs",
+            ".eclipse",
             // OS junk
-            ".DS_Store", "Thumbs.db", "desktop.ini",
+            ".DS_Store",
+            "Thumbs.db",
+            "desktop.ini",
             // Misc
-            ".Trash", ".Trash-*", "lost+found",
+            ".Trash",
+            ".Trash-*",
+            "lost+found",
         ]
         .into_iter()
         .map(String::from)
@@ -122,22 +253,15 @@ impl Default for KensakuConfig {
         // and OCR, so they are deliberately NOT excluded by default.
         let default_excluded_extensions: Vec<String> = vec![
             // Raw/editor-only image formats we cannot read text from
-            "psd", "ai", "sketch", "fig",
-            // Audio/Video
-            "mp3", "mp4", "wav", "avi", "mov", "mkv", "flac", "ogg", "webm",
-            // Archives
-            "zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz",
-            // Binaries
+            "psd", "ai", "sketch", "fig", // Audio/Video
+            "mp3", "mp4", "wav", "avi", "mov", "mkv", "flac", "ogg", "webm", // Archives
+            "zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz", // Binaries
             "exe", "dll", "so", "dylib", "bin", "o", "a", "lib", "class", "pyc", "pyo",
             // Secrets / credentials
-            "pem", "key", "pfx", "p12", "crt", "cer",
-            // Database
-            "db", "sqlite", "sqlite3",
-            // Lock files
-            "lock", "lockb",
-            // Minified/generated
-            "min.js", "min.css", "map",
-            // Font
+            "pem", "key", "pfx", "p12", "crt", "cer", // Database
+            "db", "sqlite", "sqlite3", // Lock files
+            "lock", "lockb", // Minified/generated
+            "min.js", "min.css", "map", // Font
             "ttf", "otf", "woff", "woff2", "eot",
         ]
         .into_iter()
@@ -155,7 +279,14 @@ impl Default for KensakuConfig {
             skip_hidden: true,
             semantic_enabled: true,
             semantic_model: "static".to_string(),
+            semantic_f32_table: false,
+            crawl_mode: CrawlMode::Full,
+            pause_indexing: false,
+            mcp_allow_reindex: false,
+            visual_search_beta_enabled: false,
+            extractors: Vec::new(),
             ocr_enabled: true,
+            ocr_engine: default_ocr_engine(),
             theme: default_theme(),
             aliases: default_aliases(),
             saved_searches: Vec::new(),
@@ -195,11 +326,13 @@ impl KensakuConfig {
             // v1: document/image formats became indexable (text extraction + OCR).
             // Strip the legacy defaults so existing installs start indexing them.
             const LEGACY_EXCLUDED: &[&str] = &[
-                "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
-                "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp", "tiff", "tif",
+                "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "png", "jpg", "jpeg", "gif",
+                "bmp", "ico", "webp", "tiff", "tif",
             ];
             cfg.excluded_extensions.retain(|ext| {
-                !LEGACY_EXCLUDED.iter().any(|legacy| legacy.eq_ignore_ascii_case(ext))
+                !LEGACY_EXCLUDED
+                    .iter()
+                    .any(|legacy| legacy.eq_ignore_ascii_case(ext))
             });
             cfg.config_version = 1;
             migrated = true;
@@ -235,7 +368,11 @@ impl KensakuConfig {
             // v4: default-deny common secret/credential file extensions.
             const SENSITIVE_EXTS: &[&str] = &["pem", "key", "pfx", "p12", "crt", "cer"];
             for ext in SENSITIVE_EXTS {
-                if !cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case(ext)) {
+                if !cfg
+                    .excluded_extensions
+                    .iter()
+                    .any(|e| e.eq_ignore_ascii_case(ext))
+                {
                     cfg.excluded_extensions.push((*ext).to_string());
                 }
             }
@@ -356,15 +493,18 @@ impl KensakuConfig {
     }
 
     pub fn is_dir_excluded(&self, dir_name: &str) -> bool {
-        self.excluded_dirs.iter().any(|ex| ex.eq_ignore_ascii_case(dir_name))
+        self.excluded_dirs
+            .iter()
+            .any(|ex| ex.eq_ignore_ascii_case(dir_name))
     }
 
     pub fn is_extension_excluded(&self, path: &Path) -> bool {
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
             let ext = ext.trim_start_matches('.').to_ascii_lowercase();
-            return self.excluded_extensions.iter().any(|e| {
-                e.trim_start_matches('.').eq_ignore_ascii_case(&ext)
-            });
+            return self
+                .excluded_extensions
+                .iter()
+                .any(|e| e.trim_start_matches('.').eq_ignore_ascii_case(&ext));
         }
         false
     }
@@ -399,6 +539,42 @@ mod tests {
     }
 
     #[test]
+    fn semantic_f32_table_flag_defaults_off_and_round_trips() {
+        let cfg = KensakuConfig::default();
+        assert!(!cfg.semantic_f32_table);
+        let json = serde_json::to_string(&cfg).unwrap();
+        let parsed = KensakuConfig::load_from_str(&json);
+        assert!(!parsed.semantic_f32_table);
+
+        let with_flag = json.replace(
+            "\"semantic_f32_table\":false",
+            "\"semantic_f32_table\":true",
+        );
+        assert!(KensakuConfig::load_from_str(&with_flag).semantic_f32_table);
+    }
+
+    #[test]
+    fn crawl_mode_and_pause_parse_from_config() {
+        let cfg = KensakuConfig::default();
+        assert_eq!(cfg.crawl_mode, CrawlMode::Full);
+        assert!(!cfg.pause_indexing);
+
+        let raw = r#"{
+            "watched_dirs": [],
+            "excluded_dirs": [],
+            "excluded_extensions": [],
+            "shortcut": "Alt+Space",
+            "max_results": 50,
+            "is_setup_complete": false,
+            "crawl_mode": "eco",
+            "pause_indexing": true
+        }"#;
+        let parsed = KensakuConfig::load_from_str(raw);
+        assert_eq!(parsed.crawl_mode, CrawlMode::Eco);
+        assert!(parsed.pause_indexing);
+    }
+
+    #[test]
     fn legacy_config_is_migrated() {
         let legacy = r#"{
             "watched_dirs": [],
@@ -413,9 +589,21 @@ mod tests {
 
         assert_eq!(cfg.config_version, 4);
         // Legacy document/image extensions are stripped (case-insensitively)...
-        assert!(!cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case("pdf")));
-        assert!(!cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case("png")));
-        assert!(!cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case("doc")));
+        assert!(
+            !cfg.excluded_extensions
+                .iter()
+                .any(|e| e.eq_ignore_ascii_case("pdf"))
+        );
+        assert!(
+            !cfg.excluded_extensions
+                .iter()
+                .any(|e| e.eq_ignore_ascii_case("png"))
+        );
+        assert!(
+            !cfg.excluded_extensions
+                .iter()
+                .any(|e| e.eq_ignore_ascii_case("doc"))
+        );
         // ...while user-defined exclusions survive.
         assert!(cfg.excluded_extensions.iter().any(|e| e == "rs"));
         assert!(cfg.excluded_extensions.iter().any(|e| e == "zip"));
@@ -481,6 +669,28 @@ mod tests {
                 "cer".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn external_extractors_default_to_off_with_safe_limits() {
+        let default = KensakuConfig::default();
+        assert!(default.extractors.is_empty(), "no plugins ship by default");
+
+        let extractor: ExternalExtractor =
+            serde_json::from_str(r#"{"name":"sample","extensions":[".STL"],"command":"/bin/cat"}"#)
+                .expect("minimal extractor should parse");
+        assert!(!extractor.enabled, "plugins require explicit opt-in");
+        assert_eq!(extractor.timeout_ms, 5_000);
+        assert_eq!(extractor.max_output_bytes, 1_000_000);
+        assert!(extractor.mime.is_empty());
+        assert!(extractor.args.is_empty());
+
+        let enabled: ExternalExtractor = serde_json::from_str(
+            r#"{"name":"sample","extensions":["stl"],"mime":["model/*"],"command":"/bin/cat","enabled":true}"#,
+        )
+        .expect("explicitly enabled extractor should parse");
+        assert!(enabled.enabled);
+        assert_eq!(enabled.mime, vec!["model/*".to_string()]);
     }
 
     #[test]

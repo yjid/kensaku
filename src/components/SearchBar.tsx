@@ -108,6 +108,7 @@ export function SearchBar({
           <SlidersHorizontal className="h-4 w-4" />
         </button>
 
+        <kbd className="kbd mr-1 shrink-0" title="Toggle details">tab</kbd>
         <kbd className="kbd mr-1 shrink-0">esc</kbd>
       </div>
 

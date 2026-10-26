@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Check, Plus, X, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download } from "lucide-react";
-import { EmptyState } from "./EmptyState";
 import { useTheme } from "../hooks/useTheme";
 import type { IndexingStatus, ModelsStatus, OcrStatus } from "../types";
 
@@ -45,6 +44,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const [scanStatus, setScanStatus] = useState<IndexingStatus | null>(null);
   const [done, setDone] = useState(false);
   const [modelsStatus, setModelsStatus] = useState<ModelsStatus | null>(null);
+  const [ocrPackStatus, setOcrPackStatus] = useState<ModelsStatus | null>(null);
   const [ocrStatus, setOcrStatus] = useState<OcrStatus | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [packError, setPackError] = useState<string | null>(null);
@@ -112,6 +112,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   useEffect(() => {
     if (step !== 4) return;
     invoke<ModelsStatus>("get_models_status").then(setModelsStatus).catch(() => {});
+    invoke<ModelsStatus>("get_ocr_pack_status").then(setOcrPackStatus).catch(() => {});
     invoke<OcrStatus>("get_ocr_status").then(setOcrStatus).catch(() => {});
   }, [step]);
 
@@ -122,6 +123,14 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     }, 600);
     return () => window.clearInterval(id);
   }, [step, modelsStatus?.downloading]);
+
+  useEffect(() => {
+    if (step !== 4 || !ocrPackStatus?.downloading) return;
+    const id = window.setInterval(() => {
+      invoke<ModelsStatus>("get_ocr_pack_status").then(setOcrPackStatus).catch(() => {});
+    }, 600);
+    return () => window.clearInterval(id);
+  }, [step, ocrPackStatus?.downloading]);
 
   // Poll indexing status while scanning; finish when the crawl completes.
   useEffect(() => {
@@ -341,7 +350,14 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
       <main className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-8 pb-6 pt-2">
         {step === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <EmptyState variant="empty" caption="Everything, already in its place" />
+            <img
+              src={theme === "paper" ? "/setup-icon-paper.png" : "/setup-icon-void.png"}
+              alt="Kensaku"
+              className="h-40 w-40 object-contain"
+            />
+            <p className="font-serif text-[17px] italic text-muted mt-1">
+              Everything, already in its place
+            </p>
             <h1 className="pt-2 text-[20px] font-semibold tracking-tight text-fg">
               A precision index of your machine.
             </h1>
@@ -524,7 +540,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <span className="block text-[12px] font-medium text-fg">OCR language data</span>
-                    <span className="block text-[11px] text-muted">English tessdata, ~4 MB</span>
+                    <span className="block text-[11px] text-muted">English tessdata, ~4 MB · uses Tesseract</span>
                   </div>
                   {ocrStatus?.available ? (
                     <span className="flex h-8 items-center gap-1.5 rounded-[10px] px-2 text-[11px] text-success">
@@ -568,6 +584,62 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                   </p>
                 )}
               </div>
+
+              {ocrStatus?.accurate_compiled ? (
+                <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <span className="block text-[12px] font-medium text-fg">
+                        Accurate OCR pack
+                      </span>
+                      <span className="block text-[11px] text-muted">
+                        PP-OCRv6 tiny detector + recognizer, ~6 MB · uses PP-OCRv6
+                      </span>
+                    </div>
+                    {ocrPackStatus?.ready ? (
+                      <span className="flex h-8 items-center gap-1.5 rounded-[10px] px-2 text-[11px] text-success">
+                        <Check className="h-3.5 w-3.5" /> Ready
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={ocrPackStatus?.downloading}
+                        onClick={async () => {
+                          setPackError(null);
+                          try {
+                            setOcrPackStatus(
+                              await invoke<ModelsStatus>("download_ocr_pack"),
+                            );
+                          } catch (e) {
+                            setPackError(`Accurate OCR download failed: ${String(e)}`);
+                          }
+                        }}
+                        className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                      >
+                        {ocrPackStatus?.downloading ? (
+                          <>
+                            <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> Downloading…
+                          </>
+                        ) : (
+                          <>
+                            <Download className="h-3.5 w-3.5" /> Download
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                  {ocrPackStatus?.error && (
+                    <p className="pt-1.5 text-[11px] text-warning">{ocrPackStatus.error}</p>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+                  <div>
+                    <span className="block text-[12px] font-medium text-fg">Accurate OCR pack (PP-OCRv6)</span>
+                    <span className="block text-[11px] text-muted">Not included in this build.</span>
+                  </div>
+                </div>
+              )}
 
               <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
                 <div className="flex items-center justify-between gap-4">

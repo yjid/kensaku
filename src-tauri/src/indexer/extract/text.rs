@@ -119,7 +119,9 @@ pub fn extract_rtf(path: &Path, max_bytes: usize) -> Option<String> {
 fn strip_markdown_frontmatter(text: &str) -> String {
     let trimmed = text.trim_start();
     if let Some(stripped) = trimmed.strip_prefix("---")
-        && let Some(rest) = stripped.strip_prefix('\n').or_else(|| stripped.strip_prefix("\r\n"))
+        && let Some(rest) = stripped
+            .strip_prefix('\n')
+            .or_else(|| stripped.strip_prefix("\r\n"))
         && let Some(end_pos) = rest.find("\n---")
     {
         let after = &rest[end_pos + 4..];

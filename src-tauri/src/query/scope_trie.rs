@@ -35,16 +35,21 @@ pub enum TrieMatchResult {
 }
 
 impl DirectoryTrie {
-    pub fn build(entries: &[FileEntry], path_index: &HashMap<PathBuf, usize>, generation: u64) -> Self {
+    pub fn build(
+        entries: &[FileEntry],
+        path_index: &HashMap<PathBuf, usize>,
+        generation: u64,
+    ) -> Self {
         let mut root = TrieNode::default();
         let mut children_map: HashMap<usize, Vec<usize>> = HashMap::new();
 
         // 1. Build children map for DFS
         for (idx, entry) in entries.iter().enumerate() {
             if let Some(parent_path) = entry.path.parent()
-                && let Some(&parent_idx) = path_index.get(parent_path) {
-                    children_map.entry(parent_idx).or_default().push(idx);
-                }
+                && let Some(&parent_idx) = path_index.get(parent_path)
+            {
+                children_map.entry(parent_idx).or_default().push(idx);
+            }
         }
 
         // 2. Insert all directory names into trie (folded to lowercase)
@@ -68,7 +73,12 @@ impl DirectoryTrie {
     }
 
     /// Resolve a directory-looking token or `in:` target: exact > prefix > fuzzy.
-    pub fn resolve(&self, target: &str, entries: &[FileEntry], path_index: &HashMap<PathBuf, usize>) -> TrieMatchResult {
+    pub fn resolve(
+        &self,
+        target: &str,
+        entries: &[FileEntry],
+        path_index: &HashMap<PathBuf, usize>,
+    ) -> TrieMatchResult {
         let trimmed = target.trim();
         if trimmed.is_empty() {
             return TrieMatchResult::None;
@@ -77,7 +87,9 @@ impl DirectoryTrie {
         // 1. If target looks like a path (starts with ~, ., / or has path separator)
         let expanded_path = if trimmed.starts_with('~') {
             if let Some(home) = dirs::home_dir() {
-                let rest = trimmed.trim_start_matches('~').trim_start_matches(['/', '\\']);
+                let rest = trimmed
+                    .trim_start_matches('~')
+                    .trim_start_matches(['/', '\\']);
                 if rest.is_empty() {
                     home
                 } else {
@@ -106,7 +118,11 @@ impl DirectoryTrie {
         let mut path_matches = Vec::new();
         for (idx, entry) in entries.iter().enumerate() {
             if entry.is_dir {
-                let entry_path_str = entry.path.to_string_lossy().replace('\\', "/").to_lowercase();
+                let entry_path_str = entry
+                    .path
+                    .to_string_lossy()
+                    .replace('\\', "/")
+                    .to_lowercase();
                 if entry_path_str.ends_with(target_clean) {
                     path_matches.push(ScopeResolution {
                         dir_idx: idx,
