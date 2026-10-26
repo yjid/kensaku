@@ -212,6 +212,7 @@ impl IndexerManager {
                 None
             }
         };
+        let content_rebuilt = content_index.as_ref().is_some_and(|index| index.rebuilt);
 
         let metadata_store = Arc::new(RwLock::new(MetadataStore::new()));
         let unit_store = Arc::new(RwLock::new(UnitStore::new(EMBEDDING_DIM)));
@@ -270,6 +271,14 @@ impl IndexerManager {
                     eprintln!("[Kensaku] Failed to load semantic units: {}", e);
                 }
             }
+        }
+
+        if content_rebuilt {
+            let marked = metadata_store.write().mark_all_content_pending();
+            eprintln!(
+                "[Kensaku] Content index schema upgraded; {} file(s) queued for re-indexing",
+                marked
+            );
         }
 
         Self {

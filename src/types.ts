@@ -14,7 +14,7 @@ export interface SearchResult {
   file_size: number;
   modified: number;
   is_dir: boolean;
-  match_type: "FileName" | "Content" | "Semantic" | "Both";
+  match_type: "FileName" | "Content" | "ContentFolded" | "Semantic" | "Both";
   best_range?: [number, number] | null;
   group_count?: number;
   group_paths?: string[];

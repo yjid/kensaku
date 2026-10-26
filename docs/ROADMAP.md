@@ -131,13 +131,13 @@ snippets for the ranked set.
 `re:` scans but is not a fast tier.
 
 **Work**
-- [ ] K5.1 Add a folded content field (normalized text) indexed with an ngram /
+- [x] K5.1 Add a folded content field (normalized text) indexed with an ngram /
   trigram tokenizer, or a sidecar FTS5 table.
-- [ ] K5.2 Search order: exact terms → folded candidates verified against raw
+- [x] K5.2 Search order: exact terms → folded candidates verified against raw
   text (1 misread in 4–7 letters, 2 in 8+, none under 4) → semantic.
-- [ ] K5.3 Keep the current `re:` path for power users; folded search must never
+- [x] K5.3 Keep the current `re:` path for power users; folded search must never
   produce more false positives than the exact tier.
-- [ ] K5.4 Schema/migration and index rebuild plan.
+- [x] K5.4 Schema/migration and index rebuild plan.
 
 **Acceptance**
 - `nutsmp` finds `donutsmp.net`; `0RDER` finds `ORDER`.

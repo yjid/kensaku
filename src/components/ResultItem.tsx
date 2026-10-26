@@ -36,6 +36,8 @@ function MatchBadge({ matchType }: { matchType: SearchResult["match_type"] }) {
     switch (matchType) {
       case "Content":
         return "content";
+      case "ContentFolded":
+        return "fuzzy content";
       case "Both":
         return "name + content";
       case "Semantic":
@@ -51,7 +53,9 @@ function MatchBadge({ matchType }: { matchType: SearchResult["match_type"] }) {
       title={
         matchType === "Semantic"
           ? "Found via semantic similarity only"
-          : "Query matched inside the file contents"
+          : matchType === "ContentFolded"
+            ? "Found via spelling/OCR-tolerant content matching"
+            : "Query matched inside the file contents"
       }
     >
       {badge}

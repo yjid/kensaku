@@ -4,10 +4,112 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::SystemTime;
 use tantivy::collector::{DocSetCollector, TopDocs};
-use tantivy::query::{AllQuery, BooleanQuery, Occur, Query, QueryParser, RegexQuery};
+use tantivy::query::{AllQuery, BooleanQuery, Occur, Query, QueryParser, RegexQuery, TermQuery};
 use tantivy::schema::*;
+use tantivy::tokenizer::NgramTokenizer;
 use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term, doc};
+
+/// Canonicalizes OCR/lookalike characters for the folded trigram tier.
+///
+/// Spaces and punctuation are preserved, so folding never joins two words.
+/// The mapping is intentionally lossy in one direction: `rn → m`, `vv → w`,
+/// and `cl → d` make the longer spelling match the shorter query.
+pub fn fold(text: &str) -> String {
+    let lower = text.to_lowercase();
+    let chars: Vec<char> = lower.chars().collect();
+    let mut out = String::with_capacity(lower.len());
+    let mut index = 0;
+    while index < chars.len() {
+        match chars[index] {
+            'r' if chars.get(index + 1) == Some(&'n') => {
+                out.push('m');
+                index += 2;
+                continue;
+            }
+            'v' if chars.get(index + 1) == Some(&'v') => {
+                out.push('w');
+                index += 2;
+                continue;
+            }
+            'c' if chars.get(index + 1) == Some(&'l') => {
+                out.push('d');
+                index += 2;
+                continue;
+            }
+            '0' => out.push('o'),
+            '1' | 'l' | '|' => out.push('i'),
+            '5' | '$' => out.push('s'),
+            '8' => out.push('b'),
+            other => out.push(other),
+        }
+        index += 1;
+    }
+    out
+}
+
+/// Verifies a folded candidate against the original text.
+///
+/// Every query term of three or more characters must occur exactly, or within
+/// the OCR budget: one misread for 4–7 characters, two for 8+. Shorter terms
+/// must match exactly.
+pub fn verify_folded(raw: &str, query: &str) -> bool {
+    let lower = raw.to_lowercase();
+    let terms: Vec<&str> = query
+        .split(|ch: char| !ch.is_alphanumeric())
+        .filter(|term| term.chars().count() >= 3)
+        .collect();
+    if terms.is_empty() {
+        return false;
+    }
+    terms.iter().all(|term| term_matches(&lower, term))
+}
+
+fn term_matches(raw_lower: &str, term: &str) -> bool {
+    let term_lower = term.to_lowercase();
+    if raw_lower.contains(&term_lower) {
+        return true;
+    }
+    let budget = match term_lower.chars().count() {
+        4..=7 => 1,
+        8.. => 2,
+        _ => 0,
+    };
+    if budget == 0 {
+        return false;
+    }
+    let needle: Vec<char> = term_lower.chars().collect();
+    raw_lower
+        .split(|ch: char| !ch.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .filter(|word| word.chars().count().abs_diff(needle.len()) <= budget)
+        .any(|word| edit_distance_within(&needle, word, budget))
+}
+
+fn edit_distance_within(needle: &[char], haystack: &str, budget: usize) -> bool {
+    let hay: Vec<char> = haystack.chars().collect();
+    if needle.len().abs_diff(hay.len()) > budget {
+        return false;
+    }
+    let mut previous: Vec<usize> = (0..=hay.len()).collect();
+    for (i, needle_char) in needle.iter().enumerate() {
+        let mut current = vec![i + 1; hay.len() + 1];
+        let mut row_min = current[0];
+        for (j, hay_char) in hay.iter().enumerate() {
+            let substitution = previous[j] + usize::from(needle_char != hay_char);
+            current[j + 1] = (previous[j + 1] + 1)
+                .min(current[j] + 1)
+                .min(substitution);
+            row_min = row_min.min(current[j + 1]);
+        }
+        if row_min > budget {
+            return false;
+        }
+        previous = current;
+    }
+    previous[hay.len()] <= budget
+}
 
 pub struct SnippetCache {
     capacity: usize,
@@ -60,7 +162,15 @@ pub struct ContentIndex {
     pub path_field: Field,
     pub filename_field: Field,
     pub content_field: Field,
+    /// Folded text indexed with a 3-gram tokenizer. `None` for a read-only
+    /// handle opened on the pre-K5 schema.
+    pub content_folded_field: Option<Field>,
+    /// Original text used to verify folded candidates. Stored but not indexed.
+    pub content_raw_field: Option<Field>,
     pub modified_field: Field,
+    /// True when this construction migrated an older schema and the caller
+    /// must force a full content re-extraction.
+    pub rebuilt: bool,
     snippet_cache: Mutex<SnippetCache>,
 }
 
@@ -103,14 +213,52 @@ impl ContentIndex {
         let path_field = schema_builder.add_text_field("path", STRING | STORED);
         let filename_field = schema_builder.add_text_field("filename", TEXT | STORED);
         let content_field = schema_builder.add_text_field("content", TEXT);
+        let folded_indexing = TextFieldIndexing::default()
+            .set_tokenizer("trigram")
+            .set_index_option(IndexRecordOption::WithFreqsAndPositions);
+        let folded_field = schema_builder.add_text_field(
+            "content_folded",
+            TextOptions::default().set_indexing_options(folded_indexing),
+        );
+        let raw_field = schema_builder.add_text_field("content_raw", STORED);
         let modified_field = schema_builder.add_u64_field("modified", STORED | FAST);
         let schema = schema_builder.build();
 
+        let mut rebuilt = false;
         let index = if index_dir.join("meta.json").exists() {
-            Index::open_in_dir(index_dir).map_err(|e| e.to_string())?
+            let existing = Index::open_in_dir(index_dir).map_err(|e| e.to_string())?;
+            let existing_schema = existing.schema();
+            let compatible = existing_schema.get_field("content_folded").is_ok()
+                && existing_schema.get_field("content_raw").is_ok();
+            if compatible {
+                existing
+            } else {
+                // Tantivy schemas are immutable. Preserve the old derived index
+                // beside the live one and rebuild into the live path; the
+                // caller marks every file for content re-extraction.
+                drop(existing);
+                let stamp = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map(|duration| duration.as_secs())
+                    .unwrap_or(0);
+                let backup = index_dir.with_file_name(format!("index.legacy-{stamp}"));
+                fs::rename(index_dir, &backup).map_err(|e| {
+                    format!(
+                        "Failed to move the pre-K5 content index to {}: {}",
+                        backup.display(),
+                        e
+                    )
+                })?;
+                fs::create_dir_all(index_dir).map_err(|e| e.to_string())?;
+                rebuilt = true;
+                Index::create_in_dir(index_dir, schema.clone()).map_err(|e| e.to_string())?
+            }
         } else {
             Index::create_in_dir(index_dir, schema.clone()).map_err(|e| e.to_string())?
         };
+        index
+            .tokenizers()
+            .register("trigram", NgramTokenizer::new(3, 3, false).map_err(|e| e.to_string())?);
 
         // A desktop daemon should not reserve a large indexing arena. Tantivy
         // requires ~15 MB per writer thread; one thread with a 16 MB arena keeps
@@ -133,7 +281,10 @@ impl ContentIndex {
             path_field,
             filename_field,
             content_field,
+            content_folded_field: Some(folded_field),
+            content_raw_field: Some(raw_field),
             modified_field,
+            rebuilt,
             snippet_cache: Mutex::new(SnippetCache::new(32)),
         })
     }
@@ -159,9 +310,16 @@ impl ContentIndex {
         let content_field = schema
             .get_field("content")
             .map_err(|e| format!("Content index is missing the 'content' field: {}", e))?;
+        let content_folded_field = schema.get_field("content_folded").ok();
+        let content_raw_field = schema.get_field("content_raw").ok();
         let modified_field = schema
             .get_field("modified")
             .map_err(|e| format!("Content index is missing the 'modified' field: {}", e))?;
+
+        // Read-only handles still need the trigram tokenizer for folded queries.
+        index
+            .tokenizers()
+            .register("trigram", NgramTokenizer::new(3, 3, false).map_err(|e| e.to_string())?);
 
         let reader = index
             .reader_builder()
@@ -176,7 +334,10 @@ impl ContentIndex {
             path_field,
             filename_field,
             content_field,
+            content_folded_field,
+            content_raw_field,
             modified_field,
+            rebuilt: false,
             snippet_cache: Mutex::new(SnippetCache::new(32)),
         })
     }
@@ -211,12 +372,18 @@ impl ContentIndex {
         let writer = self.writer()?.write();
         writer.delete_term(term);
 
-        let doc = doc!(
+        let mut doc = doc!(
             self.path_field => path_str,
             self.filename_field => filename.to_string(),
             self.content_field => content.to_string(),
             self.modified_field => modified,
         );
+        if let Some(field) = self.content_folded_field {
+            doc.add_text(field, fold(content));
+        }
+        if let Some(field) = self.content_raw_field {
+            doc.add_text(field, content);
+        }
         writer.add_document(doc).map_err(|e| e.to_string())?;
         Ok(())
     }
@@ -431,6 +598,125 @@ impl ContentIndex {
         };
 
         ContentSearchOutcome { matches, hints }
+    }
+
+    /// Folded trigram search used only when exact BM25 left a shortfall.
+    ///
+    /// Candidates are retrieved from the 3-gram field, then verified against
+    /// the stored raw text with a length-dependent edit budget. This rejects
+    /// mass false positives from broad trigrams.
+    pub fn search_folded(
+        &self,
+        query: &str,
+        limit: usize,
+        path_prefix: Option<&str>,
+    ) -> Vec<ContentMatch> {
+        let (Some(folded_field), Some(raw_field)) =
+            (self.content_folded_field, self.content_raw_field)
+        else {
+            return Vec::new();
+        };
+        if limit == 0 {
+            return Vec::new();
+        }
+
+        let folded = fold(query);
+        let mut term_groups: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+        for term in folded.split(|ch: char| !ch.is_alphanumeric()) {
+            let chars: Vec<char> = term.chars().collect();
+            if chars.len() < 3 {
+                continue;
+            }
+            let mut grams: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+            let mut seen = HashSet::new();
+            for window in chars.windows(3) {
+                let gram: String = window.iter().collect();
+                if !seen.insert(gram.clone()) {
+                    continue;
+                }
+                grams.push((
+                    Occur::Should,
+                    Box::new(TermQuery::new(
+                        Term::from_field_text(folded_field, &gram),
+                        IndexRecordOption::WithFreqs,
+                    )),
+                ));
+            }
+            if !grams.is_empty() {
+                term_groups.push((Occur::Must, Box::new(BooleanQuery::new(grams))));
+            }
+        }
+        if term_groups.is_empty() {
+            return Vec::new();
+        }
+
+        let boolean_query: Box<dyn Query> = Box::new(BooleanQuery::new(term_groups));
+        let effective_query: Box<dyn Query> = match path_prefix {
+            Some(prefix) if !prefix.is_empty() => {
+                let pattern = format!("(?s)^{}.*", regex::escape(prefix));
+                match RegexQuery::from_pattern(&pattern, self.path_field) {
+                    Ok(path_query) => Box::new(BooleanQuery::new(vec![
+                        (Occur::Must, boolean_query.box_clone()),
+                        (Occur::Must, Box::new(path_query)),
+                    ])),
+                    Err(_) => boolean_query.box_clone(),
+                }
+            }
+            _ => boolean_query.box_clone(),
+        };
+
+        let searcher = self.reader.searcher();
+        let collector = TopDocs::with_limit(limit.saturating_mul(2).max(1)).order_by_score();
+        let Ok(top_docs) = searcher.search(effective_query.as_ref(), &collector) else {
+            return Vec::new();
+        };
+
+        let mut results = Vec::new();
+        for (score, address) in top_docs {
+            let Ok(document) = searcher.doc::<TantivyDocument>(address) else {
+                continue;
+            };
+            let path_str = document
+                .get_first(self.path_field)
+                .and_then(|field| field.as_str())
+                .unwrap_or("")
+                .to_string();
+            if path_str.is_empty() {
+                continue;
+            }
+            if let Some(prefix) = path_prefix
+                && !path_str.starts_with(prefix)
+            {
+                continue;
+            }
+            let raw = document
+                .get_first(raw_field)
+                .and_then(|field| field.as_str())
+                .unwrap_or("");
+            if !verify_folded(raw, query) {
+                continue;
+            }
+            let filename = document
+                .get_first(self.filename_field)
+                .and_then(|field| field.as_str())
+                .unwrap_or("")
+                .to_string();
+            let modified = document
+                .get_first(self.modified_field)
+                .and_then(|field| field.as_u64())
+                .unwrap_or(0);
+            results.push(ContentMatch {
+                path: PathBuf::from(path_str),
+                filename,
+                snippet: None,
+                score,
+                modified,
+            });
+            if results.len() >= limit {
+                break;
+            }
+        }
+        results
     }
 
     fn run_query(
@@ -840,10 +1126,296 @@ mod tests {
         }
     }
 
+    #[test]
+    fn fold_maps_lookalikes_without_crossing_spaces() {
+        assert_eq!(fold("0RDER"), "order");
+        assert_eq!(fold("nutsmp"), "nutsmp");
+        assert_eq!(fold("rnodern vvater clock"), "modem water dock");
+        assert_eq!(fold("a rn"), "a m");
+        assert_eq!(fold("email"), "emaii");
+        assert_eq!(fold("internally"), "intemaiiy");
+        assert_eq!(fold("5$8"), "ssb");
+    }
+
+    fn dir_size(path: &Path) -> u64 {
+        let mut total = 0;
+        let Ok(entries) = fs::read_dir(path) else {
+            return 0;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                total += dir_size(&path);
+            } else if let Ok(meta) = entry.metadata() {
+                total += meta.len();
+            }
+        }
+        total
+    }
+
+    #[test]
+    fn records_folded_index_size_growth() {
+        let nanos = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "kensaku-content-size-{}-{}",
+            std::process::id(),
+            nanos
+        ));
+        let old_dir = root.join("old");
+        let new_dir = root.join("new");
+        fs::create_dir_all(&old_dir).unwrap();
+        fs::create_dir_all(&new_dir).unwrap();
+
+        let mut old_schema = Schema::builder();
+        old_schema.add_text_field("path", STRING | STORED);
+        old_schema.add_text_field("filename", TEXT | STORED);
+        old_schema.add_text_field("content", TEXT);
+        old_schema.add_u64_field("modified", STORED | FAST);
+        let old_index = Index::create_in_dir(&old_dir, old_schema.build()).unwrap();
+        let mut old_writer = old_index.writer(50_000_000).unwrap();
+        let old_schema = old_index.schema();
+        let old_path = old_schema.get_field("path").unwrap();
+        let old_name = old_schema.get_field("filename").unwrap();
+        let old_content = old_schema.get_field("content").unwrap();
+        let old_modified = old_schema.get_field("modified").unwrap();
+
+        let mut new_schema_builder = Schema::builder();
+        let new_path = new_schema_builder.add_text_field("path", STRING | STORED);
+        let new_name = new_schema_builder.add_text_field("filename", TEXT | STORED);
+        let new_content = new_schema_builder.add_text_field("content", TEXT);
+        let folded_indexing = TextFieldIndexing::default()
+            .set_tokenizer("trigram")
+            .set_index_option(IndexRecordOption::WithFreqsAndPositions);
+        let new_folded = new_schema_builder.add_text_field(
+            "content_folded",
+            TextOptions::default().set_indexing_options(folded_indexing),
+        );
+        let new_raw = new_schema_builder.add_text_field("content_raw", STORED);
+        let new_modified = new_schema_builder.add_u64_field("modified", STORED | FAST);
+        let new_index = Index::create_in_dir(&new_dir, new_schema_builder.build()).unwrap();
+        new_index
+            .tokenizers()
+            .register("trigram", NgramTokenizer::new(3, 3, false).unwrap());
+        let mut new_writer = new_index.writer(50_000_000).unwrap();
+
+        let body = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu \
+                    order invoice screenshot receipt research notes";
+        let text: String = (0..60).map(|_| body).collect::<Vec<_>>().join(" ");
+        for i in 0..100 {
+            let path = format!("/tmp/kensaku/size/doc-{i}.txt");
+            old_writer
+                .add_document(doc!(
+                    old_path => path.clone(),
+                    old_name => format!("doc-{i}.txt"),
+                    old_content => text.clone(),
+                    old_modified => i as u64,
+                ))
+                .unwrap();
+            new_writer
+                .add_document(doc!(
+                    new_path => path,
+                    new_name => format!("doc-{i}.txt"),
+                    new_content => text.clone(),
+                    new_folded => fold(&text),
+                    new_raw => text.clone(),
+                    new_modified => i as u64,
+                ))
+                .unwrap();
+        }
+        old_writer.commit().unwrap();
+        new_writer.commit().unwrap();
+        drop(old_writer);
+        drop(new_writer);
+        drop(old_index);
+        drop(new_index);
+
+        let old_bytes = dir_size(&old_dir);
+        let new_bytes = dir_size(&new_dir);
+        println!(
+            "K5 folded index: 100 docs x {} B raw, old={} B new={} B growth={:.2}x",
+            text.len(),
+            old_bytes,
+            new_bytes,
+            new_bytes as f64 / old_bytes.max(1) as f64
+        );
+        assert!(new_bytes > old_bytes);
+        let _ = fs::remove_dir_all(&root);
+    }
+
     fn add(index: &ContentIndex, path: &str, filename: &str, content: &str) {
         index
             .add_or_update(Path::new(path), filename, content, 0)
             .expect("add document");
+    }
+
+    #[test]
+    #[ignore = "reports folded p50/p95; run with --ignored --nocapture"]
+    fn folded_query_latency() {
+        let temp = temp_index("folded-latency");
+        let index = temp.index.as_ref().unwrap();
+        for i in 0..500 {
+            let body = format!(
+                "invoice invoice number {i} customer order receipt screenshot \
+                 alpha beta gamma delta epsilon zeta eta theta iota kappa"
+            );
+            add(
+                index,
+                &format!("/tmp/kensaku/latency/doc-{i}.txt"),
+                &format!("doc-{i}.txt"),
+                &body,
+            );
+        }
+        index.commit().unwrap();
+
+        let mut samples = Vec::with_capacity(200);
+        for _ in 0..200 {
+            let start = std::time::Instant::now();
+            let hits = index.search_folded("invoice", 50, None);
+            std::hint::black_box(hits);
+            samples.push(start.elapsed().as_micros() as u64);
+        }
+        samples.sort_unstable();
+        println!(
+            "K5 folded query latency over 500 docs: p50={}µs p95={}µs",
+            samples[samples.len() / 2],
+            samples[samples.len() * 95 / 100]
+        );
+    }
+
+    #[test]
+    fn folded_search_handles_cjk_and_skips_short_terms() {
+        let temp = temp_index("folded-cjk");
+        let index = temp.index.as_ref().unwrap();
+        add(
+            index,
+            "/tmp/kensaku/cjk/paper.txt",
+            "paper.txt",
+            "東京大学の研究成果",
+        );
+        index.commit().unwrap();
+
+        let hit = index.search_folded("東京大", 10, None);
+        assert_eq!(hit.len(), 1);
+        // Terms under three characters are left to the exact/bounded fallback.
+        assert!(index.search_folded("東京", 10, None).is_empty());
+    }
+
+    #[test]
+    fn old_schema_is_backed_up_and_rebuilt() {
+        let nanos = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "kensaku-content-migrate-{}-{}",
+            std::process::id(),
+            nanos
+        ));
+        let index_dir = root.join("index");
+        fs::create_dir_all(&index_dir).unwrap();
+
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_text_field("path", STRING | STORED);
+        schema_builder.add_text_field("filename", TEXT | STORED);
+        schema_builder.add_text_field("content", TEXT);
+        schema_builder.add_u64_field("modified", STORED | FAST);
+        let old_index =
+            Index::create_in_dir(&index_dir, schema_builder.build()).expect("old index");
+        drop(old_index);
+
+        let index = ContentIndex::new(&index_dir).expect("migrate index");
+        assert!(index.rebuilt);
+        assert!(index.content_folded_field.is_some());
+        assert!(index.content_raw_field.is_some());
+        assert!(
+            fs::read_dir(&root)
+                .unwrap()
+                .flatten()
+                .any(|entry| entry.file_name().to_string_lossy().starts_with("index.legacy-")),
+            "old derived index should be preserved beside the new one"
+        );
+
+        index
+            .add_or_update(
+                Path::new("/tmp/kensaku/migrated/note.txt"),
+                "note.txt",
+                "Visit donutsmp.net",
+                0,
+            )
+            .unwrap();
+        index.commit().unwrap();
+        assert_eq!(index.search_folded("nutsmp", 10, None).len(), 1);
+
+        drop(index);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn folded_search_finds_trigram_substrings_and_lookalikes() {
+        let temp = temp_index("folded");
+        let index = temp.index.as_ref().unwrap();
+        add(
+            index,
+            "/tmp/kensaku/f/donuts.txt",
+            "donuts.txt",
+            "Visit donutsmp.net for details",
+        );
+        add(
+            index,
+            "/tmp/kensaku/f/order.txt",
+            "order.txt",
+            "ORDER-12345 shipped",
+        );
+        add(
+            index,
+            "/tmp/kensaku/f/unrelated.txt",
+            "unrelated.txt",
+            "nothing relevant here",
+        );
+        index.commit().unwrap();
+
+        // Exact BM25 cannot match an interior substring of a token.
+        assert!(index.search("nutsmp", 10, None).is_empty());
+        let substring = index.search_folded("nutsmp", 10, None);
+        assert_eq!(substring.len(), 1);
+        assert!(substring[0].path.ends_with("donuts.txt"));
+
+        // 0/o lookalike is folded; verification allows one misread.
+        assert!(index.search("0RDER", 10, None).is_empty());
+        let lookalike = index.search_folded("0RDER", 10, None);
+        assert_eq!(lookalike.len(), 1);
+        assert!(lookalike[0].path.ends_with("order.txt"));
+    }
+
+    #[test]
+    fn folded_search_rejects_broad_ngram_false_positives() {
+        let temp = temp_index("folded-reject");
+        let index = temp.index.as_ref().unwrap();
+        add(
+            index,
+            "/tmp/kensaku/f/clock.txt",
+            "clock.txt",
+            "the clock tower",
+        );
+        add(
+            index,
+            "/tmp/kensaku/f/email.txt",
+            "email.txt",
+            "internally consistent",
+        );
+        index.commit().unwrap();
+
+        // d/cl folding makes "clock" a trigram candidate for "dock", but raw
+        // verification rejects the two-edit word match.
+        assert!(index.search_folded("dock", 10, None).is_empty());
+        assert!(index.search_folded("email", 10, None).is_empty());
+        assert!(verify_folded("the order shipped", "0RDER"));
+        assert!(verify_folded("donutsmp.net", "nutsmp"));
+        assert!(!verify_folded("internally consistent", "email"));
+        assert!(!verify_folded("the clock tower", "dock"));
     }
 
     #[test]

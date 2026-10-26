@@ -6,6 +6,12 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Folded/trigram content tier: `content_folded` plus stored `content_raw`
+  fields, OCR-lookalike folding, raw-text verification (1 misread for 4–7
+  letters, 2 for 8+), and a `ContentFolded` result badge. The tier only runs
+  when exact/fuzzy/semantic results leave a shortfall. Existing indexes are
+  preserved as `index.legacy-*` and rebuilt; all files are queued for content
+  re-extraction once.
 - Background indexing policy: `crawl_mode` (`full` / `balanced` / `eco`) and a
   persisted `pause_indexing` switch, both in Settings → Search. Balanced/eco use
   OS idle CPU/I/O priority; eco also paces new extraction jobs on battery.

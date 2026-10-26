@@ -351,6 +351,28 @@ impl MetadataStore {
         marked
     }
 
+    /// Forces a content re-read for every file (used after a content-index
+    /// schema migration). Directories keep their metadata.
+    pub fn mark_all_content_pending(&mut self) -> usize {
+        let mut marked = 0;
+        for i in 0..self.arena.len() {
+            let idx = i as u32;
+            if !self.arena.node(idx).is_dir() {
+                self.arena.node_mut(idx).set_content_pending(true);
+                marked += 1;
+            }
+        }
+        if marked > 0 {
+            self.generation.fetch_add(1, Ordering::SeqCst);
+        }
+        if let Some(db) = self.db.as_ref()
+            && let Err(e) = db.mark_all_content_pending()
+        {
+            eprintln!("[Kensaku] Failed to mark content pending: {}", e);
+        }
+        marked
+    }
+
     pub fn clear_content_pending(&mut self, path: &Path) {
         if let Some(idx) = self.find_path_index(path) {
             let node = self.arena.node(idx);
@@ -740,6 +762,24 @@ mod tests {
             char_bloom: 0,
             content_pending: false,
         }
+    }
+
+    #[test]
+    fn mark_all_content_pending_skips_directories() {
+        let mut temp = TempStore::new("mark-all");
+        let image = temp.dir.join("photo.jpg");
+        let doc = temp.dir.join("notes.txt");
+        let dir_path = temp.dir.join("folder");
+
+        let store = temp.store();
+        store.add(entry(&image, false));
+        store.add(entry(&doc, false));
+        store.add(entry(&dir_path, true));
+
+        assert_eq!(store.mark_all_content_pending(), 2);
+        assert!(store.get(&image).expect("image").content_pending);
+        assert!(store.get(&doc).expect("doc").content_pending);
+        assert!(!store.get(&dir_path).expect("dir").content_pending);
     }
 
     #[test]
