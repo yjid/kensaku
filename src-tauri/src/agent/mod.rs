@@ -30,6 +30,7 @@ pub struct HeadlessIndex {
     pub metadata: MetadataStore,
     pub content: Option<ContentIndex>,
     pub units: UnitStore,
+    pub visual: crate::embed::visual::VisualStore,
     pub model: &'static ModelRegistry,
     dir: PathBuf,
 }
@@ -74,6 +75,7 @@ impl HeadlessIndex {
 
         let model = ModelRegistry::global();
         let mut units = UnitStore::new(model.dim);
+        let mut visual = crate::embed::visual::VisualStore::default();
         if let Some(db) = metadata.db() {
             match db.load_all_units() {
                 Ok(loaded) => {
@@ -83,6 +85,7 @@ impl HeadlessIndex {
                 }
                 Err(e) => eprintln!("[Kensaku] Failed to load semantic units: {}", e),
             }
+            let _ = db.load_visual_units_into(&mut visual);
         }
 
         let index_dir = dir.join("index");
@@ -97,6 +100,7 @@ impl HeadlessIndex {
             metadata,
             content,
             units,
+            visual,
             model,
             dir: dir.to_path_buf(),
         })
@@ -171,6 +175,69 @@ impl HeadlessIndex {
     /// cache). The result is aligned with `paths`.
     pub fn snippets(&self, paths: &[String], query: &str) -> Vec<Option<String>> {
         snippets_for_paths(paths, query)
+    }
+
+    /// Looks up visually similar images in the local visual store.
+    pub fn find_similar_images_local(
+        &self,
+        path: &str,
+        limit: usize,
+    ) -> Result<Vec<crate::embed::visual::SimilarImageResult>, String> {
+        let p = Path::new(path);
+        let (source_node_id, query_vec) = if let Some(entry) = self.metadata.get(p) {
+            let vec_opt = self.visual.get_vector(entry.id).map(|v| v.to_vec());
+            (Some(entry.id), vec_opt)
+        } else {
+            (None, None)
+        };
+
+        let query_vec = match query_vec {
+            Some(v) => v,
+            None => {
+                let thumbs_dir = self.dir.join("thumbs");
+                let thumb = crate::indexer::extract::image::thumbnail_path(p, &thumbs_dir);
+                let encoder = crate::embed::visual::MockVisualEncoder;
+                use crate::embed::visual::VisualEncoder;
+                if thumb.is_file()
+                    && let Some(v) = encoder.embed_image_from_thumbnail(&thumb)
+                {
+                    v
+                } else if p.is_file() {
+                    let img = image::open(p)
+                        .map_err(|e| format!("Failed to open image {}: {}", p.display(), e))?;
+                    encoder.embed_image(&img)
+                } else {
+                    return Err(format!("Image not found or not readable: {}", p.display()));
+                }
+            }
+        };
+
+        let floor = 0.30f32;
+        let hits = self
+            .visual
+            .find_similar(&query_vec, source_node_id, floor, limit);
+
+        let mut results = Vec::new();
+        for (node_id, similarity) in hits {
+            if let Some(entry) = self.metadata.get_by_node_id(node_id) {
+                let is_image = entry
+                    .path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(crate::indexer::extract::image::is_supported_image_extension);
+                if is_image {
+                    results.push(crate::embed::visual::SimilarImageResult {
+                        path: entry.path.to_string_lossy().to_string(),
+                        filename: entry.name,
+                        similarity,
+                        file_size: entry.size,
+                        modified: entry.modified,
+                    });
+                }
+            }
+        }
+
+        Ok(results)
     }
 
     /// Health snapshot without a daemon: the local stores were opened at
@@ -347,6 +414,28 @@ impl AgentSession<'_> {
 
     pub fn snippets(&self, paths: &[String], query: &str) -> Vec<Option<String>> {
         snippets_for_paths(paths, query)
+    }
+
+    /// Looks up visually similar images.
+    pub fn find_similar_images(
+        &self,
+        path: &str,
+        limit: usize,
+    ) -> Result<Vec<crate::embed::visual::SimilarImageResult>, String> {
+        match self {
+            Self::Daemon => {
+                let value = crate::daemon::request(
+                    "find_similar_images",
+                    json!({
+                        "path": path,
+                        "limit": limit,
+                    }),
+                )?;
+                serde_json::from_value(value).map_err(|e| e.to_string())
+            }
+            Self::Local(index) => index.find_similar_images_local(path, limit),
+            Self::None => Err(NO_INDEX_MESSAGE.to_string()),
+        }
     }
 
     /// `reindex` is the only write tool. It requires both the config opt-in

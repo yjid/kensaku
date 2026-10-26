@@ -20,6 +20,14 @@ export interface SearchResult {
   group_paths?: string[];
 }
 
+export interface SimilarImageResult {
+  path: string;
+  filename: string;
+  similarity: number;
+  file_size: number;
+  modified: number;
+}
+
 export interface HomeItem {
   path: string;
   filename: string;

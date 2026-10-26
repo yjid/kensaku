@@ -14,4 +14,6 @@ pub use queue::EmbeddingQueue;
 pub use scanner::{ExactScanner, SemanticHit};
 pub use table::StaticTable;
 pub use units::{Unit, UnitStore, chunk_text};
-pub use visual::{MockVisualEncoder, VISUAL_DIM, VisualEncoder, VisualStore, VisualUnit};
+pub use visual::{
+    MockVisualEncoder, SimilarImageResult, VISUAL_DIM, VisualEncoder, VisualStore, VisualUnit,
+};

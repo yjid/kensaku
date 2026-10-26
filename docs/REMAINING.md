@@ -106,8 +106,9 @@ These are the highest-leverage gaps. None require a new model.
 - [x] **Image embeddings & visual search** — CLIP ViT-B/32 int8 image embedding pipeline with
       `VisualStore`, thumbnail reuse, cancel safety, and 4-tier RRF fusion with `visual:` filter.
       (ROADMAP K18, K19)
-- [ ] **Similar images** — image-to-image query from a selected result; reuse
-      the same visual index and the related-file response shape. (ROADMAP K20)
+- [x] **Similar images** — image-to-image query from a selected result; reuse
+      the same visual index, exclude query image, apply cosine floor, exposed via Tauri
+      command, daemon IPC, and read-only MCP tool. (ROADMAP K20)
 - [ ] **Native OCR** — macOS Vision (`objc2-vision`) and Windows OCR (`windows`
       crate). Today it shells out to `tesseract`, which may not be installed.
       Scanned PDFs need the same path. (ROADMAP K21)

@@ -52,8 +52,8 @@ pub fn request(method: &str, mut params: Value) -> Result<Value, String> {
     }
     let token = read_token().ok_or_else(|| "daemon token missing".to_string())?;
     let name = socket_name().map_err(|e| format!("daemon socket name: {}", e))?;
-    let stream = LocalSocketStream::connect(name)
-        .map_err(|e| format!("daemon unavailable: {}", e))?;
+    let stream =
+        LocalSocketStream::connect(name).map_err(|e| format!("daemon unavailable: {}", e))?;
     stream
         .set_recv_timeout(Some(Duration::from_secs(30)))
         .map_err(|e| e.to_string())?;
@@ -255,6 +255,21 @@ impl DaemonClient {
         serde_json::from_value(value).map_err(|e| e.to_string())
     }
 
+    pub fn find_similar_images(
+        &self,
+        path: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<crate::embed::visual::SimilarImageResult>, String> {
+        let value = request(
+            "find_similar_images",
+            serde_json::json!({
+                "path": path,
+                "limit": limit.unwrap_or(20),
+            }),
+        )?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
     pub fn get_status(&self) -> Result<crate::indexer::IndexingStatus, String> {
         let value = request("get_status", serde_json::json!({}))?;
         serde_json::from_value(value).map_err(|e| e.to_string())
@@ -266,10 +281,7 @@ impl DaemonClient {
     }
 
     pub fn save_config(&self, config: KensakuConfig) -> Result<(), String> {
-        request(
-            "save_config",
-            serde_json::json!({ "config": config }),
-        )?;
+        request("save_config", serde_json::json!({ "config": config }))?;
         Ok(())
     }
 

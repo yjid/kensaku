@@ -1174,6 +1174,73 @@ impl IndexerManager {
         )
     }
 
+    /// Looks up visually similar images for a given path.
+    pub fn find_similar_images(
+        &self,
+        path: &std::path::Path,
+        limit: usize,
+    ) -> Result<Vec<crate::embed::visual::SimilarImageResult>, String> {
+        let metadata = self.metadata.read();
+        let visual_store = self.visual_store.read();
+
+        // 1. Resolve source entry and vector
+        let (source_node_id, query_vec) = if let Some(entry) = metadata.get(path) {
+            let vec_opt = visual_store.get_vector(entry.id).map(|v| v.to_vec());
+            (Some(entry.id), vec_opt)
+        } else {
+            (None, None)
+        };
+
+        let query_vec = match query_vec {
+            Some(v) => v,
+            None => {
+                let thumbs_dir = KensakuConfig::config_dir().join("thumbs");
+                let thumb = crate::indexer::extract::image::thumbnail_path(path, &thumbs_dir);
+                let encoder = crate::embed::visual::MockVisualEncoder;
+                use crate::embed::visual::VisualEncoder;
+                if thumb.is_file()
+                    && let Some(v) = encoder.embed_image_from_thumbnail(&thumb)
+                {
+                    v
+                } else if path.is_file() {
+                    let img = image::open(path)
+                        .map_err(|e| format!("Failed to open image {}: {}", path.display(), e))?;
+                    encoder.embed_image(&img)
+                } else {
+                    return Err(format!(
+                        "Image not found or not readable: {}",
+                        path.display()
+                    ));
+                }
+            }
+        };
+
+        let floor = 0.30f32;
+        let hits = visual_store.find_similar(&query_vec, source_node_id, floor, limit);
+
+        let mut results = Vec::new();
+        for (node_id, similarity) in hits {
+            if let Some(entry) = metadata.get_by_node_id(node_id) {
+                let is_image = entry
+                    .path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(crate::indexer::extract::image::is_supported_image_extension);
+                if is_image {
+                    results.push(crate::embed::visual::SimilarImageResult {
+                        path: entry.path.to_string_lossy().to_string(),
+                        filename: entry.name,
+                        similarity,
+                        file_size: entry.size,
+                        modified: entry.modified,
+                    });
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
     /// Compact live state shared by the daemon, CLI and MCP. Avoids loading
     /// the embedding table or re-opening SQLite/Tantivy.
     pub fn state_json(&self) -> Result<serde_json::Value, String> {
@@ -1438,5 +1505,99 @@ mod tests {
             !is_unchanged(&pending, &entry(100, 10, false)),
             "a pending entry must be re-processed even when mtime/size match"
         );
+    }
+
+    #[test]
+    fn find_similar_images_returns_matches_and_excludes_self() {
+        use crate::agent::HeadlessIndex;
+        use crate::embed::visual::{MockVisualEncoder, VisualEncoder};
+        use crate::indexer::metadata_db::MetadataDb;
+
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let temp_dir = std::env::temp_dir().join(format!("kensaku-sim-mgr-{}", nanos));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let db = MetadataDb::open_in_dir(&temp_dir).unwrap();
+        let path1 = temp_dir.join("image_1.png");
+        let path2 = temp_dir.join("image_2.png");
+        let path3 = temp_dir.join("unrelated.jpg");
+
+        let entry1 = FileEntry {
+            id: 1,
+            path: path1.clone(),
+            name: "image_1.png".to_string(),
+            extension: Some("png".to_string()),
+            size: 100,
+            modified: 10,
+            is_dir: false,
+            dev: 0,
+            ino: 0,
+            char_bloom: 0,
+            content_pending: false,
+        };
+        let entry2 = FileEntry {
+            id: 2,
+            path: path2.clone(),
+            name: "image_2.png".to_string(),
+            extension: Some("png".to_string()),
+            size: 100,
+            modified: 10,
+            is_dir: false,
+            dev: 0,
+            ino: 0,
+            char_bloom: 0,
+            content_pending: false,
+        };
+        let entry3 = FileEntry {
+            id: 3,
+            path: path3.clone(),
+            name: "unrelated.jpg".to_string(),
+            extension: Some("jpg".to_string()),
+            size: 100,
+            modified: 10,
+            is_dir: false,
+            dev: 0,
+            ino: 0,
+            char_bloom: 0,
+            content_pending: false,
+        };
+
+        db.upsert(&entry1).unwrap();
+        db.upsert(&entry2).unwrap();
+        db.upsert(&entry3).unwrap();
+
+        let id1 = db.get_node_id_by_path(&path1).unwrap().unwrap();
+        let id2 = db.get_node_id_by_path(&path2).unwrap().unwrap();
+        let id3 = db.get_node_id_by_path(&path3).unwrap().unwrap();
+
+        let encoder = MockVisualEncoder;
+        let vec_base = encoder.embed_text("same concept");
+        let inverted_vec: Vec<i8> = vec_base.iter().map(|&v| -v).collect();
+
+        db.save_visual_unit(id1, encoder.model_id(), 0x1111, &vec_base)
+            .unwrap();
+        db.save_visual_unit(id2, encoder.model_id(), 0x2222, &vec_base)
+            .unwrap();
+        db.save_visual_unit(id3, encoder.model_id(), 0x3333, &inverted_vec)
+            .unwrap();
+
+        let index = HeadlessIndex::open_at(&temp_dir).unwrap();
+
+        let results = index
+            .find_similar_images_local(path1.to_str().unwrap(), 10)
+            .unwrap();
+
+        // 1. Query path1 must be excluded
+        assert!(results.iter().all(|r| r.path != path1.to_string_lossy()));
+
+        // 2. path2 must be returned with similarity ~1.0
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].path, path2.to_string_lossy());
+        assert!(results[0].similarity >= 0.99);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
