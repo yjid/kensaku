@@ -44,23 +44,25 @@ These are the highest-leverage gaps. None require a new model.
 - [x] **Interpretation chips** — every natural-language inference is shown as a
       removable chip (sort, scope, type, time, size). Explicit grammar is never
       reinterpreted.
-- [ ] **Version grouping** — collapse `resume_v1`, `resume_final`,
-      `resume_final_final` into one row with a version count. False grouping is
-      worse than none; ship conservative heuristics.
+- [x] **Version grouping** — conservative backend grouping of same-directory,
+      same-stem files with version markers (`_v2`, `_final`, ` (1)`, `-copy`);
+      one row with a version count and the other paths in a tooltip.
 - [x] **Facet counts** — server-side counts over the full matched set for type,
       language, place, time, size, and recent; category chips consume them.
-- [ ] **Multi-select and exclude facets** — OR within a facet, AND across
-      facets, alt-click to exclude. Filters must never silently zero results.
-- [ ] **Saved searches / smart folders** — "My screenshots", "Work invoices",
-      "This project's logs". User-created first; auto-suggestion optional and
-      never silent.
+- [x] **Multi-select and exclude facets** — click includes, Alt-click excludes,
+      OR within the category row, AND against the text query.
+- [x] **Saved searches / smart folders** — save the current query + sort from
+      the results bar; listed on the home screen; stored in config.
+- [x] **Pagination / load-more** — server `offset` + a Load more control for
+      ranked results.
 - [x] **`/` command menu** — `/images`, `/pdf`, `/docs`, `/code`, `/media`,
       `/recent`, `/errors`, `/diagrams`, `/dupes`, `/reindex`, `/doctor`,
       `/settings`. (`/ask` awaits a local model.)
 - [x] **`@` scope mentions** — resolves a typed prefix against indexed
       directories and inserts `in:"<path>"`; arrow keys + Enter.
-- [ ] **New home and result states** — recent files, recent queries, pins,
-      suggestions, best-guess card, grouped versions, related files.
+- [x] **New home and result states** — pinned files, recent files, saved
+      searches, suggested queries, grouped version rows. (Recent queries and
+      best-guess/related cards remain.)
 - [x] **Duplicate cleanup UI** — `/dupes` opens a review view with exact-content
       and near-image groups; open/copy/reveal per file. Destructive delete is
       intentionally left to the OS.
@@ -75,8 +77,7 @@ These are the highest-leverage gaps. None require a new model.
       the scan shows live counts and a Done summary, resumes after interruption,
       and later launches stay search-first. (Current path and ETA are not yet
       shown.)
-- [ ] **Voice and microcopy pass** — human, anticipatory, quiet. No chat
-      persona, no "How can I help you today?".
+- [—] **Voice and microcopy pass** — intentionally skipped; not planned.
 
 ## B. Intelligence & vision
 
@@ -126,9 +127,9 @@ These are the highest-leverage gaps. None require a new model.
 
 - [ ] **E2 extension interning** — `FileEntry.extension: Option<String>` is
       128 B per entry. A `u16` intern table saves ~6–12 MB per 1M files.
-- [ ] **B4 full pushdown** — filters are post-filters in Tantivy. Add `ext` /
-      `size` fast fields and build a `BooleanQuery` so only matching docs are
-      scored. Required for instant facets and the 1M gate.
+- [~] **B4 full pushdown** — scope paths are now pushed into the Tantivy query
+      as a path-prefix clause. `ext` / `size` fast fields still need schema work
+      and a rebuild before those filters can be pushed too.
 - [ ] **1M-file prefilter** — 100k is ~2.8 ms; 1M is projected ~28 ms. A
       trigram/prefix index or sharded scan is needed to hold <15 ms.
 - [ ] **Metadata arena** — still `Vec<FileEntry>` + `HashMap<PathBuf, usize>`.

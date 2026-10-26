@@ -426,7 +426,24 @@ impl ContentIndex {
 
         let searcher = self.reader.searcher();
         let collector = TopDocs::with_limit(limit).order_by_score();
-        let top_docs = match searcher.search(query, &collector) {
+
+        // Push the scope down into the Tantivy query: only documents whose
+        // stored path starts with the prefix are scored at all.
+        let effective_query: Box<dyn Query> = match path_prefix {
+            Some(prefix) if !prefix.is_empty() => {
+                let pattern = format!("(?s)^{}.*", regex::escape(prefix));
+                match RegexQuery::from_pattern(&pattern, self.path_field) {
+                    Ok(path_query) => Box::new(BooleanQuery::new(vec![
+                        (Occur::Must, query.box_clone()),
+                        (Occur::Must, Box::new(path_query)),
+                    ])),
+                    Err(_) => query.box_clone(),
+                }
+            }
+            _ => query.box_clone(),
+        };
+
+        let top_docs = match searcher.search(effective_query.as_ref(), &collector) {
             Ok(docs) => docs,
             Err(_) => return Vec::new(),
         };

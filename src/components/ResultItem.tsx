@@ -220,6 +220,14 @@ export const ResultItem = React.memo<ResultItemProps>(
               <HighlightedName text={result.filename} query={query} />
             </span>
             <MatchBadge matchType={result.match_type} />
+            {(result.group_count ?? 1) > 1 && (
+              <span
+                title={(result.group_paths ?? []).join("\n")}
+                className="shrink-0 rounded-full bg-sunken px-1.5 py-0.5 font-mono text-[9px] text-muted"
+              >
+                {result.group_count} versions
+              </span>
+            )}
           </div>
           {hasSnippet ? (
             <p className={RESERVED_SUBLINE}>
@@ -295,6 +303,7 @@ export const ResultItem = React.memo<ResultItemProps>(
     prev.result.path === next.result.path &&
     prev.result.snippet === next.result.snippet &&
     prev.result.match_type === next.result.match_type &&
+    prev.result.group_count === next.result.group_count &&
     prev.isSelected === next.isSelected &&
     prev.view === next.view &&
     prev.query === next.query &&

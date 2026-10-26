@@ -34,6 +34,16 @@ pub struct SearchResult {
     pub is_dir: bool,
     pub match_type: MatchType,
     pub best_range: Option<(usize, usize)>,
+    /// Number of files collapsed into this row by version grouping.
+    #[serde(default = "one")]
+    pub group_count: usize,
+    /// Other paths in this version group (empty when not grouped).
+    #[serde(default)]
+    pub group_paths: Vec<String>,
+}
+
+fn one() -> usize {
+    1
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -137,6 +147,82 @@ fn compute_facets(results: &[SearchResult], now_sec: u64) -> Facets {
         *facets.size.entry(size_bucket.to_string()).or_insert(0) += 1;
     }
     facets
+}
+
+/// Version grouping: collapse `resume`, `resume_v2`, `resume_final` into one
+/// row when they share a parent directory, stem and extension. Conservative:
+/// at least one member must carry a version marker.
+fn group_versions(results: &mut Vec<SearchResult>) {
+    use std::sync::OnceLock;
+    static MARKERS: OnceLock<Vec<regex::Regex>> = OnceLock::new();
+    let markers = MARKERS.get_or_init(|| {
+        [
+            r"(?i)[ _.\-]*(?:v|version)[ _.\-]*\d+$",
+            r"(?i)[ _.\-]*(?:final|final[ _.\-]*final|copy|backup|old|new)(?:[ _.\-]*\d+)?$",
+            r"(?i)[ _.\-]*\(\d+\)$",
+            r"(?i)[ _.\-]*-?[ _.\-]*copy$",
+        ]
+        .iter()
+        .filter_map(|p| regex::Regex::new(p).ok())
+        .collect()
+    });
+
+    let mut groups: HashMap<(String, String, String), Vec<usize>> = HashMap::new();
+    let mut has_marker: HashMap<(String, String, String), bool> = HashMap::new();
+    for (i, r) in results.iter().enumerate() {
+        if r.is_dir {
+            continue;
+        }
+        let (stem, ext) = match r.filename.rsplit_once('.') {
+            Some((s, e)) => (s.to_string(), e.to_lowercase()),
+            None => (r.filename.clone(), String::new()),
+        };
+        let parent = std::path::Path::new(&r.path)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let mut base = stem.to_lowercase();
+        let mut marker = false;
+        for re in markers {
+            let next = re.replace(&base, "").to_string();
+            if next != base {
+                marker = true;
+                base = next;
+            }
+        }
+        let base = base.trim_matches(|c: char| c == ' ' || c == '_' || c == '-' || c == '.').to_string();
+        if base.is_empty() {
+            continue;
+        }
+        let key = (parent, base, ext);
+        groups.entry(key.clone()).or_default().push(i);
+        if marker {
+            has_marker.insert(key, true);
+        }
+    }
+
+    let mut remove = HashSet::new();
+    for (key, indices) in groups {
+        if indices.len() < 2 || !has_marker.get(&key).copied().unwrap_or(false) {
+            continue;
+        }
+        let keep = indices[0];
+        let others: Vec<String> = indices[1..]
+            .iter()
+            .map(|&i| results[i].path.clone())
+            .collect();
+        results[keep].group_count = indices.len();
+        results[keep].group_paths = others;
+        for &i in &indices[1..] {
+            remove.insert(i);
+        }
+    }
+    let mut i = 0;
+    results.retain(|_| {
+        let keep = !remove.contains(&i);
+        i += 1;
+        keep
+    });
 }
 
 /// Result ordering. `Best` preserves the fused relevance ranking.
@@ -264,6 +350,7 @@ impl SearchDispatcher {
             true,
             SortOrder::Best,
             &[],
+            0,
         )
     }
 
@@ -290,6 +377,7 @@ impl SearchDispatcher {
             true,
             SortOrder::Best,
             aliases,
+            0,
         )
     }
 
@@ -318,6 +406,7 @@ impl SearchDispatcher {
             false,
             SortOrder::Best,
             &[],
+            0,
         )
     }
 
@@ -333,6 +422,7 @@ impl SearchDispatcher {
         seq: u64,
         sort: SortOrder,
         aliases: &[(String, Vec<String>)],
+        offset: usize,
     ) -> SearchResponse {
         Self::search_response_with_snippets(
             raw_query,
@@ -345,6 +435,7 @@ impl SearchDispatcher {
             false,
             sort,
             aliases,
+            offset,
         )
     }
 
@@ -360,6 +451,7 @@ impl SearchDispatcher {
         with_snippets: bool,
         sort: SortOrder,
         aliases: &[(String, Vec<String>)],
+        offset: usize,
     ) -> SearchResponse {
         let start_time = SystemTime::now();
         let trimmed = raw_query.trim();
@@ -575,12 +667,25 @@ impl SearchDispatcher {
         }
 
         // 4. Tier 2: Tantivy BM25 content search (< 50ms)
+        // A single include scope is pushed into the Tantivy query as a path
+        // prefix, so BM25 never scores documents outside the scope.
+        let scope_prefix: Option<String> = {
+            let mut includes = parsed.scopes.iter().filter(|s| s.include);
+            match (includes.next(), includes.next()) {
+                (Some(scope), None) => Some(scope.path.to_string_lossy().to_string()),
+                _ => None,
+            }
+        };
         let mut bm25_ranks: HashMap<PathBuf, usize> = HashMap::new();
         if (!bm25_groups.is_empty() || !regex_patterns.is_empty())
             && let Some(c_index) = content_index
         {
-            let outcome =
-                c_index.search_groups_with_regex(&bm25_groups, &regex_patterns, limit * 3, None);
+            let outcome = c_index.search_groups_with_regex(
+                &bm25_groups,
+                &regex_patterns,
+                limit * 3,
+                scope_prefix.as_deref(),
+            );
             parsed.hints.extend(outcome.hints);
             for (rank, cm) in outcome.matches.into_iter().enumerate() {
                 bm25_ranks.insert(cm.path, rank + 1);
@@ -791,16 +896,23 @@ impl SearchDispatcher {
                     is_dir: entry.is_dir,
                     match_type,
                     best_range: cand.best_range,
+                    group_count: 1,
+                    group_paths: Vec::new(),
                 })
             })
             .collect();
 
         // 8. Ordering: best-match by default; explicit sort when requested.
         apply_sort(&mut results, sort);
+        group_versions(&mut results);
 
         let total = results.len();
         let facets = compute_facets(&results, now_sec);
 
+        if offset > 0 {
+            let skip = offset.min(results.len());
+            results.drain(0..skip);
+        }
         if results.len() > limit {
             results.truncate(limit);
         }
@@ -929,6 +1041,8 @@ fn exhaustive_results(
                     is_dir: entry.is_dir,
                     match_type: MatchType::FileName,
                     best_range: None,
+                    group_count: 1,
+                    group_paths: Vec::new(),
                 });
             }
         }
@@ -955,6 +1069,8 @@ fn exhaustive_results(
                 is_dir: entry.is_dir,
                 match_type: MatchType::Content,
                 best_range: None,
+                group_count: 1,
+                group_paths: Vec::new(),
             });
         }
     }

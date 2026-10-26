@@ -217,6 +217,8 @@ pub fn run() {
             commands::complete_setup,
             commands::get_suggested_directories,
             commands::get_scope_suggestions,
+            commands::get_home_data,
+            commands::toggle_pin,
             commands::hide_window,
             commands::run_doctor,
             commands::reset_all,

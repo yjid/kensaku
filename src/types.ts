@@ -16,6 +16,28 @@ export interface SearchResult {
   is_dir: boolean;
   match_type: "FileName" | "Content" | "Semantic" | "Both";
   best_range?: [number, number] | null;
+  group_count?: number;
+  group_paths?: string[];
+}
+
+export interface HomeItem {
+  path: string;
+  filename: string;
+  size: number;
+  modified: number;
+  is_dir: boolean;
+}
+
+export interface SavedSearch {
+  name: string;
+  query: string;
+  sort?: string | null;
+}
+
+export interface HomeData {
+  recent: HomeItem[];
+  pins: HomeItem[];
+  saved_searches: SavedSearch[];
 }
 
 export interface ActiveFilter {
@@ -111,6 +133,8 @@ export interface KensakuConfig {
   ocr_enabled?: boolean;
   theme?: "paper" | "void";
   aliases?: Alias[];
+  saved_searches?: SavedSearch[];
+  pins?: string[];
   config_version?: number;
 }
 
