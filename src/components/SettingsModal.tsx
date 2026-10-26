@@ -350,6 +350,10 @@ function GeneralSection({
 
   useEffect(() => {
     if (!capturing) return;
+    // Modifiers accumulate across keydowns, so tapping Ctrl then K works as
+    // well as holding Ctrl+K.
+    const pressed = new Set<string>();
+    const normalizeModifier = (key: string) => (key === "Meta" ? "Super" : key);
     const onKey = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -358,13 +362,16 @@ function GeneralSection({
         setCapturing(false);
         return;
       }
-      // Ignore standalone modifiers so the combo can be completed.
-      if (["Control", "Super", "Meta", "Alt", "Shift"].includes(e.key)) return;
-      const parts: string[] = [];
-      if (e.ctrlKey) parts.push("Control");
-      if (e.metaKey) parts.push("Super");
-      if (e.altKey) parts.push("Alt");
-      if (e.shiftKey) parts.push("Shift");
+      if (["Control", "Super", "Meta", "Alt", "Shift"].includes(e.key)) {
+        pressed.add(normalizeModifier(e.key));
+        return;
+      }
+      if (e.ctrlKey) pressed.add("Control");
+      if (e.metaKey) pressed.add("Super");
+      if (e.altKey) pressed.add("Alt");
+      if (e.shiftKey) pressed.add("Shift");
+      const order = ["Control", "Super", "Alt", "Shift"];
+      const parts = order.filter((m) => pressed.has(m));
       const key = e.key === " " ? "Space" : e.key.length === 1 ? e.key.toUpperCase() : e.key;
       parts.push(key);
       setConfig((c) => (c ? { ...c, shortcut: parts.join("+") } : c));
