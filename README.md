@@ -5,12 +5,11 @@
 <h1 align="center">Kensaku <span title="kensaku = search, in Japanese">検索</span></h1>
 
 <p align="center">
-  <b>Find anything on your computer. Let your AI find it too.</b><br/>
-  <i>Fast, local-first search for files, source code, documents, and images — semantic search, OCR, hybrid ranking, and MCP access for compatible AI agents.</i>
+  <b>Find anything on your computer. Let your AI find it too.</b>
 </p>
 
 <p align="center">
-  <i>Your computer's search is broken. This one isn't.</i>
+  <i>Semantic search, OCR, and document understanding — one local index for you, your terminal, and your agents.</i>
 </p>
 
 <p align="center">
@@ -28,59 +27,71 @@
 </p>
 
 <p align="center">
-  <a href="#installation-and-quick-start">Install</a> ·
-  <a href="#ai-agent-integration">AI agents</a> ·
-  <a href="docs/USAGE.md">Documentation</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#why-kensaku">Why Kensaku</a> ·
+  <a href="#ai-agents">AI agents</a> ·
+  <a href="docs/USAGE.md">Docs</a> ·
   <a href="https://github.com/yjid/kensaku/releases">Releases</a>
 </p>
 
 ---
 
-## The problem and the solution
+## The search you actually wanted
 
-You wrote a file two weeks ago. You need it now. You cannot remember what it was called.
+You remember the file. Not its name.
 
-Ordinary filename search fails when the name is forgotten, the folder is wrong, or the content lives inside a PDF, a spreadsheet, or a screenshot. Kensaku builds a persistent local index of filenames, file contents, and extracted text, then answers in milliseconds through one search box.
+You know it was a PDF about a failed deploy, or a screenshot of that database error, or the invoice from March. Your operating system's search asks you to remember the filename — and gives up when the answer lives inside the file.
 
-- **Persistent index.** Walks watched folders once, keeps the index on disk, and reconciles changes in the background.
-- **Content retrieval.** Reads supported documents and source files; OCR text from images when tesseract and language data are available.
-- **Unified interface.** Desktop app, CLI, and MCP server all query the same index.
+Kensaku indexes what is *in* your files, not just what they are called. Then it answers in milliseconds, on your machine, with no account and no cloud.
 
-## Core capabilities
+- **Search by meaning.** Local embeddings match related ideas, not just exact words.
+- **Search inside.** PDFs, Office documents, EPUB, RTF, source code, logs, and images.
+- **Search from anywhere.** Desktop app, CLI, and AI agents share the same index.
+- **Search privately.** Your index never leaves your device.
 
-- **Find by meaning, not just words.** Semantic search via local embeddings finds conceptually related files even when exact terms don't match.
-- **Full-text content search.** Across supported files, with snippets and line-level context.
-- **Supported documents.** PDF, DOCX/PPTX/XLSX, EPUB/ODT/ODS/ODP, RTF, plain text and code.
-- **Image understanding.** OCR text extraction (tesseract), thumbnails, dimensions, and perceptual near-duplicate grouping.
-- **Hybrid ranking.** Lexical + semantic + recency + path signals fused via RRF.
-- **Query language.** `type:`, `ext:`, `in:`, `path:`, `modified:`, `size:`, `is:`, `lang:`, `name:`, `content:`, `re:`, negation, `mode:exhaustive`.
-- **Programmatic access.** `kensaku-cli search` with text or JSON output, filters, and exhaustive enumeration.
-- **AI-agent access.** MCP server exposing `search`, `read_snippet`, and `index_state` over stdio.
-- **Local-first.** Indexes and config stay on your machine; no telemetry.
+## Why Kensaku
 
-## How it works
+### It understands more than filenames
 
-```
-watched folders
-   │
-   ▼
- walker (jwalk) ──► metadata (SQLite) + Tantivy content index
-   │                       │
-   ▼                       ▼
- extraction (PDF/Office/OCR) ──► snippets + semantic units
-   │
-   ▼
- desktop app / CLI / MCP  ──► query ──► hybrid ranking ──► results
-```
+Kensaku combines lexical full-text search with a semantic tier. Ask for "that docker build error" and it can surface the right log or screenshot even when the exact phrase isn't in the name. Ranking fuses text relevance, semantic similarity, recency, and path signals, so the file you touched last week tends to win.
 
-- **Metadata** (paths, size, mtime, inode identity) lives in SQLite.
-- **Content** lives in Tantivy, populated by parallel extractors with an 8-second timeout per file.
-- **Semantic units** feed a local embedding tier; the default model is a static table, with optional neural models.
-- The desktop backend, CLI, and MCP all read the same on-disk index; the CLI/MCP open it read-only.
+### It reads your documents and images
 
-## Installation and quick start
+- **Documents:** PDF, DOCX, PPTX, XLSX, EPUB, ODT/ODS/ODP, RTF, and plain text/code.
+- **Images:** OCR text extracted with tesseract when the engine and language data are available.
+- **Images, beyond text:** thumbnails, dimensions, and perceptual near-duplicate grouping for cleanup.
 
-Download prebuilt bundles from the [releases page](https://github.com/yjid/kensaku/releases). Builds are currently unsigned (see [docs/INSTALL.md](docs/INSTALL.md) for Gatekeeper/SmartScreen notes).
+Most "fast search" tools stop at filenames. Kensaku opens the file.
+
+### It gives the same power to your AI agents
+
+This is the part that changes your workflow. Kensaku ships an MCP server over stdio, so compatible agents can search your local index — read-only — instead of guessing at paths or asking you to paste content into chat.
+
+Your agent gets three tools:
+
+| Tool | What it does |
+|---|---|
+| `search` | Ranked file/content search with path, extension, and recency filters |
+| `read_snippet` | A bounded snippet from an indexed file, centered on a query |
+| `index_state` | Index freshness and size |
+
+One index. You search it in the app; your agent searches it in a tool call. No re-indexing, no cloud sync, no API key.
+
+### It stays on your machine
+
+No telemetry. No account. No hosted search service. Indexes and configuration live in your OS config directory. The only outbound request is an optional model or OCR language download that you initiate.
+
+### It is genuinely fast
+
+Measured warm-cache on a ~100,000-file corpus, Kensaku's keystroke hot path (walk + fuzzy filename search) averages around **2.8 ms per query**. That is not a marketing number — the benchmark harness ships in the repository, and the methodology is documented.
+
+### It speaks your language
+
+For power users and scripts, the query language is real: `type:`, `ext:`, `in:`, `path:`, `modified:`, `size:`, `is:`, `lang:`, `name:`, `content:`, `re:`, negation, and exhaustive mode. For everyone else, type what you remember.
+
+## Install
+
+Download a prebuilt bundle from the [releases page](https://github.com/yjid/kensaku/releases). Builds are currently unsigned; [docs/INSTALL.md](docs/INSTALL.md) covers Gatekeeper and SmartScreen.
 
 | Platform | Asset |
 |---|---|
@@ -88,7 +99,7 @@ Download prebuilt bundles from the [releases page](https://github.com/yjid/kensa
 | macOS | `Kensaku_<ver>_universal.dmg` (Intel + Apple Silicon) |
 | Windows | `Kensaku_<ver>_x64_en-US.msi`, `kensaku.exe` |
 
-**Build from source** (all platforms):
+Build from source:
 
 ```bash
 git clone https://github.com/yjid/kensaku
@@ -97,48 +108,38 @@ bun install
 bun run tauri build
 ```
 
-Prerequisites: Rust stable, Bun 1.1+ (Node 18+ works), plus platform webview libraries. See [docs/INSTALL.md](docs/INSTALL.md).
+Prerequisites: Rust stable, Bun 1.1+ (Node 18+ works), plus platform webview libraries — see [docs/INSTALL.md](docs/INSTALL.md).
 
-**First run:** choose watched folders, pick an exclusion preset, start. The first scan completes before the main window opens, showing live counts; later launches are instant. You can search while indexing runs.
+**First run:** choose folders, pick an exclusion preset, optionally download OCR/model packs. The first scan finishes with a Done summary; later launches are instant. You can search while indexing runs.
 
-**Agent CLI:**
+**Get the CLI:**
 
 ```bash
 cargo build --release --manifest-path cli/Cargo.toml
 install -m 755 cli/target/release/kensaku-cli ~/.local/bin/kensaku-cli
 ```
 
-## Usage examples
+## Try it
 
 ```bash
-# fuzzy filename search
+# filename and content search
 kensaku-cli search "docker error"
 
-# full-text-ish query with filters
+# filter by extension and recency
 kensaku-cli search "error" --ext log --since 7d --limit 20
 
-# JSON for scripts/agents
+# JSON for scripts and agents
 kensaku-cli search "resume" --json
 
-# index status
+# index health
 kensaku-cli state
 ```
 
-Query syntax (full reference in [docs/USAGE.md](docs/USAGE.md)): `type:`, `ext:`, `in:`, `path:`, `modified:`, `size:`, `is:`, `lang:`, `name:`, `content:`, `re:`, negation, `mode:exhaustive`.
+Query syntax reference: [docs/USAGE.md](docs/USAGE.md).
 
-## AI agent integration
+## AI agents
 
-Kensaku is designed to be queried by compatible AI agents over MCP (stdio). The agent gets read-only search access to your local index — not unrestricted filesystem access.
-
-**Tools:**
-
-| Tool | Purpose |
-|---|---|
-| `search` | Ranked file/content search with filters |
-| `read_snippet` | Bounded snippet from an indexed file, centered on a query |
-| `index_state` | Index freshness and size |
-
-**Minimal config** (Claude Desktop / Cursor style):
+Point a compatible MCP client at the CLI:
 
 ```json
 {
@@ -148,11 +149,11 @@ Kensaku is designed to be queried by compatible AI agents over MCP (stdio). The 
 }
 ```
 
-If `kensaku-cli` is not on `PATH`, use its absolute path. Tool responses are token-budgeted; file content is returned as data, never as instructions. See [docs/USAGE.md](docs/USAGE.md) for the full integration guide.
+If `kensaku-cli` is not on `PATH`, use its absolute path. The server binds to stdio only; tools are read-only and responses are token-budgeted. File content is returned as data, never as instructions. Full guide: [docs/USAGE.md](docs/USAGE.md).
 
-## Performance and benchmarks
+## Performance
 
-Measured on Linux, release build, warm page cache, local SSD, ~100,000-file synthetic corpus (default exclusions applied):
+Warm page cache, release build, Linux, local SSD, ~100,000-file synthetic corpus with default exclusions:
 
 | Phase | Result |
 |---|---|
@@ -160,33 +161,33 @@ Measured on Linux, release build, warm page cache, local SSD, ~100,000-file synt
 | Fuzzy filename search | ~2.8 ms average per query (p50) |
 | Memory | 128 B per entry (~12.8 MB per 100k files) |
 
-These are reference values for spotting regressions, not guarantees; hardware, filesystem, and query mix all move the numbers. The benchmark measures the keystroke hot path (walk + fuzzy search) and deliberately skips SQLite/Tantivy writes, so it is not end-to-end indexing latency. Full methodology: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+Reference values, not guarantees. The benchmark isolates the keystroke hot path and deliberately skips index writes, so it is not end-to-end indexing latency. Full methodology: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ## Privacy and security
 
-- **Local only.** No telemetry, no account. Indexes and config live in your OS config directory (`~/.config/kensaku/` on Linux, `~/Library/Application Support/kensaku/` on macOS, `%APPDATA%\kensaku\` on Windows).
-- **What is indexed.** Filenames and extracted text from watched folders; thumbnails for images. Extraction caps content at 1 MB indexed / 20 MB extraction ceiling; images are capped at 50 MP.
-- **Network.** The only outbound request is an optional model or OCR language download that you initiate. Default installs make zero network calls.
-- **Agent access.** The CLI and MCP server open the index read-only (no Tantivy writer lock, no mutation tools). They bind to stdio only.
-- **Secrets.** Default exclusions skip hidden files, common junk directories, and common credential file extensions (`.pem`, `.key`, `.pfx`, …). Other sensitive locations (`.ssh`, browser profiles, password managers, `.env`) are not auto-excluded; add them to exclusions. Treat the index directory as sensitive.
+- **Local by default.** No telemetry, no account, no cloud search.
+- **You choose what is indexed.** Watched folders and exclusions are yours to set. Hidden files and common junk directories are skipped; common credential extensions (`.pem`, `.key`, `.pfx`, …) are excluded by default. Add `.ssh`, browser profiles, and password-manager folders to exclusions.
+- **Bounded extraction.** 8-second timeout per file, 1 MB indexed content cap, 20 MB extraction ceiling, 50 MP image cap.
+- **Read-only agent access.** The CLI and MCP server open the index without the writer lock and expose no write, shell, or network tools.
+- **Treat the index as sensitive.** It contains filenames and extracted text; don't sync it to a shared location.
 
-Full threat model and controls: [SECURITY.md](SECURITY.md).
+Full threat model: [SECURITY.md](SECURITY.md).
 
 ## Project status
 
-**Available:** durable metadata + warm start, incremental crawl, rename/delete handling, full query grammar, hybrid ranking, semantic vectors, PDF/Office/EPUB/ODT/RTF extraction, tesseract OCR, image thumbnails/dimensions/near-duplicates, CLI + MCP, two themes, Doctor, factory reset, 95+ Rust tests.
+**Available today:** desktop app, CLI, MCP, semantic + lexical hybrid search, full query grammar, PDF/Office/EPUB/ODT/RTF extraction, tesseract OCR, image thumbnails and near-duplicate grouping, incremental indexing, rename/delete tracking, two themes, Doctor, factory reset, guided first-run setup, and 95+ Rust tests.
 
-**In progress / planned:** natural-language intent, `/` and `@` interaction, facet counts, visual search (CLIP/SigLIP), face identity, native platform OCR, warm daemon, 1M-file prefilter, signing/notarization, auto-update. See [docs/REMAINING.md](docs/REMAINING.md) and [docs/VISION.md](docs/VISION.md).
+**Planned:** natural-language intent without syntax, `/` commands and `@` scopes, facet counts, saved searches, CLIP/SigLIP visual search, face identity, native platform OCR, warm shared daemon, 1M-file prefilter, signing/notarization, auto-update. See [docs/REMAINING.md](docs/REMAINING.md) and [docs/VISION.md](docs/VISION.md).
 
-## Contributing, security, and license
+## Contributing
 
-- Contributing: [CONTRIBUTING.md](docs/CONTRIBUTING.md)
-- Security: [SECURITY.md](SECURITY.md) (private vulnerability reporting)
-- Issues: https://github.com/yjid/kensaku/issues
-- License: [MIT](LICENSE)
+- [Contributing guide](docs/CONTRIBUTING.md)
+- [Security policy](SECURITY.md) — please report vulnerabilities privately
+- [Issue tracker](https://github.com/yjid/kensaku/issues)
+- [MIT license](LICENSE)
 
 Useful contributions: reproducible bug reports, platform testing (especially unsigned-build install paths), search-quality improvements, agent integrations, and documentation.
 
 ---
 
-**Detailed docs:** [USAGE.md](docs/USAGE.md) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [FAQ.md](docs/FAQ.md) · [INSTALL.md](docs/INSTALL.md) · [BENCHMARKS.md](docs/BENCHMARKS.md)
+**More:** [USAGE.md](docs/USAGE.md) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [FAQ.md](docs/FAQ.md) · [INSTALL.md](docs/INSTALL.md) · [BENCHMARKS.md](docs/BENCHMARKS.md)
