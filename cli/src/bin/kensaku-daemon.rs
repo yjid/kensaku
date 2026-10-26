@@ -163,6 +163,18 @@ fn handle_client(mut stream: UnixStream, token: &str, manager: &Arc<IndexerManag
                 manager.start_indexing();
                 Ok(json!({"started": true}))
             }
+            "search" => match HeadlessIndex::open() {
+                Ok(idx) => {
+                    let query = params.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                    let limit = params
+                        .get("limit")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(10) as usize;
+                    idx.search_local(query, limit)
+                        .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string()))
+                }
+                Err(e) => Err(e),
+            },
             "index_state" => match HeadlessIndex::open() {
                 Ok(idx) => idx.state_local(),
                 Err(e) => Err(e),

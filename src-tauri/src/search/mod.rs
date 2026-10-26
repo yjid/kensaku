@@ -294,7 +294,7 @@ pub struct SearchResponse {
     /// `mode:exhaustive`).
     pub total: usize,
     /// `"ranked"` or `"exhaustive"`.
-    pub mode: &'static str,
+    pub mode: String,
     /// Natural-language interpretations applied to this query.
     #[serde(default)]
     pub interpretation: Vec<crate::query::intent::InterpretationChip>,
@@ -463,7 +463,7 @@ impl SearchDispatcher {
                 hints: Vec::new(),
                 search_time_ms: 0,
                 total: 0,
-                mode: "ranked",
+                mode: "ranked".to_string(),
                 interpretation: Vec::new(),
                 facets: Facets::default(),
             };
@@ -651,7 +651,7 @@ impl SearchDispatcher {
                 hints,
                 search_time_ms: elapsed,
                 total,
-                mode: "exhaustive",
+                mode: "exhaustive".to_string(),
                 interpretation: intent.chips.clone(),
                 facets,
             };
@@ -956,7 +956,7 @@ impl SearchDispatcher {
             hints: parsed.hints,
             search_time_ms: elapsed,
             total,
-            mode: "ranked",
+            mode: "ranked".to_string(),
             interpretation: intent.chips,
             facets,
         }
