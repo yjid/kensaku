@@ -393,6 +393,8 @@ pub fn stats_for(
             "files": files,
             "dirs": dirs,
             "content_docs": content_docs,
+            "content_rebuilt": indexer.content_index.read().as_ref().map(|i| i.rebuilt).unwrap_or(false),
+            "rebuild_reason": indexer.content_index.read().as_ref().and_then(|i| i.rebuild_reason.clone()),
             "semantic_units": semantic_units,
             "metadata_db_bytes": metadata_db_bytes,
             "tantivy_bytes": tantivy_bytes,

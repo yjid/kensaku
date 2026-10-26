@@ -252,11 +252,44 @@ fn check_full_text_index(nodes: usize) -> DoctorCheck {
         );
     }
 
-    ok(
-        ID,
-        LABEL,
-        format!("{} · {}", format_bytes(bytes), dir.display()),
-    )
+    let schema_marker = dir.join("content.schema");
+    let schema_ver = std::fs::read_to_string(&schema_marker)
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok());
+    let ver_label = match schema_ver {
+        Some(v) => format!("schema v{v} (kensaku-cjk)"),
+        None => "schema v1 (legacy)".to_string(),
+    };
+
+    let legacy_backups = dir
+        .parent()
+        .and_then(|p| std::fs::read_dir(p).ok())
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| e.file_name().to_string_lossy().starts_with("index.legacy-"))
+                .count()
+        })
+        .unwrap_or(0);
+
+    let detail = if legacy_backups > 0 {
+        format!(
+            "{} · {} · {} ({} legacy backup)",
+            format_bytes(bytes),
+            ver_label,
+            dir.display(),
+            legacy_backups
+        )
+    } else {
+        format!(
+            "{} · {} · {}",
+            format_bytes(bytes),
+            ver_label,
+            dir.display()
+        )
+    };
+
+    ok(ID, LABEL, detail)
 }
 
 fn check_semantic_index(units: usize) -> DoctorCheck {

@@ -13,7 +13,7 @@ The baseline was verified against the code before this plan was written:
 
 | Task | Current state | Gap the task closes |
 |---|---|---|
-| K15 | `filename`/`content` use Tantivy's default `SimpleTokenizer`; a no-space CJK run becomes one token. | CJK queries cannot match words inside a longer run. |
+| K15 | Shipped: CJK-aware Tantivy tokenizer ("kensaku") with interleaved unigram + bigram segmentation; schema v2 marker; 9.73x index size on 50-doc CJK fixture. | Closed: CJK queries now match full words, substrings, and single characters. |
 | K16 | `semantic_model = "static"` exists in config, but the provider is hard-wired to the static table. | No provider abstraction or fallback contract for a second model. |
 | K17 | Only the Potion static table exists; there is no `ort`/ONNX inference path. | No higher-quality semantic tier. |
 | K18 | Images feed OCR text and thumbnails only; no visual vectors are produced. | Text cannot describe image content. |
