@@ -6,6 +6,9 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Thumbnail-based perceptual hashing (480 px thumbnails reused for dHash and
+  previews), `image_hash_version` invalidation, and best-effort
+  `release_memory()` after image/PDF/Office work.
 - `kensaku-daemon` scaffold: a headless process that owns `IndexerManager`,
   listens on `$XDG_RUNTIME_DIR/kensaku.sock` (0600), enforces single-instance
   locking, writes `daemon.pid`, and serves token-authenticated JSON-RPC

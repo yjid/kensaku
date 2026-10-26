@@ -30,6 +30,7 @@ dirs = "6"
 log = "0.4"
 auto-launch = "0.5"
 parking_lot = "0.12"
+libc = "0.2"
 open = "5"
 rusqlite = { version = "0.32", features = ["bundled"] }
 regex = "1"

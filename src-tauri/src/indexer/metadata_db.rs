@@ -122,6 +122,28 @@ impl MetadataDb {
             }
         }
 
+        // Image hash space version. Bumping it invalidates stored hashes so
+        // `/dupes` never mixes hashes computed from different sources.
+        const IMAGE_HASH_VERSION: &str = "1";
+        let _ = conn.execute(
+            "INSERT OR IGNORE INTO meta (key, value) VALUES ('image_hash_version', ?1)",
+            [IMAGE_HASH_VERSION],
+        );
+        let stored_version: Option<String> = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'image_hash_version'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        if stored_version.as_deref() != Some(IMAGE_HASH_VERSION) {
+            let _ = conn.execute("UPDATE nodes SET phash = NULL", []);
+            let _ = conn.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('image_hash_version', ?1)",
+                [IMAGE_HASH_VERSION],
+            );
+        }
+
         // Must run after the `dev`/`ino` columns are guaranteed to exist.
         if let Err(e) = conn.execute(
             "CREATE INDEX IF NOT EXISTS nodes_dev_ino ON nodes(dev, ino)",

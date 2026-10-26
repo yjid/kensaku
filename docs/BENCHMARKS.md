@@ -96,6 +96,7 @@ is dominated by the external tesseract process and is build-independent.
 | Workload | Result |
 | --- | --- |
 | K2 metadata arena | Node size 64 bytes (vs 128-byte `FileEntry`); 1M entries ≈ 64 MB metadata (stretch target met) |
+| K3 thumbnail hashing | dHash now reuses the 480 px JPEG thumbnail; `phash64_cached` decodes sources only when the thumbnail is stale. 1400-image RSS run still pending. |
 | 200 screenshots, OCR | ~12 s (~17 files/s) |
 | 400 screenshots, OCR | ~26 s (~15 files/s) |
 | Fresh crawl, 703 mixed files (400 images + 300 text), SQLite + Tantivy + embeddings | ~23–27 s |

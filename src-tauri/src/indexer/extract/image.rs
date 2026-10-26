@@ -417,7 +417,10 @@ fn decode_guarded(path: &Path) -> Option<DynamicImage> {
 /// that fail to decode, or exceed the pixel budget, return `None` instead of
 /// panicking.
 pub fn phash64(path: &Path) -> Option<u64> {
-    let image = decode_guarded(path)?;
+    hash_image(&decode_guarded(path)?)
+}
+
+fn hash_image(image: &DynamicImage) -> Option<u64> {
     let small = image
         .resize_exact(9, 8, image::imageops::FilterType::Triangle)
         .into_luma8();
@@ -436,13 +439,26 @@ pub fn phash64(path: &Path) -> Option<u64> {
     Some(hash)
 }
 
+/// Hashes a cached thumbnail without touching the source image.
+pub fn phash64_from_thumbnail(thumb: &Path) -> Option<u64> {
+    let image = image::open(thumb).ok()?;
+    hash_image(&image)
+}
+
+/// Returns a perceptual hash, reusing a fresh thumbnail when one exists and
+/// otherwise decoding the source once, writing the thumbnail, and hashing it.
+pub fn phash64_cached(path: &Path, thumbs_dir: &Path) -> Option<u64> {
+    let thumb = thumbnail(path, thumbs_dir)?;
+    phash64_from_thumbnail(&thumb)
+}
+
 /// Absolute path of the cached thumbnail for `path` inside `out_dir`.
 pub fn thumbnail_path(path: &Path, out_dir: &Path) -> PathBuf {
     let hash = fnv1a(path.to_string_lossy().as_bytes());
     out_dir.join(format!("{:016x}.jpg", hash))
 }
 
-/// Generates (or reuses) a 320px JPEG thumbnail for `path`.
+/// Generates (or reuses) a 480px JPEG thumbnail for `path`.
 ///
 /// Existing thumbnails that are at least as new as the source are returned
 /// unchanged, which makes repeated calls idempotent. New thumbnails are
@@ -464,7 +480,7 @@ pub fn thumbnail(path: &Path, out_dir: &Path) -> Option<PathBuf> {
     ));
 
     let result = (|| -> Option<()> {
-        let rgb = image.thumbnail(320, 320).to_rgb8();
+        let rgb = image.thumbnail(480, 480).to_rgb8();
         let mut writer = BufWriter::new(File::create(&temp).ok()?);
         let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, 80);
         encoder
@@ -688,7 +704,7 @@ mod tests {
         assert_eq!(first.extension().and_then(|e| e.to_str()), Some("jpg"));
 
         let decoded = image::open(&first).expect("decode thumbnail");
-        assert!(decoded.width() <= 320 && decoded.height() <= 320);
+        assert!(decoded.width() <= 480 && decoded.height() <= 480);
 
         let first_mtime = std::fs::metadata(&first)
             .and_then(|meta| meta.modified())
@@ -705,6 +721,31 @@ mod tests {
             first_mtime, second_mtime,
             "fresh thumbnail must not be rewritten"
         );
+    }
+
+    #[test]
+    fn cached_hash_uses_thumbnail_and_is_deterministic() {
+        let dir = TempDir::new("phash-cache");
+        let source = dir.join("photo.png");
+        let thumbs = dir.join("thumbs");
+        gradient(&source, false);
+
+        let cached = phash64_cached(&source, &thumbs).expect("cached hash");
+        let direct = phash64(&source).expect("direct hash");
+        assert_eq!(cached, direct);
+        let thumb = thumbnail_path(&source, &thumbs);
+        assert!(thumb.exists());
+
+        let mtime = std::fs::metadata(&thumb)
+            .and_then(|m| m.modified())
+            .expect("mtime");
+        std::thread::sleep(Duration::from_millis(60));
+        let again = phash64_cached(&source, &thumbs).expect("cached hash again");
+        assert_eq!(cached, again);
+        let mtime2 = std::fs::metadata(&thumb)
+            .and_then(|m| m.modified())
+            .expect("mtime");
+        assert_eq!(mtime, mtime2, "fresh thumbnail must be reused");
     }
 
     #[test]
