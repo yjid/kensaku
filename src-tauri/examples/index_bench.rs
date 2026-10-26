@@ -74,7 +74,7 @@ fn main() {
                 return 0;
             }
             let n = done.fetch_add(1, Ordering::Relaxed) + 1;
-            if n % 50 == 0 {
+            if n.is_multiple_of(50) {
                 println!("  {n} files, {:.1}s", t.elapsed().as_secs_f64());
             }
             1

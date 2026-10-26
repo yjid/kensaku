@@ -878,7 +878,7 @@ pub async fn get_home_data(state: State<'_, AppState>) -> Result<HomeData, Strin
             is_dir: e.is_dir,
         })
         .collect();
-    recent.sort_by(|a, b| b.modified.cmp(&a.modified));
+    recent.sort_by_key(|a| std::cmp::Reverse(a.modified));
     recent.truncate(12);
 
     let pins = config
@@ -944,9 +944,7 @@ pub async fn get_scope_suggestions(
     for entry in metadata.get_entries().iter().filter(|e| e.is_dir) {
         let name = entry.name.to_lowercase();
         let path = entry.path.to_string_lossy().to_string();
-        let score = if prefix.is_empty() {
-            0
-        } else if name.starts_with(&prefix) {
+        let score = if prefix.is_empty() || name.starts_with(&prefix) {
             0
         } else if name.contains(&prefix) {
             1

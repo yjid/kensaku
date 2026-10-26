@@ -77,20 +77,19 @@ pub fn compile_with_aliases(raw: &str, aliases: &[(String, Vec<String>)]) -> Int
             (r"(?i)\boldest\b", "oldest", "Oldest"),
             (r"(?i)\b(?:biggest|largest)\b", "largest", "Largest"),
         ] {
-            if sort.is_none() {
-                if let Ok(re) = Regex::new(pat)
-                    && re.is_match(&work)
-                {
-                    let source = re.find(&work).map(|m| m.as_str().to_string()).unwrap_or_default();
-                    work = re.replace(&work, " ").to_string();
-                    sort = Some(order.to_string());
-                    chips.push(InterpretationChip {
-                        kind: "sort".to_string(),
-                        label: format!("Sort: {}", label),
-                        raw: format!("sort:{}", order),
-                        source,
-                    });
-                }
+            if sort.is_none()
+                && let Ok(re) = Regex::new(pat)
+                && re.is_match(&work)
+            {
+                let source = re.find(&work).map(|m| m.as_str().to_string()).unwrap_or_default();
+                work = re.replace(&work, " ").to_string();
+                sort = Some(order.to_string());
+                chips.push(InterpretationChip {
+                    kind: "sort".to_string(),
+                    label: format!("Sort: {}", label),
+                    raw: format!("sort:{}", order),
+                    source,
+                });
             }
         }
 
@@ -108,37 +107,37 @@ pub fn compile_with_aliases(raw: &str, aliases: &[(String, Vec<String>)]) -> Int
         }
 
         // --- Size -------------------------------------------------------
-        if let Ok(re) = Regex::new(r"(?i)\b(?:under|less than|smaller than)\s+(\d+(?:\.\d+)?)\s*(kb|mb|gb)\b") {
-            if let Some(c) = re.captures(&work) {
-                let number = c[1].to_string();
-                let unit = c[2].to_string();
-                let raw = format!("size:<{}{}", number, unit.to_lowercase());
-                let source = c.get(0).map(|m| m.as_str().to_string()).unwrap_or_default();
-                work = re.replace(&work, " ").to_string();
-                appends.push(raw.clone());
-                chips.push(InterpretationChip {
-                    kind: "size".to_string(),
-                    label: format!("Size: under {}{}", number, unit.to_uppercase()),
-                    raw,
-                    source,
-                });
-            }
+        if let Ok(re) = Regex::new(r"(?i)\b(?:under|less than|smaller than)\s+(\d+(?:\.\d+)?)\s*(kb|mb|gb)\b")
+            && let Some(c) = re.captures(&work)
+        {
+            let number = c[1].to_string();
+            let unit = c[2].to_string();
+            let raw = format!("size:<{}{}", number, unit.to_lowercase());
+            let source = c.get(0).map(|m| m.as_str().to_string()).unwrap_or_default();
+            work = re.replace(&work, " ").to_string();
+            appends.push(raw.clone());
+            chips.push(InterpretationChip {
+                kind: "size".to_string(),
+                label: format!("Size: under {}{}", number, unit.to_uppercase()),
+                raw,
+                source,
+            });
         }
-        if let Ok(re) = Regex::new(r"(?i)\b(?:over|more than|larger than|bigger than)\s+(\d+(?:\.\d+)?)\s*(kb|mb|gb)\b") {
-            if let Some(c) = re.captures(&work) {
-                let number = c[1].to_string();
-                let unit = c[2].to_string();
-                let raw = format!("size:>{}{}", number, unit.to_lowercase());
-                let source = c.get(0).map(|m| m.as_str().to_string()).unwrap_or_default();
-                work = re.replace(&work, " ").to_string();
-                appends.push(raw.clone());
-                chips.push(InterpretationChip {
-                    kind: "size".to_string(),
-                    label: format!("Size: over {}{}", number, unit.to_uppercase()),
-                    raw,
-                    source,
-                });
-            }
+        if let Ok(re) = Regex::new(r"(?i)\b(?:over|more than|larger than|bigger than)\s+(\d+(?:\.\d+)?)\s*(kb|mb|gb)\b")
+            && let Some(c) = re.captures(&work)
+        {
+            let number = c[1].to_string();
+            let unit = c[2].to_string();
+            let raw = format!("size:>{}{}", number, unit.to_lowercase());
+            let source = c.get(0).map(|m| m.as_str().to_string()).unwrap_or_default();
+            work = re.replace(&work, " ").to_string();
+            appends.push(raw.clone());
+            chips.push(InterpretationChip {
+                kind: "size".to_string(),
+                label: format!("Size: over {}{}", number, unit.to_uppercase()),
+                raw,
+                source,
+            });
         }
         for (pat, filter, label) in [
             (r"(?i)\b(?:huge|big|large)\b", "size:>100mb", "Size: over 100 MB"),

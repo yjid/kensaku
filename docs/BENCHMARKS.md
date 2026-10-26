@@ -1,14 +1,17 @@
 # Benchmarks
 
-There are two in-tree harnesses:
+There are three in-tree harnesses:
 
 - `bench` measures the hot path of Kensaku: walking a directory tree, building
   the in-memory entry list, and running fuzzy filename queries. It deliberately
   skips SQLite/Tantivy indexing so the numbers isolate the code that runs on
   every keystroke.
-- `index_bench` measures crawl extraction: the same walk, image metadata
-  (dimensions + perceptual hash), and text/OCR extraction the indexer performs.
-  It does not touch the real index.
+- `index_bench` measures crawl extraction: the same walk, image dimensions
+  (plus optional perceptual hashing), and text/OCR extraction the indexer
+  performs. It does not touch the real index.
+- `crawl_bench` builds a throwaway index in an isolated config directory and
+  runs a fresh crawl plus an incremental re-crawl, reporting counts, wall time,
+  and peak RSS (Linux).
 
 ## Running
 
@@ -18,6 +21,9 @@ cargo run --manifest-path src-tauri/Cargo.toml --example bench --release -- ~/Pr
 
 # crawl extraction (optionally cap the number of files)
 cargo run --manifest-path src-tauri/Cargo.toml --example index_bench --release -- ~/Pictures 400
+
+# full fresh + incremental crawl in a throwaway index
+cargo run --manifest-path src-tauri/Cargo.toml --example crawl_bench --release -- ~/Pictures
 ```
 
 Always use `--release`. Debug builds are 10–50× slower and are not comparable
@@ -77,26 +83,30 @@ The crawl is a single extraction pass: extracted text feeds both Tantivy and the
 semantic index, so an image is OCR'd once rather than once per index. Extraction
 concurrency is bounded (up to 8 workers, and each tesseract child is pinned to
 one OpenMP thread), and the indexer commits through a bounded channel instead of
-collecting every document in memory.
+collecting every document in memory. Perceptual image hashing is **not** part of
+the crawl: dimensions come from the header, and hashes are filled in afterwards
+by a one-decode-at-a-time background pass used by `/dupes`.
 
 Measured on the development machine (Linux, local SSD). **These runs used a
-debug build**, so they are conservative; release builds are faster. OCR time is
-dominated by the external tesseract process and is build-independent.
+debug build**, so they are conservative; release builds are faster. Since the
+`dev` profile now optimizes dependency code (`image`, Tantivy, PDF parsing),
+`make dev` numbers are much closer to release than a plain debug build. OCR time
+is dominated by the external tesseract process and is build-independent.
 
 | Workload | Result |
 | --- | --- |
-| 200 screenshots, OCR + perceptual hash | ~15 s (~13 files/s) |
-| 400 screenshots, OCR | ~23 s (~16 files/s) |
-| Fresh crawl, 243 mixed files (40 images + 200 text), SQLite + Tantivy + embeddings | ~7 s |
-| Warm re-crawl of the same tree | ~0.2 s |
-| Indexer process peak RSS, text-only / mixed | ~73 MB / ~153 MB |
+| 200 screenshots, OCR | ~12 s (~17 files/s) |
+| 400 screenshots, OCR | ~26 s (~15 files/s) |
+| Fresh crawl, 703 mixed files (400 images + 300 text), SQLite + Tantivy + embeddings | ~23–27 s |
+| Warm re-crawl of the same tree | ~0.7 s |
+| Indexer process peak RSS, text-only / mixed | ~73 MB / ~73 MB |
 
-The mixed crawl used the fallback embedder; a real install adds the ~30 MB
-static embedding table when the semantic pack is installed. Desktop RSS is
-dominated by the OS webview and is not comparable with the indexer-process
-numbers above. The 1,400-image `~/Pictures` corpus used during development
-extrapolates to roughly 80–90 s in a debug build; a release build is faster, and
-text-only corpora finish in milliseconds per thousand files.
+The mixed crawl used the fallback embedder; a real install adds the ~30 MB static
+embedding table when the semantic pack is installed. Desktop RSS is dominated by
+the OS webview and is not comparable with the indexer-process numbers above. The
+1,400-image `~/Pictures` corpus used during development extrapolates to roughly
+90 s in this build; a release build is faster, and text-only corpora finish in
+milliseconds per thousand files.
 
 ## Reference numbers (100k files)
 

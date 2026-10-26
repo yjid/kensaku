@@ -743,6 +743,70 @@ impl MetadataDb {
         Ok(())
     }
 
+    /// Stores only the image dimensions for a node.
+    ///
+    /// The crawl uses this: reading the header is cheap, whereas decoding the
+    /// full image for a perceptual hash is not. The hash is filled in later by
+    /// the background backfill so it never gates OCR or index commits.
+    pub fn set_image_dimensions(
+        &self,
+        path: &Path,
+        width: u32,
+        height: u32,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE nodes SET width = ?1, height = ?2 WHERE path = ?3",
+            params![
+                i64::from(width),
+                i64::from(height),
+                path.to_string_lossy().to_string(),
+            ],
+        )
+        .map_err(|e| format!("Failed to store image dimensions: {}", e))?;
+        Ok(())
+    }
+
+    /// Stores (or finalizes) the perceptual hash for an image node.
+    ///
+    /// `u64::MAX` is the sentinel for "attempted, could not decode"; callers
+    /// exclude it from duplicate grouping and from the missing-hash scan.
+    pub fn set_image_phash(&self, path: &Path, phash: u64) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE nodes SET phash = ?1 WHERE path = ?2",
+            params![phash as i64, path.to_string_lossy().to_string()],
+        )
+        .map_err(|e| format!("Failed to store image hash: {}", e))?;
+        Ok(())
+    }
+
+    /// Image paths that have dimensions but no perceptual hash yet.
+    ///
+    /// `width IS NOT NULL` scopes this to rows the crawler identified as
+    /// raster images, so non-image files are never returned.
+    pub fn image_paths_missing_phash(&self, limit: usize) -> Result<Vec<PathBuf>, String> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT path FROM nodes
+                 WHERE is_dir = 0 AND width IS NOT NULL AND phash IS NULL
+                 ORDER BY modified DESC
+                 LIMIT ?1",
+            )
+            .map_err(|e| format!("Failed to prepare missing phash query: {}", e))?;
+
+        let rows = stmt
+            .query_map(params![limit as i64], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("Failed to query missing image hashes: {}", e))?;
+
+        let mut paths = Vec::new();
+        for row in rows.flatten() {
+            paths.push(PathBuf::from(row));
+        }
+        Ok(paths)
+    }
+
     /// Marks every still-present raster image as needing its content re-read.
     ///
     /// Used when the OCR setting changes: a cursor over the image rows is
@@ -832,7 +896,7 @@ impl MetadataDb {
         let mut stmt = conn
             .prepare(
                 "SELECT path, phash FROM nodes
-                 WHERE is_dir = 0 AND phash IS NOT NULL
+                 WHERE is_dir = 0 AND phash IS NOT NULL AND phash != -1
                  ORDER BY path
                  LIMIT ?1",
             )
@@ -1222,5 +1286,41 @@ mod tests {
             )
             .expect("read other metadata");
         assert_eq!(other_phash, None);
+    }
+
+    #[test]
+    fn deferred_image_hash_is_tracked_and_sentinel_is_excluded() {
+        let temp = TempDb::new("deferred-phash");
+        let db = temp.db();
+        let image = temp.dir.join("photo.jpg");
+        db.upsert(&entry(&image, false)).expect("insert image row");
+
+        // Dimensions alone make the row eligible for the background backfill.
+        db.set_image_dimensions(&image, 64, 48)
+            .expect("store dimensions");
+        assert_eq!(
+            db.image_paths_missing_phash(10).expect("missing hashes"),
+            vec![image.clone()]
+        );
+
+        db.set_image_phash(&image, 0xDEAD_BEEF)
+            .expect("store hash");
+        assert!(db.image_paths_missing_phash(10).expect("missing").is_empty());
+        assert_eq!(
+            db.near_duplicate_groups(0, 10)
+                .expect("duplicate groups")
+                .len(),
+            0,
+            "a single image cannot form a group"
+        );
+
+        // Failure sentinel must stop retries and stay out of duplicate groups.
+        db.set_image_phash(&image, u64::MAX)
+            .expect("store failure sentinel");
+        assert!(db.image_paths_missing_phash(10).expect("missing").is_empty());
+        assert!(db
+            .near_duplicate_groups(64, 10)
+            .expect("duplicate groups")
+            .is_empty());
     }
 }

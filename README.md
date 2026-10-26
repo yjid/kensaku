@@ -161,15 +161,20 @@ Warm page cache, release build, Linux, local SSD, ~100,000-file synthetic corpus
 | Fuzzy filename search | ~2.8 ms average per query (p50) |
 | Metadata footprint | 128 B per entry (~12.8 MB per 100k files) |
 
-Indexing reference on the development machine (in-tree `index_bench` harness and a throwaway index for the full crawl). These runs used a debug build, so they are **conservative — release builds are faster**; OCR time itself is bound by the external tesseract process and is build-independent:
+Indexing reference on the development machine (in-tree `index_bench` and `crawl_bench` harnesses). These runs used a debug build, so they are **conservative — release builds are faster**; dependency code is now optimized in the dev profile, so `make dev` is close to release. OCR time itself is bound by the external tesseract process and is build-independent:
 
 | Workload | Result |
 |---|---|
-| 200 screenshots, OCR + image hash | ~15 s (~13 files/s) |
-| 400 screenshots, OCR | ~23 s (~16 files/s) |
-| Fresh crawl, 243 mixed files (40 images + 200 text) | ~7 s |
-| Warm re-crawl, same tree | ~0.2 s |
-| Indexer process peak RSS, text-only / mixed | ~73 MB / ~153 MB |
+| 200 screenshots, OCR | ~12 s (~17 files/s) |
+| 400 screenshots, OCR | ~26 s (~15 files/s) |
+| Fresh crawl, 703 mixed files (400 images + 300 text) | ~23–27 s |
+| Warm re-crawl of the same tree | ~0.7 s |
+| Indexer process peak RSS, text-only / mixed | ~73 MB / ~73 MB |
+
+Perceptual image hashes are computed after the crawl in a low-priority
+background pass (one decode at a time), so `/dupes` fills in progressively and
+never blocks indexing. The mixed crawl used the fallback embedder; a real install
+adds the ~30 MB static embedding table when the semantic pack is installed.
 
 Reference values, not guarantees. The query-path benchmark isolates the keystroke hot path and deliberately skips index writes, so it is not end-to-end indexing latency. Indexer RSS excludes the ~30 MB static embedding table downloaded by the semantic pack. Full methodology: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 

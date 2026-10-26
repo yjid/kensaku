@@ -271,8 +271,7 @@ impl SlotPool {
         // waiting caller holds it while blocked, which is fine: it only becomes
         // contended when the pool is saturated, and at that point callers are
         // meant to queue for backpressure anyway.
-        let permit = self.available.lock().ok()?.recv_timeout(timeout).ok()?;
-        let _ = permit;
+        self.available.lock().ok()?.recv_timeout(timeout).ok()?;
         Some(ExtractionSlot { pool: self })
     }
 }
@@ -292,19 +291,6 @@ static SLOT_POOL: std::sync::OnceLock<SlotPool> = std::sync::OnceLock::new();
 
 fn slot_pool() -> &'static SlotPool {
     SLOT_POOL.get_or_init(|| SlotPool::new(extraction_concurrency()))
-}
-
-/// Caps concurrent full-image decodes (perceptual hashing).
-///
-/// A single decode of a 50 MP photo can touch ~200 MB, and the crawler runs
-/// several files at once; decoding two at a time keeps that peak bounded while
-/// still overlapping with OCR on other files.
-static IMAGE_DECODE_POOL: std::sync::OnceLock<SlotPool> = std::sync::OnceLock::new();
-
-pub(crate) fn acquire_image_decode_slot() -> Option<impl Drop> {
-    IMAGE_DECODE_POOL
-        .get_or_init(|| SlotPool::new(2))
-        .acquire_timeout(Duration::from_secs(5))
 }
 
 /// Dedicated pool for extraction work.

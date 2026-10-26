@@ -114,10 +114,10 @@ fn compute_facets(results: &[SearchResult], now_sec: u64) -> Facets {
         if let Some(lang) = language_of(&ext) {
             *facets.languages.entry(lang.to_string()).or_insert(0) += 1;
         }
-        if let Some(parent) = std::path::Path::new(&r.path).parent() {
-            if let Some(name) = parent.file_name().and_then(|n| n.to_str()) {
-                *facets.places.entry(name.to_string()).or_insert(0) += 1;
-            }
+        if let Some(parent) = std::path::Path::new(&r.path).parent()
+            && let Some(name) = parent.file_name().and_then(|n| n.to_str())
+        {
+            *facets.places.entry(name.to_string()).or_insert(0) += 1;
         }
         let age = now_sec.saturating_sub(r.modified);
         let bucket = if age < 86_400 {
