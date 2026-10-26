@@ -111,12 +111,98 @@ fn private_tessdata(dir: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Resolves the tesseract binary to run.
+///
+/// A desktop-launched app (notably an AppImage) can inherit a shorter `PATH`
+/// than a login shell, so a perfectly good system install can look missing.
+/// After walking `PATH` we probe the usual install locations. Setting
+/// `KENSAKU_TESSERACT` overrides both, which keeps Nix/Flatpak/portable
+/// installs workable without patching the app.
+fn tesseract_program() -> PathBuf {
+    if let Some(path) = std::env::var_os("KENSAKU_TESSERACT") {
+        return PathBuf::from(path);
+    }
+
+    let name = if cfg!(windows) {
+        "tesseract.exe"
+    } else {
+        "tesseract"
+    };
+
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+    }
+
+    for candidate in fallback_tesseract_paths() {
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+
+    // Nothing found: the OS will now produce the canonical "not found" error.
+    PathBuf::from(name)
+}
+
+/// Well-known install prefixes used when `tesseract` is not on `PATH`.
+fn fallback_tesseract_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+
+    #[cfg(target_os = "windows")]
+    {
+        for env in ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"] {
+            if let Some(base) = std::env::var_os(env) {
+                paths.push(
+                    PathBuf::from(base)
+                        .join("Tesseract-OCR")
+                        .join("tesseract.exe"),
+                );
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        for dir in [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/opt/local/bin",
+            "/usr/bin",
+        ] {
+            paths.push(PathBuf::from(dir).join("tesseract"));
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        for dir in [
+            "/usr/bin",
+            "/usr/local/bin",
+            "/bin",
+            "/snap/bin",
+            "/run/current-system/sw/bin",
+        ] {
+            paths.push(PathBuf::from(dir).join("tesseract"));
+        }
+    }
+
+    paths
+}
+
+fn tesseract_command() -> Command {
+    Command::new(tesseract_program())
+}
+
 /// Inspects the tesseract binary and its language data. Never panics.
 pub fn ocr_status() -> OcrStatus {
     let dir = tessdata_dir();
 
     // Some builds print version information to stderr instead of stdout.
-    let (engine_present, mut error) = match Command::new("tesseract").arg("--version").output() {
+    let (engine_present, mut error) = match tesseract_command().arg("--version").output() {
         Ok(output) if output.status.success() => (true, None),
         Ok(output) => (
             false,
@@ -126,7 +212,7 @@ pub fn ocr_status() -> OcrStatus {
     };
 
     let mut languages = Vec::new();
-    let mut list = Command::new("tesseract");
+    let mut list = tesseract_command();
     list.arg("--list-langs");
     // The configured (private) tessdata directory takes precedence when it
     // exists, mirroring what `extract_image_ocr` does at runtime.
@@ -256,7 +342,7 @@ fn download_eng_tessdata_to(dir: &Path) -> Result<PathBuf, String> {
 /// Returns None if OCR fails or produces no text.
 pub fn extract_image_ocr(path: &Path) -> Option<String> {
     // Try tesseract (available on Linux and macOS with Homebrew)
-    let mut command = Command::new("tesseract");
+    let mut command = tesseract_command();
     command.arg(path).arg("stdout").arg("--psm").arg("3"); // Fully automatic page segmentation
 
     // Prefer Kensaku's private language data when it has been downloaded, but
