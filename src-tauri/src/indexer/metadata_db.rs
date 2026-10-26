@@ -845,6 +845,16 @@ impl MetadataDb {
         .map_err(|e| format!("Failed to mark images pending: {}", e))
     }
 
+    /// Marks every file as needing a content re-read.
+    pub fn mark_all_content_pending(&self) -> Result<usize, String> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE nodes SET content_pending = 1 WHERE is_dir = 0",
+            [],
+        )
+        .map_err(|e| format!("Failed to mark all content pending: {}", e))
+    }
+
     /// Clears the pending flag for a single path.
     pub fn clear_content_pending(&self, path: &Path) -> Result<(), String> {
         let conn = self.conn.lock();

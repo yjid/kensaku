@@ -217,20 +217,24 @@ struct Unit { node_id, byte_start, byte_end, model_idx }  // 1 vector per unit
 
 **Embedding queue:** bounded, resumable cursor in `nodes.indexed_gen`, priority = recently-modified first, then small files first. Hard rules: stop on battery, stop when a query is in flight, stop during fullscreen apps, max 2 threads.
 
-### 5.4 Folded / substring tier (planned, [K5](ROADMAP.md#k5-folded--trigram-content-tier))
+### 5.4 Folded / substring tier ([K5](ROADMAP.md#k5-folded--trigram-content-tier))
 
 Exact BM25 is the first tier. When it cannot fill the result limit, a folded
 tier handles partial words and OCR look-alikes:
 
 - Normalize look-alike characters (`0/o`, `1/l/i/|`, `5/s/$`, `8/b`, `m/rn`,
-  `w/vv`, `d/cl`) into a second content field, indexed with an n-gram tokenizer
-  (or a SQLite FTS5 trigram sidecar; decide with [K12](ROADMAP.md#k12-index-format-spike-timeboxed)).
+  `w/vv`, `d/cl`) into `content_folded`, indexed with Tantivy's 3-gram
+  tokenizer. `content_raw` is stored, not indexed, for verification.
 - Verify each folded candidate against the raw text before returning it: one
   misread letter in a 4–7 letter word, two in 8+, none under 4. This prevents
-  `email` matching inside `internally`.
-- Folded hits always rank after every exact hit.
-- Budget: the tier only runs when the exact tier is short, so a normal query
-  never pays for it.
+  `email` matching inside `internally` and rejects broad n-gram false positives.
+- Folded hits always rank after every exact hit and carry
+  `match_type = ContentFolded`.
+- Budget: the tier only runs when the exact/fuzzy/semantic tiers leave a
+  shortfall, so a normal query never pays for it. On the synthetic 500-doc
+  corpus, `p95 = 262 µs`; index growth was 1.61x with stored raw text.
+- Upgrading an older index preserves it as `index.legacy-*`, creates a fresh
+  index, and queues every file for one content re-extraction.
 
 ### 5.5 Image metadata tier (thumbnails and hashes)
 

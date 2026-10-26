@@ -19,6 +19,8 @@ const EXHAUSTIVE_LIMIT: usize = 10_000;
 pub enum MatchType {
     FileName,
     Content,
+    /// Found by the folded/trigram fallback after exact matches ran short.
+    ContentFolded,
     Semantic,
     Both,
 }
@@ -745,6 +747,7 @@ impl SearchDispatcher {
             in_fuzzy: bool,
             in_bm25: bool,
             in_semantic: bool,
+            in_folded: bool,
             rrf_score: f64,
             best_range: Option<(usize, usize)>,
         }
@@ -762,6 +765,7 @@ impl SearchDispatcher {
                             in_fuzzy: true,
                             in_bm25: false,
                             in_semantic: false,
+                            in_folded: false,
                             rrf_score: 0.1,
                             best_range: None,
                         },
@@ -787,6 +791,7 @@ impl SearchDispatcher {
                             in_fuzzy: true,
                             in_bm25: false,
                             in_semantic: false,
+                            in_folded: false,
                             rrf_score: rrf,
                             best_range: None,
                         },
@@ -812,6 +817,7 @@ impl SearchDispatcher {
                                 in_fuzzy: false,
                                 in_bm25: true,
                                 in_semantic: false,
+                                in_folded: false,
                                 rrf_score: rrf,
                                 best_range: None,
                             },
@@ -846,10 +852,52 @@ impl SearchDispatcher {
                             in_fuzzy: false,
                             in_bm25: false,
                             in_semantic: true,
+                            in_folded: false,
                             rrf_score: rrf,
                             best_range: Some(range),
                         },
                     );
+                }
+            }
+
+            // Tier 4: folded trigrams, only when the exact/fuzzy/semantic
+            // tiers left a shortfall. The lower weight keeps these after
+            // exact hits, and raw-text verification has already rejected
+            // broad n-gram noise.
+            if candidates.len() < limit
+                && !search_text.is_empty()
+                && let Some(c_index) = content_index
+            {
+                let w_folded = w_bm25 * 0.55;
+                for (rank, cm) in c_index
+                    .search_folded(search_text, limit * 3, scope_prefix.as_deref())
+                    .into_iter()
+                    .enumerate()
+                {
+                    let Some(&orig_idx) = path_index.get(&cm.path) else {
+                        continue;
+                    };
+                    if !candidate_set.contains(&orig_idx) {
+                        continue;
+                    }
+                    let rrf = w_folded * (1.0 / (60.0 + rank as f64));
+                    if let Some(cand) = candidates.get_mut(&cm.path) {
+                        cand.in_folded = true;
+                        cand.rrf_score += rrf;
+                    } else {
+                        candidates.insert(
+                            cm.path,
+                            MatchCandidate {
+                                entry_idx: orig_idx,
+                                in_fuzzy: false,
+                                in_bm25: false,
+                                in_semantic: false,
+                                in_folded: true,
+                                rrf_score: rrf,
+                                best_range: None,
+                            },
+                        );
+                    }
                 }
             }
         }
@@ -868,12 +916,20 @@ impl SearchDispatcher {
                 let entry = entries.get(cand.entry_idx)?;
 
                 // MatchType resolution: Semantic badge if only found by semantic tier
-                let match_type = if cand.in_semantic && !cand.in_fuzzy && !cand.in_bm25 {
+                let match_type = if cand.in_semantic
+                    && !cand.in_fuzzy
+                    && !cand.in_bm25
+                    && !cand.in_folded
+                {
                     MatchType::Semantic
-                } else if cand.in_fuzzy && (cand.in_bm25 || cand.in_semantic) {
+                } else if cand.in_fuzzy
+                    && (cand.in_bm25 || cand.in_semantic || cand.in_folded)
+                {
                     MatchType::Both
                 } else if cand.in_bm25 {
                     MatchType::Content
+                } else if cand.in_folded {
+                    MatchType::ContentFolded
                 } else {
                     MatchType::FileName
                 };
@@ -1349,6 +1405,48 @@ mod tests {
             response.results.iter().all(|result| result.snippet.is_none()),
             "the fast search path must not attach snippets"
         );
+    }
+
+    #[test]
+    fn folded_content_runs_only_after_exact_shortfall() {
+        let temp = temp_index("folded-search");
+        let index = temp.index.as_ref().unwrap();
+        let path = "/tmp/kensaku/folded/donuts.txt";
+        let name = "donuts.txt";
+        index
+            .add_or_update(Path::new(path), name, "Visit donutsmp.net for details", 0)
+            .expect("add document");
+        index.commit().unwrap();
+
+        let db = MetadataDb::open_in_dir(&temp.dir).expect("open metadata db");
+        db.upsert(&entry(1, path, name)).unwrap();
+        let metadata = MetadataStore::with_db(db);
+
+        let folded = SearchDispatcher::search_response_fast(
+            "nutsmp",
+            &metadata,
+            &temp.index,
+            None,
+            false,
+            10,
+            0,
+        );
+        assert_eq!(folded.results.len(), 1);
+        assert_eq!(folded.results[0].path, path);
+        assert_eq!(folded.results[0].match_type, MatchType::ContentFolded);
+
+        // Exact hits fill the limit, so the folded tier must not run/append.
+        let exact = SearchDispatcher::search_response_fast(
+            "donutsmp",
+            &metadata,
+            &temp.index,
+            None,
+            false,
+            1,
+            0,
+        );
+        assert_eq!(exact.results.len(), 1);
+        assert_eq!(exact.results[0].match_type, MatchType::Content);
     }
 
     #[test]
