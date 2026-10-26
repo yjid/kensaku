@@ -797,6 +797,24 @@ impl ContentIndex {
         results
     }
 
+    /// Returns the stored original text for one path, when the schema has it.
+    /// Used by the idle screenshot-burst backfill; never runs extraction.
+    pub fn get_stored_text(&self, path: &Path) -> Option<String> {
+        let field = self.content_raw_field?;
+        let searcher = self.reader.searcher();
+        let term = Term::from_field_text(self.path_field, &path.to_string_lossy());
+        let query = TermQuery::new(term, IndexRecordOption::Basic);
+        let top_docs = searcher
+            .search(&query, &TopDocs::with_limit(1).order_by_score())
+            .ok()?;
+        let (_, address) = top_docs.first()?;
+        let document = searcher.doc::<TantivyDocument>(*address).ok()?;
+        document
+            .get_first(field)
+            .and_then(|value| value.as_str())
+            .map(str::to_string)
+    }
+
     pub fn get_snippet(&self, path: &Path, query: &str) -> Option<String> {
         let mut cache = self.snippet_cache.lock();
         let (content, content_lower) = cache.get_or_read(path)?;

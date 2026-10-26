@@ -1,6 +1,7 @@
+use crate::indexer::burst;
 use crate::indexer::walker::FileEntry;
 use parking_lot::Mutex;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -111,6 +112,9 @@ impl MetadataDb {
             "ALTER TABLE nodes ADD COLUMN width INTEGER",
             "ALTER TABLE nodes ADD COLUMN height INTEGER",
             "ALTER TABLE nodes ADD COLUMN phash INTEGER",
+            "ALTER TABLE nodes ADD COLUMN burst INTEGER",
+            "ALTER TABLE nodes ADD COLUMN look INTEGER",
+            "ALTER TABLE nodes ADD COLUMN text_sig BLOB",
             "ALTER TABLE nodes ADD COLUMN content_pending INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE units ADD COLUMN vec BLOB",
         ] {
@@ -121,6 +125,10 @@ impl MetadataDb {
                 }
             }
         }
+
+        // Burst grouping and the missing-hash/backfill scans are image-only.
+        let _ = conn.execute("CREATE INDEX IF NOT EXISTS nodes_burst ON nodes(burst)", []);
+        let _ = conn.execute("CREATE INDEX IF NOT EXISTS nodes_phash ON nodes(phash)", []);
 
         // Image hash space version. Bumping it invalidates stored hashes so
         // `/dupes` never mixes hashes computed from different sources.
@@ -738,31 +746,83 @@ impl MetadataDb {
         }
     }
 
+    /// Removes one row from its current burst before its content is rewritten.
+    /// If the row was the burst leader, the remaining members are re-homed to
+    /// their own lowest id so a changed screenshot cannot keep old versions
+    /// grouped under its id.
+    fn detach_burst(conn: &Connection, path: &str) -> Result<Vec<(PathBuf, u64)>, String> {
+        let row = conn
+            .query_row(
+                "SELECT id, burst FROM nodes WHERE path = ?1",
+                params![path],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?)),
+            )
+            .optional()
+            .map_err(|e| format!("Failed to read old burst: {}", e))?;
+        let Some((id, Some(burst))) = row else {
+            return Ok(Vec::new());
+        };
+        conn.execute("UPDATE nodes SET burst = NULL WHERE id = ?1", params![id])
+            .map_err(|e| format!("Failed to detach burst row: {}", e))?;
+        if burst != id {
+            return Ok(Vec::new());
+        }
+        let next: Option<i64> = conn
+            .query_row(
+                "SELECT MIN(id) FROM nodes WHERE burst = ?1 AND id <> ?2",
+                params![burst, id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Failed to find next burst leader: {}", e))?;
+        let Some(next) = next else {
+            return Ok(Vec::new());
+        };
+        conn.execute(
+            "UPDATE nodes SET burst = ?1 WHERE burst = ?2 AND id <> ?3",
+            params![next, burst, id],
+        )
+        .map_err(|e| format!("Failed to re-home burst members: {}", e))?;
+        let mut statement = conn
+            .prepare("SELECT path, burst FROM nodes WHERE burst = ?1 ORDER BY id")
+            .map_err(|e| format!("Failed to read re-homed burst rows: {}", e))?;
+        let rows = statement
+            .query_map(params![next], |row| {
+                Ok((
+                    PathBuf::from(row.get::<_, String>(0)?),
+                    row.get::<_, i64>(1)? as u64,
+                ))
+            })
+            .map_err(|e| format!("Failed to query re-homed burst rows: {}", e))?;
+        Ok(rows.flatten().collect())
+    }
+
     /// Stores the decoded image dimensions and perceptual hash for a node.
     ///
     /// Width, height and `phash` live only in the database (not on
     /// [`FileEntry`]): they are large-index metadata used by thumbnails and
     /// duplicate detection, not by search. `phash` is a full 64-bit value, so
     /// it is stored as the bit-compatible `i64` SQLite integer.
+    ///
+    /// Returns re-homed `(path, burst)` rows when this image led a burst; the
+    /// caller applies them to the in-memory search view.
     pub fn set_image_meta(
         &self,
         path: &Path,
         width: u32,
         height: u32,
         phash: u64,
-    ) -> Result<(), String> {
+    ) -> Result<Vec<(PathBuf, u64)>, String> {
         let conn = self.conn.lock();
+        let path = path.to_string_lossy().to_string();
+        let updates = Self::detach_burst(&conn, &path)?;
         conn.execute(
-            "UPDATE nodes SET width = ?1, height = ?2, phash = ?3 WHERE path = ?4",
-            params![
-                i64::from(width),
-                i64::from(height),
-                phash as i64,
-                path.to_string_lossy().to_string(),
-            ],
+            "UPDATE nodes SET width = ?1, height = ?2, phash = ?3, look = ?3,
+                burst = NULL, text_sig = NULL
+             WHERE path = ?4",
+            params![i64::from(width), i64::from(height), phash as i64, path],
         )
         .map_err(|e| format!("Failed to store image metadata: {}", e))?;
-        Ok(())
+        Ok(updates)
     }
 
     /// Stores only the image dimensions for a node.
@@ -796,11 +856,275 @@ impl MetadataDb {
     pub fn set_image_phash(&self, path: &Path, phash: u64) -> Result<(), String> {
         let conn = self.conn.lock();
         conn.execute(
-            "UPDATE nodes SET phash = ?1 WHERE path = ?2",
+            "UPDATE nodes SET phash = ?1, look = ?1 WHERE path = ?2",
             params![phash as i64, path.to_string_lossy().to_string()],
         )
         .map_err(|e| format!("Failed to store image hash: {}", e))?;
         Ok(())
+    }
+
+    /// Drops a stale perceptual hash when a changed image could not be hashed
+    /// during the write/crawl pass. The idle backfill recomputes it; leaving
+    /// the old hash would group the new pixels against the old burst.
+    pub fn clear_image_hash(&self, path: &Path) -> Result<Vec<(PathBuf, u64)>, String> {
+        let conn = self.conn.lock();
+        let path = path.to_string_lossy().to_string();
+        let updates = Self::detach_burst(&conn, &path)?;
+        conn.execute(
+            "UPDATE nodes SET phash = NULL, look = NULL, burst = NULL WHERE path = ?1",
+            params![path],
+        )
+        .map_err(|e| format!("Failed to clear image hash: {}", e))?;
+        Ok(updates)
+    }
+
+    /// Stores the compact line signature used for burst grouping. A changed
+    /// signature invalidates the old burst membership.
+    ///
+    /// Returns re-homed `(path, burst)` rows when this image led a burst.
+    pub fn set_image_text_sig(
+        &self,
+        path: &Path,
+        signature: &[u8],
+    ) -> Result<Vec<(PathBuf, u64)>, String> {
+        let conn = self.conn.lock();
+        let path = path.to_string_lossy().to_string();
+        let updates = Self::detach_burst(&conn, &path)?;
+        conn.execute(
+            "UPDATE nodes SET text_sig = ?1, burst = NULL WHERE path = ?2",
+            params![signature, path],
+        )
+        .map_err(|e| format!("Failed to store image text signature: {}", e))?;
+        Ok(updates)
+    }
+
+    /// Image paths that have a perceptual hash but no burst assignment yet.
+    pub fn image_paths_missing_burst(&self, limit: usize) -> Result<Vec<PathBuf>, String> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT path FROM nodes
+                 WHERE is_dir = 0 AND phash IS NOT NULL AND phash != -1 AND burst IS NULL
+                 ORDER BY modified ASC, id ASC
+                 LIMIT ?1",
+            )
+            .map_err(|e| format!("Failed to prepare burst backfill query: {}", e))?;
+        let rows = stmt
+            .query_map(params![limit as i64], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("Failed to query burst backfill rows: {}", e))?;
+        Ok(rows.flatten().map(PathBuf::from).collect())
+    }
+
+    /// Assigns (or re-assigns) one image to the lowest-id compatible burst.
+    ///
+    /// Candidates must share a directory, fit the ten-minute capture window,
+    /// and have the same decoded dimensions. Text overlap plus perceptual
+    /// distance decide whether the pair is the same page. When the image
+    /// bridges multiple bursts, all of them merge into the lowest id.
+    ///
+    /// Returns every `(path, burst)` row touched so the in-memory search view
+    /// can be updated without a database round-trip per query.
+    pub fn assign_burst_for_path(&self, path: &Path) -> Result<Vec<(PathBuf, u64)>, String> {
+        let conn = self.conn.lock();
+        let current = conn
+            .query_row(
+                "SELECT id, path, width, height, modified, phash, text_sig, burst
+                 FROM nodes WHERE path = ?1 AND is_dir = 0",
+                params![path.to_string_lossy().to_string()],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<i64>>(2)?,
+                        row.get::<_, Option<i64>>(3)?,
+                        row.get::<_, i64>(4)?,
+                        row.get::<_, Option<i64>>(5)?,
+                        row.get::<_, Option<Vec<u8>>>(6)?,
+                        row.get::<_, Option<i64>>(7)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|e| format!("Failed to read burst candidate '{}': {}", path.display(), e))?;
+        let Some((
+            current_id,
+            current_path,
+            width,
+            height,
+            modified,
+            Some(raw_phash),
+            current_sig,
+            current_burst,
+        )) = current
+        else {
+            return Ok(Vec::new());
+        };
+        if raw_phash < 0 {
+            return Ok(Vec::new());
+        }
+        let phash = raw_phash as u64;
+        let current_sig = current_sig.unwrap_or_default();
+        let parent = Path::new(&current_path)
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default();
+        let low = modified.saturating_sub(burst::BURST_WINDOW_SECS as i64);
+        let high = modified.saturating_add(burst::BURST_WINDOW_SECS as i64);
+
+        let sql = "SELECT id, path, phash, text_sig, coalesce(burst, id)
+             FROM nodes
+             WHERE is_dir = 0 AND phash IS NOT NULL AND phash != -1
+               AND path <> ?1 AND modified BETWEEN ?2 AND ?3
+               AND width = ?4 AND height = ?5
+             ORDER BY ABS(modified - ?6) ASC, id ASC LIMIT 128";
+
+        // Equal decoded dimensions are required. Without them a pair cannot be
+        // verified as the same capture, so the image keeps its own burst.
+        let candidates = if let (Some(width), Some(height)) = (width, height) {
+            let mut statement = conn
+                .prepare(sql)
+                .map_err(|e| format!("Failed to prepare burst candidates: {}", e))?;
+            let rows = statement
+                .query_map(
+                    params![current_path, low, high, width, height, modified],
+                    |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, i64>(2)?,
+                            row.get::<_, Option<Vec<u8>>>(3)?,
+                            row.get::<_, i64>(4)?,
+                        ))
+                    },
+                )
+                .map_err(|e| format!("Failed to query burst candidates: {}", e))?;
+            rows.flatten().collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+
+        let mut matched_ids = Vec::new();
+        let mut matched_bursts = Vec::new();
+        for (candidate_id, candidate_path, candidate_phash, candidate_sig, candidate_burst) in
+            candidates
+        {
+            if candidate_phash < 0 || Path::new(&candidate_path).parent() != Some(parent.as_path())
+            {
+                continue;
+            }
+            let distance = (phash ^ candidate_phash as u64).count_ones();
+            let overlap =
+                burst::text_overlap(&current_sig, candidate_sig.as_deref().unwrap_or_default());
+            if burst::is_same_burst(distance, overlap) {
+                matched_ids.push(candidate_id);
+                matched_bursts.push(candidate_burst);
+            }
+        }
+
+        let new_burst = matched_bursts
+            .iter()
+            .copied()
+            .chain(current_burst)
+            .chain(std::iter::once(current_id))
+            .min()
+            .unwrap_or(current_id);
+        matched_ids.push(current_id);
+        matched_ids.sort_unstable();
+        matched_ids.dedup();
+        matched_bursts.extend(current_burst);
+        matched_bursts.push(current_id);
+        matched_bursts.push(new_burst);
+        matched_bursts.sort_unstable();
+        matched_bursts.dedup();
+
+        let id_placeholders = std::iter::repeat_n("?", matched_ids.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let burst_placeholders = std::iter::repeat_n("?", matched_bursts.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "UPDATE nodes SET burst = ?1, look = COALESCE(look, phash)
+             WHERE id IN ({}) OR burst IN ({})",
+            id_placeholders, burst_placeholders
+        );
+        let mut values: Vec<i64> = vec![new_burst];
+        values.extend(matched_ids);
+        values.extend(matched_bursts);
+        conn.execute(&sql, params_from_iter(values))
+            .map_err(|e| format!("Failed to assign burst: {}", e))?;
+
+        let mut statement = conn
+            .prepare("SELECT path, burst FROM nodes WHERE burst = ?1 ORDER BY id")
+            .map_err(|e| format!("Failed to prepare burst update query: {}", e))?;
+        let rows = statement
+            .query_map(params![new_burst], |row| {
+                Ok((
+                    PathBuf::from(row.get::<_, String>(0)?),
+                    row.get::<_, i64>(1)? as u64,
+                ))
+            })
+            .map_err(|e| format!("Failed to read burst updates: {}", e))?;
+        Ok(rows.flatten().collect())
+    }
+
+    /// Burst groups for the duplicates view. The burst id is the grouping key;
+    /// `look` supplies a stable display hash when one was hashed.
+    pub fn burst_duplicate_groups(&self, limit: usize) -> Result<Vec<(u64, Vec<String>)>, String> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn.lock();
+        let mut statement = conn
+            .prepare(
+                "SELECT burst, path, look FROM nodes
+                 WHERE is_dir = 0 AND burst IS NOT NULL
+                 ORDER BY burst, path",
+            )
+            .map_err(|e| format!("Failed to prepare burst duplicate query: {}", e))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)? as u64,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                ))
+            })
+            .map_err(|e| format!("Failed to query burst duplicates: {}", e))?;
+
+        let mut groups: HashMap<u64, (Option<u64>, Vec<String>)> = HashMap::new();
+        for (burst, path, look) in rows.flatten() {
+            let group = groups.entry(burst).or_insert((None, Vec::new()));
+            if group.0.is_none() {
+                group.0 = look.map(|hash| hash as u64);
+            }
+            group.1.push(path);
+        }
+        let mut groups: Vec<(u64, Vec<String>)> = groups
+            .into_iter()
+            .filter(|(_, (_, paths))| paths.len() > 1)
+            .map(|(burst, (look, paths))| (look.unwrap_or(burst), paths))
+            .collect();
+        groups.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0)));
+        groups.truncate(limit);
+        Ok(groups)
+    }
+
+    /// All assigned bursts, used to hydrate the in-memory search view.
+    pub fn load_bursts(&self) -> Result<Vec<(u64, u64)>, String> {
+        let conn = self.conn.lock();
+        let mut statement = conn
+            .prepare("SELECT id, burst FROM nodes WHERE burst IS NOT NULL")
+            .map_err(|e| format!("Failed to prepare burst load query: {}", e))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))
+            })
+            .map_err(|e| format!("Failed to load bursts: {}", e))?;
+        Ok(rows.flatten().collect())
     }
 
     /// Image paths that have dimensions but no perceptual hash yet.
@@ -870,11 +1194,8 @@ impl MetadataDb {
     /// Marks every file as needing a content re-read.
     pub fn mark_all_content_pending(&self) -> Result<usize, String> {
         let conn = self.conn.lock();
-        conn.execute(
-            "UPDATE nodes SET content_pending = 1 WHERE is_dir = 0",
-            [],
-        )
-        .map_err(|e| format!("Failed to mark all content pending: {}", e))
+        conn.execute("UPDATE nodes SET content_pending = 1 WHERE is_dir = 0", [])
+            .map_err(|e| format!("Failed to mark all content pending: {}", e))
     }
 
     /// Clears the pending flag for a single path.
@@ -884,7 +1205,13 @@ impl MetadataDb {
             "UPDATE nodes SET content_pending = 0 WHERE path = ?1",
             params![path.to_string_lossy().to_string()],
         )
-        .map_err(|e| format!("Failed to clear pending content for '{}': {}", path.display(), e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to clear pending content for '{}': {}",
+                path.display(),
+                e
+            )
+        })?;
         Ok(())
     }
 
@@ -1286,14 +1613,22 @@ mod tests {
         let loaded = db.load_all().expect("load nodes");
         for path in [&stl, &obj, &stl_lower] {
             assert!(
-                loaded.iter().find(|e| e.path == *path).unwrap().content_pending,
+                loaded
+                    .iter()
+                    .find(|e| e.path == *path)
+                    .unwrap()
+                    .content_pending,
                 "{} should be pending",
                 path.display()
             );
         }
         for path in [&doc, &dir] {
             assert!(
-                !loaded.iter().find(|e| e.path == *path).unwrap().content_pending,
+                !loaded
+                    .iter()
+                    .find(|e| e.path == *path)
+                    .unwrap()
+                    .content_pending,
                 "{} should not be pending",
                 path.display()
             );
@@ -1322,7 +1657,13 @@ mod tests {
             .map(|entry| entry.path.to_str().expect("utf-8 path"))
             .collect();
         assert_eq!(pending.len(), 2);
-        assert!(loaded.iter().find(|e| e.path == image).unwrap().content_pending);
+        assert!(
+            loaded
+                .iter()
+                .find(|e| e.path == image)
+                .unwrap()
+                .content_pending
+        );
         assert!(
             loaded
                 .iter()
@@ -1330,18 +1671,199 @@ mod tests {
                 .unwrap()
                 .content_pending
         );
-        assert!(!loaded.iter().find(|e| e.path == doc).unwrap().content_pending);
-        assert!(!loaded.iter().find(|e| e.path == dir).unwrap().content_pending);
+        assert!(
+            !loaded
+                .iter()
+                .find(|e| e.path == doc)
+                .unwrap()
+                .content_pending
+        );
+        assert!(
+            !loaded
+                .iter()
+                .find(|e| e.path == dir)
+                .unwrap()
+                .content_pending
+        );
 
         db.clear_content_pending(&image).expect("clear pending");
         let reloaded = db.load_all().expect("reload nodes");
-        assert!(!reloaded.iter().find(|e| e.path == image).unwrap().content_pending);
+        assert!(
+            !reloaded
+                .iter()
+                .find(|e| e.path == image)
+                .unwrap()
+                .content_pending
+        );
         assert!(
             reloaded
                 .iter()
                 .find(|e| e.path == other_image)
                 .unwrap()
                 .content_pending
+        );
+    }
+
+    #[test]
+    fn burst_assignment_groups_scrolls_and_keeps_distinct_pages_apart() {
+        let temp = TempDb::new("burst-grouping");
+        let db = temp.db();
+
+        let add = |name: &str, modified: u64, phash: u64, text: &str| {
+            let path = temp.dir.join(name);
+            let mut item = entry(&path, false);
+            item.modified = modified;
+            let id = db.upsert(&item).expect("insert image row");
+            db.set_image_meta(&path, 800, 600, phash)
+                .expect("store image metadata");
+            db.set_image_text_sig(&path, &crate::indexer::burst::line_signature(text))
+                .expect("store text signature");
+            (path, id)
+        };
+
+        let (a, a_id) = add(
+            "a.png",
+            1_000,
+            0,
+            "Header\nalpha one\nbeta two\ngamma three\ndelta four\nepsilon five\nzeta six\neta seven\ntheta eight",
+        );
+        let updates = db.assign_burst_for_path(&a).expect("assign first");
+        assert_eq!(
+            updates,
+            vec![(a.clone(), a_id)],
+            "first image starts its own burst"
+        );
+
+        let (b, b_id) = add(
+            "b.png",
+            1_010,
+            0x00FF_FFFF,
+            "gamma three\ndelta four\nepsilon five\nzeta six\neta seven\ntheta eight\niota nine\nkappa ten",
+        );
+        let updates = db.assign_burst_for_path(&b).expect("assign scroll");
+        assert_eq!(
+            updates,
+            vec![(a.clone(), a_id), (b.clone(), a_id)],
+            "scrolled page joins the lower id"
+        );
+        assert_ne!(b_id, a_id);
+
+        let (c, c_id) = add(
+            "c.png",
+            1_020,
+            0xFFF,
+            "Home\nSearch\nSettings\nProfile\nHelp\nAbout\nPrivacy\nTerms\nWeather today\nRain expected\nWindy afternoon\nUmbrella needed",
+        );
+        let updates = db.assign_burst_for_path(&c).expect("assign distinct");
+        assert_eq!(
+            updates,
+            vec![(c.clone(), c_id)],
+            "a distinct page with the same chrome stays separate"
+        );
+        assert!(
+            db.image_paths_missing_burst(50)
+                .expect("burst backfill rows")
+                .is_empty()
+        );
+
+        let groups = db
+            .burst_duplicate_groups(10)
+            .expect("burst duplicate groups");
+        assert_eq!(groups.len(), 1, "only the scrolled pair is a group");
+        assert_eq!(groups[0].0, 0, "the display hash comes from look");
+        assert_eq!(
+            groups[0].1,
+            vec![
+                a.to_string_lossy().to_string(),
+                b.to_string_lossy().to_string()
+            ]
+        );
+
+        let loaded = db.load_bursts().expect("load bursts");
+        assert!(loaded.contains(&(a_id, a_id)));
+        assert!(loaded.contains(&(b_id, a_id)));
+        assert!(loaded.contains(&(c_id, c_id)));
+    }
+
+    #[test]
+    fn burst_assignment_chains_two_groups_to_the_lowest_id() {
+        let temp = TempDb::new("burst-chain");
+        let db = temp.db();
+
+        let add = |name: &str, modified: u64, phash: u64, text: &str| {
+            let path = temp.dir.join(name);
+            let mut item = entry(&path, false);
+            item.modified = modified;
+            let id = db.upsert(&item).expect("insert image row");
+            db.set_image_meta(&path, 320, 200, phash)
+                .expect("store image metadata");
+            db.set_image_text_sig(&path, &crate::indexer::burst::line_signature(text))
+                .expect("store text signature");
+            (path, id)
+        };
+
+        // A and C share text; B and C are visually identical. A and B match
+        // neither rule, so C is the bridge that must merge both groups.
+        let text = "alpha one\nbeta two\ngamma three\ndelta four";
+        let (a, a_id) = add("a.png", 2_000, 0, text);
+        db.assign_burst_for_path(&a).expect("assign a");
+        let (b, b_id) = add("b.png", 2_010, 0xFF, "");
+        db.assign_burst_for_path(&b).expect("assign b");
+        let (c, c_id) = add("c.png", 2_020, 0xFF, text);
+        let updates = db.assign_burst_for_path(&c).expect("assign bridge");
+        assert_eq!(
+            updates,
+            vec![
+                (a.clone(), a_id),
+                (b.clone(), a_id),
+                (c.clone(), a_id)
+            ],
+            "bridge merges both groups into the lowest id"
+        );
+        assert!(b_id > a_id && c_id > b_id);
+    }
+
+    #[test]
+    fn changed_burst_leader_detaches_and_rehomes_members() {
+        let temp = TempDb::new("burst-detach");
+        let db = temp.db();
+
+        let add = |name: &str, modified: u64, text: &str| {
+            let path = temp.dir.join(name);
+            let mut item = entry(&path, false);
+            item.modified = modified;
+            let id = db.upsert(&item).expect("insert image row");
+            db.set_image_meta(&path, 200, 100, 0)
+                .expect("store image metadata");
+            db.set_image_text_sig(&path, &crate::indexer::burst::line_signature(text))
+                .expect("store text signature");
+            (path, id)
+        };
+
+        let text = "alpha one\nbeta two\ngamma three\ndelta four";
+        let (a, a_id) = add("a.png", 3_000, text);
+        let (b, b_id) = add("b.png", 3_010, text);
+        db.assign_burst_for_path(&a).expect("assign a");
+        db.assign_burst_for_path(&b).expect("assign b");
+        assert_eq!(
+            db.load_bursts().expect("load bursts"),
+            vec![(a_id, a_id), (b_id, a_id)]
+        );
+
+        // A is the leader. Rewriting it with unrelated text must detach it and
+        // re-home B under its own id before the new assignment runs.
+        db.set_image_text_sig(
+            &a,
+            &crate::indexer::burst::line_signature(
+                "weather today\nrain expected\nwindy afternoon\numbrella needed",
+            ),
+        )
+        .expect("rewrite a signature");
+        let updates = db.assign_burst_for_path(&a).expect("reassign a");
+        assert_eq!(updates, vec![(a.clone(), a_id)]);
+        assert_eq!(
+            db.load_bursts().expect("load bursts after detach"),
+            vec![(a_id, a_id), (b_id, b_id)]
         );
     }
 
@@ -1393,9 +1915,12 @@ mod tests {
             vec![image.clone()]
         );
 
-        db.set_image_phash(&image, 0xDEAD_BEEF)
-            .expect("store hash");
-        assert!(db.image_paths_missing_phash(10).expect("missing").is_empty());
+        db.set_image_phash(&image, 0xDEAD_BEEF).expect("store hash");
+        assert!(
+            db.image_paths_missing_phash(10)
+                .expect("missing")
+                .is_empty()
+        );
         assert_eq!(
             db.near_duplicate_groups(0, 10)
                 .expect("duplicate groups")
@@ -1407,10 +1932,15 @@ mod tests {
         // Failure sentinel must stop retries and stay out of duplicate groups.
         db.set_image_phash(&image, u64::MAX)
             .expect("store failure sentinel");
-        assert!(db.image_paths_missing_phash(10).expect("missing").is_empty());
-        assert!(db
-            .near_duplicate_groups(64, 10)
-            .expect("duplicate groups")
-            .is_empty());
+        assert!(
+            db.image_paths_missing_phash(10)
+                .expect("missing")
+                .is_empty()
+        );
+        assert!(
+            db.near_duplicate_groups(64, 10)
+                .expect("duplicate groups")
+                .is_empty()
+        );
     }
 }

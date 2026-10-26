@@ -172,7 +172,7 @@ fn group_versions(results: &mut Vec<SearchResult>) {
     let mut groups: HashMap<(String, String, String), Vec<usize>> = HashMap::new();
     let mut has_marker: HashMap<(String, String, String), bool> = HashMap::new();
     for (i, r) in results.iter().enumerate() {
-        if r.is_dir {
+        if r.is_dir || r.group_count > 1 {
             continue;
         }
         let (stem, ext) = match r.filename.rsplit_once('.') {
@@ -218,6 +218,51 @@ fn group_versions(results: &mut Vec<SearchResult>) {
         for &i in &indices[1..] {
             remove.insert(i);
         }
+    }
+    let mut i = 0;
+    results.retain(|_| {
+        let keep = !remove.contains(&i);
+        i += 1;
+        keep
+    });
+}
+
+/// Collapses image results that belong to the same screenshot burst.
+///
+/// The first result in rank order is kept and carries the other paths; this is
+/// a pure O(results) pass over an in-memory map, so it adds no database query
+/// to the search path. Non-image rows never participate.
+fn group_bursts<F>(results: &mut Vec<SearchResult>, burst_for: F)
+where
+    F: Fn(&SearchResult) -> Option<u64>,
+{
+    let mut groups: HashMap<u64, Vec<usize>> = HashMap::new();
+    for (i, result) in results.iter().enumerate() {
+        if result.is_dir {
+            continue;
+        }
+        let is_image = std::path::Path::new(&result.filename)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(crate::indexer::extract::image::is_supported_image_extension);
+        if is_image && let Some(burst) = burst_for(result) {
+            groups.entry(burst).or_default().push(i);
+        }
+    }
+
+    let mut remove = HashSet::new();
+    for indices in groups.values() {
+        if indices.len() < 2 {
+            continue;
+        }
+        let keep = indices[0];
+        let others: Vec<String> = indices[1..]
+            .iter()
+            .map(|&i| results[i].path.clone())
+            .collect();
+        results[keep].group_count = indices.len();
+        results[keep].group_paths = others;
+        remove.extend(indices[1..].iter().copied());
     }
     let mut i = 0;
     results.retain(|_| {
@@ -994,6 +1039,9 @@ impl SearchDispatcher {
 
         // 8. Ordering: best-match by default; explicit sort when requested.
         apply_sort(&mut results, sort);
+        group_bursts(&mut results, |result| {
+            metadata.burst_for_path(std::path::Path::new(&result.path))
+        });
         group_versions(&mut results);
 
         let total = results.len();
@@ -1347,6 +1395,88 @@ fn matches_language(lang: &str, ext_opt: Option<&str>) -> bool {
 mod tests {
     use super::*;
 
+    fn fake_result(path: &str) -> SearchResult {
+        SearchResult {
+            path: path.to_string(),
+            filename: Path::new(path)
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            snippet: None,
+            score: 1.0,
+            file_size: 1,
+            modified: 1,
+            is_dir: false,
+            match_type: MatchType::FileName,
+            best_range: None,
+            group_count: 1,
+            group_paths: Vec::new(),
+        }
+    }
+
+    /// Run with `cargo test --release --lib burst_grouping_cost -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn burst_grouping_cost_benchmark() {
+        let base: Vec<SearchResult> = (0..50)
+            .map(|i| fake_result(&format!("/shots/burst-{i:02}.png")))
+            .collect();
+        let bursts: HashMap<String, u64> = base
+            .iter()
+            .enumerate()
+            .map(|(i, result)| (result.path.clone(), (i / 2) as u64 + 1))
+            .collect();
+
+        for _ in 0..200 {
+            let mut warm = base.clone();
+            group_bursts(&mut warm, |result| bursts.get(&result.path).copied());
+        }
+
+        let mut samples = Vec::with_capacity(20_000);
+        for _ in 0..20_000 {
+            let mut results = base.clone();
+            let start = std::time::Instant::now();
+            group_bursts(&mut results, |result| bursts.get(&result.path).copied());
+            samples.push(start.elapsed().as_nanos());
+        }
+        samples.sort_unstable();
+        let p50 = samples[samples.len() / 2];
+        let p95 = samples[samples.len() * 95 / 100];
+        eprintln!("burst grouping (50 results, release): p50 {p50} ns, p95 {p95} ns");
+        assert!(p50 < 100_000, "grouping must stay under 0.1 ms");
+    }
+
+    #[test]
+    fn burst_grouping_collapses_images_and_ignores_non_images() {
+        let mut results = vec![
+            fake_result("/shots/a.png"),
+            fake_result("/shots/b.png"),
+            fake_result("/shots/c.png"),
+            fake_result("/shots/d.png"),
+            fake_result("/docs/report.pdf"),
+        ];
+        let bursts = HashMap::from([
+            ("/shots/a.png".to_string(), 10u64),
+            ("/shots/b.png".to_string(), 10u64),
+            ("/shots/c.png".to_string(), 10u64),
+            ("/shots/d.png".to_string(), 20u64),
+            ("/docs/report.pdf".to_string(), 10u64),
+        ]);
+        group_bursts(&mut results, |result| bursts.get(&result.path).copied());
+
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].path, "/shots/a.png");
+        assert_eq!(results[0].group_count, 3);
+        assert_eq!(
+            results[0].group_paths,
+            vec!["/shots/b.png".to_string(), "/shots/c.png".to_string()]
+        );
+        assert_eq!(results[1].path, "/shots/d.png");
+        assert_eq!(results[1].group_count, 1);
+        assert_eq!(results[2].path, "/docs/report.pdf");
+        assert_eq!(results[2].group_count, 1);
+    }
+
     #[test]
     fn sort_order_parses_known_values() {
         assert_eq!(SortOrder::parse("newest"), SortOrder::Newest);
@@ -1436,6 +1566,42 @@ mod tests {
             response.results.iter().all(|result| result.snippet.is_none()),
             "the fast search path must not attach snippets"
         );
+    }
+
+    #[test]
+    fn search_collapses_a_screenshot_burst_from_metadata() {
+        let temp = temp_index("burst-search");
+        let db = MetadataDb::open_in_dir(&temp.dir).expect("open metadata db");
+        let text = "header\nalpha one\nbeta two\ngamma three\ndelta four";
+        let mut paths = Vec::new();
+        for (id, name) in [(1, "shot-a.png"), (2, "shot-b.png")] {
+            let path = temp.dir.join(name);
+            let mut item = entry(id, &path.to_string_lossy(), name);
+            item.extension = Some("png".to_string());
+            item.char_bloom = crate::search::fuzzy::compute_char_mask(name);
+            db.upsert(&item).expect("insert image");
+            db.set_image_meta(&path, 800, 600, 0)
+                .expect("image metadata");
+            db.set_image_text_sig(&path, &crate::indexer::burst::line_signature(text))
+                .expect("image signature");
+            db.assign_burst_for_path(&path).expect("assign burst");
+            paths.push(path.to_string_lossy().to_string());
+        }
+
+        let metadata = MetadataStore::with_db(db);
+        let response =
+            SearchDispatcher::search_response_fast("shot", &metadata, &None, None, false, 10, 0);
+
+        assert_eq!(
+            response.results.len(),
+            1,
+            "burst is one row: {:?}",
+            response.results
+        );
+        assert_eq!(response.results[0].group_count, 2);
+        assert_eq!(response.results[0].group_paths.len(), 1);
+        assert!(paths.contains(&response.results[0].path));
+        assert!(paths.contains(&response.results[0].group_paths[0]));
     }
 
     #[test]

@@ -14,6 +14,8 @@ pub struct MetadataStore {
     path_index: HashMap<u64, u32>,
     collision_index: HashMap<PathBuf, u32>,
     node_id_to_idx: HashMap<u64, u32>,
+    /// Image node id -> burst id. Only images with an assigned burst appear.
+    bursts: HashMap<u64, u64>,
     db: Option<Arc<MetadataDb>>,
     generation: AtomicU64,
     dir_generation: AtomicU64,
@@ -42,6 +44,7 @@ impl MetadataStore {
             path_index: HashMap::new(),
             collision_index: HashMap::new(),
             node_id_to_idx: HashMap::new(),
+            bursts: HashMap::new(),
             db,
             generation: AtomicU64::new(1),
             dir_generation: AtomicU64::new(1),
@@ -73,6 +76,7 @@ impl MetadataStore {
             path_index: HashMap::new(),
             collision_index: HashMap::new(),
             node_id_to_idx: HashMap::new(),
+            bursts: HashMap::new(),
             db: Some(Arc::new(db)),
             generation: AtomicU64::new(1),
             dir_generation: AtomicU64::new(1),
@@ -85,7 +89,7 @@ impl MetadataStore {
 
     pub fn load_from_db(&mut self) -> usize {
         let db = match self.db.as_ref() {
-            Some(db) => db,
+            Some(db) => Arc::clone(db),
             None => return 0,
         };
 
@@ -105,6 +109,7 @@ impl MetadataStore {
         self.path_index.clear();
         self.collision_index.clear();
         self.node_id_to_idx.clear();
+        self.bursts.clear();
 
         let count = entries.len();
         // First pass: push nodes (parents resolved later).
@@ -155,6 +160,10 @@ impl MetadataStore {
             }
         }
 
+        if let Ok(bursts) = db.load_bursts() {
+            self.bursts = bursts.into_iter().collect();
+        }
+
         self.generation.fetch_add(1, Ordering::SeqCst);
         self.dir_generation.fetch_add(1, Ordering::SeqCst);
         *self.cached_trie.write() = None;
@@ -190,6 +199,7 @@ impl MetadataStore {
         self.path_index.clear();
         self.collision_index.clear();
         self.node_id_to_idx.clear();
+        self.bursts.clear();
         self.generation.fetch_add(1, Ordering::SeqCst);
         self.dir_generation.fetch_add(1, Ordering::SeqCst);
         *self.cached_trie.write() = None;
@@ -445,6 +455,7 @@ impl MetadataStore {
             let removed_id = self.arena.node(idx).node_id;
             if removed_id > 0 {
                 self.node_id_to_idx.remove(&removed_id);
+                self.bursts.remove(&removed_id);
             }
             // remove from collision/path index
             let h = path_hash(path);
@@ -582,7 +593,7 @@ impl MetadataStore {
             // Wait: path() derives from parent chain + names. If we only updated leaf names,
             // parent directories names not updated for rename_prefix of a directory.
             // This is a known limitation; rename_prefix in original updated path strings.
-            // To handle directory renames properly, we'd need update all descendants' parent names? 
+            // To handle directory renames properly, we'd need update all descendants' parent names?
             // Our arena stores names per node; renaming a directory means renaming that node's name,
             // and descendants keep parent pointers, so path() will reflect new dir name. Good.
             // But we updated only nodes whose path starts with old? We updated names for those nodes
@@ -716,6 +727,42 @@ impl MetadataStore {
             map.insert(self.arena.path(idx), i);
         }
         map
+    }
+
+    /// Assigned burst for a node, if it is an image that has been grouped.
+    pub fn burst_for_node_id(&self, node_id: u64) -> Option<u64> {
+        self.bursts.get(&node_id).copied()
+    }
+
+    /// Assigned burst for a path. The hash lookup is the same one search
+    /// already uses for metadata, so collapsing results stays O(results).
+    pub fn burst_for_path(&self, path: &Path) -> Option<u64> {
+        let idx = self.find_path_index(path)?;
+        let node_id = self.arena.node(idx).node_id;
+        self.burst_for_node_id(node_id)
+    }
+
+    /// Drops a stale burst assignment while a changed image waits for a new
+    /// perceptual hash/backfill pass.
+    pub fn clear_burst_for_path(&mut self, path: &Path) {
+        let Some(idx) = self.find_path_index(path) else {
+            return;
+        };
+        let node_id = self.arena.node(idx).node_id;
+        self.bursts.remove(&node_id);
+    }
+
+    /// Applies burst assignments returned by the database after a merge.
+    pub fn apply_bursts(&mut self, updates: &[(PathBuf, u64)]) {
+        for (path, burst) in updates {
+            let Some(idx) = self.find_path_index(path) else {
+                continue;
+            };
+            let node_id = self.arena.node(idx).node_id;
+            if node_id > 0 {
+                self.bursts.insert(node_id, *burst);
+            }
+        }
     }
 
     pub fn db(&self) -> Option<Arc<MetadataDb>> {

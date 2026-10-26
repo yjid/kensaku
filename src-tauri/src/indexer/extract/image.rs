@@ -445,6 +445,20 @@ pub fn phash64_from_thumbnail(thumb: &Path) -> Option<u64> {
     hash_image(&image)
 }
 
+/// Reuses a *fresh* thumbnail if one already exists, otherwise returns `None`.
+///
+/// Unlike [`phash64_cached`], this never decodes or writes the source image, so
+/// the crawl can opportunistically group already-thumbnailed screenshots
+/// without paying the full-image cost that K3 removed from the crawl path.
+pub fn phash64_reusing_fresh_thumbnail(path: &Path, thumbs_dir: &Path) -> Option<u64> {
+    let thumb = thumbnail_path(path, thumbs_dir);
+    if is_fresh(&thumb, path) {
+        phash64_from_thumbnail(&thumb)
+    } else {
+        None
+    }
+}
+
 /// Returns a perceptual hash, reusing a fresh thumbnail when one exists and
 /// otherwise decoding the source once, writing the thumbnail, and hashing it.
 pub fn phash64_cached(path: &Path, thumbs_dir: &Path) -> Option<u64> {

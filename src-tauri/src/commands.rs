@@ -661,8 +661,15 @@ pub async fn find_duplicates(
     let limit = limit.unwrap_or(200).clamp(1, 1_000);
     let max_distance = max_distance.unwrap_or(10).min(64);
     let mut groups = Vec::new();
+    let mut seen: std::collections::HashSet<Vec<String>> = std::collections::HashSet::new();
+    let group_key = |paths: &[String]| {
+        let mut key = paths.to_vec();
+        key.sort();
+        key
+    };
 
     for (hash, paths) in db.exact_duplicate_groups(limit)? {
+        seen.insert(group_key(&paths));
         groups.push(DuplicateGroup {
             kind: "content".to_string(),
             hash,
@@ -670,7 +677,23 @@ pub async fn find_duplicates(
         });
     }
 
+    // Screenshot bursts are the primary version grouping. A near-duplicate
+    // group covering exactly the same paths would be redundant.
+    for (look, paths) in db.burst_duplicate_groups(limit)? {
+        if !seen.insert(group_key(&paths)) {
+            continue;
+        }
+        groups.push(DuplicateGroup {
+            kind: "burst".to_string(),
+            hash: format!("{:016x}", look),
+            paths,
+        });
+    }
+
     for (phash, paths) in db.near_duplicate_groups(max_distance, limit)? {
+        if !seen.insert(group_key(&paths)) {
+            continue;
+        }
         groups.push(DuplicateGroup {
             kind: "image".to_string(),
             hash: format!("{:016x}", phash),

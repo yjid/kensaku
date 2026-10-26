@@ -110,7 +110,7 @@ export interface FilePreview {
 }
 
 export interface DuplicateGroup {
-  kind: "content" | "image" | string;
+  kind: "content" | "burst" | "image";
   hash: string;
   paths: string[];
 }
