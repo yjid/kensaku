@@ -255,10 +255,10 @@ land first either way.
 
 ### K14. Quantize the static embedding table to i8
 
-- [ ] Store the static table as i8 with per-row (or global) scales instead of
+- [x] Store the static table as i8 with per-row (or global) scales instead of
   f32; dequantize into the accumulator at query time.
-- [ ] Compare semantic recall/MRR against the f32 table on the golden set.
-- [ ] Keep the f32 table behind a config flag for one release.
+- [x] Compare semantic recall/MRR against the f32 table on the golden set.
+- [x] Keep the f32 table behind a config flag for one release.
 
 **Acceptance:** table memory ≤ 8 MB (from ~30 MB); semantic recall within 1 % of
 f32; query p50 unchanged; no new dependency.

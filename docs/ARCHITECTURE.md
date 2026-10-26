@@ -21,7 +21,7 @@
 | **Simple** | Zero-config default. One shortcut. One box. One list. No modes, no tabs. |
 | **Smart** | Semantic search that costs ~0.1 ms per query and never needs a GPU. |
 | **Universal** | The same index serves the GUI, the CLI, and MCP/HTTP for agents. |
-| **Small** | Core binary ~15 MB, GUI bundle ~25 MB, semantic model ~30 MB as loaded today (i8 table quantization is a planned reduction to ~8 MB). |
+| **Small** | Core binary ~15 MB, GUI bundle ~25 MB, semantic model loaded as a ~7.7 MB i8 table (f32 fallback is ~30 MB). |
 
 ### UX invariants (non-negotiable, encode these in tests)
 
@@ -194,7 +194,7 @@ Schema:
 
 ### 5.3 Semantic tier — budget **0.5–2 ms**
 
-**Default model: `potion-base-8M` (model2vec, static, 256-dim).** The table is ~30 MB as loaded today (f32); quantizing it to i8 (~8 MB) is a planned memory win. No ONNX, no neural graph at query time: tokenize → table lookup → weighted mean → normalize. **~50 µs per query.** ~92 % of MiniLM's MTEB average. Embedding the corpus is also cheap (~50k docs/s), so full re-embed after a model change is minutes, not hours.
+**Default model: `potion-base-8M` (model2vec, static, 256-dim).** The table is stored as i8 with per-row scales (~7.7 MB; the f32 fallback is ~30 MB). No ONNX, no neural graph at query time: tokenize → table lookup → weighted mean → normalize. **~50 µs per query.** ~92 % of MiniLM's MTEB average. Embedding the corpus is also cheap (~50k docs/s), so full re-embed after a model change is minutes, not hours.
 
 **Optional "Smart" pack** (downloaded, ~40 MB): `fastembed-rs` + `ort` with **`load-dynamic`** (never static — prebuilt static ORT requires AVX2 and SIGILLs on older CPUs; dynamic also fixes macOS codesign and Windows dylib swaps). `bge-small-en-v1.5` or `EmbeddingGemma-Q4` for multilingual quality.
 
@@ -539,7 +539,7 @@ GitHub Actions (AppImage/deb/AUR, dmg universal, msi/exe) · benchmark harness +
 1. **Daemon-first, GUI-as-client.** Enables CLI + agents without a rewrite; isolates indexing from paint.
 2. **SQLite as truth, arena as hot path.** Durability without per-file `PathBuf` memory.
 3. **Identity by inode/file_id, never by path.** Makes renames cheap and ghosts impossible.
-4. **Static embeddings by default, ONNX optional.** Semantic search at ~50 µs/query, ~30 MB today (8 MB after i8 table quantization), zero runtime deps; honest about the quality/size trade.
+4. **Static embeddings by default, ONNX optional.** Semantic search at ~50 µs/query, a ~7.7 MB i8 table (~30 MB in the f32 fallback), zero runtime deps; honest about the quality/size trade.
 5. **No ANN until 400k units.** Exact scan is faster, exact, and dependency-free at desktop scale.
 6. **RRF over weighted score fusion.** No calibration data, robust to corpus-dependent BM25.
 7. **Search-first, reconcile-after startup.** The only way "instant on boot" coexists with correctness.

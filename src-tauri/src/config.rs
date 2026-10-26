@@ -56,6 +56,11 @@ pub struct KensakuConfig {
     pub semantic_enabled: bool,
     #[serde(default = "default_semantic_model")]
     pub semantic_model: String,
+    /// Keep the static embedding table in f32 for one release. The default is
+    /// the compact i8 table; this switch exists for quality comparisons and
+    /// rollback without rebuilding.
+    #[serde(default)]
+    pub semantic_f32_table: bool,
     #[serde(default = "default_true")]
     pub ocr_enabled: bool,
     /// Persisted UI theme ("paper" or "void").
@@ -155,6 +160,7 @@ impl Default for KensakuConfig {
             skip_hidden: true,
             semantic_enabled: true,
             semantic_model: "static".to_string(),
+            semantic_f32_table: false,
             ocr_enabled: true,
             theme: default_theme(),
             aliases: default_aliases(),
@@ -396,6 +402,21 @@ mod tests {
         assert!(cfg.skip_hidden);
         assert!(cfg.ocr_enabled);
         assert_eq!(cfg.theme, "paper");
+    }
+
+    #[test]
+    fn semantic_f32_table_flag_defaults_off_and_round_trips() {
+        let cfg = KensakuConfig::default();
+        assert!(!cfg.semantic_f32_table);
+        let json = serde_json::to_string(&cfg).unwrap();
+        let parsed = KensakuConfig::load_from_str(&json);
+        assert!(!parsed.semantic_f32_table);
+
+        let with_flag = json.replace(
+            "\"semantic_f32_table\":false",
+            "\"semantic_f32_table\":true",
+        );
+        assert!(KensakuConfig::load_from_str(&with_flag).semantic_f32_table);
     }
 
     #[test]

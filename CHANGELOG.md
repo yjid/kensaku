@@ -51,6 +51,10 @@ versioning: [SemVer](https://semver.org/).
   indexing and extraction.
 
 ### Performance
+- **Static embedding table shrunk ~4x.** `potion-base-8M` is stored as i8 with
+  one scale per row (30.2 MB → 7.7 MB) and dequantized while mean-pooling.
+  `semantic_f32_table` (or `KENSAKU_F32_TABLE=1`) keeps the f32 matrix for
+  comparison; rankings and query p50 are unchanged.
 - **One extraction pass.** The crawl now feeds the lexical (Tantivy) and
   semantic indexes from the same extraction instead of re-reading and
   re-extracting every file for embeddings. Images are OCR'd once, not twice.

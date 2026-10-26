@@ -48,7 +48,12 @@ impl ModelRegistry {
     /// Returns `None` when the artifacts are missing/corrupt or the embedding
     /// width is not [`EMBEDDING_DIM`].
     pub fn load(dir: &Path) -> Option<Self> {
-        let table = StaticTable::load(dir)?;
+        Self::load_with_f32(dir, false)
+    }
+
+    /// Loads the static table, optionally keeping the f32 matrix.
+    pub fn load_with_f32(dir: &Path, use_f32: bool) -> Option<Self> {
+        let table = StaticTable::load_with_f32(dir, use_f32)?;
         Some(Self {
             model_id: table.model_id,
             name: "potion-base-8M".to_string(),
@@ -65,7 +70,8 @@ impl ModelRegistry {
     pub fn global() -> &'static ModelRegistry {
         GLOBAL.get_or_init(|| {
             let dir = KensakuConfig::config_dir().join("models");
-            let registry = match Self::load(&dir) {
+            let config = KensakuConfig::load();
+            let registry = match Self::load_with_f32(&dir, config.semantic_f32_table) {
                 Some(registry) => registry,
                 None => {
                     log::info!(
