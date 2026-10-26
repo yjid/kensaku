@@ -76,3 +76,46 @@ pub fn request(_method: &str, _params: Value) -> Result<Value, String> {
 pub fn health() -> bool {
     request("health", json!({})).is_ok()
 }
+
+/// Validates the token and protocol version carried by an IPC request.
+pub fn authenticate(
+    expected_token: &str,
+    provided_token: Option<&str>,
+    protocol_version: Option<u64>,
+) -> Result<(), (i32, String)> {
+    if provided_token != Some(expected_token) {
+        return Err((-32001, "bad token".to_string()));
+    }
+    if protocol_version != Some(PROTOCOL_VERSION) {
+        return Err((
+            -32002,
+            format!(
+                "protocol version mismatch: expected {}, got {:?}",
+                PROTOCOL_VERSION, protocol_version
+            ),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_bad_token() {
+        let err = authenticate("good", Some("bad"), Some(PROTOCOL_VERSION)).unwrap_err();
+        assert_eq!(err.0, -32001);
+    }
+
+    #[test]
+    fn rejects_version_mismatch() {
+        let err = authenticate("good", Some("good"), Some(999)).unwrap_err();
+        assert_eq!(err.0, -32002);
+    }
+
+    #[test]
+    fn accepts_matching_handshake() {
+        assert!(authenticate("good", Some("good"), Some(PROTOCOL_VERSION)).is_ok());
+    }
+}

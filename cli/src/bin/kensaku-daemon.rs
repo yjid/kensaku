@@ -142,16 +142,17 @@ fn handle_client(mut stream: UnixStream, token: &str, manager: &Arc<IndexerManag
         let method = req.get("method").and_then(|m| m.as_str()).unwrap_or("");
         let params = req.get("params").cloned().unwrap_or(Value::Null);
 
-        // Token check
-        let provided = params.get("token").and_then(|t| t.as_str()).unwrap_or("");
-        if provided != token {
-            let _ = writeln!(stream, "{}", json!({"jsonrpc":"2.0","id":id,"error":{"code":-32001,"message":"bad token"}}));
+        let provided = params.get("token").and_then(|t| t.as_str());
+        let protocol_version = params.get("protocol_version").and_then(|v| v.as_u64());
+        if let Err((code, message)) =
+            kensaku_lib::daemon::authenticate(token, provided, protocol_version)
+        {
+            let _ = writeln!(
+                stream,
+                "{}",
+                json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
+            );
             continue;
-        }
-
-        let protocol_version = params.get("protocol_version").and_then(|v| v.as_u64()).unwrap_or(0);
-        if protocol_version != 1 && method != "health" {
-            // allow missing for now
         }
 
         let result = match method {
