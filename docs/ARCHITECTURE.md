@@ -1,12 +1,11 @@
 # Kensaku v2 — Architecture & Implementation Plan
 
-> **Status:** design through `v0.3.3`. This document describes the target
-> architecture as well as what shipped; they are not identical. In particular,
-> the daemon topology in §3 and the HTTP transport in §9.3 are **planned**, not
-> current — today the GUI backend is in-process and the CLI/MCP load the index
-> themselves. Product direction and sequencing live in
-> [`VISION.md`](VISION.md); the engineering backlog lives in
-> [`REMAINING.md`](REMAINING.md).
+> **Status:** design through `v0.3.3`, updated after the K1–K14 execution pass.
+> The daemon topology in §3 is now shipped: the GUI, CLI, and MCP are clients of
+> `kensaku-daemon` over a Unix socket or Windows named pipe, with a read-only
+> in-process fallback. The loopback HTTP transport in §9.3 is still planned.
+> Product direction and sequencing live in [`VISION.md`](VISION.md); the
+> engineering backlog lives in [`REMAINING.md`](REMAINING.md).
 
 > **One sentence:** a warm, local, read-only index of your machine that answers in under 15 ms — for you, and for every AI agent you use.
 
@@ -79,7 +78,7 @@
 
 **Two binaries, one core crate:** `kensaku` (daemon + CLI + MCP) and `kensaku-app` (Tauri GUI). The GUI auto-spawns the daemon if it isn't running.
 
-**Current state (v0.3.x):** the GUI still constructs `IndexerManager` in-process, and the CLI/MCP open the index read-only. The daemon split shown above is the target; [ROADMAP K1](ROADMAP.md#k1-daemon-split-epic) executes it. [LANDSCAPE.md](LANDSCAPE.md) explains why this is the top architectural gap.
+**Current state (v0.3.x + K1):** the GUI connects to the daemon for search, snippets, status, config, home data, duplicates, scope suggestions, and pin toggles. It constructs only a read-only `IndexerManager` for fallback when the daemon is unavailable. CLI and MCP also prefer the daemon. Unix and Windows transports use `interprocess` local sockets (Unix socket / named pipe); release packaging of the daemon sidecar is tracked in [REMAINING.md](REMAINING.md) section F.
 
 ---
 
@@ -359,7 +358,7 @@ magic-byte sniff ─► dispatcher ─► built-in or opt-in external extractor
 | text/code/config | encoding detect → UTF-8 | UTF-16 BOM, Latin-1 fallback; strict-UTF-8 rejection is a bug |
 | DOCX/PPTX/XLSX/EPUB | ZIP + quick-xml | shared strings, speaker notes, hidden sheets; **DTDs disabled** (billion-laughs) |
 | PDF | `pdf-extract` first; `pdfium` feature flag if quality fails | page-level offsets → "jump to page"; encrypted/scanned → explicit state |
-| Images | platform OCR (Vision / Windows OCR / optional tesseract) → text units | OCR before CLIP; screenshots prioritized |
+| Images | tesseract by default; optional PP-OCRv6 tiny pack; native Vision/Windows OCR planned → text units | OCR before CLIP; screenshots prioritized |
 | Archives | metadata only (v2) | no recursive indexing |
 | External | config-defined executable, extension/MIME allowlist | no shell, cleared env, 100–7000 ms timeout, bounded stdout, process-group kill; zero plugins by default |
 
@@ -403,10 +402,10 @@ kensaku doctor
 kensaku mcp            # stdio MCP server
 ```
 
-Same AST and index as the GUI. CLI and MCP prefer the warm daemon (§18.4), so
-queries do not re-open SQLite or Tantivy; without a daemon they fall back to a
-read-only in-process open. The GUI still constructs its own `IndexerManager`
-until the Tauri-client part of [K1](ROADMAP.md#k1-daemon-split-epic) lands.
+Same AST and index as the GUI. CLI, MCP, and the GUI prefer the warm daemon
+(§18.4), so queries do not re-open SQLite or Tantivy; without a daemon they fall
+back to a read-only in-process open. The GUI keeps a read-only manager only for
+that fallback.
 
 ### 9.3 MCP / agent API
 
@@ -493,12 +492,13 @@ Rule: **`kensaku-core` must not depend on Tauri.** The GUI must not depend on in
 
 ## 13. Phase plan (each phase ships something usable)
 
-**Status (v0.3.x):** the foundation, query layer, semantic tier, document
-extraction, OCR/thumbnail work, and opt-in external extractors are implemented.
-The daemon/agent split (Phase 4) is partial: CLI and MCP use the daemon, but the
-GUI still owns its indexer in-process. The next slice is the landscape-derived
-[ROADMAP](ROADMAP.md) P0/P1 (GUI daemon client, optional OCR pack, model
-download hygiene).
+**Status (v0.3.x + K1–K14):** the foundation, query layer, semantic tier,
+document extraction, OCR/thumbnail work, opt-in external extractors, daemon
+split, accurate OCR pack, model/download hygiene, and native quick-window spike
+are implemented. The GUI, CLI, and MCP are daemon clients with a read-only
+fallback. The next slice is the remaining product backlog in
+[REMAINING.md](REMAINING.md): visual search, native platform OCR, HTTP/SSE,
+one-click agent connect, 1M prefilter, and packaging/signing.
 The phases below are the original plan; use ROADMAP for current ordering.
 
 ### Phase 0 — Trustworthy foundation · ~2 weeks
@@ -518,11 +518,11 @@ Magic sniffing · encoding detection · DOCX/PPTX/XLSX/EPUB · PDF text layer + 
 **Gate:** 50-page PDF < 50 ms; malformed/encrypted/scanned handled without daemon crash; zero panics on a 500-file fuzz corpus.
 
 ### Phase 4 — Agent surface · ~1 week
-Daemon socket + protocol · CLI commands · MCP stdio + HTTP with token auth · `search` / `read_snippet` / `find_related` / `index_state` · `.gitignore` parity · token budgets · config snippets for Cursor/Claude Code.
+Daemon socket + protocol (shipped) · CLI commands (shipped) · MCP stdio (shipped) + HTTP with token auth (planned) · `search` / `read_snippet` / `index_state` (shipped) · `find_related` / `.gitignore` parity (planned) · token budgets (shipped) · config snippets for Cursor/Claude Code (planned).
 **Gate:** `search` p95 < 50 ms; MCP client round-trip works from Cursor and Claude Code; exhaustive mode paginates 100k matches without OOM.
 
 ### Phase 5 — Vision & OCR · ~1.5 weeks
-Screenshot OCR (Vision/Windows OCR/tesseract) → text units · image embeddings (SigLIP or CLIP ViT-B/32 int8, **not** MobileCLIP on x86) · EXIF orientation · megapixel/size caps · perceptual-hash dedupe · thumbnails.
+Screenshot OCR (tesseract default, PP-OCRv6 pack shipped, native Vision/Windows OCR planned) → text units · image embeddings (SigLIP or CLIP ViT-B/32 int8, **not** MobileCLIP on x86) · EXIF orientation · megapixel/size caps · perceptual-hash dedupe · thumbnails.
 **Gate:** "screenshot of docker error" returns the right image in top 5; 50k-image scan < 10 ms.
 
 ### Phase 6 — Ask & act · ~1 week
@@ -574,9 +574,9 @@ GitHub Actions (AppImage/deb/AUR, dmg universal, msi/exe) · benchmark harness +
 9. **Read-only agent surface.** Security, simplicity, and a clean mental model.
 10. **No bundled LLM.** Ollama integration gives "ask" without shipping a 4 GB dependency.
 11. **Daemon owns the index before more workers land.** The webview must not be in the memory path for OCR, image decoding, or model packs. ([K1](ROADMAP.md#k1-daemon-split-epic))
-12. **Compact arena before the daemon payload.** Move to name/attribute arenas while the index is still in-process, then hand the smaller structure to the daemon. ([K2](ROADMAP.md#k2-compact-metadata-arena))
+12. **Compact arena inside the daemon.** The daemon owns the name/attribute arenas; clients never receive the full metadata payload. ([K2](ROADMAP.md#k2-compact-metadata-arena))
 13. **Thumbnail hashing, not full-image hashing.** A 480 px thumbnail is the source for dHash; full decodes never happen just to compute a duplicate key. ([K3](ROADMAP.md#k3-thumbnail-based-hashing--memory-release))
-14. **Tesseract by default, accurate OCR opt-in.** Bulk indexing stays fast and light; PaddleOCR/native OCR is a per-platform pack for UI text. ([K6](ROADMAP.md#k6-optional-high-accuracy-ocr-pack))
+14. **Tesseract by default, accurate OCR opt-in.** Bulk indexing stays fast and light; the PP-OCRv6 tiny pack is a ~6 MB opt-in for UI text, with native platform OCR still planned. ([K6](ROADMAP.md#k6-optional-high-accuracy-ocr-pack))
 15. **Exact → folded → semantic.** Never let tolerant matching run when exact results already fill the limit; verify folded candidates against the raw text. ([K5](ROADMAP.md#k5-folded--trigram-content-tier))
 
 ---
@@ -696,24 +696,27 @@ Add a fourth retrieval tier alongside fuzzy name, BM25, and static vectors.
 
 ### 18.4 Daemon migration
 
-Current: the GUI owns the indexer in-process; `kensaku-cli` and MCP load the
-metadata themselves. Target: one warm process, three clients.
+Shipped: one warm process, three clients.
 
 ```
 GUI ─┐
-CLI ─┼─► kensaku-daemon (UDS / named pipe, 0600 token)
+CLI ─┼─► kensaku-daemon (Unix socket / Windows named pipe, 0600 token)
 MCP ─┘        │
               ├─ indexer + watcher + embed queue
               └─ query planner + snippets
 ```
 
-- Keep a **dual mode**: if the daemon is absent, the GUI runs in-process as it
-  does today. This avoids making the app unusable when the daemon fails.
-- Start with UDS/named pipes; add loopback HTTP/SSE only for clients that need
-  it. Token auth, read-only, no shell, no network beyond loopback.
-- Migrate in this order: protocol types → daemon skeleton → GUI client →
-  CLI/MCP proxy → HTTP. Do not block Milestones 1–2 on this.
-- Single instance moves from the current file lock to the daemon lock.
+- **Dual mode remains:** if the daemon is absent, the GUI falls back to a
+  read-only `IndexerManager`; CLI/MCP fall back to a read-only direct open.
+- IPC uses `interprocess` local sockets: a `0600` Unix socket or a namespaced
+  Windows named pipe. Protocol version and token are checked on every request.
+- The daemon owns the single-instance lock and the writer; clients never open a
+  second writer. `daemon.pid`, socket cleanup, SIGTERM/SIGINT, and graceful
+  shutdown are implemented.
+- Loopback HTTP/SSE remains planned for web-capable MCP clients; it will reuse
+  the same token and read-only rules.
+- Release packaging of the daemon sidecar (installer/bundle) is the remaining
+  release task, tracked in [REMAINING.md](REMAINING.md) section F.
 
 ### 18.5 Memory and personalization
 

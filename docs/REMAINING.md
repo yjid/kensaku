@@ -18,12 +18,17 @@ Durable metadata + warm start · incremental crawl · inode identity ·
 rename/delete handling · full query language (`type:`, `ext:`, `in:`, `path:`,
 `modified:`, `size:`, `is:`, `lang:`, `name:`, `content:`, `re:`, negation,
 `mode:exhaustive`) · three-tier RRF ranking · semantic vectors · PDF/Office/
-EPUB/ODT/RTF extraction · tesseract OCR · image thumbnails, dimensions, and
-perceptual duplicates · CLI + MCP · `/` command menu · two themes · Doctor ·
+EPUB/ODT/RTF extraction · tesseract OCR + optional PP-OCRv6 accurate pack ·
+image thumbnails, dimensions, and perceptual duplicates · CLI + MCP · warm daemon
+with Unix socket / Windows named pipe · `/` command menu · two themes · Doctor ·
 Stats for Nerds · factory reset · extraction timeout · cloud-placeholder guard ·
-single-instance lock · 102 Rust tests and CI.
+single-instance lock · 177 Rust tests and CI.
 
-Also shipped in the `v0.3.x` hardening cycle: image/PDF exclusion migration,
+Also shipped in the `v0.3.x` hardening cycle and K1–K14 pass: compact metadata
+arena (91.3 MB at 1M entries), folded/trigram content tier, visible-row snippets,
+thumbnail-only hashing, i8 embedding table (real-model MRR parity), model/OCR
+download hygiene, external extractors, screenshot-burst grouping, 104-image OCR
+fixture, and a native quick-window spike. Earlier hardening: image/PDF exclusion migration,
 thumbnail asset scope fix, snippets no longer invoke the full extractor
 (3.86 s → 0.14 s), metadata DB vacuum (310 MB → 604 KB), OCR toggle persistence,
 and OCR language download. The crawl is now a single extraction pass that feeds
@@ -114,10 +119,10 @@ These are the highest-leverage gaps. None require a new model.
 ## C. Agent, LLM & runtime
 
 - [x] **Warm daemon** — one process owns the index; GUI, CLI, and MCP attach.
-      Today the GUI backend is in-process and a one-shot CLI pays metadata load.
-      This is the top architectural gap: see [ROADMAP K1](ROADMAP.md#k1-daemon-split-epic)
-      for the IPC, lifecycle, client migration, and acceptance criteria. (ROADMAP K1;
-      Unix socket + Windows named pipe, clients, metadata RPCs, snippets.)
+      The daemon owns the writer and single-instance lock; clients use a Unix
+      socket or Windows named pipe and fall back read-only when it is absent.
+      See [ROADMAP K1](ROADMAP.md#k1-daemon-split-epic). (ROADMAP K1; release
+      packaging of the daemon sidecar remains in section F.)
 - [ ] **Local HTTP/SSE endpoint** — loopback only, token auth, read-only.
       Needed for web-capable MCP clients and long-lived agents. Follows K1.
       (ROADMAP K1)

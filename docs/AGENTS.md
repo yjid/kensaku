@@ -161,7 +161,6 @@ response. Exit codes: `0` ok, `2` usage, `3` no index (launch Kensaku once).
 
 These are designed but not shipped. The contract above remains the truth today.
 
-- **Tauri GUI client** for the daemon; CLI and MCP already use it.
 - **Loopback HTTP/SSE** transport with token auth for clients that need it.
 - **`find_symbol`** (tree-sitter), **`find_related`**, and
   `.gitignore` / `.cursorignore` parity; pagination beyond the 10k result cap.

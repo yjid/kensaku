@@ -58,7 +58,7 @@ Kensaku combines lexical full-text search with a semantic tier. Ask for "that do
 ### It reads your documents and images
 
 - **Documents:** PDF, DOCX, PPTX, XLSX, EPUB, ODT/ODS/ODP, RTF, and plain text/code.
-- **Images:** OCR text extracted with tesseract when the engine and language data are available.
+- **Images:** OCR text extracted with tesseract by default, or the optional PP-OCRv6 tiny pack for higher recall on UI screenshots. Falls back to tesseract when the pack is absent.
 - **Images, beyond text:** thumbnails, dimensions, perceptual near-duplicate grouping, and screenshot bursts that collapse to one result row.
 
 Most "fast search" tools stop at filenames. Kensaku opens the file.
@@ -196,9 +196,9 @@ Full threat model: [SECURITY.md](SECURITY.md).
 
 ## Project status
 
-**Available today:** desktop app, CLI, daemon-backed MCP, semantic + lexical + folded/trigram hybrid search, config-only external extractors, full query grammar, PDF/Office/EPUB/ODT/RTF extraction, tesseract OCR, image thumbnails, near-duplicate grouping and screenshot bursts, incremental indexing, rename/delete tracking, two themes, Doctor, factory reset, guided first-run setup, and 166 Rust tests.
+**Available today:** desktop app, daemon-backed GUI/CLI/MCP over Unix socket or Windows named pipe, semantic + lexical + folded/trigram hybrid search, config-only external extractors, full query grammar, PDF/Office/EPUB/ODT/RTF extraction, tesseract OCR plus an optional PP-OCRv6 accurate pack, image thumbnails, near-duplicate grouping and screenshot bursts, incremental indexing, rename/delete tracking, two themes, Doctor, factory reset, guided first-run setup, and 177 Rust tests.
 
-**Planned:** Tauri GUI client for the daemon, optional high-accuracy OCR, native platform OCR, CLIP/SigLIP visual search, face identity, 1M-file prefilter, signing/notarization, and auto-update. See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/REMAINING.md](docs/REMAINING.md), [docs/VISION.md](docs/VISION.md), and the [landscape notes](docs/LANDSCAPE.md).
+**Planned:** native platform OCR (macOS Vision / Windows OCR), CLIP/SigLIP visual search, face identity, 1M-file prefilter, loopback HTTP/SSE, one-click agent connect, signing/notarization, auto-update, and installer packaging of the daemon sidecar. See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/REMAINING.md](docs/REMAINING.md), [docs/VISION.md](docs/VISION.md), and the [landscape notes](docs/LANDSCAPE.md).
 
 ## Contributing
 

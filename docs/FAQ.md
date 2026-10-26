@@ -30,10 +30,11 @@ flagged, not indexed.
 
 **Does it search images?**
 By filename, by OCR text when `tesseract` **and** language data are available,
+or with the optional PP-OCRv6 accurate pack for higher recall on UI screenshots,
 and by perceptual near-duplicate. Natural-language visual search ("red cap",
-"system design diagram"), similar-image lookup, and an optional local "this is
-me" identity are planned — see [VISION.md](VISION.md). Semantic image search
-(CLIP) is not implemented yet.
+"system design diagram"), similar-image lookup, native Vision/Windows OCR, and an
+optional local "this is me" identity are planned — see [VISION.md](VISION.md).
+Semantic image search (CLIP) is not implemented yet.
 
 **Can I just type "latest resume" or use `/` and `@`?**
 Yes. A deterministic, local intent compiler turns recency, size, type, and place

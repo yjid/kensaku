@@ -8,15 +8,15 @@
 
 1. **Rename/delete divergence** — ghost results, duplicates, unbounded index growth. (P0, was present in v0.1, partially fixed in PR 2)
 2. **Full re-crawl on every launch** — app is "slow" for minutes after every boot. (P0, fixed in PR 1)
-3. **O(n) fuzzy scan with full sort per keystroke** — 50–200ms at 1M files. (P0, planned PR 3)
-4. **Disk reads inside the query path** — snippet extraction per hit, locks stall indexing. (P0, planned PR 3)
+3. **O(n) fuzzy scan with full sort per keystroke** — 50–200ms at 1M files. (P0, addressed by K4/K5 fast path and bounded snippets)
+4. **Disk reads inside the query path** — snippet extraction per hit, locks stall indexing. (P0, addressed by K4 visible-row snippets and the fast response path)
 5. **Content tokenization of generated files** — lockfiles, .min.js, source maps explode the term dictionary. (P0)
 6. **CJK tokenization** — default Tantivy tokenizer fails on no-space languages. (P0, Japanese app name!)
 7. **Cloud placeholder files** (OneDrive/Dropbox/iCloud) — reading hydrates them, silently downloading gigabytes. (P0 on Windows/macOS)
 8. **Case/Unicode normalization mismatch** — macOS NFD vs Linux/Windows NFC, case-sensitive vs insensitive FS. (P0)
 9. **inotify watch exhaustion (ENOSPC)** — recursive $HOME typically fails; v0.1 only eprintln'd. (P0 Linux, partially fixed PR 2)
 10. **Watcher overflow** (IN_Q_OVERFLOW, FSEvents MustScanSubDirs, Windows buffer) — missed events = silently stale index. (P0)
-11. **Unbounded query concurrency / out-of-order results** — fast typing races. (P0, planned PR 3)
+11. **Unbounded query concurrency / out-of-order results** — fast typing races. (P0, addressed by query sequence tracking and cancellation in the K1/K4 work)
 12. **Index schema drift** — reuse meta.json with fresh schema → wrong fields. (P0)
 
 ## B. By subsystem (condensed)

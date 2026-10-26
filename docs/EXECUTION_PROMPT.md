@@ -1,8 +1,13 @@
-# Kensaku — execution prompt (next implementation pass)
+# Kensaku — execution prompt (K1–K14, completed)
 
-You are a senior Rust/Tauri engineer working in this repository. Implement the
-roadmap in `docs/ROADMAP.md` (tasks K1–K14) in the order below. Work one task at
-a time, verify it, commit it, then move on. Do not stop at a plan: write the code.
+> **Status: completed.** K1–K14 landed in the local `master` history. This file
+> is kept as a historical execution guide; see `docs/ROADMAP.md` for the current
+> status table and `docs/REMAINING.md` for what is still open. Do not re-run the
+> tasks without checking the current tree.
+
+You are a senior Rust/Tauri engineer working in this repository. The roadmap in
+`docs/ROADMAP.md` (tasks K1–K14) was implemented one task at a time, with tests,
+clippy, and docs updated per commit.
 
 ## 0. Read first (in this order)
 
@@ -20,8 +25,9 @@ reference in `docs/LANDSCAPE.md`. Keep that document anonymized.
 
 - Rust 2024, Tauri 2 + React/Vite, Tantivy 0.26, SQLite (rusqlite bundled),
   static potion embeddings (256-dim, i8 vectors), Tesseract subprocess OCR.
-- `IndexerManager` lives in `src-tauri/src/indexer/mod.rs` and is constructed
-  in-process by the Tauri app (`src-tauri/src/lib.rs`).
+- `IndexerManager` lives in `src-tauri/src/indexer/mod.rs` and is owned by
+  `kensaku-daemon`; the Tauri app uses `DaemonClient` and keeps a read-only
+  manager only as a fallback (`src-tauri/src/lib.rs`).
 - The CLI (`cli/src/main.rs`) is a thin wrapper over `kensaku_lib::cli::run`.
   MCP lives in `src-tauri/src/agent/mcp.rs`.
 - Metadata: `indexer/metadata.rs` (`Vec<FileEntry>` + `HashMap<PathBuf, usize>`)
