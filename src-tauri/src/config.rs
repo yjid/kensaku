@@ -137,6 +137,10 @@ pub struct KensakuConfig {
     pub mcp_allow_reindex: bool,
     #[serde(default = "default_true")]
     pub ocr_enabled: bool,
+    /// OCR backend: `tesseract` (fast default) or `accurate` (optional
+    /// PP-OCRv6 pack). Falls back to Tesseract when the pack is absent.
+    #[serde(default = "default_ocr_engine")]
+    pub ocr_engine: String,
     /// Opt-in external extractors keyed by extension or MIME type. Empty by
     /// default: no external command ever runs without explicit configuration.
     #[serde(default)]
@@ -160,6 +164,10 @@ pub struct KensakuConfig {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_ocr_engine() -> String {
+    "tesseract".to_string()
 }
 
 fn default_semantic_model() -> String {
@@ -244,6 +252,7 @@ impl Default for KensakuConfig {
             mcp_allow_reindex: false,
             extractors: Vec::new(),
             ocr_enabled: true,
+            ocr_engine: default_ocr_engine(),
             theme: default_theme(),
             aliases: default_aliases(),
             saved_searches: Vec::new(),

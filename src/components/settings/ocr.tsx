@@ -7,7 +7,7 @@ import {
   RefreshCw,
   TriangleAlert,
 } from "lucide-react";
-import { KensakuConfig, OcrStatus } from "../../types";
+import { KensakuConfig, ModelsStatus, OcrStatus } from "../../types";
 import { Switch } from "./kit";
 
 /* OCR row — state-aware. Calls `get_ocr_status` on mount; every outcome
@@ -60,6 +60,8 @@ export function OcrField({
   /* null = status unknown (missing command or re-check pending) → the
      switch stays enabled, optimistic, with no hint line. */
   const [status, setStatus] = useState<OcrStatus | null>(null);
+  const [pack, setPack] = useState<ModelsStatus | null>(null);
+  const [packBusy, setPackBusy] = useState(false);
   const [rechecking, setRechecking] = useState(false);
   const [allPlatforms, setAllPlatforms] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
@@ -72,11 +74,27 @@ export function OcrField({
       console.warn("get_ocr_status not available:", err);
       setStatus(null);
     }
+    try {
+      setPack(await invoke<ModelsStatus>("get_ocr_pack_status"));
+    } catch {
+      setPack(null);
+    }
   }, []);
 
   useEffect(() => {
     check();
   }, [check]);
+
+  const downloadPack = async () => {
+    setPackBusy(true);
+    try {
+      setPack(await invoke<ModelsStatus>("download_ocr_pack"));
+    } catch (err) {
+      console.warn("download_ocr_pack failed:", err);
+    } finally {
+      setPackBusy(false);
+    }
+  };
 
   const recheck = async () => {
     setRechecking(true);
@@ -131,6 +149,60 @@ export function OcrField({
           onChange={(v) => setConfig((c) => (c ? { ...c, ocr_enabled: v } : c))}
         />
       </div>
+
+      {status?.accurate_compiled && (
+        <div className="mt-3 border-t border-line pt-3">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium text-fg">Accurate OCR pack</p>
+              <p className="text-[10px] leading-relaxed text-muted">
+                PP-OCRv6 tiny · about 6 MB · higher recall on UI text.
+              </p>
+              <p className="mt-0.5 font-mono text-[10px] text-subtle">
+                {pack?.downloading
+                  ? `Downloading ${Math.round(
+                      ((pack.progress?.downloaded ?? 0) / Math.max(1, pack.progress?.total ?? 1)) * 100,
+                    )}%`
+                  : pack?.ready
+                    ? "Installed"
+                    : pack?.error
+                      ? pack.error
+                      : "Not installed"}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <select
+                aria-label="OCR engine"
+                value={config.ocr_engine ?? "tesseract"}
+                onChange={(e) =>
+                  setConfig((c) =>
+                    c ? { ...c, ocr_engine: e.target.value as "tesseract" | "accurate" } : c,
+                  )
+                }
+                className="h-8 rounded-[10px] border border-line bg-elevated px-2 text-[11px] text-fg"
+              >
+                <option value="tesseract">Tesseract</option>
+                <option value="accurate" disabled={!pack?.ready}>
+                  Accurate
+                </option>
+              </select>
+              {!pack?.ready && (
+                <button
+                  type="button"
+                  disabled={packBusy || pack?.downloading}
+                  onClick={downloadPack}
+                  className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-elevated px-3 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                >
+                  <RefreshCw
+                    className={`h-3 w-3 ${packBusy || pack?.downloading ? "animate-spin" : ""}`}
+                  />
+                  Download
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {!unavailable ? null : engineMissing ? (
         /* tesseract absent — show the install command for this platform,

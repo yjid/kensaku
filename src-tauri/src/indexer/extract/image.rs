@@ -41,6 +41,12 @@ pub struct OcrStatus {
     pub tessdata_dir: String,
     /// Last error line when the engine is missing or failing.
     pub error: Option<String>,
+    /// Currently selected backend (`tesseract` or `accurate`).
+    pub engine: String,
+    /// Whether the optional accurate pack is installed and compiled in.
+    pub accurate_available: bool,
+    /// Whether this binary was compiled with the accurate engine.
+    pub accurate_compiled: bool,
 }
 
 /// Directory holding language data downloaded by Kensaku.
@@ -63,6 +69,9 @@ fn build_status(
         languages,
         tessdata_dir: tessdata_dir.to_string_lossy().to_string(),
         error,
+        engine: crate::ocr::engine_name().to_string(),
+        accurate_available: crate::ocr::accurate_available(),
+        accurate_compiled: crate::ocr::accurate_compiled(),
     }
 }
 
@@ -349,6 +358,12 @@ fn download_eng_tessdata_to(dir: &Path) -> Result<PathBuf, String> {
 /// On Linux: shells out to tesseract.
 /// Returns None if OCR fails or produces no text.
 pub fn extract_image_ocr(path: &Path) -> Option<String> {
+    if crate::ocr::engine_name() == crate::ocr::ACCURATE
+        && let Some(text) = crate::ocr::extract_image_ocr(path)
+    {
+        return Some(text);
+    }
+
     // Try tesseract (available on Linux and macOS with Homebrew)
     let mut command = tesseract_command();
     command.arg(path).arg("stdout").arg("--psm").arg("3"); // Fully automatic page segmentation

@@ -8,6 +8,7 @@ pub mod doctor;
 pub mod embed;
 pub mod indexer;
 pub mod models;
+pub mod ocr;
 pub mod query;
 pub mod search;
 pub mod util;
@@ -168,6 +169,7 @@ pub fn run() {
 
     let config = KensakuConfig::load();
     indexer::extract::set_ocr_enabled(config.ocr_enabled);
+    ocr::set_engine(&config.ocr_engine);
     let is_setup = config.is_setup_complete;
 
     let (indexer_manager, daemon_client) = if daemon_available {
@@ -222,6 +224,8 @@ pub fn run() {
             commands::get_thumbnail,
             commands::get_ocr_status,
             commands::download_ocr_language,
+            commands::get_ocr_pack_status,
+            commands::download_ocr_pack,
             commands::find_duplicates,
             commands::execute_command,
             commands::read_file_content,

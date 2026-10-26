@@ -1213,7 +1213,8 @@ impl IndexerManager {
 
     pub fn apply_config(&self, config: KensakuConfig) -> Result<(), String> {
         let previous = self.config.read().clone();
-        let ocr_changed = previous.ocr_enabled != config.ocr_enabled;
+        let ocr_changed =
+            previous.ocr_enabled != config.ocr_enabled || previous.ocr_engine != config.ocr_engine;
         let extractors_changed = previous.extractors != config.extractors;
 
         config.save()?;
@@ -1223,6 +1224,7 @@ impl IndexerManager {
         let mut reindex = false;
         if ocr_changed {
             crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
+            crate::ocr::set_engine(&config.ocr_engine);
             let marked = self.metadata.write().mark_images_pending();
             eprintln!(
                 "[Kensaku] OCR {}: {} image(s) queued for re-scan",

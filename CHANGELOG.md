@@ -6,6 +6,15 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- K13 native quick-search spike: an opt-in `kensaku-quick` egui binary
+  (`--features quick-ui`) backed by the daemon. Debug measurements: 8.6 ms to
+  first UI, 46 ms daemon round-trip, ~223 MB hidden RSS versus ~350 MB for the
+  Tauri debug window. Not wired into the product.
+- K6 optional accurate OCR pack: PP-OCRv6 tiny detector + recognizer behind
+  the `accurate-ocr` feature, downloaded with pinned SHA-256 and selectable in
+  Settings/Setup with automatic Tesseract fallback. A frozen 104-image UI-text
+  fixture scores 104/104 exact lines. Native macOS/Windows OCR remains future
+  platform work.
 - K1 daemon parity: the GUI now fetches snippets, `read_snippet`, stats, home
   data, duplicate groups, scope suggestions and pin toggles through the daemon
   instead of opening metadata in-process. K4 visible-row snippets now use a
@@ -15,8 +24,8 @@ versioning: [SemVer](https://semver.org/).
   of scales, with MRR 1.000 for both f32 and i8 on the labelled set.
 - K9 download hygiene framework: resumable `.part` downloads, HTTP Range resume,
   mirror fallback, atomic rename, SHA-256 verification, progress reporting, a
-  disk-space precheck, and pinned checksums for the three Potion artifacts.
-  Existing files are re-verified instead of trusted by name.
+  disk-space precheck, and pinned checksums for the three Potion and three
+  PP-OCRv6 artifacts. Existing files are re-verified instead of trusted by name.
 - K7 default scheduling mode is now `full`; balanced/eco still opt in.
 - K3 thumbnail version fix: legacy 320 px thumbnails are no longer hashed;
   `image_hash_version` bumped to 2.
