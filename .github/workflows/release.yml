@@ -147,8 +147,10 @@ jobs:
           rustup target add x86_64-apple-darwin
           cargo build --release --manifest-path cli/Cargo.toml --target x86_64-apple-darwin
           mkdir -p dist
+          # The host (macos-latest) is arm64, so the generic build above is the
+          # aarch64 slice; only the x86_64 slice needs an explicit --target.
           lipo -create \
-            cli/target/aarch64-apple-darwin/release/kensaku-cli \
+            cli/target/release/kensaku-cli \
             cli/target/x86_64-apple-darwin/release/kensaku-cli \
             -output dist/kensaku-cli-macos-universal
 
