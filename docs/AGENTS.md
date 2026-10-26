@@ -120,3 +120,23 @@ response. Exit codes: `0` ok, `2` usage, `3` no index (launch Kensaku once).
 - No index → tools return a clear error; they never create or modify one.
 - Startup cost is once per MCP session. A one-shot CLI call pays metadata load,
   so prefer the MCP session for many queries.
+
+---
+
+## Planned v2 (not available yet)
+
+These are designed but not shipped. The contract above remains the truth today.
+
+- **Warm daemon** shared by GUI, CLI, and MCP, with loopback HTTP/SSE and token
+  auth for clients that need it. Removes the per-session metadata load.
+- **Pagination beyond the 10k exhaustive cap**, plus `find_symbol`
+  (tree-sitter), `find_related`, and `.gitignore` / `.cursorignore` parity.
+- **Visual search** once the vision tier lands: text-to-image, similar-image,
+  and optional "this is me" lookups. Read-only and local like everything else.
+- **One-click connect** for supported MCP clients, with live status in
+  Settings → Agents.
+- **Optional local LLM** as a query compiler and `/ask` with path citations.
+  The model never retrieves on its own and is never required.
+
+Scope and acceptance tests: [VISION.md](VISION.md). Technical shape:
+[ARCHITECTURE.md](ARCHITECTURE.md) §18.

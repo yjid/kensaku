@@ -6,7 +6,8 @@
 
 <p align="center">
   <b>Your computer's search is broken. This one isn't.</b><br/>
-  <i>Filenames, file contents, PDFs, Office docs and image text — one local index, millisecond answers, zero cloud.</i>
+  <i>Filenames, file contents, PDFs, Office docs and image text — one local index, millisecond answers, zero cloud.</i><br/>
+  <i>For you, and for every agent you use.</i>
 </p>
 
 <p align="center">
@@ -166,6 +167,26 @@ network. Full contract: [docs/AGENTS.md](docs/AGENTS.md).
 
 ---
 
+## Where this is going
+
+The next level is not more query syntax. It is **less translation between a
+thought and a file**:
+
+1. **Understand** — "latest resume" is a newest-sort plus an alias, not two
+   keywords. The app shows its interpretation as chips you can edit.
+2. **Filter** — live facet counts, multi-select, exclude, and saved searches.
+   Narrowing a million files should feel like toggling.
+3. **See** — CLIP/SigLIP image search, similar images, diagrams, native OCR,
+   and an optional local "this is me" identity. No image leaves the machine.
+4. **Connect** — a warm daemon that serves the GUI, CLI, and any MCP-capable
+   agent, plus an optional local `/ask` with path citations.
+
+Plain language stays the default. `/` is for what you want, `@` is for where it
+lives. The existing query grammar remains for power users and agents. Full
+scope, acceptance tests, and open decisions: [docs/VISION.md](docs/VISION.md).
+
+---
+
 ## Privacy
 
 - No analytics, no telemetry, no accounts.
@@ -180,6 +201,7 @@ network. Full contract: [docs/AGENTS.md](docs/AGENTS.md).
 
 | | |
 |---|---|
+| [Vision & roadmap](docs/VISION.md) | where the product is going, interaction model, milestones |
 | [Install & build](docs/INSTALL.md) | platforms, prerequisites, CLI, unsigned notes |
 | [Usage](docs/USAGE.md) | query language, keys, settings, indexing behavior |
 | [Agents](docs/AGENTS.md) | MCP tools and CLI contract |
@@ -200,9 +222,14 @@ network. Full contract: [docs/AGENTS.md](docs/AGENTS.md).
 hybrid ranking, documents + OCR, image thumbnails and near-duplicates, agent
 CLI/MCP, two themes, Doctor, Stats for Nerds, factory reset, tests and CI.
 
-Not yet: ONNX/CLIP embeddings, native platform OCR, a 1M-file prefilter, signing
-and notarization, auto-update, final artwork. See
-[docs/REMAINING.md](docs/REMAINING.md).
+Not yet: natural-language intent, `/` + `@` interaction, instant facet counts,
+CLIP/SigLIP visual search, face identity, native platform OCR, a warm agent
+daemon, a 1M-file prefilter, signing/notarization, auto-update, final artwork.
+See [docs/REMAINING.md](docs/REMAINING.md).
+
+**Where this is going:** a memory that understands a sentence, filters like a
+toggle, sees your screenshots and photos, and plugs into any AI without
+uploading your life. The plan is in [docs/VISION.md](docs/VISION.md).
 
 ## Contributing
 

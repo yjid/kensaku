@@ -5,9 +5,10 @@ Thanks for helping. Bug reports, docs fixes, and focused PRs are all welcome.
 ## Before you start
 
 - Open an issue for anything larger than a small fix, so we can agree on scope.
-- Read [`../docs/ARCHITECTURE.md`](ARCHITECTURE.md) and
-  [`../docs/EDGE-CASES.md`](EDGE-CASES.md) — they explain why the index is shaped
-  the way it is.
+- Read [`VISION.md`](VISION.md) for where the product is going and which
+  milestone a change serves. Read [`ARCHITECTURE.md`](ARCHITECTURE.md) and
+  [`EDGE-CASES.md`](EDGE-CASES.md) — they explain why the index is shaped the
+  way it is. The engineering backlog is [`REMAINING.md`](REMAINING.md).
 - Security issues: do **not** open a public issue. See [`../SECURITY.md`](../SECURITY.md).
 
 ## Setup
