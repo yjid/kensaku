@@ -789,6 +789,11 @@ pub async fn is_setup_complete() -> Result<bool, String> {
 }
 
 #[tauri::command]
+pub async fn is_setup_configured() -> Result<bool, String> {
+    Ok(KensakuConfig::load().is_setup_complete)
+}
+
+#[tauri::command]
 pub async fn complete_setup(
     watched_dirs: Vec<String>,
     excluded_dirs: Vec<String>,
@@ -804,6 +809,7 @@ pub async fn complete_setup(
         config.shortcut = sc;
     }
     config.is_setup_complete = true;
+    config.first_scan_done = false;
     config.save()?;
 
     crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);

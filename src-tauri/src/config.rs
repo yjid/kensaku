@@ -11,6 +11,10 @@ pub struct KensakuConfig {
     pub shortcut: String,
     pub max_results: usize,
     pub is_setup_complete: bool,
+    /// True once the *first* full crawl finished. `is_setup_complete` in the
+    /// command layer is the AND of this and `is_setup_complete` (configured).
+    #[serde(default)]
+    pub first_scan_done: bool,
     /// Skip files and directories whose name starts with `.` (hidden entries).
     /// Enabled by default; users can opt into indexing hidden files.
     #[serde(default = "default_true")]
@@ -103,12 +107,13 @@ impl Default for KensakuConfig {
             shortcut: "Alt+Space".to_string(),
             max_results: 50,
             is_setup_complete: false,
+            first_scan_done: false,
             skip_hidden: true,
             semantic_enabled: true,
             semantic_model: "static".to_string(),
             ocr_enabled: true,
             theme: default_theme(),
-            config_version: 2,
+            config_version: 3,
         }
     }
 }
@@ -166,6 +171,16 @@ impl KensakuConfig {
                 !NOW_INDEXABLE.contains(&normalized.as_str())
             });
             cfg.config_version = 2;
+            migrated = true;
+        }
+
+        if cfg.config_version < 3 {
+            // v3: first-scan completion gate. Existing installs that already
+            // completed setup are treated as having finished their first scan.
+            if cfg.is_setup_complete {
+                cfg.first_scan_done = true;
+            }
+            cfg.config_version = 3;
             migrated = true;
         }
 
@@ -269,7 +284,7 @@ impl KensakuConfig {
 
     pub fn is_setup_done() -> bool {
         let cfg = Self::load();
-        cfg.is_setup_complete
+        cfg.is_setup_complete && cfg.first_scan_done
     }
 
     pub fn is_dir_excluded(&self, dir_name: &str) -> bool {
@@ -309,7 +324,7 @@ mod tests {
     #[test]
     fn default_config_is_v2_and_paper() {
         let cfg = KensakuConfig::default();
-        assert_eq!(cfg.config_version, 2);
+        assert_eq!(cfg.config_version, 3);
         assert!(cfg.skip_hidden);
         assert!(cfg.ocr_enabled);
         assert_eq!(cfg.theme, "paper");
@@ -328,7 +343,7 @@ mod tests {
 
         let cfg = KensakuConfig::load_from_str(legacy);
 
-        assert_eq!(cfg.config_version, 2);
+        assert_eq!(cfg.config_version, 3);
         // Legacy document/image extensions are stripped (case-insensitively)...
         assert!(!cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case("pdf")));
         assert!(!cfg.excluded_extensions.iter().any(|e| e.eq_ignore_ascii_case("png")));
@@ -355,7 +370,7 @@ mod tests {
         }"#;
 
         let cfg = KensakuConfig::load_from_str(current);
-        assert_eq!(cfg.config_version, 2);
+        assert_eq!(cfg.config_version, 3);
         assert_eq!(
             cfg.excluded_extensions,
             vec!["rs".to_string(), "node_modules".to_string()]
@@ -375,7 +390,7 @@ mod tests {
         }"#;
 
         let cfg = KensakuConfig::load_from_str(legacy);
-        assert_eq!(cfg.config_version, 2);
+        assert_eq!(cfg.config_version, 3);
         assert_eq!(
             cfg.excluded_extensions,
             vec![".o".to_string(), "zip".to_string()]
@@ -385,7 +400,7 @@ mod tests {
     #[test]
     fn corrupt_config_falls_back_to_defaults() {
         let cfg = KensakuConfig::load_from_str("{ not json");
-        assert_eq!(cfg.config_version, 2);
+        assert_eq!(cfg.config_version, 3);
         assert_eq!(cfg.theme, "paper");
     }
 
@@ -405,7 +420,7 @@ mod tests {
 
         let saved: KensakuConfig =
             serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(saved.config_version, 2);
+        assert_eq!(saved.config_version, 3);
         assert_eq!(saved.theme, "paper");
 
         // A second save replaces the existing file atomically.

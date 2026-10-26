@@ -486,6 +486,15 @@ impl IndexerManager {
 
             last_reconcile_unix_secs.store(now_unix_secs(), Ordering::Relaxed);
 
+            // First-scan completion gate: the first full crawl marks setup done.
+            {
+                let mut cfg = config_arc.write();
+                if cfg.is_setup_complete && !cfg.first_scan_done {
+                    cfg.first_scan_done = true;
+                    let _ = cfg.save();
+                }
+            }
+
             {
                 let mut st = status.write();
                 st.is_indexing = false;
