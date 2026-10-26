@@ -6,6 +6,8 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- K14 startup quantization drops the temporary f32 matrix after quantizing and
+  adds an ignored real-model validation test gated on KENSAKU_MODEL_DIR.
 - K9 download hygiene framework: resumable `.part` downloads, HTTP Range resume,
   mirror fallback, atomic rename, SHA-256 verification, and progress reporting.
   Production artifact checksums remain to be pinned.
