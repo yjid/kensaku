@@ -71,6 +71,26 @@ name:Cargo content:workspace
 re:"TODO|FIXME" ext:rs
 ```
 
+### Plain language
+
+Kensaku compiles common phrasing locally, without a model. Every inference is
+shown as a removable chip above the results; removing a chip removes the words
+that produced it. If the query already contains an explicit `filter:`, the
+compiler leaves it alone.
+
+| You type | It becomes |
+|---|---|
+| `latest resume` | `resume` + sort newest |
+| `screenshots from last week` | `type:image modified:<7d` |
+| `big videos in Projects` | `size:>100mb type:media in:Projects` |
+| `tiny images` | `size:<1mb type:image` |
+| `oldest invoices` | `invoices` + sort oldest |
+| `biggest files` | `files` + sort largest |
+
+Time words: `today`, `yesterday`, `last week`, `last month`, `last year`.
+Size words: `big`/`large`/`huge` (>100 MB), `small`/`tiny` (<1 MB), and
+`under 5 MB` / `over 10 MB`.
+
 ### Scopes and sort
 
 - Type `@` to pick a folder from the index; the choice inserts `in:"<path>"`.

@@ -25,8 +25,16 @@ export interface ActiveFilter {
   negated: boolean;
 }
 
+export interface InterpretationChip {
+  kind: string;
+  label: string;
+  raw: string;
+  source: string;
+}
+
 export interface SearchResponse {
   results: SearchResult[];
+  interpretation?: InterpretationChip[];
   seq: number;
   active_filters: ActiveFilter[];
   hints: string[];

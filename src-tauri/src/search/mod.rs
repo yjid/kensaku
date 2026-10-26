@@ -106,6 +106,9 @@ pub struct SearchResponse {
     pub total: usize,
     /// `"ranked"` or `"exhaustive"`.
     pub mode: &'static str,
+    /// Natural-language interpretations applied to this query.
+    #[serde(default)]
+    pub interpretation: Vec<crate::query::intent::InterpretationChip>,
 }
 
 pub struct SearchDispatcher;
@@ -232,8 +235,22 @@ impl SearchDispatcher {
                 search_time_ms: 0,
                 total: 0,
                 mode: "ranked",
+                interpretation: Vec::new(),
             };
         }
+
+        // Deterministic natural-language pass. Explicit grammar is left alone.
+        let intent = crate::query::intent::compile(raw_query);
+        let effective_query = intent.query.as_str();
+        let sort = if sort == SortOrder::Best {
+            intent
+                .sort
+                .as_deref()
+                .map(SortOrder::parse)
+                .unwrap_or(SortOrder::Best)
+        } else {
+            sort
+        };
 
         let now_sec = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -246,7 +263,7 @@ impl SearchDispatcher {
         let generation = metadata.generation();
 
         // 1. Parse AST from query
-        let mut parsed = parse_query(raw_query, entries, path_index, Some(&trie), generation);
+        let mut parsed = parse_query(effective_query, entries, path_index, Some(&trie), generation);
         let route = crate::query::router::route_query(&parsed);
 
         // Pre-compile filters once per query (lowercase strings, intern extensions)
@@ -401,6 +418,7 @@ impl SearchDispatcher {
                 search_time_ms: elapsed,
                 total,
                 mode: "exhaustive",
+                interpretation: intent.chips.clone(),
             };
         }
 
@@ -683,6 +701,7 @@ impl SearchDispatcher {
             search_time_ms: elapsed,
             total,
             mode: "ranked",
+            interpretation: intent.chips,
         }
     }
 }
