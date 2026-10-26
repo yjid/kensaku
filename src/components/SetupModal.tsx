@@ -29,6 +29,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const [excludedDirs, setExcludedDirs] = useState<string[]>(DEFAULT_EXCLUSIONS);
   const [customExcludeInput, setCustomExcludeInput] = useState("");
   const [shortcut, setShortcut] = useState("Alt+Space");
+  const [capturing, setCapturing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanStatus, setScanStatus] = useState<IndexingStatus | null>(null);
@@ -51,6 +52,29 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
       })
       .catch(() => {});
   }, []);
+
+  // Capture a global shortcut by pressing the key combination.
+  useEffect(() => {
+    if (!capturing) return;
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      if (e.key === "Escape") {
+        setCapturing(false);
+        return;
+      }
+      const parts: string[] = [];
+      if (e.ctrlKey) parts.push("Control");
+      if (e.metaKey) parts.push("Super");
+      if (e.altKey) parts.push("Alt");
+      if (e.shiftKey) parts.push("Shift");
+      const key = e.key === " " ? "Space" : e.key.length === 1 ? e.key.toUpperCase() : e.key;
+      if (!["Control", "Super", "Alt", "Shift"].includes(e.key)) parts.push(key);
+      if (parts.length > 1) setShortcut(parts.join("+"));
+      setCapturing(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [capturing]);
 
   // Poll indexing status while scanning; finish when the crawl completes.
   useEffect(() => {
@@ -382,12 +406,17 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
               <span className="block text-[12px] font-medium text-fg">Global shortcut</span>
               <span className="block text-[11px] text-muted">Toggles the window anywhere.</span>
-              <input
-                type="text"
-                value={shortcut}
-                onChange={(e) => setShortcut(e.target.value)}
-                className="mt-2 h-9 w-40 rounded-[10px] border border-line bg-bg px-3 font-mono text-[11px] text-fg outline-none transition-colors focus:border-accent"
-              />
+              <button
+                type="button"
+                onClick={() => setCapturing(true)}
+                className={`mt-2 flex h-9 min-w-40 items-center justify-center rounded-[10px] border px-3 font-mono text-[11px] transition-colors ${
+                  capturing
+                    ? "border-accent text-accent"
+                    : "border-line bg-bg text-fg hover:border-line-strong"
+                }`}
+              >
+                {capturing ? "press keys… (Esc to cancel)" : shortcut}
+              </button>
             </div>
           </div>
         )}
@@ -447,14 +476,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
           {step === 2 && `${excludedDirs.length} ignored names`}
           {step === 3 && (
             <span className="font-mono">
-              shortcut{" "}
-              <input
-                type="text"
-                value={shortcut}
-                onChange={(e) => setShortcut(e.target.value)}
-                className="w-24 rounded border border-line bg-elevated px-1.5 py-0.5 font-mono text-[10px] text-fg outline-none focus:border-accent"
-              />{" "}
-              toggles the window anywhere
+              shortcut <kbd className="kbd">{shortcut}</kbd> toggles the window anywhere
             </span>
           )}
         </div>
