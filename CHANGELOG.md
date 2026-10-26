@@ -12,7 +12,8 @@ versioning: [SemVer](https://semver.org/).
   `health`/`index_state`/`shutdown`. CLI/MCP `state`/`index_state` now prefer
   the daemon and fall back to direct read-only access when it is absent.
   Search remains local until the daemon search method lands. The daemon also
-  exposes `get_status` and `reindex`.
+  exposes `get_status` and `reindex`, handles SIGTERM/SIGINT, and clients can
+  opt out with `KENSAKU_NO_DAEMON=1`.
 - Compact metadata arena (`NodeArena`/`NameArena`): per-entry node is 64 bytes
   (down from 128-byte `FileEntry`), full paths are reconstructed from parent
   chains instead of being stored per entry.

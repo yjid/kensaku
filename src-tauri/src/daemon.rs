@@ -36,6 +36,9 @@ pub fn request(method: &str, mut params: Value) -> Result<Value, String> {
     use std::os::unix::net::UnixStream;
     use std::time::Duration;
 
+    if std::env::var_os("KENSAKU_NO_DAEMON").is_some() {
+        return Err("daemon disabled by KENSAKU_NO_DAEMON".to_string());
+    }
     let token = read_token().ok_or_else(|| "daemon token missing".to_string())?;
     let stream = UnixStream::connect(socket_path())
         .map_err(|e| format!("daemon unavailable: {}", e))?;
