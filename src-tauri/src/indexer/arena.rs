@@ -54,6 +54,14 @@ impl NameArena {
     pub fn new() -> Self {
         Self { buf: Vec::new() }
     }
+    pub fn len(&self) -> usize {
+        self.buf.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.buf.is_empty()
+    }
+
     pub fn push(&mut self, name: &str) -> (u32, u32) {
         let off = self.buf.len() as u32;
         self.buf.extend_from_slice(name.as_bytes());
@@ -125,6 +133,10 @@ impl NodeArena {
         }
     }
 
+    pub fn ext_count(&self) -> usize {
+        self.exts.len()
+    }
+
     pub fn ext_str(&self, ext_id: u16) -> &str {
         if ext_id == 0 {
             ""
@@ -183,6 +195,40 @@ impl NodeArena {
         p
     }
 
+    /// Compares an arena node's reconstructed path with `path` without
+    /// allocating a `PathBuf`.
+    pub fn path_eq(&self, idx: u32, path: &Path) -> bool {
+        let components: Vec<&std::ffi::OsStr> =
+            path.components().map(|component| component.as_os_str()).collect();
+        let mut current = Some(idx);
+        let mut position = components.len();
+        let mut guard = 0usize;
+        while let Some(node_idx) = current {
+            if guard > self.nodes.len() + 1 || node_idx as usize >= self.nodes.len() {
+                return false;
+            }
+            guard += 1;
+            let node = &self.nodes[node_idx as usize];
+            let name = self.names.get(node.name_off, node.name_len);
+            if node.parent == NO_PARENT {
+                if position == 0 {
+                    return name.is_empty();
+                }
+                let remaining: PathBuf = components[..position].iter().collect();
+                return name == remaining.to_string_lossy();
+            }
+            if position == 0 {
+                return false;
+            }
+            position -= 1;
+            if components[position] != name {
+                return false;
+            }
+            current = Some(node.parent);
+        }
+        position == 0
+    }
+
     /// Reconstruct parent index if needed (already stored).
     pub fn parent(&self, idx: u32) -> NodeId {
         self.nodes[idx as usize].parent
@@ -196,4 +242,226 @@ pub fn path_hash(path: &Path) -> u64 {
         h = h.wrapping_mul(0x100000001b3);
     }
     h
+}
+
+
+const PATH_INDEX_EMPTY: u32 = u32::MAX;
+const PATH_INDEX_TOMBSTONE: u32 = u32::MAX - 1;
+
+#[derive(Default)]
+pub struct PathIndex {
+    fingerprints: Vec<u32>,
+    indices: Vec<u32>,
+    mask: usize,
+    len: usize,
+    tombstones: usize,
+}
+
+impl PathIndex {
+    pub fn new() -> Self {
+        Self::with_capacity(16)
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        let capacity = capacity.next_power_of_two().max(16);
+        Self {
+            fingerprints: vec![0; capacity],
+            indices: vec![PATH_INDEX_EMPTY; capacity],
+            mask: capacity - 1,
+            len: 0,
+            tombstones: 0,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.indices.len()
+    }
+
+    pub fn clear(&mut self) {
+        *self = Self::new();
+    }
+
+    fn fingerprint(hash: u64) -> u32 {
+        (hash as u32) ^ ((hash >> 32) as u32)
+    }
+
+    pub fn find(&self, arena: &NodeArena, path: &Path) -> Option<u32> {
+        if self.indices.is_empty() {
+            return None;
+        }
+        let hash = path_hash(path);
+        let fingerprint = Self::fingerprint(hash);
+        let mut slot = (hash as usize) & self.mask;
+        loop {
+            let idx = self.indices[slot];
+            if idx == PATH_INDEX_EMPTY {
+                return None;
+            }
+            if idx != PATH_INDEX_TOMBSTONE
+                && self.fingerprints[slot] == fingerprint
+                && arena.path_eq(idx, path)
+            {
+                return Some(idx);
+            }
+            slot = (slot + 1) & self.mask;
+        }
+    }
+
+    pub fn insert(&mut self, arena: &NodeArena, path: &Path, idx: u32) {
+        if self.len + self.tombstones + 1 > self.indices.len() * 7 / 10 {
+            self.grow(arena);
+        }
+        let hash = path_hash(path);
+        let fingerprint = Self::fingerprint(hash);
+        let mut first_tombstone = None;
+        let mut slot = (hash as usize) & self.mask;
+        loop {
+            let current = self.indices[slot];
+            if current == PATH_INDEX_EMPTY {
+                let target = first_tombstone.unwrap_or(slot);
+                self.fingerprints[target] = fingerprint;
+                self.indices[target] = idx;
+                self.len += 1;
+                if first_tombstone.is_some() {
+                    self.tombstones = self.tombstones.saturating_sub(1);
+                }
+                return;
+            }
+            if current == PATH_INDEX_TOMBSTONE {
+                if first_tombstone.is_none() {
+                    first_tombstone = Some(slot);
+                }
+            } else if self.fingerprints[slot] == fingerprint && arena.path_eq(current, path) {
+                self.indices[slot] = idx;
+                return;
+            }
+            slot = (slot + 1) & self.mask;
+        }
+    }
+
+    pub fn remove(&mut self, arena: &NodeArena, path: &Path) -> Option<u32> {
+        let hash = path_hash(path);
+        let fingerprint = Self::fingerprint(hash);
+        let mut slot = (hash as usize) & self.mask;
+        loop {
+            let idx = self.indices[slot];
+            if idx == PATH_INDEX_EMPTY {
+                return None;
+            }
+            if idx != PATH_INDEX_TOMBSTONE
+                && self.fingerprints[slot] == fingerprint
+                && arena.path_eq(idx, path)
+            {
+                self.indices[slot] = PATH_INDEX_TOMBSTONE;
+                self.tombstones += 1;
+                self.len = self.len.saturating_sub(1);
+                if self.tombstones > self.len / 4 + 1 && self.indices.len() > 16 {
+                    self.rehash(arena);
+                }
+                return Some(idx);
+            }
+            slot = (slot + 1) & self.mask;
+        }
+    }
+
+    fn grow(&mut self, arena: &NodeArena) {
+        let new_capacity = (self.indices.len() * 2).max(16);
+        let old_fingerprints = std::mem::take(&mut self.fingerprints);
+        let old_indices = std::mem::take(&mut self.indices);
+        self.fingerprints = vec![0; new_capacity];
+        self.indices = vec![PATH_INDEX_EMPTY; new_capacity];
+        self.mask = new_capacity - 1;
+        self.len = 0;
+        self.tombstones = 0;
+        for &idx in &old_indices {
+            if idx != PATH_INDEX_EMPTY && idx != PATH_INDEX_TOMBSTONE {
+                let path = arena.path(idx);
+                self.insert(arena, &path, idx);
+            }
+        }
+        drop(old_fingerprints);
+        drop(old_indices);
+    }
+
+    fn rehash(&mut self, arena: &NodeArena) {
+        let capacity = self.indices.len();
+        let old_fingerprints = std::mem::take(&mut self.fingerprints);
+        let old_indices = std::mem::take(&mut self.indices);
+        self.fingerprints = vec![0; capacity];
+        self.indices = vec![PATH_INDEX_EMPTY; capacity];
+        self.mask = capacity - 1;
+        self.len = 0;
+        self.tombstones = 0;
+        for &idx in &old_indices {
+            if idx != PATH_INDEX_EMPTY && idx != PATH_INDEX_TOMBSTONE {
+                let path = arena.path(idx);
+                self.insert(arena, &path, idx);
+            }
+        }
+        drop(old_fingerprints);
+        drop(old_indices);
+    }
+}
+
+#[derive(Default)]
+pub struct IdIndex {
+    ids: Vec<u64>,
+    idxs: Vec<u32>,
+}
+
+impl IdIndex {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn len(&self) -> usize {
+        self.ids.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+
+    pub fn get(&self, id: u64) -> Option<u32> {
+        let pos = self.ids.binary_search(&id).ok()?;
+        Some(self.idxs[pos])
+    }
+
+    pub fn insert(&mut self, id: u64, idx: u32) {
+        match self.ids.binary_search(&id) {
+            Ok(pos) => self.idxs[pos] = idx,
+            Err(pos) => {
+                self.ids.insert(pos, id);
+                self.idxs.insert(pos, idx);
+            }
+        }
+    }
+
+    pub fn remove(&mut self, id: u64) {
+        if let Ok(pos) = self.ids.binary_search(&id) {
+            self.ids.remove(pos);
+            self.idxs.remove(pos);
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.ids.clear();
+        self.idxs.clear();
+    }
+
+    pub fn from_pairs(mut pairs: Vec<(u64, u32)>) -> Self {
+        pairs.sort_unstable_by_key(|pair| pair.0);
+        Self {
+            ids: pairs.iter().map(|pair| pair.0).collect(),
+            idxs: pairs.iter().map(|pair| pair.1).collect(),
+        }
+    }
 }

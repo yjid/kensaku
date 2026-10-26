@@ -100,10 +100,10 @@ These are the highest-leverage gaps. None require a new model.
 - [ ] **Native OCR** — macOS Vision (`objc2-vision`) and Windows OCR (`windows`
       crate). Today it shells out to `tesseract`, which may not be installed.
       Scanned PDFs need the same path.
-- [ ] **"This is me" identity** — local face embeddings + clustering, opt-in
+- [-] **"This is me" identity** —  skip for now will think and appy it later , local face embeddings + clustering, opt-in
       enrollment with 3–5 photos, explainable matches, delete-all. Sensitive
       data: local only, never uploaded; ship after the sensitive-path policy.
-- [ ] **VLM captions (optional)** — idle-time captions for diagrams and
+- [-] **VLM captions (optional)** — skip this feature , idle-time captions for diagrams and
       screenshots, stored as searchable text. Complements CLIP where short text
       queries are weak.
 - [ ] **Multilingual embeddings + CJK tokenization** — the default model is
