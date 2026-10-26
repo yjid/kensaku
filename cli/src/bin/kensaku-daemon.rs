@@ -203,6 +203,27 @@ fn handle_client(mut stream: UnixStream, token: &str, manager: &Arc<IndexerManag
             },
             "get_status" => serde_json::to_value(manager.get_status())
                 .map_err(|e| e.to_string()),
+            "get_config" => serde_json::to_value(manager.config.read().clone())
+                .map_err(|e| e.to_string()),
+            "save_config" => {
+                let config: KensakuConfig = match serde_json::from_value(
+                    params.get("config").cloned().unwrap_or(serde_json::Value::Null),
+                ) {
+                    Ok(config) => config,
+                    Err(e) => {
+                        let _ = writeln!(
+                            stream,
+                            "{}",
+                            serde_json::json!({"jsonrpc":"2.0","id":id,"error":{"code":-32000,"message":e.to_string()}})
+                        );
+                        continue;
+                    }
+                };
+                match manager.apply_config(config) {
+                    Ok(()) => Ok(serde_json::json!({"ok": true})),
+                    Err(e) => Err(e),
+                }
+            }
             "reindex" => {
                 if !manager.config.read().mcp_allow_reindex {
                     Err("reindex is disabled; enable mcp_allow_reindex in config.json".to_string())
