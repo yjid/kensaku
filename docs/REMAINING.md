@@ -158,7 +158,7 @@ These are the highest-leverage gaps. None require a new model.
       i8 with scales targets ~8 MB with a golden-set quality check. Task:
       [ROADMAP K14](ROADMAP.md#k14-quantize-the-static-embedding-table-to-i8).
       (ROADMAP K14)
-- [ ] **Thumbnail-based image hashing + memory release** — generate the 480 px
+- [x] **Thumbnail-based image hashing + memory release** — generate the 480 px
       thumbnail once, hash it (~2.4 ms), reuse it for the grid, and return freed
       pages after each image/PDF (`malloc_trim`, `malloc_zone_pressure_relief`,
       `EmptyWorkingSet`). Task: [ROADMAP K3](ROADMAP.md#k3-thumbnail-based-hashing--memory-release).
