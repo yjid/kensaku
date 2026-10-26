@@ -1269,6 +1269,7 @@ mod tests {
         assert_eq!(SortOrder::parse("nonsense"), SortOrder::Best);
     }
 
+    use crate::indexer::metadata_db::MetadataDb;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1316,6 +1317,38 @@ mod tests {
             char_bloom: 0,
             content_pending: false,
         }
+    }
+
+    #[test]
+    fn fast_response_never_reads_or_returns_snippets() {
+        let temp = temp_index("fast-snippets");
+        let index = temp.index.as_ref().unwrap();
+        let path = "/tmp/kensaku/fast/notes.txt";
+        let name = "notes.txt";
+        index
+            .add_or_update(Path::new(path), name, "needle in a haystack", 0)
+            .expect("add document");
+        index.commit().unwrap();
+
+        let db = MetadataDb::open_in_dir(&temp.dir).expect("open metadata db");
+        db.upsert(&entry(1, path, name)).unwrap();
+        let metadata = MetadataStore::with_db(db);
+
+        let response = SearchDispatcher::search_response_fast(
+            "needle",
+            &metadata,
+            &temp.index,
+            None,
+            false,
+            10,
+            0,
+        );
+
+        assert!(!response.results.is_empty());
+        assert!(
+            response.results.iter().all(|result| result.snippet.is_none()),
+            "the fast search path must not attach snippets"
+        );
     }
 
     #[test]
