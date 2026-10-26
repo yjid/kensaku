@@ -23,8 +23,16 @@ flagged, not indexed.
 
 **Does it search images?**
 By filename, by OCR text when `tesseract` **and** language data are available,
-and by perceptual near-duplicate. Semantic image search (CLIP) is not implemented
-yet.
+and by perceptual near-duplicate. Natural-language visual search ("red cap",
+"system design diagram"), similar-image lookup, and an optional local "this is
+me" identity are planned — see [VISION.md](VISION.md). Semantic image search
+(CLIP) is not implemented yet.
+
+**Can I just type "latest resume" or use `/` and `@`?**
+Not yet. Today plain words are searched as terms and narrowing uses
+`key:value` filters such as `type:pdf` and `modified:<7d`. Plain-language intent,
+`/` commands, `@` scopes, and visible interpretation chips are the next
+milestone — see [VISION.md](VISION.md).
 
 **OCR is on but no image text is indexed.**
 Tesseract is probably installed without language data. Settings → Search shows
@@ -59,7 +67,11 @@ Yes — that's the point of `kensaku-cli` and the MCP server. See
 
 **Why not bundle an LLM / "ask my files"?**
 A local LLM is a multi-gigabyte dependency and a different product. Kensaku stays
-the fast, trustworthy index; agents bring their own model.
+the fast, trustworthy index by default. An **optional** local Ollama/LM Studio
+connection may compile plain-language intent and power `/ask` with path
+citations; agents bring their own model through MCP. No model is bundled, and
+nothing leaves the machine unless you explicitly configure a cloud provider.
+See [VISION.md](VISION.md).
 
 **How do I contribute?**
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). Tests and clippy must pass.

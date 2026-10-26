@@ -1,5 +1,9 @@
 # Usage
 
+> This page documents **shipped behavior** at `v0.3.3`. The planned interaction
+> — plain-language intent, `/` commands, `@` scopes, facet counts, visual search
+> — is described in [VISION.md](VISION.md). Do not assume it exists yet.
+
 ## The window
 
 Press <kbd>Alt</kbd>+<kbd>Space</kbd> (configurable in Settings) to toggle the

@@ -1,8 +1,12 @@
 # Kensaku v2 — Architecture & Implementation Plan
 
-> **Status:** implemented through v0.3.0. This document is the design; the
-> user-facing guides are in [`USAGE.md`](USAGE.md) and [`AGENTS.md`](AGENTS.md),
-> and the open gaps are in [`REMAINING.md`](REMAINING.md).
+> **Status:** design through `v0.3.3`. This document describes the target
+> architecture as well as what shipped; they are not identical. In particular,
+> the daemon topology in §3 and the HTTP transport in §9.3 are **planned**, not
+> current — today the GUI backend is in-process and the CLI/MCP load the index
+> themselves. Product direction and sequencing live in
+> [`VISION.md`](VISION.md); the engineering backlog lives in
+> [`REMAINING.md`](REMAINING.md).
 
 > **One sentence:** a warm, local, read-only index of your machine that answers in under 15 ms — for you, and for every AI agent you use.
 
@@ -329,6 +333,12 @@ State machine: `pending → ok | skipped(reason) | failed(reason)`, max 3 attemp
 - **Semantic badge:** a subtle `≈` on results that only the vector tier found. No mode switch — semantics are part of the one box.
 - **Settings:** four controls. Folders, exclusions preset, shortcut, AI toggle. Everything else is a config file, documented, not a UI.
 
+> This is the **shipped `v0.3.x`** surface. The planned zero-syntax interaction —
+> plain-language intent, `/` commands, `@` scopes, interpretation chips, facet
+> counts, grouped versions — is specified in §18.1–18.2 and
+> [`VISION.md`](VISION.md). `>` is intended to become `/`; the old grammar stays
+> available underneath.
+
 **Perceived-speed rules:** render previous results during computation; fire immediately on Enter/paste; prefetch top-5 snippets; never animate reordering; empty state = recent files, rendered before any query.
 
 ### 9.2 CLI
@@ -342,7 +352,8 @@ kensaku doctor
 kensaku mcp            # stdio MCP server
 ```
 
-Same daemon, same AST, machine-readable. This makes Kensaku usable by any shell-capable agent today, before MCP adoption.
+Same AST and index as the GUI. Today the CLI loads the index per invocation; a
+warm daemon (§18.4) removes that cost and lets GUI, CLI, and MCP share one index.
 
 ### 9.3 MCP / agent API
 
@@ -503,3 +514,170 @@ GitHub Actions (AppImage/deb/AUR, dmg universal, msi/exe) · benchmark harness +
 3. **Query layer skeleton.** AST + lexer + `type:`/`in:`/`modified:`/`-` filters + scope trie + RRF fusion + deterministic tiebreak. Ship behind the existing UI; add chips.
 
 After those three, the remaining phases are additive rather than corrective.
+
+---
+
+## 18. Planned product layers (v0.4+)
+
+Product intent and acceptance tests are in [`VISION.md`](VISION.md). This
+section is the technical shape of those layers.
+
+### 18.1 Intent layer
+
+Today the parser turns grammar into an AST. The next layer turns **language**
+into the same AST, then shows the result as chips.
+
+```rust
+struct Interpretation {
+    terms:    Vec<Term>,        // text, with aliases expanded
+    filters:  Vec<Filter>,      // existing Filter enum
+    scopes:   Vec<Scope>,       // existing directory-trie resolution
+    sort:     Sort,             // new: BestMatch | Newest | Oldest | Largest | Name
+    aliases:  Vec<AliasHit>,    // what was expanded, for the chips
+    confidence: f32,
+    source:   InterpretationSource, // Rules | Llm | Grammar
+}
+```
+
+Pipeline:
+
+```
+raw input
+  ├─ grammar parse (existing) ──────────────► AST
+  ├─ alias expansion ───────────────────────► terms
+  ├─ deterministic intent rules ─────────────► filters + sort + scope
+  └─ optional local LLM compiler ───────────► canonical JSON, schema-validated
+        └─ on failure/timeout: keep the deterministic result
+```
+
+Rules:
+
+- Rules first, LLM never required. The app must work offline and instantly.
+- The LLM returns **only** an interpretation (a strict, versioned JSON schema),
+  never file results. Retrieval stays with the index.
+- Validate every field against the existing AST enums; unknown keys are dropped,
+  not executed.
+- Show `interpretation` in the response and render it as chips.
+- Cache `(raw input, config version) -> Interpretation` with a small LRU.
+- If confidence is low, ask one chip-based clarification ("@Work or @Personal?"),
+  never a chat paragraph.
+
+Sort is executed after candidate collection, before the display limit. `Newest`
+sorts matches by `mtime` desc with the existing deterministic path tiebreak;
+`BestMatch` is today's RRF order. Recency stays a ranking bonus only in
+`BestMatch`.
+
+### 18.2 Facets and filter pushdown
+
+Request additions:
+
+```json
+{ "query": "...", "facets": ["type", "lang", "scope", "modified", "size"] }
+```
+
+Response additions:
+
+```json
+{
+  "facets": {
+    "type":  [{ "value": "image", "count": 1204 }, ...],
+    "lang":  [{ "value": "rust",  "count": 88 }],
+    "modified": [{ "value": "7d", "count": 41 }]
+  },
+  "total": 1402
+}
+```
+
+- Counts are for the **whole** result set, computed with the facet's own
+  dimension excluded (standard faceted search).
+- Push `ext`, `size`, `mtime`, and `lang` into Tantivy as fast fields and a
+  `BooleanQuery`; stop scoring documents that cannot match.
+- Compute metadata-only facets from the snapshot where possible; content facets
+  from fast fields. Cache by `(query, generation)` and invalidate on write.
+- Budget: facet computation ≤ 3 ms at 100k, ≤ 10 ms at 1M.
+- Multi-select is OR within a dimension, AND across dimensions; negation is a
+  `MustNot`. An empty facet selection is never sent as a filter.
+
+### 18.3 Visual tier
+
+Add a fourth retrieval tier alongside fuzzy name, BM25, and static vectors.
+
+- **Model:** SigLIP or CLIP ViT-B/32 int8, `load-dynamic`, optional Vision Pack.
+  Normalize embeddings; one vector per image; optional region/caption vectors.
+- **Storage:** `visual_units(node_id, model_id, vec_id)`; vectors in the existing
+  i8 store with `model_id` so a model swap never corrupts results. Reuse the
+  thumbnail and dHash already stored per image.
+- **Query:** text → visual embedding, or selected image → embedding. Fuse the
+  visual rank with the other tiers through RRF; apply the same semantic floor
+  and the same metadata filters first. A visual-only hit is marked as such.
+- **Captions:** optional idle-time VLM captions enter the BM25 tier as text
+  units, so "system design diagram" works even when the visual model is weak.
+- **Face identity:** separate, opt-in table of 512-d face embeddings, clustered
+  at idle; the user labels a cluster as "me"; search is cosine-to-centroid
+  intersected with visual attributes. Explain the match
+  (`face 0.82 · red cap 0.91`). Never upload, never export, delete-all must be
+  verifiable.
+- **Cost:** ~20 ms/image on 2 low-priority threads; 50k photos ≈ 17 min at idle.
+  Honor battery/fullscreen/query-in-flight pauses; resume from a cursor.
+
+### 18.4 Daemon migration
+
+Current: the GUI owns the indexer in-process; `kensaku-cli` and MCP load the
+metadata themselves. Target: one warm process, three clients.
+
+```
+GUI ─┐
+CLI ─┼─► kensaku-daemon (UDS / named pipe, 0600 token)
+MCP ─┘        │
+              ├─ indexer + watcher + embed queue
+              └─ query planner + snippets
+```
+
+- Keep a **dual mode**: if the daemon is absent, the GUI runs in-process as it
+  does today. This avoids making the app unusable when the daemon fails.
+- Start with UDS/named pipes; add loopback HTTP/SSE only for clients that need
+  it. Token auth, read-only, no shell, no network beyond loopback.
+- Migrate in this order: protocol types → daemon skeleton → GUI client →
+  CLI/MCP proxy → HTTP. Do not block Milestones 1–2 on this.
+- Single instance moves from the current file lock to the daemon lock.
+
+### 18.5 Memory and personalization
+
+All local, all inspectable, all deletable.
+
+- **Aliases:** config-backed `alias -> [terms]`, seeded by onboarding preset
+  (developer, designer, student, office) and user-editable.
+- **Usage:** extend the existing frecency with query→result opens, refinements,
+  and pins. Never upload; expose a "clear history" action.
+- **Saved searches:** a named `Interpretation` + chips. User-created first;
+  auto-suggestions require explicit acceptance.
+- **Version groups:** conservative name + size + time heuristics, user-mergeable.
+  A wrong group is worse than no group.
+- **Home:** recent files, recent queries, pins, and suggestions derived from the
+  local usage table.
+
+### 18.6 Response and schema evolution
+
+Additive fields only; existing clients keep working.
+
+- `interpretation`: terms, filters, scopes, sort, aliases, confidence, source.
+- `sort`: the effective sort order.
+- `facets`: counts keyed by dimension.
+- `partial`: which tier missed its deadline.
+- `as_of`: already present; keep per-root freshness.
+
+Bump the JSON schema version for MCP/CLI when a field changes meaning, not when
+a field is added. The CLI default output stays `path<TAB>score<TAB>snippet`.
+
+### 18.7 Testing these layers
+
+- **Intent golden set:** 40–50 labelled queries, including `latest resume`,
+  `screenshots from last week`, `docker error in Projects`, `my biggest videos`,
+  `the invoice from March`. Gate on top-1/top-3 and one-shot success.
+- **Facet tests:** count accuracy with multi-select and negation; latency at
+  100k and 1M.
+- **Visual tests:** a frozen 200-image set with labelled queries (`red cap`,
+  `diagram`, `whiteboard`), measured at top-5.
+- **Privacy tests:** default configuration makes zero network calls; sensitive
+  paths never enter an index; face data delete-all is verified.
+- **Migration tests:** index/model version changes never mix vector spaces.
