@@ -217,6 +217,15 @@ struct Unit { node_id, byte_start, byte_end, model_idx }  // 1 vector per unit
 
 **Embedding queue:** bounded, resumable cursor in `nodes.indexed_gen`, priority = recently-modified first, then small files first. Hard rules: stop on battery, stop when a query is in flight, stop during fullscreen apps, max 2 threads.
 
+**Optional ONNX smart embedding pack (K17):**
+- **Model:** `bge-small-en-v1.5` (quantized int8 ONNX).
+- **License:** MIT License.
+- **Parameters & Dimensions:** 33.4M parameters, 384 dimensions (quantized to i8, unit-normalized).
+- **Disk size:** ~34.7 MB total (`model.onnx` 34,014,426 B, `tokenizer.json` 711,396 B, `config.json` 683 B).
+- **Inference & Concurrency:** Loaded through `ort` under the optional `smart-embeddings` feature. Single intra-op thread per session; maximum 2 parallel inference workers in the embed queue; batch size capped at 16 chunks.
+- **Memory overhead:** ~45–55 MB peak RSS when active; exactly 0 MB when the feature is off or provider is `static`/`none`.
+- **Model isolation:** Managed with `model_id = 3` (distinct from default hashing `1` and static table `2`), ensuring units are strictly filtered and incompatible vectors never mix. Missing or disabled smart pack falls back to the static table with an explicit fallback reason surfaced in Doctor/stats.
+
 ### 5.4 Folded / substring tier ([K5](ROADMAP.md#k5-folded--trigram-content-tier))
 
 Exact BM25 is the first tier. When it cannot fill the result limit, a folded

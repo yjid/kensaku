@@ -99,9 +99,10 @@ These are the highest-leverage gaps. None require a new model.
       remains default; missing/incompatible providers fall back cleanly with
       recorded reasons; model-id isolation prevents mixing incompatible vectors.
       (ROADMAP K16)
-- [ ] **ONNX "smart pack"** — optional `ort`/ONNX model with `load-dynamic`,
-      bge-small or EmbeddingGemma-Q4, activation after download. The Potion
-      table is already used; this is the quality tier above it. (ROADMAP K17)
+- [x] **ONNX "smart pack"** — optional `ort`/ONNX model (`bge-small-en-v1.5` int8)
+      behind `smart-embeddings` feature, activation after download with K9 hygiene,
+      pinned SHA-256, bounded concurrency (max 2 workers, 1 intra-op thread),
+      static fallback with recorded reason. (ROADMAP K17)
 - [ ] **Image embeddings** — SigLIP or CLIP ViT-B/32 int8 for "red cap",
       "system design diagram", "whiteboard". Today images are searchable through
       OCR text and filename only. Wire as a fourth retrieval tier into RRF.
@@ -119,8 +120,8 @@ These are the highest-leverage gaps. None require a new model.
       diagrams and screenshots, stored as searchable text. Complements CLIP
       where short text queries are weak.
 - [~] **Multilingual embeddings + CJK tokenization** — K15 CJK Tantivy
-      tokenization shipped with unigrams/bigrams and schema v2; multilingual
-      ONNX smart pack and evaluation remain. (ROADMAP K15 [x], K17, K22)
+      tokenization shipped with unigrams/bigrams and schema v2; K17 ONNX smart pack
+      shipped; evaluation remains. (ROADMAP K15 [x], K17 [x], K22)
 
 ## C. Agent, LLM & runtime
 

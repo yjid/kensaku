@@ -6,6 +6,14 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- K17 optional ONNX smart embedding pack: `bge-small-en-v1.5` int8 text embedding model
+  (MIT license, 33.4M parameters, 384 dimensions) behind the `smart-embeddings`
+  Cargo feature using `ort`. Features zero cost when disabled. Pinned artifact manifest
+  in `models.rs` (`models/smart/`) with SHA-256 verification, resume, and mirror support.
+  Shared BERT WordPiece tokenizer (`embed::wordpiece`). Bounded concurrency with 1 intra-op
+  thread per session and maximum 2 inference workers. Model isolation via `model_id = 3`
+  with automatic fallback to `StaticTable` when artifacts are missing or feature is disabled.
+  Tauri commands `get_smart_pack_status` and `download_smart_pack` registered.
 - K16 embedding provider contract: real provider selection supporting `Static`
   (quantized Potion table / hashing estimator), `Smart` (reserved for ONNX),
   and `None` (lexical-only mode). Reads `semantic_enabled`, `semantic_model`, and

@@ -15,11 +15,12 @@ use std::time::Duration;
 /// Size of the read buffer, and therefore the progress update interval.
 const CHUNK_BYTES: usize = 64 * 1024;
 
-struct Artifact {
-    name: &'static str,
-    urls: &'static [&'static str],
-    bytes_expected: u64,
-    sha256: Option<&'static str>,
+#[derive(Debug, Clone, Copy)]
+pub struct Artifact {
+    pub name: &'static str,
+    pub urls: &'static [&'static str],
+    pub bytes_expected: u64,
+    pub sha256: Option<&'static str>,
 }
 
 /// Static manifest of the files required by the semantic model.
@@ -75,11 +76,40 @@ const OCR_ARTIFACTS: [Artifact; 3] = [
     },
     Artifact {
         name: "dict.txt",
-        urls: &[
-            "https://github.com/GreatV/oar-ocr/releases/download/v0.7.0/ppocrv6_tiny_dict.txt",
-        ],
+        urls: &["https://github.com/GreatV/oar-ocr/releases/download/v0.7.0/ppocrv6_tiny_dict.txt"],
         bytes_expected: 27_156,
         sha256: Some("c5cbe34ef40c29c4df07ed012bf96569cb69a2d2a01a07027e9f13cb832bd9cd"),
+    },
+];
+
+/// Optional ONNX smart embedding pack (bge-small-en-v1.5 int8).
+pub const SMART_ARTIFACTS: [Artifact; 3] = [
+    Artifact {
+        name: "model.onnx",
+        urls: &[
+            "https://huggingface.co/Xenova/bge-small-en-v1.5/resolve/main/onnx/model_quantized.onnx",
+            "https://hf-mirror.com/Xenova/bge-small-en-v1.5/resolve/main/onnx/model_quantized.onnx",
+        ],
+        bytes_expected: 34_014_426,
+        sha256: Some("6c9c6101a956d62dfb5e7190c538226c0c5bb9cb27b651234b6df063ee7dbfe4"),
+    },
+    Artifact {
+        name: "tokenizer.json",
+        urls: &[
+            "https://huggingface.co/Xenova/bge-small-en-v1.5/resolve/main/tokenizer.json",
+            "https://hf-mirror.com/Xenova/bge-small-en-v1.5/resolve/main/tokenizer.json",
+        ],
+        bytes_expected: 711_396,
+        sha256: Some("d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66"),
+    },
+    Artifact {
+        name: "config.json",
+        urls: &[
+            "https://huggingface.co/Xenova/bge-small-en-v1.5/resolve/main/config.json",
+            "https://hf-mirror.com/Xenova/bge-small-en-v1.5/resolve/main/config.json",
+        ],
+        bytes_expected: 683,
+        sha256: Some("fa73f90bf92c8cace1fbcb709626306f2bdbc9ea3e5b5f94b440df9b6aa56350"),
     },
 ];
 
@@ -181,6 +211,20 @@ pub fn ocr_status() -> ModelsStatus {
     status_for(&crate::ocr::pack_dir(), &OCR_ARTIFACTS)
 }
 
+pub fn smart_dir() -> PathBuf {
+    models_dir().join("smart")
+}
+
+pub fn smart_pack_present() -> bool {
+    smart_dir().join("model.onnx").is_file()
+        && smart_dir().join("tokenizer.json").is_file()
+        && smart_dir().join("config.json").is_file()
+}
+
+pub fn smart_status() -> ModelsStatus {
+    status_for(&smart_dir(), &SMART_ARTIFACTS)
+}
+
 fn status_for(dir: &Path, artifacts_list: &[Artifact]) -> ModelsStatus {
     let dir = dir.to_path_buf();
     let mut artifacts = Vec::with_capacity(artifacts_list.len());
@@ -228,12 +272,7 @@ fn status_for(dir: &Path, artifacts_list: &[Artifact]) -> ModelsStatus {
 /// Returns immediately. Calling this while a download is already running is a
 /// no-op.
 pub fn download_all() {
-    start_download(
-        models_dir(),
-        &ARTIFACTS,
-        "kensaku-model-download",
-        "model",
-    );
+    start_download(models_dir(), &ARTIFACTS, "kensaku-model-download", "model");
 }
 
 /// Starts a background download of the optional accurate OCR pack.
@@ -243,6 +282,16 @@ pub fn download_ocr_pack() {
         &OCR_ARTIFACTS,
         "kensaku-ocr-download",
         "OCR pack",
+    );
+}
+
+/// Starts a background download of the optional ONNX smart embedding pack.
+pub fn download_smart_pack() {
+    start_download(
+        smart_dir(),
+        &SMART_ARTIFACTS,
+        "kensaku-smart-download",
+        "smart embedding pack",
     );
 }
 
@@ -292,11 +341,7 @@ fn run_download(dir: PathBuf, artifacts: &'static [Artifact], label: &'static st
     DOWNLOADING.store(false, Ordering::SeqCst);
 }
 
-fn download_missing_for(
-    dir: &Path,
-    artifacts: &[Artifact],
-    label: &str,
-) -> Result<(), String> {
+fn download_missing_for(dir: &Path, artifacts: &[Artifact], label: &str) -> Result<(), String> {
     ensure_dir(dir)?;
 
     let missing_bytes: u64 = artifacts
@@ -353,10 +398,7 @@ fn download_one(dir: &Path, artifact: &Artifact) -> Result<(), String> {
     }
 
     let part_path = dir.join(format!("{}.part", artifact.name));
-    let mut downloaded = part_path
-        .metadata()
-        .map(|meta| meta.len())
-        .unwrap_or(0);
+    let mut downloaded = part_path.metadata().map(|meta| meta.len()).unwrap_or(0);
     if downloaded > artifact.bytes_expected && artifact.bytes_expected > 0 {
         let _ = std::fs::remove_file(&part_path);
         downloaded = 0;
@@ -439,7 +481,7 @@ fn download_url(
             return Err(format!(
                 "Unexpected HTTP status {} for {}",
                 other, artifact.name
-            ))
+            ));
         }
     };
 
@@ -462,8 +504,7 @@ fn download_url(
         if read == 0 {
             break;
         }
-        file
-            .write_all(&buffer[..read])
+        file.write_all(&buffer[..read])
             .map_err(|e| format!("Failed to write {}: {}", part_path.display(), e))?;
         *downloaded = downloaded.saturating_add(read as u64);
         set_progress(Some(ModelProgress {
@@ -478,8 +519,7 @@ fn download_url(
             artifact.name, total, downloaded
         ));
     }
-    file
-        .flush()
+    file.flush()
         .map_err(|e| format!("Failed to flush {}: {}", part_path.display(), e))?;
     Ok(())
 }
@@ -498,8 +538,8 @@ fn sha256_matches(path: &Path, expected: Option<&str>) -> Result<bool, String> {
 
 fn sha256_file(path: &Path) -> Result<String, String> {
     use sha2::{Digest, Sha256};
-    let bytes = std::fs::read(path)
-        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+    let bytes =
+        std::fs::read(path).map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
     let digest = Sha256::digest(bytes);
     Ok(format!("{:x}", digest))
 }
@@ -543,6 +583,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn smart_artifacts_manifest_sanity() {
+        assert_eq!(SMART_ARTIFACTS.len(), 3);
+        assert!(SMART_ARTIFACTS.iter().all(|a| a.sha256.is_some()));
+        assert!(SMART_ARTIFACTS.iter().all(|a| a.bytes_expected > 0));
+        assert!(SMART_ARTIFACTS.iter().all(|a| !a.urls.is_empty()));
+    }
+
+    #[test]
     fn sha256_matches_detects_corruption() {
         let dir = std::env::temp_dir().join("kensaku-model-test-corrupt");
         let _ = std::fs::create_dir_all(&dir);
@@ -550,7 +598,13 @@ mod tests {
         std::fs::write(&path, b"hello").unwrap();
         let digest = sha256_file(&path).unwrap();
         assert!(sha256_matches(&path, Some(&digest)).unwrap());
-        assert!(!sha256_matches(&path, Some("0000000000000000000000000000000000000000000000000000000000000000")).unwrap());
+        assert!(
+            !sha256_matches(
+                &path,
+                Some("0000000000000000000000000000000000000000000000000000000000000000")
+            )
+            .unwrap()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -564,7 +618,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
-
 
 #[cfg(test)]
 mod download_tests {
@@ -636,7 +689,9 @@ mod download_tests {
         let bad = spawn_server(|mut stream| {
             let mut buf = [0u8; 1024];
             let _ = stream.read(&mut buf);
-            let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            let _ = stream.write_all(
+                b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
         });
         let good = spawn_server(move |mut stream| {
             let mut buf = [0u8; 1024];
