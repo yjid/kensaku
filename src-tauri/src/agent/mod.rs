@@ -4,7 +4,10 @@
 //! reads the index built by the GUI: there is no in-app AI, no LLM call and no
 //! network access anywhere on this path.
 
+pub mod connect;
+pub mod http;
 pub mod mcp;
+pub mod symbols;
 
 use crate::config::KensakuConfig;
 use crate::embed::{ModelRegistry, UnitStore};
@@ -356,6 +359,20 @@ impl AgentSession<'_> {
         matches!(self, Self::Daemon)
     }
 
+    /// Configured agent-scope roots, fetched once per call. Empty means the
+    /// whole index is visible to agents.
+    pub fn scoped_roots(&self) -> Vec<String> {
+        match self {
+            Self::Daemon => crate::daemon::request("get_config", json!({}))
+                .ok()
+                .and_then(|value| serde_json::from_value::<KensakuConfig>(value).ok())
+                .map(|config| config.agent_scoped_roots)
+                .unwrap_or_default(),
+            Self::Local(index) => index.config.agent_scoped_roots.clone(),
+            Self::None => Vec::new(),
+        }
+    }
+
     pub fn search_page(
         &self,
         query: &str,
@@ -376,6 +393,49 @@ impl AgentSession<'_> {
                 serde_json::from_value(value).map_err(|e| e.to_string())
             }
             Self::Local(index) => index.search_local_page(query, limit, offset),
+            Self::None => Err(NO_INDEX_MESSAGE.to_string()),
+        }
+    }
+
+    /// Keyset-paginated exhaustive search: matches strictly after
+    /// `start_after` (a path), for pagination past the 10k exhaustive cap.
+    pub fn search_page_after(
+        &self,
+        query: &str,
+        limit: usize,
+        start_after: &str,
+    ) -> Result<SearchResponse, String> {
+        match self {
+            Self::Daemon => {
+                let value = crate::daemon::request(
+                    "search",
+                    json!({
+                        "query": query,
+                        "limit": limit,
+                        "offset": 0,
+                        "snippets": false,
+                        "start_after": start_after,
+                        "mode": "exhaustive",
+                    }),
+                )?;
+                serde_json::from_value(value).map_err(|e| e.to_string())
+            }
+            Self::Local(index) => {
+                // Callers pass a composed query that already carries
+                // `mode:exhaustive`; the keyset filter does the rest.
+                Ok(SearchDispatcher::search_response_exhaustive_after(
+                    query.trim(),
+                    &index.metadata,
+                    &index.content,
+                    Some(&index.units),
+                    index.config.semantic_enabled,
+                    limit,
+                    0,
+                    &index.config.alias_pairs(),
+                    start_after,
+                    false,
+                ))
+            }
             Self::None => Err(NO_INDEX_MESSAGE.to_string()),
         }
     }
@@ -452,6 +512,146 @@ impl AgentSession<'_> {
     }
 }
 
+/// Applies the configured agent-scope roots to an optional requested path.
+///
+/// - No roots configured: pass the request through unchanged.
+/// - Roots configured: a requested path must live under one of them (else
+///   the request is rejected); an absent path defaults to the union of the
+///   roots.
+///
+/// Containment is decided on resolved paths: existing paths are canonicalized
+/// (which resolves `..`, `.` and symlinks) and non-existent paths fall back to
+/// a lexical normalization, so a request cannot escape a root with `..`.
+///
+/// Returns the scope paths to append as `in:"..."` tokens, or an error for
+/// out-of-scope requests.
+pub fn agent_scope_paths(roots: &[String], requested: Option<&str>) -> Result<Vec<String>, String> {
+    if roots.is_empty() {
+        return Ok(requested
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+            .map(|path| vec![normalize_scope_path(path)])
+            .unwrap_or_default());
+    }
+
+    let requested = requested.map(str::trim).filter(|path| !path.is_empty());
+    if let Some(path) = requested {
+        if roots.iter().any(|root| scope_contains(root, path)) {
+            // Keep the caller's spelling for query matching; containment was
+            // already decided on the resolved path.
+            return Ok(vec![normalize_scope_path(path)]);
+        }
+        return Err(format!(
+            "path is outside the configured agent scope: {}",
+            path
+        ));
+    }
+    Ok(roots
+        .iter()
+        .map(|root| normalize_scope_path(root))
+        .collect())
+}
+
+/// Expands a leading `~` and lexically normalizes `.`/`..` components.
+///
+/// This is for display/composition only; use [`scope_contains`] for
+/// containment checks so symlinks are resolved where possible.
+fn normalize_scope_path(path: &str) -> String {
+    lexical_scope_path(&expand_tilde(path))
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn expand_tilde(path: &str) -> String {
+    let path = path.trim();
+    let Some(rest) = path.strip_prefix('~') else {
+        return path.to_string();
+    };
+    if !rest.is_empty() && !rest.starts_with('/') && !rest.starts_with('\\') {
+        // `~user` is not supported; leave it untouched rather than
+        // concatenating it onto the current home directory.
+        return path.to_string();
+    }
+    let Some(home) =
+        std::env::var_os("HOME").or_else(|| dirs::home_dir().map(|p| p.into_os_string()))
+    else {
+        return path.to_string();
+    };
+    let mut expanded = home.to_string_lossy().into_owned();
+    if !rest.is_empty() {
+        expanded.push_str(rest);
+    }
+    expanded
+}
+
+fn lexical_scope_path(path: &str) -> PathBuf {
+    use std::path::Component;
+
+    let mut out = PathBuf::new();
+    for component in Path::new(path).components() {
+        match component {
+            Component::Prefix(_) | Component::RootDir | Component::Normal(_) => {
+                out.push(component.as_os_str());
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() && !out.has_root() {
+                    out.push("..");
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Resolves a path for scope comparison. Existing paths are canonicalized so
+/// symlinks and `..` resolve exactly as the OS would; non-existent paths use a
+/// lexical normalization (enough to stop `..` escapes).
+fn resolved_scope_path(path: &str) -> PathBuf {
+    let expanded = expand_tilde(path);
+    std::fs::canonicalize(&expanded).unwrap_or_else(|_| lexical_scope_path(&expanded))
+}
+
+fn scope_contains(root: &str, path: &str) -> bool {
+    let root = resolved_scope_path(root);
+    let path = resolved_scope_path(path);
+    path == root || path.starts_with(&root)
+}
+
+/// True when `path` is within the configured agent-scope roots (or no roots
+/// are configured). Used to gate `read_snippet`-style single-path reads.
+pub fn agent_path_allowed(roots: &[String], path: &str) -> bool {
+    if roots.is_empty() {
+        return true;
+    }
+    roots.iter().any(|root| scope_contains(root, path))
+}
+
+/// Composes a Kensaku query from a base query plus one or more scope paths.
+///
+/// Like [`compose_query`], but every scope path becomes an `in:"..."` token
+/// (multiple include scopes are OR'd by the parser — the agent-scope union).
+pub fn compose_query_scoped(
+    base: &str,
+    scope_paths: &[String],
+    ext: Option<&str>,
+    modified_after: Option<&str>,
+    exhaustive: bool,
+) -> String {
+    let (first, rest) = match scope_paths.split_first() {
+        Some((first, rest)) => (Some(first.as_str()), rest),
+        None => (None, &[][..]),
+    };
+    let mut composed = compose_query(base, first, ext, modified_after, exhaustive);
+    for path in rest {
+        if !composed.is_empty() {
+            composed.push(' ');
+        }
+        composed.push_str(&format!("in:\"{}\"", escape_query_value(path)));
+    }
+    composed
+}
+
 /// Composes a Kensaku query from a base query plus optional agent filters.
 ///
 /// Paths are quoted so a path containing spaces (or a `:` / `"`) survives the
@@ -511,6 +711,19 @@ pub fn truncate_chars(text: &str, max_chars: usize) -> String {
     text.chars().take(max_chars).collect()
 }
 
+/// Random-enough token for a loopback-only local socket or HTTP endpoint.
+///
+/// Not cryptographic: the threat model is other local processes, and the
+/// token file is 0600. Same scheme the daemon uses for its socket token.
+pub fn new_connection_token() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{:x}-{:x}", std::process::id(), nanos)
+}
+
 /// Unix timestamp (seconds) used for `as_of` / freshness fields.
 pub fn now_unix_secs() -> u64 {
     SystemTime::now()
@@ -567,4 +780,89 @@ fn last_modified_secs(paths: &[PathBuf]) -> Option<u64> {
                 .map(|d| d.as_secs())
         })
         .max()
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::*;
+
+    fn temp_root(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "kensaku-scope-{}-{}-{}",
+            tag,
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("inside.txt"), "x").unwrap();
+        std::fs::write(dir.join("sub/inside.txt"), "x").unwrap();
+        std::fs::write(dir.with_extension("sibling"), "x").unwrap();
+        dir
+    }
+
+    #[test]
+    fn accepts_paths_inside_a_root() {
+        let root = temp_root("inside");
+        let roots = vec![root.to_string_lossy().into_owned()];
+        assert!(agent_path_allowed(
+            &roots,
+            &root.join("inside.txt").to_string_lossy()
+        ));
+        assert!(agent_path_allowed(
+            &roots,
+            &root.join("sub/inside.txt").to_string_lossy()
+        ));
+        assert_eq!(
+            agent_scope_paths(&roots, Some(&root.join("sub").to_string_lossy())).unwrap(),
+            vec![root.join("sub").to_string_lossy().into_owned()]
+        );
+    }
+
+    #[test]
+    fn rejects_parent_dir_escape() {
+        let root = temp_root("dotdot");
+        let roots = vec![root.to_string_lossy().into_owned()];
+        let escape = root.join("sub/../../outside.txt");
+        let escape = escape.to_string_lossy().into_owned();
+        assert!(!agent_path_allowed(&roots, &escape));
+        assert!(agent_scope_paths(&roots, Some(&escape)).is_err());
+    }
+
+    #[test]
+    fn rejects_sibling_prefix() {
+        let root = temp_root("sibling");
+        let roots = vec![root.to_string_lossy().into_owned()];
+        let sibling = root.with_extension("sibling");
+        assert!(!agent_path_allowed(&roots, &sibling.to_string_lossy()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlink_escape() {
+        let root = temp_root("symlink");
+        let outside = temp_root("symlink-outside");
+        std::os::unix::fs::symlink(&outside, root.join("escape")).unwrap();
+        let roots = vec![root.to_string_lossy().into_owned()];
+        let escaped = root.join("escape/inside.txt");
+        assert!(!agent_path_allowed(&roots, &escaped.to_string_lossy()));
+        assert!(agent_scope_paths(&roots, Some(&escaped.to_string_lossy())).is_err());
+    }
+
+    #[test]
+    fn empty_roots_allow_anything() {
+        assert!(agent_path_allowed(&[], "/etc/passwd"));
+        assert_eq!(
+            agent_scope_paths(&[], Some("/tmp/demo")).unwrap(),
+            vec!["/tmp/demo".to_string()]
+        );
+    }
+
+    #[test]
+    fn lexical_normalization_stays_above_root() {
+        assert_eq!(lexical_scope_path("/a/../..").to_string_lossy(), "/");
+        assert_eq!(lexical_scope_path("../a").to_string_lossy(), "../a");
+    }
 }

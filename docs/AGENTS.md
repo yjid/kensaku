@@ -157,19 +157,47 @@ response. Exit codes: `0` ok, `2` usage, `3` no index (launch Kensaku once).
 
 ---
 
+## Also shipped (agent surface v2)
+
+- **`find_symbol`** — tree-sitter definitions (Rust, Python, JavaScript,
+  TypeScript): `{ query, language?, path?, page_size≤50 }` → path, kind, line
+  range, one-line signature. Candidates come from the content index; up to
+  200 files are parsed per call.
+- **Keyset pagination past the 10k cap** — exhaustive cursors `k2-<hex path>`
+  return matches strictly after the last path; `total` is then a windowed
+  lower bound (`total_is_lower_bound: true`). Offset cursors (`k1-`) still
+  work for ranked pages.
+- **`.gitignore` / `.cursorignore` parity** — common pattern syntax, honored
+  by default so agents see the same tree developers do; `include_ignored`
+  opts out. An excluded parent directory cannot be re-included (git
+  semantics).
+- **Read-only scoping per root** — `agent_scoped_roots` in config restricts
+  search results and `read_snippet`/`find_symbol` paths to those roots;
+  out-of-scope requests are rejected, not silently trimmed. Paths are resolved
+  before comparison, so `..` and symlink escapes do not pass the check.
+- **One-click connect** — Settings → Agents detects Claude Desktop/Code and
+  Cursor, merges one config entry atomically (with a `.bak` backup); manual
+  JSON stays. Claude Desktop paths follow each platform (`~/Library/
+  Application Support` on macOS, `~/.config` on Linux, `%APPDATA%` on
+  Windows). CLI: `kensaku-cli connect <client> [--write]`.
+- **Loopback HTTP/SSE** — `kensaku-cli serve [--port 8765]`: MCP Streamable
+  HTTP on `POST /mcp` (JSON or SSE), read-only `GET /health`, `GET /search?q=`,
+  and an SSE keepalive at `GET /events`. Bearer token in
+  `<config>/http.token` (0600); loopback bind + per-connection peer check;
+  `reindex` is never enabled on this transport. `/ask` is a CLI/GUI feature,
+  not an HTTP route.
+- **Optional local LLM** — query compiler (validated chips) and `/ask` with
+  path+line citations. Off by default; the model never retrieves on its own
+  and is never required. CLI: `kensaku-cli ask "<question>"`. The compiler
+  validates both filter keys and values against the query grammar, so chips
+  that would do nothing are rejected rather than shown.
+
 ## Planned
 
-These are designed but not shipped. The contract above remains the truth today.
-
-- **Loopback HTTP/SSE** transport with token auth for clients that need it.
-- **`find_symbol`** (tree-sitter), **`find_related`**, and
-  `.gitignore` / `.cursorignore` parity; pagination beyond the 10k result cap.
-- **Visual search** once the vision tier lands: text-to-image, similar-image,
-  and optional "this is me" lookups. Read-only and local like everything else.
-- **One-click connect** for supported MCP clients, with live status in
-  Settings → Agents.
-- **Optional local LLM** as a query compiler and `/ask` with path citations.
-  The model never retrieves on its own and is never required.
+- **`find_related`** — related-file lookups (same stem, imports, neighbors).
+- **Visual agent tools** — text-to-image and similar-image lookups once the
+  vision tier is wired into search; `similar_images` exists and self-hides
+  until then. Read-only and local like everything else.
 
 Scope and acceptance tests: [VISION.md](VISION.md). Technical shape:
 [ARCHITECTURE.md](ARCHITECTURE.md) §18.

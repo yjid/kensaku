@@ -1314,3 +1314,285 @@ mod tests {
         }
     }
 }
+
+/* ---------------------------------------------------------------- */
+/* Local LLM: query compiler and /ask                                */
+/* ---------------------------------------------------------------- */
+
+/// Outcome of an LLM compile attempt for the UI.
+#[derive(Debug, Clone, Serialize)]
+pub struct LlmCompileOutcome {
+    /// "compiled" (LLM result applied), "deterministic" (the local rules
+    /// already handled it; no model call), or "unavailable" (fall back).
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compiled: Option<crate::llm::compiler::CompiledQuery>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// Refines a natural-language query with the configured local LLM.
+///
+/// Explicit grammar (`type:` tokens) is never reinterpreted, and the
+/// deterministic compiler wins: when it already produced chips or a sort,
+/// no model call happens at all. The LLM output is validated against the
+/// query grammar before it is returned.
+#[tauri::command]
+pub async fn llm_compile_query(
+    query: String,
+    state: State<'_, AppState>,
+) -> Result<LlmCompileOutcome, String> {
+    let config = current_config(&state);
+    if !config.llm_compile_queries {
+        return Ok(LlmCompileOutcome {
+            status: "off".to_string(),
+            compiled: None,
+            detail: Some("LLM query compilation is disabled in settings".to_string()),
+        });
+    }
+    // Deterministic pass first: it is free, instant, and authoritative.
+    let intent = crate::query::intent::compile_with_aliases(&query, &config.alias_pairs());
+    if !intent.chips.is_empty() || intent.sort.is_some() {
+        return Ok(LlmCompileOutcome {
+            status: "deterministic".to_string(),
+            compiled: None,
+            detail: Some("handled by the deterministic compiler".to_string()),
+        });
+    }
+    // Explicit grammar is authoritative too.
+    if query
+        .split_whitespace()
+        .any(|token| token.contains(':') && !token.starts_with("http"))
+    {
+        return Ok(LlmCompileOutcome {
+            status: "deterministic".to_string(),
+            compiled: None,
+            detail: Some("query already uses explicit grammar".to_string()),
+        });
+    }
+
+    let Some(target) = crate::llm::LlmTarget::from_config(&config) else {
+        return Ok(LlmCompileOutcome {
+            status: "unavailable".to_string(),
+            compiled: None,
+            detail: Some("no local LLM provider is configured".to_string()),
+        });
+    };
+
+    let query_for_compile = query.clone();
+    // tokio note: the blocking HTTP call must leave the async context.
+    let compiled = tauri::async_runtime::spawn_blocking(move || {
+        crate::llm::compiler::compile(&target, &query_for_compile)
+    })
+    .await
+    .map_err(|e| format!("compile task failed: {}", e))?;
+
+    match compiled {
+        Ok(compiled) => Ok(LlmCompileOutcome {
+            status: "compiled".to_string(),
+            compiled: Some(compiled),
+            detail: None,
+        }),
+        Err(crate::llm::LlmError::NotConfigured) => Ok(LlmCompileOutcome {
+            status: "unavailable".to_string(),
+            compiled: None,
+            detail: Some("no local LLM provider is configured".to_string()),
+        }),
+        Err(crate::llm::LlmError::Unavailable(detail)) => Ok(LlmCompileOutcome {
+            status: "unavailable".to_string(),
+            compiled: None,
+            detail: Some(detail),
+        }),
+    }
+}
+
+/// Status of the configured LLM provider for the settings UI: reachable,
+/// models list. Never hard-fails; unreachable providers return ok=false.
+#[derive(Debug, Clone, Serialize)]
+pub struct LlmStatus {
+    pub configured: bool,
+    pub reachable: bool,
+    pub provider: String,
+    pub base_url: String,
+    pub model: String,
+    pub models: Vec<String>,
+    pub error: Option<String>,
+}
+
+#[tauri::command]
+pub async fn llm_status(state: State<'_, AppState>) -> Result<LlmStatus, String> {
+    let config = current_config(&state);
+    let provider = config.llm_provider.clone();
+    let base_url = if config.llm_base_url.is_empty() {
+        match config.llm_provider.as_str() {
+            "ollama" => crate::llm::OLLAMA_DEFAULT_URL.to_string(),
+            "lmstudio" => crate::llm::LMSTUDIO_DEFAULT_URL.to_string(),
+            _ => config.llm_base_url.clone(),
+        }
+    } else {
+        config.llm_base_url.clone()
+    };
+    let model = config.llm_model.clone();
+    let Some(target) = crate::llm::LlmTarget::from_config(&config) else {
+        return Ok(LlmStatus {
+            configured: false,
+            reachable: false,
+            provider,
+            base_url,
+            model,
+            models: Vec::new(),
+            error: None,
+        });
+    };
+    let detected = tauri::async_runtime::spawn_blocking(move || crate::llm::detect(&target))
+        .await
+        .map_err(|e| format!("detect task failed: {}", e))?;
+    match detected {
+        Ok(models) => Ok(LlmStatus {
+            configured: true,
+            reachable: true,
+            provider,
+            base_url,
+            model,
+            models,
+            error: None,
+        }),
+        Err(crate::llm::LlmError::Unavailable(error)) => Ok(LlmStatus {
+            configured: true,
+            reachable: false,
+            provider,
+            base_url,
+            model,
+            models: Vec::new(),
+            error: Some(error),
+        }),
+        Err(crate::llm::LlmError::NotConfigured) => Ok(LlmStatus {
+            configured: false,
+            reachable: false,
+            provider,
+            base_url,
+            model,
+            models: Vec::new(),
+            error: None,
+        }),
+    }
+}
+
+/// `/ask`: retrieval-grounded answer from the configured local model.
+///
+/// Cloud endpoints require per-use consent (`allow_cloud`); loopback
+/// providers run regardless. No retrieval, no answer: with zero results the
+/// response explains that instead of guessing.
+#[tauri::command]
+pub async fn ask_question(
+    question: String,
+    allow_cloud: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<crate::llm::ask::AskResponse, String> {
+    let config = current_config(&state);
+    let Some(target) = crate::llm::LlmTarget::from_config(&config) else {
+        return Err(
+            "no local LLM provider is configured; set it up in Settings → Agents".to_string(),
+        );
+    };
+    let allow_cloud = allow_cloud.unwrap_or(false);
+
+    // Retrieval through the same path the search command uses.
+    let results = retrieve_for_ask(&state, &question, &config)?;
+    if results.is_empty() {
+        let mut response = crate::llm::ask::AskResponse {
+            question: question.clone(),
+            answer: "No matching files in the local index, so there is nothing to answer from."
+                .to_string(),
+            sources: Vec::new(),
+            model: target.model.clone(),
+            provider: target.provider.as_str().to_string(),
+            answered: false,
+            as_of: crate::agent::now_unix_secs(),
+        };
+        response.question = question;
+        return Ok(response);
+    }
+
+    let question_clone = question.clone();
+    let target_clone = target.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::llm::ask::answer_from_results(&question_clone, &results, &target_clone, allow_cloud)
+    })
+    .await
+    .map_err(|e| format!("ask task failed: {}", e))?
+}
+
+/// Retrieval for `/ask`: daemon search when available, else the in-process
+/// dispatcher — identical to what `search` uses.
+fn retrieve_for_ask(
+    state: &State<'_, AppState>,
+    question: &str,
+    config: &KensakuConfig,
+) -> Result<Vec<crate::search::SearchResult>, String> {
+    if let Some(daemon) = state.daemon.as_ref() {
+        let response = daemon.search_page(question.to_string(), 12, 0, false)?;
+        return Ok(response.results);
+    }
+    let indexer = &state.indexer;
+    let metadata = indexer.metadata.read();
+    let content_index = indexer.content_index.read();
+    let unit_store = indexer.unit_store.read();
+    let aliases = config.alias_pairs();
+    let visual_store = indexer.visual_store.read();
+    let response = SearchDispatcher::search_response_fast_sorted_with_snippets_and_visual(
+        question,
+        &metadata,
+        &content_index,
+        Some(&unit_store),
+        Some(&visual_store),
+        config.semantic_enabled,
+        12,
+        0,
+        crate::search::SortOrder::Best,
+        &aliases,
+        0,
+        false,
+    );
+    Ok(response.results)
+}
+
+/// Config snapshot from the daemon when it owns the index, else local.
+fn current_config(state: &State<'_, AppState>) -> KensakuConfig {
+    if let Some(daemon) = state.daemon.as_ref()
+        && let Ok(config) = daemon.get_config()
+    {
+        return config;
+    }
+    state.indexer.config.read().clone()
+}
+
+/* ---------------------------------------------------------------- */
+/* One-click agent connect                                           */
+/* ---------------------------------------------------------------- */
+
+#[tauri::command]
+pub async fn agent_connect_status() -> Result<Vec<crate::agent::connect::ClientStatus>, String> {
+    Ok(crate::agent::connect::detect_clients())
+}
+
+#[tauri::command]
+pub async fn agent_connect_install(
+    client: String,
+) -> Result<crate::agent::connect::InstallOutcome, String> {
+    let parsed = parse_connect_client(&client)?;
+    crate::agent::connect::install(parsed)
+}
+
+#[tauri::command]
+pub async fn agent_connect_snippet(client: String) -> Result<String, String> {
+    let parsed = parse_connect_client(&client)?;
+    crate::agent::connect::config_snippet(parsed)
+}
+
+fn parse_connect_client(client: &str) -> Result<crate::agent::connect::Client, String> {
+    crate::agent::connect::Client::ALL
+        .into_iter()
+        .find(|candidate| candidate.id() == client)
+        .ok_or_else(|| format!("unknown client: {}", client))
+}
