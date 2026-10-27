@@ -548,11 +548,12 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             </div>
             <ul className="space-y-1.5 text-[12px] text-muted">
               <li>Search file names, contents, and images (OCR) in one box.</li>
-              <li>Filters: type, extension, folder, date, size, regex.</li>
-              <li>Quick Look preview with Space; drag results into other apps.</li>
+              <li>Filters: type, extension, folder, date, size, regex; use / for commands and @ for folders.</li>
+              <li>Quick Look preview with Space; Enter opens; Shift+Enter shows in folder.</li>
+              <li>Drag a result straight into another app to copy the file.</li>
               <li>Semantic search for “what it was about”, not just the name.</li>
               <li>Works with AI agents over MCP (read-only by default).</li>
-              <li>Nothing leaves your machine.</li>
+              <li>Nothing leaves your machine; index stays local.</li>
             </ul>
           </div>
         )}
