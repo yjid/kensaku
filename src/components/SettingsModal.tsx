@@ -415,7 +415,7 @@ function GeneralSection({
       </Card>
 
       <Card title="Invocation">
-        <Field label="Global shortcut" description="Click, then press the combo to capture. Applied on Save.">
+        <Field label="Quick shortcut" description="Press it from anywhere to open search. Click, then press a combo to change it. On Linux Wayland, desktops may block global keys: bind a shortcut to the command kensaku --toggle instead.">
           <button
             type="button"
             onClick={() => setCapturing(true)}
