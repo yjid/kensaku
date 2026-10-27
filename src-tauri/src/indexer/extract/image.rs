@@ -141,6 +141,14 @@ fn tesseract_program() -> PathBuf {
         "tesseract"
     };
 
+    // A copy shipped inside the app wins over whatever the user installed,
+    // so OCR behaves the same on every machine the app is installed on.
+    for candidate in bundled_tesseract_paths(name) {
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
             let candidate = dir.join(name);
@@ -158,6 +166,24 @@ fn tesseract_program() -> PathBuf {
 
     // Nothing found: the OS will now produce the canonical "not found" error.
     PathBuf::from(name)
+}
+
+/// Places an app-bundled Tesseract can live: next to the executable (Windows
+/// installs, Linux packages) and in the macOS bundle's Resources folder.
+fn bundled_tesseract_paths(name: &str) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    let Ok(exe) = std::env::current_exe() else {
+        return paths;
+    };
+    if let Some(dir) = exe.parent() {
+        paths.push(dir.join(name));
+        paths.push(dir.join("tesseract").join(name));
+        // macOS: Kensaku.app/Contents/MacOS/kensaku -> Contents/Resources
+        if let Some(contents) = dir.parent() {
+            paths.push(contents.join("Resources").join("tesseract").join(name));
+        }
+    }
+    paths
 }
 
 /// Well-known install prefixes used when `tesseract` is not on `PATH`.
