@@ -78,14 +78,13 @@ jobs:
         run: bunx tauri build ${{ matrix.args }}
 
       - name: Upload bundles
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: |
             src-tauri/target/release/bundle/**
             src-tauri/target/*/release/bundle/**
-          if-no-files-found: warn
+          if-no-files-found: error
 
   cli:
     name: CLI (${{ matrix.platform }})
@@ -194,19 +193,22 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Checkout must run before the artifact download: checkout defaults to
+      # `clean: true`, which wipes the workspace and deletes the downloaded
+      # artifacts (this is what broke the v1.0.1 release runs).
+      - name: Checkout (for release notes generation)
+        uses: actions/checkout@v4
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
 
-      - name: Checkout (for release notes generation)
-        uses: actions/checkout@v4
-
       - name: Check artifacts arrived
         run: |
-          mkdir -p artifacts
-          test -n "$(ls -A artifacts)" || { echo "no artifacts downloaded"; exit 1; }
+          test -d artifacts
+          find artifacts -type f | grep -q . || { echo "no artifacts downloaded"; exit 1; }
 
       - name: Checksums
         run: |
