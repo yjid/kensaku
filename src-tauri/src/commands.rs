@@ -1635,3 +1635,23 @@ pub async fn get_file_details(path: String) -> Result<FileDetails, String> {
     .await
     .map_err(|e| format!("Details task failed: {}", e))?
 }
+
+/// Thumbnail bytes as a `data:` URL. Using a data URL means the card never
+/// depends on the asset protocol or its scope, so it renders the same on every
+/// platform. Thumbnails are 480px JPEGs (tens of KB), which keeps the payload
+/// small for the visible cards.
+#[tauri::command]
+pub async fn get_thumbnail_data(path: String) -> Result<String, String> {
+    use base64::Engine;
+    tauri::async_runtime::spawn_blocking(move || {
+        let thumb = generate_thumbnail(&path)?;
+        let bytes = std::fs::read(&thumb)
+            .map_err(|e| format!("Failed to read thumbnail: {}", e))?;
+        Ok(format!(
+            "data:image/jpeg;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        ))
+    })
+    .await
+    .map_err(|e| format!("Thumbnail task failed: {}", e))?
+}
