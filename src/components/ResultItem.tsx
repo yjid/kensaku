@@ -28,7 +28,7 @@ interface ResultItemProps {
 }
 
 export const ResultItem = React.memo<ResultItemProps>(
-  ({ result, query, isSelected, onSelect, onOpen, onReveal, onCopyPath, onContextMenu, showThumbs }) => {
+  ({ result, query, isSelected, onSelect, onOpen, onContextMenu, showThumbs }) => {
     /* Thumbnails only for image files in the initial window. */
     // The virtual grid mounts only visible cards, so every image card may ask.
     const imageEligible = Boolean(showThumbs) && !result.is_dir && isThumbImage(result.filename);
@@ -51,7 +51,7 @@ export const ResultItem = React.memo<ResultItemProps>(
           onContextMenu(e.clientX, e.clientY);
         }}
         aria-selected={isSelected}
-        className={`group relative row-enter aspect-square w-full overflow-hidden rounded-[16px] border text-left transition-[transform,box-shadow,border-color] duration-200 [transition-timing-function:var(--ease-apple)] hover:-translate-y-px hover:shadow-md ${
+        className={`group relative row-enter aspect-square w-full overflow-hidden rounded-[16px] border text-left transition-[transform,box-shadow,border-color] duration-200 [transition-timing-function:var(--ease-apple)] hover:-translate-y-0.5 hover:shadow-md ${
           isSelected
             ? "border-fg bg-elevated shadow-sm"
             : "border-line bg-elevated hover:border-line-strong"
@@ -95,14 +95,7 @@ export const ResultItem = React.memo<ResultItemProps>(
           </span>
         </span>
 
-        {/* Hover details: facts, actions, and a primary Open. */}
-        <HoverDetails
-          result={result}
-          onOpen={onOpen}
-          onReveal={onReveal ?? onOpen}
-          onCopy={onCopyPath ?? (() => undefined)}
-          onMore={(x, y) => onContextMenu?.(x, y)}
-        />
+        <HoverDetails result={result} />
       </button>
     );
   },

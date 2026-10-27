@@ -348,3 +348,23 @@
 .transition-all {
   transition-timing-function: var(--ease-apple);
 }
+
+/* Hover info bar: waits a beat, then rises and fades in. Calm, no bounce. */
+.hover-reveal {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 180ms var(--ease-apple), transform 220ms var(--ease-apple);
+  transition-delay: 0ms;
+}
+.group:hover .hover-reveal {
+  opacity: 1;
+  transform: translateY(0);
+  transition-delay: 220ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hover-reveal,
+  .group:hover .hover-reveal {
+    transition: none;
+    transform: none;
+  }
+}
