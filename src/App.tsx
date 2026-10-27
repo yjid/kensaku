@@ -27,7 +27,8 @@ import { ContextMenu, ContextMenuItem } from "./components/ContextMenu";
 import { DetailsDialog } from "./components/DetailsDialog";
 import { SearchBar } from "./components/SearchBar";
 import { CategoryChips } from "./components/CategoryChips";
-import { useTheme } from "./hooks/useTheme";
+import { SortControl } from "./components/SortControl";
+import { VirtualGrid } from "./components/VirtualGrid";
 import { classify } from "./lib/categories";
 import {
   Settings as SettingsIcon,
@@ -35,8 +36,6 @@ import {
   Copy,
   FileText,
   Sparkles,
-  Sun,
-  Moon,
   Image as ImageIcon,
   FileCode,
   Film,
@@ -49,7 +48,6 @@ import {
 } from "lucide-react";
 import "./App.css";
 
-const VIEW_KEY = "kensaku.view";
 const SNIPPET_LRU_LIMIT = 200;
 
 /** Small insertion-order LRU for snippets: recent hits move to the end. */
@@ -94,14 +92,11 @@ function App() {
   const [scopeIndex, setScopeIndex] = useState(0);
   const [commandOutput, setCommandOutput] = useState<string | null>(null);
   const [sort, setSort] = useState("best");
-  const [view] = useState<ResultView>(
-    () => (localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "list") as ResultView,
-  );
+  const view: ResultView = "grid";
   /* Right-click menu and the details dialog replace the old preview pane. */
   const [menu, setMenu] = useState<{ x: number; y: number; result: SearchResult } | null>(null);
   const [details, setDetails] = useState<SearchResult | null>(null);
 
-  const { theme, toggle: toggleTheme } = useTheme();
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
@@ -110,7 +105,9 @@ function App() {
    *  the DOM so it stays correct across window resizes and auto-fill.
    *  Only `data-index` cells count — full-span labels ("Recent") sit in
    *  the grid too but span every column. */
+  const columnsRef = useRef(1);
   const gridColumnCount = useCallback(() => {
+    if (columnsRef.current > 0) return columnsRef.current;
     const el = resultsContainerRef.current;
     if (!el) return 1;
     const children = Array.from(el.children).filter((child) =>
@@ -448,9 +445,6 @@ function App() {
     if (isSetupComplete) inputRef.current?.focus();
   }, [isSetupComplete]);
 
-  useEffect(() => {
-    localStorage.setItem(VIEW_KEY, view);
-  }, [view]);
 
   useEffect(() => {
     if (!resultsContainerRef.current) return;
@@ -830,38 +824,17 @@ function App() {
                 setQuery={setQuery}
                 inputRef={inputRef}
                 isSearching={isSearching}
-                onOpenCommands={() => {
-                  setSlashIndex(0);
-                  setQuery("/");
-                  inputRef.current?.focus();
-                }}
                 onFocusInput={() => {}}
                 resultCount={results.length}
                 trailing={
-                  <>
-                    <button
-                      type="button"
-                      title={
-                        theme === "paper" ? "Switch to void theme" : "Switch to paper theme"
-                      }
-                      onClick={toggleTheme}
-                      className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors duration-150 hover:bg-sunken hover:text-fg"
-                    >
-                      {theme === "paper" ? (
-                        <Moon className="h-3.5 w-3.5" />
-                      ) : (
-                        <Sun className="h-3.5 w-3.5" />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      title="Settings (⌘,)"
-                      onClick={() => openSettings()}
-                      className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors duration-150 hover:bg-sunken hover:text-fg"
-                    >
-                      <SettingsIcon className="h-3.5 w-3.5" />
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    title="Settings"
+                    onClick={() => openSettings()}
+                    className="flex h-8 w-8 items-center justify-center rounded-[10px] text-muted transition-colors duration-150 hover:bg-sunken hover:text-fg"
+                  >
+                    <SettingsIcon className="h-4 w-4" />
+                  </button>
                 }
               />
 
@@ -915,21 +888,7 @@ function App() {
 
               {!isCommandMode && displayResults.length > 0 && (
                 <div className="flex shrink-0 items-center justify-end gap-2 border-b border-line px-4 py-1.5">
-                  <label htmlFor="sort" className="text-[11px] text-muted">
-                    Sort
-                  </label>
-                  <select
-                    id="sort"
-                    value={sort}
-                    onChange={(e) => setSort(e.target.value)}
-                    className="rounded-[8px] border border-line bg-elevated px-2 py-1 text-[11px] text-fg outline-none focus:border-accent"
-                  >
-                    <option value="best">Best match</option>
-                    <option value="newest">Newest</option>
-                    <option value="oldest">Oldest</option>
-                    <option value="largest">Largest</option>
-                    <option value="name">Name</option>
-                  </select>
+                  <SortControl value={sort} onChange={setSort} />
                   <button
                     type="button"
                     title="Save this search"
@@ -1027,50 +986,36 @@ function App() {
               <div className="flex min-h-0 flex-1 overflow-hidden">
                 <div
                   ref={resultsContainerRef}
-                  className={`min-w-0 flex-1 overflow-y-auto ${
-                    !hasQuery
-                      ? "block"
-                      : view === "grid"
-                        ? "grid grid-cols-[repeat(auto-fill,minmax(156px,1fr))] content-start gap-3 p-4"
-                        : "px-2 py-1"
+                  className={`flex min-h-0 min-w-0 flex-1 flex-col ${
+                    !hasQuery || displayResults.length === 0 ? "overflow-y-auto" : ""
                   }`}
                 >
                   {displayResults.length > 0 ? (
-                    view === "list" ? (
-                      displayResults.map((res, idx) => (
-                        <div key={res.path + idx} data-index={idx}>
-                          <ResultItem
-                            result={res}
-                            query={query}
-                            index={idx}
-                            isSelected={idx === selectedIndex}
-                            view="list"
-                            onSelect={() => setSelectedIndex(idx)}
-                            onOpen={() => handleOpenFile(res.path)}
-                            onReveal={() => handleOpenFolder(res.path)}
-                            onCopyPath={() => handleCopyPath(res.path)}
-                            onContextMenu={(x, y) => setMenu({ x, y, result: res })}
-                          />
-                        </div>
-                      ))
-                    ) : (
-                      displayResults.map((res, idx) => (
-                        <div key={res.path + idx} data-index={idx}>
-                          <ResultItem
-                            result={res}
-                            query={query}
-                            index={idx}
-                            isSelected={idx === selectedIndex}
-                            view="grid"
-                            onSelect={() => setSelectedIndex(idx)}
-                            onOpen={() => handleOpenFile(res.path)}
-                            onReveal={() => handleOpenFolder(res.path)}
-                            onCopyPath={() => handleCopyPath(res.path)}
-                            onContextMenu={(x, y) => setMenu({ x, y, result: res })}
-                          />
-                        </div>
-                      ))
-                    )
+                    <VirtualGrid
+                      items={displayResults}
+                      getKey={(res) => res.path}
+                      selectedIndex={selectedIndex}
+                      hasMore={results.length < total}
+                      loading={loadingMore}
+                      onNearEnd={loadMore}
+                      onColumns={(cols) => {
+                        columnsRef.current = cols;
+                      }}
+                      renderItem={(res, idx) => (
+                        <ResultItem
+                          result={res}
+                          query={query}
+                          index={idx}
+                          isSelected={idx === selectedIndex}
+                          view="grid"
+                          onSelect={() => setSelectedIndex(idx)}
+                          onOpen={() => handleOpenFile(res.path)}
+                          onReveal={() => handleOpenFolder(res.path)}
+                          onCopyPath={() => handleCopyPath(res.path)}
+                          onContextMenu={(x, y) => setMenu({ x, y, result: res })}
+                        />
+                      )}
+                    />
                   ) : noResults ? (
                     <div className="flex h-full flex-col items-center justify-center gap-1 p-8 text-center select-none">
                       <p className="font-serif text-[17px] italic text-muted">
@@ -1100,34 +1045,13 @@ function App() {
                     <HomeView
                       data={home}
                       onOpen={(path) => handleOpenFile(path)}
-                      onTogglePin={async (path) => {
-                        try {
-                          await invoke("toggle_pin", { path });
-                          await loadHome();
-                        } catch (e) {
-                          console.error(e);
-                        }
-                      }}
-                      onSearch={(q, s) => {
-                        if (s) setSort(s);
+                      onSearch={(q) => {
                         setQuery(q);
                         inputRef.current?.focus();
                       }}
                     />
                   )}
 
-                  {!isCommandMode && displayResults.length > 0 && results.length < total && (
-                    <div className="flex justify-center p-3">
-                      <button
-                        type="button"
-                        onClick={loadMore}
-                        disabled={loadingMore}
-                        className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line px-4 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
-                      >
-                        {loadingMore ? "Loading…" : `Load more (${results.length} of ${total})`}
-                      </button>
-                    </div>
-                  )}
                 </div>
               </div>
 
