@@ -37,7 +37,7 @@ Every action has a key. Keys work from the search box unless noted.
 | <kbd>⌘,</kbd>/<kbd>Ctrl</kbd>+<kbd>,</kbd> | settings |
 | <kbd>Esc</kbd> | close a dialog, clear the search, then hide |
 
-On Linux Wayland, desktops can block global keys. Bind a shortcut to the command `kensaku --toggle` instead.
+On Linux, set a shortcut for `kensaku --toggle` in your desktop settings. See [INSTALL.md](INSTALL.md#set-a-quick-shortcut).
 
 ## Query language
 
