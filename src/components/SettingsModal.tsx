@@ -743,7 +743,7 @@ function SearchSection({
           label="Result layout"
           description="Grid shows image cards. List shows one file per row, with size and age."
         >
-          <div role="radiogroup" aria-label="Result layout" className="flex items-center gap-0.5 rounded-[10px] bg-sunken p-0.5">
+          <div role="radiogroup" aria-label="Result layout" className="pill-group">
             {(["grid", "list"] as const).map((v) => {
               const active = (config.results_view ?? "grid") === v;
               return (
@@ -753,9 +753,7 @@ function SearchSection({
                   role="radio"
                   aria-checked={active}
                   onClick={() => setConfig((c) => (c ? { ...c, results_view: v } : c))}
-                  className={`h-7 rounded-[8px] px-3 text-[12px] capitalize transition-colors duration-150 [transition-timing-function:var(--ease-apple)] ${
-                    active ? "bg-elevated font-medium text-fg shadow-sm" : "text-muted hover:text-fg"
-                  }`}
+                  className="pill capitalize"
                 >
                   {v}
                 </button>

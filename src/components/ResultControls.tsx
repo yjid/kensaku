@@ -1,50 +1,58 @@
-import { Bookmark, LayoutGrid, Rows3 } from "lucide-react";
+import { Bookmark, ChevronDown, LayoutGrid, Rows3 } from "lucide-react";
 
-/* Right side of the results row: layout (grid or list) and save-search.
-   Same pill language as the category chips on the left, so the whole row
-   reads as one control bar. Icon-only, with a tooltip for each. */
+/* Results bar, right side: sort dropdown, layout group, save. Same pill
+   look as the category chips on the left. */
 
-const pill =
-  "flex h-7 shrink-0 items-center justify-center rounded-full px-2.5 text-[12px] font-medium transition-colors duration-150 [transition-timing-function:var(--ease-apple)]";
+export const SORT_OPTIONS: { value: string; label: string }[] = [
+  { value: "best", label: "Best match" },
+  { value: "newest", label: "Newest" },
+  { value: "oldest", label: "Oldest" },
+  { value: "largest", label: "Largest" },
+  { value: "name", label: "Name" },
+];
 
 export function ResultControls({
+  sort,
+  onSort,
   view,
   onView,
   onSave,
   canSave,
 }: {
+  sort: string;
+  onSort: (value: string) => void;
   view: "grid" | "list";
   onView: (v: "grid" | "list") => void;
   onSave: () => void;
   canSave: boolean;
 }) {
-  const option = (v: "grid" | "list", Icon: typeof LayoutGrid, label: string) => {
-    const active = view === v;
-    return (
-      <button
-        key={v}
-        type="button"
-        role="radio"
-        aria-checked={active}
-        aria-label={label}
-        title={label}
-        onClick={() => onView(v)}
-        className={`${pill} ${active ? "bg-fg text-bg" : "text-muted hover:bg-sunken hover:text-fg"}`}
-      >
-        <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
-      </button>
-    );
-  };
-
   return (
-    <div className="flex shrink-0 items-center gap-1 pl-2">
-      <div role="radiogroup" aria-label="Layout" className="flex items-center gap-0.5 rounded-full bg-sunken p-0.5">
-        {option("grid", LayoutGrid, "Grid")}
-        {option("list", Rows3, "List")}
+    <div className="flex shrink-0 items-center gap-2 pl-2">
+      <label className="pill-select" title="Sort results">
+        <span className="sr-only">Sort</span>
+        <select value={sort} onChange={(e) => onSort(e.target.value)} aria-label="Sort results">
+          {SORT_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="h-3 w-3" strokeWidth={2} />
+      </label>
+
+      <div role="radiogroup" aria-label="Layout" className="pill-group">
+        <button type="button" role="radio" aria-checked={view === "grid"} aria-label="Grid" title="Grid"
+          onClick={() => onView("grid")} className="pill">
+          <LayoutGrid className="h-3.5 w-3.5" strokeWidth={1.75} />
+        </button>
+        <button type="button" role="radio" aria-checked={view === "list"} aria-label="List" title="List"
+          onClick={() => onView("list")} className="pill">
+          <Rows3 className="h-3.5 w-3.5" strokeWidth={1.75} />
+        </button>
       </div>
+
       {canSave && (
-        <button type="button" title="Save this search" aria-label="Save this search" onClick={onSave}
-          className={`${pill} text-muted hover:bg-sunken hover:text-fg`}>
+        <button type="button" title="Save this search" aria-label="Save this search" onClick={onSave} className="pill">
           <Bookmark className="h-3.5 w-3.5" strokeWidth={1.75} />
         </button>
       )}

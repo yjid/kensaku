@@ -39,13 +39,8 @@ export const CategoryChips: React.FC<CategoryChipsProps> = ({
             type="button"
             onClick={(e) => onToggle(chip.id, e.altKey)}
             title={isExcluded ? "Excluded — click to clear" : "Click to include, Alt-click to exclude"}
-            className={`flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[12px] font-medium transition-colors duration-150 ${
-              isExcluded
-                ? "bg-danger/10 text-danger line-through"
-                : isSelected
-                  ? "bg-fg text-bg"
-                  : "text-muted hover:bg-sunken hover:text-fg"
-            }`}
+            data-active={isSelected && !isExcluded}
+            className={`pill ${isExcluded ? "bg-danger/10 text-danger line-through" : ""}`}
           >
             <span>{chip.label}</span>
             {count != null && count > 0 && (

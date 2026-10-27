@@ -92,7 +92,7 @@ function App() {
   const [scopeItems, setScopeItems] = useState<string[]>([]);
   const [scopeIndex, setScopeIndex] = useState(0);
   const [commandOutput, setCommandOutput] = useState<string | null>(null);
-  const sort = "best";
+  const [sort, setSort] = useState("best");
   /* Right-click menu and the details dialog replace the old preview pane. */
   // Thumbnail setting, read from config. Reloaded whenever Settings closes.
   const [config, setConfig] = useState<KensakuConfig | null>(null);
@@ -915,6 +915,8 @@ function App() {
                     onToggle={handleFacetToggle}
                   />
                   <ResultControls
+                    sort={sort}
+                    onSort={setSort}
                     view={view}
                     onView={(v) => {
                       setConfig((c) => (c ? { ...c, results_view: v } : c));

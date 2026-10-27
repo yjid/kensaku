@@ -456,3 +456,73 @@
   }
   .menu-row:hover { background: var(--bg-sunken); }
 }
+
+@layer components {
+  /* Pill controls. The category chips set the look; every other control in
+     the results bar and settings uses the same classes. */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    color: var(--fg-muted);
+    background: transparent;
+    border: 1px solid transparent;
+    transition: background-color 160ms var(--ease-apple), color 160ms var(--ease-apple),
+      transform 120ms var(--ease-apple);
+    cursor: default;
+  }
+  .pill:hover { background: var(--bg-sunken); color: var(--fg); }
+  .pill:active { transform: scale(0.97); }
+  .pill[aria-checked="true"],
+  .pill[data-active="true"] { background: var(--fg); color: var(--bg); }
+  .pill:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+
+  /* A group of pills sharing one track (layout toggle, segmented choices). */
+  .pill-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 9999px;
+    background: var(--bg-sunken);
+  }
+  .pill-group .pill { height: 24px; padding: 0 10px; }
+  .pill-group .pill[aria-checked="true"] { background: var(--bg-elevated); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
+
+  /* Dropdown: a pill with a chevron. Native select keeps keyboard and
+     accessibility; the look is the pill. */
+  .pill-select {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+  .pill-select select {
+    appearance: none;
+    -webkit-appearance: none;
+    height: 28px;
+    padding: 0 28px 0 12px;
+    border-radius: 9999px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--fg);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 160ms var(--ease-apple), border-color 160ms var(--ease-apple);
+  }
+  .pill-select select:hover { background: var(--bg-sunken); }
+  .pill-select select:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  .pill-select svg {
+    position: absolute;
+    right: 9px;
+    pointer-events: none;
+    color: var(--fg-muted);
+  }
+}
