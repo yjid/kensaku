@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Check, Copy } from "lucide-react";
 import { useStats } from "../../hooks/useStats";
 import { Sparkline } from "../Sparkline";
@@ -48,6 +49,7 @@ function Dot({ ok, label }: { ok: boolean; label: string }) {
 export function StatsForNerds() {
   const { stats, live } = useStats(2000);
   const [copied, setCopied] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
 
   const q = stats.queries;
   const i = stats.index;
@@ -85,6 +87,23 @@ export function StatsForNerds() {
         >
           {copied ? <Check className="h-3 w-3 text-accent" /> : <Copy className="h-3 w-3" />}
           Copy diagnostics
+        </button>
+        <button
+          type="button"
+          disabled={rebuilding}
+          onClick={async () => {
+            if (!window.confirm("Rebuild the index from scratch? This restarts Kensaku.")) return;
+            setRebuilding(true);
+            try {
+              await invoke("rebuild_index");
+            } catch (err) {
+              console.error("Rebuild failed:", err);
+              setRebuilding(false);
+            }
+          }}
+          className="flex h-7 items-center gap-1.5 rounded-[8px] border border-line bg-elevated px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+        >
+          {rebuilding ? "Rebuilding…" : "Rebuild index"}
         </button>
       </div>
 

@@ -165,6 +165,38 @@ fn apply_pending_reset_in(dir: &std::path::Path) -> bool {
 /// Must run before `KensakuConfig::load()` and before `IndexerManager::new()`:
 /// removing the directory while the database or index is open would leave
 /// handles pointing at deleted inodes.
+fn rebuild_marker_path_in(dir: &std::path::Path) -> std::path::PathBuf {
+    dir.join(".rebuild-requested")
+}
+
+fn rebuild_marker_path() -> std::path::PathBuf {
+    rebuild_marker_path_in(&KensakuConfig::config_dir())
+}
+
+pub fn rebuild_pending() -> bool {
+    rebuild_marker_path().exists()
+}
+
+fn apply_pending_rebuild_in(dir: &std::path::Path) -> bool {
+    let marker = rebuild_marker_path_in(dir);
+    if !marker.exists() {
+        return false;
+    }
+    // Keep settings (config.json); wipe only the index and metadata.
+    let _ = std::fs::remove_dir_all(dir.join("index"));
+    let _ = std::fs::remove_dir_all(dir.join("thumbs"));
+    for name in ["metadata.db", "metadata.db-wal", "metadata.db-shm"] {
+        let _ = std::fs::remove_file(dir.join(name));
+    }
+    let _ = std::fs::remove_file(&marker);
+    eprintln!("[Kensaku] Rebuild requested: index cleared in {}", dir.display());
+    true
+}
+
+fn maybe_apply_pending_rebuild() {
+    apply_pending_rebuild_in(&KensakuConfig::config_dir());
+}
+
 fn maybe_apply_pending_reset() {
     apply_pending_reset_in(&KensakuConfig::config_dir());
 }
@@ -178,6 +210,7 @@ pub fn run() {
 
     commands::init_process_start();
 
+    maybe_apply_pending_rebuild();
     maybe_apply_pending_reset();
 
     #[cfg(unix)]
@@ -278,6 +311,7 @@ pub fn run() {
             commands::last_query,
             commands::run_doctor,
             commands::reset_all,
+            commands::rebuild_index,
             commands::get_reset_pending,
             commands::get_autostart,
             commands::set_autostart,

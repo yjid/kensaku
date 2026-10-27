@@ -1184,6 +1184,17 @@ pub async fn reset_all(app: AppHandle, confirm: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn rebuild_index(app: AppHandle) -> Result<(), String> {
+    let dir = KensakuConfig::config_dir();
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create config directory: {}", e))?;
+    let marker = dir.join(".rebuild-requested");
+    std::fs::write(&marker, b"1")
+        .map_err(|e| format!("Failed to write rebuild marker: {}", e))?;
+    app.restart();
+}
+
+#[tauri::command]
 pub async fn get_reset_pending() -> Result<bool, String> {
     Ok(crate::reset_pending())
 }
