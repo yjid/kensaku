@@ -14,6 +14,11 @@
 </p>
 
 <p align="center">
+  <b>Super fast · Super light · Private by default</b><br/>
+  Results in ~3 ms per keystroke · about 73 MB of memory while indexing · nothing leaves your computer.
+</p>
+
+<p align="center">
   <a href="https://github.com/yjid/kensaku/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/yjid/kensaku?style=for-the-badge" /></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-111111?style=for-the-badge" /></a>
   <a href="https://github.com/yjid/kensaku/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/yjid/kensaku/ci.yml?branch=master&style=for-the-badge" /></a>
@@ -116,7 +121,12 @@ Download the bundle for your system from the [latest release](https://github.com
 | Windows | `Kensaku_<version>_x64-setup.exe` or `.msi` |
 | Linux | `.AppImage`, `.deb`, or `.rpm` |
 
-Builds are not yet code-signed. macOS and Windows will warn before the first launch. [docs/INSTALL.md](docs/INSTALL.md) shows how to open them safely.
+Builds are not yet code-signed, so macOS and Windows show a warning the first time. That is expected for an independent app, not a sign of a problem.
+
+- **macOS:** open the app, then go to System Settings → Privacy & Security and click **Open Anyway**.
+- **Windows:** on the SmartScreen prompt, click **More info** → **Run anyway**.
+
+[docs/INSTALL.md](docs/INSTALL.md) has the full steps.
 
 **First run:** choose the folders you want indexed, pick exclusions, and optionally download the OCR or model packs. Search works while the first scan runs.
 
