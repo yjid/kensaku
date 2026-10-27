@@ -14,8 +14,15 @@ pub fn release_memory() {
 
 #[cfg(target_os = "macos")]
 pub fn release_memory() {
+    // `malloc_zone_pressure_relief` is declared in <malloc/malloc.h>, not in
+    // the libc crate's macOS bindings. Declare the two symbols directly so the
+    // universal macOS build links without a C shim.
+    unsafe extern "C" {
+        fn malloc_zone_pressure_relief(zone: *mut core::ffi::c_void, goal: usize) -> usize;
+        fn malloc_default_zone() -> *mut core::ffi::c_void;
+    }
     unsafe {
-        libc::malloc_zone_pressure_relief(libc::malloc_default_zone(), 0);
+        let _ = malloc_zone_pressure_relief(malloc_default_zone(), 0);
     }
 }
 
