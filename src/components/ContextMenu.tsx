@@ -53,7 +53,7 @@ export function ContextMenu({
       ref={ref}
       role="menu"
       style={{ left, top, width }}
-      className="fixed z-[70] overflow-hidden rounded-[12px] border border-line bg-elevated p-1 shadow-lg"
+      className="fade-in fixed z-[70] overflow-hidden rounded-[12px] border border-line bg-elevated p-1 shadow-lg"
     >
       {items.map((item) => (
         <div key={item.label}>

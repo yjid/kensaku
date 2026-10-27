@@ -42,9 +42,9 @@ function MatchBadge({ matchType }: { matchType: SearchResult["match_type"] }) {
       case "Both":
         return "name + content";
       case "Semantic":
-        return "≈ semantic";
+        return "meaning";
       case "Visual":
-        return "👁 visual";
+        return "visual";
       default:
         return null;
     }

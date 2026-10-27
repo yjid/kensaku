@@ -893,7 +893,7 @@ function App() {
 
               {!isCommandMode && interpretation.length > 0 && (
                 <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line px-4 py-1.5">
-                  <span className="text-[10px] uppercase tracking-wider text-subtle">Interpreted</span>
+                  <span className="text-[11px] text-muted">Interpreted</span>
                   {interpretation.map((c, i) => (
                     <button
                       key={`${c.raw}-${i}`}
@@ -915,7 +915,7 @@ function App() {
 
               {!isCommandMode && displayResults.length > 0 && (
                 <div className="flex shrink-0 items-center justify-end gap-2 border-b border-line px-4 py-1.5">
-                  <label htmlFor="sort" className="text-[10px] uppercase tracking-wider text-subtle">
+                  <label htmlFor="sort" className="text-[11px] text-muted">
                     Sort
                   </label>
                   <select

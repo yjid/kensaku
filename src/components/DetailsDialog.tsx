@@ -31,7 +31,7 @@ export function DetailsDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-scrim p-6"
+      className="overlay-in fixed inset-0 z-[80] flex items-center justify-center bg-scrim p-6"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

@@ -214,15 +214,15 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         <div className="grid grid-cols-3 gap-6 text-center">
           <div>
             <div className="font-mono text-[20px] font-semibold text-fg">{files.toLocaleString()}</div>
-            <div className="text-[10px] uppercase tracking-wider text-subtle">files</div>
+            <div className="text-[11px] text-muted">files</div>
           </div>
           <div>
             <div className="font-mono text-[20px] font-semibold text-fg">{content.toLocaleString()}</div>
-            <div className="text-[10px] uppercase tracking-wider text-subtle">documents</div>
+            <div className="text-[11px] text-muted">documents</div>
           </div>
           <div>
             <div className="font-mono text-[20px] font-semibold text-fg">{units.toLocaleString()}</div>
-            <div className="text-[10px] uppercase tracking-wider text-subtle">embedded</div>
+            <div className="text-[11px] text-muted">embedded</div>
           </div>
         </div>
         <button
@@ -300,15 +300,15 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         <div className="grid grid-cols-3 gap-6 text-center">
           <div>
             <div className="font-mono text-[20px] font-semibold text-fg">{files.toLocaleString()}</div>
-            <div className="text-[10px] uppercase tracking-wider text-subtle">files</div>
+            <div className="text-[11px] text-muted">files</div>
           </div>
           <div>
             <div className="font-mono text-[20px] font-semibold text-fg">{content.toLocaleString()}</div>
-            <div className="text-[10px] uppercase tracking-wider text-subtle">documents</div>
+            <div className="text-[11px] text-muted">documents</div>
           </div>
           <div>
             <div className="font-mono text-[20px] font-semibold text-fg">{units.toLocaleString()}</div>
-            <div className="text-[10px] uppercase tracking-wider text-subtle">embedded</div>
+            <div className="text-[11px] text-muted">embedded</div>
           </div>
         </div>
         <p className="max-w-sm text-[11px] text-subtle">
@@ -355,17 +355,14 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             <img
               src={theme === "paper" ? "/setup-icon-paper.png" : "/setup-icon-void.png"}
               alt="Kensaku"
-              className="h-40 w-40 object-contain"
+              className="h-24 w-24 object-contain"
             />
-            <p className="font-serif text-[17px] italic text-muted mt-1">
-              Everything, already in its place
-            </p>
-            <h1 className="pt-2 text-[20px] font-semibold tracking-tight text-fg">
-              A precision index of your machine.
+            <h1 className="pt-4 text-[22px] font-semibold tracking-tight text-fg">
+              Find anything on this computer.
             </h1>
             <p className="max-w-sm text-[13px] leading-relaxed text-muted">
-              Pick a few folders. Kensaku walks them once — every file, every line inside,
-              searchable in milliseconds. Nothing ever leaves this device.
+              Choose a few folders. Kensaku reads them once, then search is instant.
+              Nothing leaves this device.
             </p>
           </div>
         )}
@@ -377,7 +374,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 What should we index?
               </h2>
               <p className="text-[12px] text-muted">
-                Suggested starting points — toggle freely, add a custom path below.
+                Start with these, or add your own folder.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -391,7 +388,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                     onClick={() => toggleDir(dir)}
                     className={`flex h-14 items-center gap-2.5 rounded-[14px] border px-3 text-left transition-colors duration-150 ${
                       selected
-                        ? "border-accent bg-accent-soft"
+                        ? "border-fg bg-sunken"
                         : "bg-elevated hover:border-line-strong"
                     }`}
                   >
@@ -491,7 +488,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 Preferences
               </h2>
               <p className="text-[12px] text-muted">
-                Theme and global shortcut. Everything else stays in Settings.
+                Appearance and one keyboard shortcut. You can change both later.
               </p>
             </div>
             <div className="flex items-center justify-between rounded-[14px] border border-line bg-elevated px-4 py-3">
@@ -516,7 +513,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 onClick={() => setCapturing(true)}
                 className={`mt-2 flex h-9 min-w-40 items-center justify-center rounded-[10px] border px-3 font-mono text-[11px] transition-colors ${
                   capturing
-                    ? "border-accent text-accent"
+                    ? "border-fg text-fg"
                     : "border-line bg-bg text-fg hover:border-line-strong"
                 }`}
               >
@@ -533,8 +530,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 Optional packs
               </h2>
               <p className="text-[12px] text-muted">
-                Downloads are optional. Skip any you don't need — keyword search
-                works without them.
+                Optional. Keyword search works without any of these.
               </p>
             </div>
             <div className="space-y-2">
@@ -549,7 +545,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                     onClick={() => setOcrEngine("tesseract")}
                     className={`rounded-[12px] border px-3 py-2 text-left transition-colors ${
                       ocrEngine === "tesseract"
-                        ? "border-accent bg-accent/10"
+                        ? "border-fg bg-sunken"
                         : "border-line hover:border-line-strong"
                     }`}
                   >
@@ -562,7 +558,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                     onClick={() => setOcrEngine("accurate")}
                     className={`rounded-[12px] border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
                       ocrEngine === "accurate"
-                        ? "border-accent bg-accent/10"
+                        ? "border-fg bg-sunken"
                         : "border-line hover:border-line-strong"
                     }`}
                   >
@@ -773,11 +769,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         <div className="min-w-0 text-[11px] text-subtle">
           {step === 1 && `${selectedDirs.length} folder${selectedDirs.length === 1 ? "" : "s"} selected`}
           {step === 2 && `${excludedDirs.length} ignored names`}
-          {step === 3 && (
-            <span className="font-mono">
-              shortcut <kbd className="kbd">{shortcut}</kbd> toggles the window anywhere
-            </span>
-          )}
+
         </div>
         <div className="flex items-center gap-2">
           {step > 0 && (
