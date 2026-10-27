@@ -3,6 +3,14 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [1.0.4] — 2026-10-28
+
+### Changed
+- Redesign: design system, search surface, results, home, onboarding, dialogs, menus, settings.
+- Drop glass theme; tighter spacing; rounded-rect search.
+- Remove Alt+Space hint from search bar; distinct settings tab icons.
+- Master Escape key handling.
+
 ## [1.0.3] — 2026-10-27
 
 ### Changed

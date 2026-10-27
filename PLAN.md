@@ -1,6 +1,6 @@
 # Kensaku — remaining work plan
 
-Status: master at `v1.0.3` (2026-10-28). Two open PRs exist as remote branches
+Status: master at `v1.0.4` (2026-10-28). ui-refresh merged.
 (`pr3-destroy-on-hide`, `pr5-onboarding`). Everything below is not yet merged.
 
 Legend: **[code]** = I can implement directly. **[you]** = needs your action
