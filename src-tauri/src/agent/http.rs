@@ -345,20 +345,32 @@ struct HttpResponse {
 fn route_request(request: &Request, state: &HttpState) -> Route {
     // Auth first: everything requires the bearer token.
     if request.token.as_deref() != Some(state.token.as_str()) {
-        return Route::Body(json_response(401, "Unauthorized", &json!({
-            "error": "missing or invalid bearer token"
-        })));
+        return Route::Body(json_response(
+            401,
+            "Unauthorized",
+            &json!({
+                "error": "missing or invalid bearer token"
+            }),
+        ));
     }
 
     match (request.method.as_str(), request.path.as_str()) {
         ("POST", "/mcp") => handle_mcp_post(request, state),
-        ("GET", "/mcp") => Route::Body(json_response(405, "Method Not Allowed", &json!({
-            "error": "this server is stateless; POST JSON-RPC to /mcp"
-        }))),
+        ("GET", "/mcp") => Route::Body(json_response(
+            405,
+            "Method Not Allowed",
+            &json!({
+                "error": "this server is stateless; POST JSON-RPC to /mcp"
+            }),
+        )),
         ("GET", "/health") => Route::Body(health_response(state)),
         ("GET", "/search") => Route::Body(handle_rest_search(request, state)),
         ("GET", "/events") => Route::Sse(b": connected\n\n".to_vec(), KeepAlive::Hold),
-        _ => Route::Body(json_response(404, "Not Found", &json!({"error": "not found"}))),
+        _ => Route::Body(json_response(
+            404,
+            "Not Found",
+            &json!({"error": "not found"}),
+        )),
     }
 }
 
@@ -441,7 +453,11 @@ fn handle_mcp_post(request: &Request, state: &HttpState) -> Route {
 fn handle_rest_search(request: &Request, state: &HttpState) -> HttpResponse {
     let query_string = request.target.split_once('?').map(|(_, q)| q).unwrap_or("");
     let params = parse_query_params(query_string);
-    let Some(query) = params.iter().find(|(k, _)| k == "q").map(|(_, v)| v.clone()) else {
+    let Some(query) = params
+        .iter()
+        .find(|(k, _)| k == "q")
+        .map(|(_, v)| v.clone())
+    else {
         return json_response(400, "Bad Request", &json!({"error": "missing q parameter"}));
     };
     if query.trim().is_empty() {
@@ -454,31 +470,33 @@ fn handle_rest_search(request: &Request, state: &HttpState) -> HttpResponse {
         .map(|limit| limit.clamp(1, 50))
         .unwrap_or(10);
 
-    let payload = with_session(state, |session| match session.search_page(&query, limit, 0) {
-        Ok(response) => {
-            let results: Vec<Value> = response
-                .results
-                .iter()
-                .map(|result| {
-                    json!({
-                        "path": result.path,
-                        "score": result.score,
-                        "snippet": result.snippet,
-                        "match_type": result.match_type,
-                        "size": result.file_size,
-                        "modified": result.modified,
+    let payload = with_session(state, |session| {
+        match session.search_page(&query, limit, 0) {
+            Ok(response) => {
+                let results: Vec<Value> = response
+                    .results
+                    .iter()
+                    .map(|result| {
+                        json!({
+                            "path": result.path,
+                            "score": result.score,
+                            "snippet": result.snippet,
+                            "match_type": result.match_type,
+                            "size": result.file_size,
+                            "modified": result.modified,
+                        })
                     })
+                    .collect();
+                json!({
+                    "results": results,
+                    "total": response.total,
+                    "mode": response.mode,
+                    "returned": results.len(),
+                    "as_of": super::now_unix_secs(),
                 })
-                .collect();
-            json!({
-                "results": results,
-                "total": response.total,
-                "mode": response.mode,
-                "returned": results.len(),
-                "as_of": super::now_unix_secs(),
-            })
+            }
+            Err(error) => json!({"error": error}),
         }
-        Err(error) => json!({"error": error}),
     });
     json_response(200, "OK", &payload)
 }
@@ -534,7 +552,10 @@ fn json_response(status: u16, reason: &'static str, value: &Value) -> HttpRespon
 fn write_response(writer: &mut TcpStream, response: &HttpResponse) -> std::io::Result<()> {
     let head = format!(
         "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",
-        response.status, response.reason, response.content_type, response.body.len()
+        response.status,
+        response.reason,
+        response.content_type,
+        response.body.len()
     );
     writer.write_all(head.as_bytes())?;
     writer.write_all(&response.body)?;
@@ -689,10 +710,7 @@ mod tests {
     #[test]
     fn rejects_missing_and_wrong_tokens() {
         let server = start_server("auth");
-        let (status, _, _) = http(
-            &server,
-            "GET /health HTTP/1.1\r\nHost: x\r\n\r\n",
-        );
+        let (status, _, _) = http(&server, "GET /health HTTP/1.1\r\nHost: x\r\n\r\n");
         assert_eq!(status, 401);
 
         let (status, _, _) = http(

@@ -63,43 +63,36 @@ pub struct InstallOutcome {
 }
 
 /// Candidate config paths for a client on this OS. The first existing file
-/// wins for `installed`/`configured`; the first locatable path is the install
-/// target.
+/// wins for `installed`/`configured` and for the install target; otherwise the
+/// first locatable path is used.
 fn config_paths(client: Client) -> Vec<PathBuf> {
     let Some(home) = dirs::home_dir() else {
         return Vec::new();
     };
     match client {
         Client::ClaudeDesktop => {
-            let mut paths = Vec::new();
-            if let Some(data) = dirs::data_dir() {
-                #[cfg(target_os = "macos")]
-                paths.push(data.join("Claude/claude_desktop_config.json"));
-                #[cfg(target_os = "linux")]
-                paths.push(data.join("Claude/claude_desktop_config.json"));
-            }
-            if let Some(config) = dirs::config_dir() {
-                #[cfg(target_os = "windows")]
-                paths.push(config.join("Claude/claude_desktop_config.json"));
-                #[cfg(not(target_os = "windows"))]
-                let _ = config;
-            }
-            // Documented Windows location, resolved manually because
-            // `dirs::data_dir` is not Roaming AppData on Windows.
-            #[cfg(target_os = "windows")]
-            if let Some(roaming) = std::env::var_os("APPDATA") {
-                paths.push(PathBuf::from(roaming).join("Claude/claude_desktop_config.json"));
-            }
-            paths.push(home.join(".claude/claude_desktop_config.json"));
-            paths
+            // macOS keeps app data in ~/Library/Application Support; the Linux
+            // and Windows builds read from the platform config dir
+            // (~/.config and %APPDATA% respectively).
+            #[cfg(target_os = "macos")]
+            let base = dirs::data_dir();
+            #[cfg(not(target_os = "macos"))]
+            let base = dirs::config_dir();
+            base.map(|base| vec![base.join("Claude/claude_desktop_config.json")])
+                .unwrap_or_default()
         }
         Client::ClaudeCode => vec![home.join(".claude.json")],
-        Client::Cursor => vec![dirs::home_dir().unwrap_or(home).join(".cursor/mcp.json")],
+        Client::Cursor => vec![home.join(".cursor/mcp.json")],
     }
 }
 
 fn primary_path(client: Client) -> Option<PathBuf> {
-    config_paths(client).into_iter().next()
+    let paths = config_paths(client);
+    paths
+        .iter()
+        .find(|path| path.is_file())
+        .cloned()
+        .or_else(|| paths.into_iter().next())
 }
 
 /// The MCP server entry for Kensaku, with the best absolute path we can find
@@ -143,10 +136,7 @@ pub fn detect_clients() -> Vec<ClientStatus> {
         .iter()
         .map(|client| {
             let path = primary_path(*client);
-            let installed = path
-                .as_ref()
-                .map(|path| path.is_file())
-                .unwrap_or(false);
+            let installed = path.as_ref().map(|path| path.is_file()).unwrap_or(false);
             let configured = installed
                 && path
                     .as_ref()
@@ -165,40 +155,93 @@ pub fn detect_clients() -> Vec<ClientStatus> {
 }
 
 fn is_configured(raw: &str) -> bool {
-    serde_json::from_str::<Value>(raw)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("mcpServers")
-                .cloned()
-                .or_else(|| value.get("projects").cloned().map(|_| Value::Null))
-                .map(|servers| {
-                    servers
-                        .get("kensaku")
-                        .map(|entry| entry.get("command").is_some())
-                        .unwrap_or(false)
-                })
+    let Ok(value) = serde_json::from_str::<Value>(raw) else {
+        return false;
+    };
+    if has_kensaku(value.get("mcpServers")) {
+        return true;
+    }
+    // Claude Code also stores local-scope servers per project.
+    value
+        .get("projects")
+        .and_then(Value::as_object)
+        .map(|projects| {
+            projects
+                .values()
+                .any(|project| has_kensaku(project.get("mcpServers")))
         })
         .unwrap_or(false)
 }
 
+fn has_kensaku(servers: Option<&Value>) -> bool {
+    servers
+        .and_then(Value::as_object)
+        .and_then(|servers| servers.get("kensaku"))
+        .map(|entry| entry.get("command").is_some())
+        .unwrap_or(false)
+}
+
 /// The ready-to-paste JSON snippet for a client's config file.
-pub fn config_snippet(client: Client) -> Result<String, String> {
+pub fn config_snippet(_client: Client) -> Result<String, String> {
     let pretty = serde_json::to_string_pretty(&json!({
         "mcpServers": {
             "kensaku": server_entry(),
         }
     }))
     .map_err(|e| e.to_string())?;
-    let _ = client;
     Ok(pretty)
+}
+
+/// `<path>.bak`, preserving the full original file name (e.g.
+/// `~/.claude.json.bak`, not `~/.claude.bak`).
+fn backup_path(path: &std::path::Path) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".bak");
+    path.with_file_name(name)
+}
+
+/// Writes `contents` through a sibling temp file and renames it into place, so
+/// an interrupted write cannot truncate the user's config. New files are 0600;
+/// an existing file keeps its mode.
+fn write_atomic(path: &std::path::Path, contents: &str) -> Result<(), String> {
+    let Some(parent) = path.parent() else {
+        return Err(format!("{} has no parent directory", path.display()));
+    };
+    std::fs::create_dir_all(parent)
+        .map_err(|e| format!("create dir {}: {}", parent.display(), e))?;
+
+    let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let tmp = parent.join(format!(
+        ".{}.tmp-{}-{}",
+        file_name,
+        std::process::id(),
+        stamp
+    ));
+
+    std::fs::write(&tmp, contents).map_err(|e| format!("write {}: {}", tmp.display(), e))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(path)
+            .map(|metadata| metadata.permissions().mode())
+            .unwrap_or(0o600);
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(mode));
+    }
+    std::fs::rename(&tmp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("replace {}: {}", path.display(), e)
+    })
 }
 
 /// Merges the Kensaku entry into the client's config file.
 ///
 /// Creates missing parent dirs and the file itself, backs up any previous
-/// content to `<path>.bak`, and never removes unrelated entries. Returns the
-/// post-install status.
+/// content to `<path>.bak`, and never removes unrelated entries. The write is
+/// atomic. Returns the post-install status.
 pub fn install(client: Client) -> Result<InstallOutcome, String> {
     let Some(path) = primary_path(client) else {
         return Err(format!(
@@ -208,7 +251,10 @@ pub fn install(client: Client) -> Result<InstallOutcome, String> {
     };
 
     let previous = if path.is_file() {
-        Some(std::fs::read_to_string(&path).map_err(|e| format!("read {}: {}", path.display(), e))?)
+        Some(
+            std::fs::read_to_string(&path)
+                .map_err(|e| format!("read {}: {}", path.display(), e))?,
+        )
     } else {
         None
     };
@@ -240,17 +286,14 @@ pub fn install(client: Client) -> Result<InstallOutcome, String> {
 
     let merged = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
 
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("create dir: {}", e))?;
-    }
     let mut backup = None;
     if let Some(previous) = &previous {
-        let backup_path = path.with_extension("json.bak");
-        std::fs::write(&backup_path, previous)
-            .map_err(|e| format!("write backup: {}", e))?;
+        let backup_path = backup_path(&path);
+        write_atomic(&backup_path, previous)
+            .map_err(|e| format!("write backup {}: {}", backup_path.display(), e))?;
         backup = Some(backup_path.to_string_lossy().into_owned());
     }
-    std::fs::write(&path, &merged).map_err(|e| format!("write {}: {}", path.display(), e))?;
+    write_atomic(&path, &merged)?;
 
     let status = ClientStatus {
         id: client.id(),
@@ -346,10 +389,12 @@ mod tests {
         let snippet = config_snippet(Client::Cursor).unwrap();
         let value: Value = serde_json::from_str(&snippet).unwrap();
         assert_eq!(value["mcpServers"]["kensaku"]["args"][0], "mcp");
-        assert!(!value["mcpServers"]["kensaku"]["command"]
-            .as_str()
-            .unwrap()
-            .is_empty());
+        assert!(
+            !value["mcpServers"]["kensaku"]["command"]
+                .as_str()
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -362,6 +407,54 @@ mod tests {
         assert!(!is_configured(
             r#"{"mcpServers": {"other": {"command": "x"}}}"#
         ));
+    }
+
+    #[test]
+    fn is_configured_detects_project_scoped_entries() {
+        assert!(is_configured(
+            r#"{"projects": {"/a": {"mcpServers": {"kensaku": {"command": "kensaku-cli"}}}}}"#
+        ));
+        assert!(!is_configured(
+            r#"{"projects": {"/a": {"mcpServers": {"other": {"command": "x"}}}}}"#
+        ));
+    }
+
+    #[test]
+    fn backup_path_keeps_the_full_file_name() {
+        assert_eq!(
+            backup_path(std::path::Path::new("/home/u/.claude.json")),
+            PathBuf::from("/home/u/.claude.json.bak")
+        );
+        assert_eq!(
+            backup_path(std::path::Path::new("/home/u/.cursor/mcp.json")),
+            PathBuf::from("/home/u/.cursor/mcp.json.bak")
+        );
+    }
+
+    #[test]
+    fn atomic_write_replaces_and_creates() {
+        let dir = std::env::temp_dir().join(format!(
+            "kensaku-connect-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("nested")).unwrap();
+        let path = dir.join("nested/config.json");
+        write_atomic(&path, "{\"a\":1}").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"a\":1}");
+        write_atomic(&path, "{\"a\":2}").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"a\":2}");
+        // No temp files are left behind.
+        let leftovers: Vec<_> = std::fs::read_dir(dir.join("nested"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp-"))
+            .collect();
+        assert!(leftovers.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

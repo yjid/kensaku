@@ -121,7 +121,10 @@ fn parse_source(source: &str, language: Language) -> Vec<SymbolHit> {
         Language::Rust => set(&mut parser, tree_sitter_rust::LANGUAGE.into()),
         Language::Python => set(&mut parser, tree_sitter_python::LANGUAGE.into()),
         Language::JavaScript => set(&mut parser, tree_sitter_javascript::LANGUAGE.into()),
-        Language::TypeScript => set(&mut parser, tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+        Language::TypeScript => set(
+            &mut parser,
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        ),
     };
     let Some(tree) = parsed else {
         return Vec::new();
@@ -208,10 +211,7 @@ fn definition_of(
 }
 
 /// Runs the `find_symbol` tool against a session and returns the MCP payload.
-pub fn tool_find_symbol(
-    session: &AgentSession<'_>,
-    args: &Value,
-) -> Result<Value, (String, bool)> {
+pub fn tool_find_symbol(session: &AgentSession<'_>, args: &Value) -> Result<Value, (String, bool)> {
     let Some(query) = args
         .get("query")
         .and_then(Value::as_str)
@@ -221,7 +221,10 @@ pub fn tool_find_symbol(
         return Err(("Invalid params: 'query' is required".to_string(), true));
     };
     if query.chars().count() > 100 {
-        return Err(("Invalid params: 'query' must be at most 100 characters".to_string(), true));
+        return Err((
+            "Invalid params: 'query' must be at most 100 characters".to_string(),
+            true,
+        ));
     }
     let language = match args.get("language").and_then(Value::as_str) {
         None | Some("") => None,
@@ -236,7 +239,11 @@ pub fn tool_find_symbol(
             }
         },
     };
-    let path = args.get("path").and_then(Value::as_str).map(str::trim).filter(|p| !p.is_empty());
+    let path = args
+        .get("path")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|p| !p.is_empty());
     let page_size = args
         .get("page_size")
         .and_then(Value::as_u64)
@@ -248,7 +255,10 @@ pub fn tool_find_symbol(
     if let Some(path) = path
         && !super::agent_path_allowed(&roots, path)
     {
-        return Err(("Invalid params: path is outside the configured agent scope".to_string(), true));
+        return Err((
+            "Invalid params: path is outside the configured agent scope".to_string(),
+            true,
+        ));
     }
 
     // Candidate files: an explicit path, else content-index prefilter.
@@ -257,7 +267,11 @@ pub fn tool_find_symbol(
     } else {
         let search_query = format!("content:\"{}\"", query);
         match session.search_page(&search_query, MAX_CANDIDATE_FILES, 0) {
-            Ok(response) => response.results.into_iter().map(|result| result.path).collect(),
+            Ok(response) => response
+                .results
+                .into_iter()
+                .map(|result| result.path)
+                .collect(),
             Err(error) => return Err((error, false)),
         }
     };
@@ -360,9 +374,24 @@ enum Choice { A, B }
     #[test]
     fn rust_definitions_are_extracted_with_lines() {
         let mut hits = parse_source(RUST_SAMPLE, Language::Rust);
-        hits.sort_by(|a, b| a.line_start.cmp(&b.line_start).then_with(|| a.name.cmp(&b.name)));
+        hits.sort_by(|a, b| {
+            a.line_start
+                .cmp(&b.line_start)
+                .then_with(|| a.name.cmp(&b.name))
+        });
         let names: Vec<&str> = hits.iter().map(|hit| hit.name.as_str()).collect();
-        assert_eq!(names, vec!["inner", "visible", "Hidden", "from_impl", "Doable", "act", "Choice"]);
+        assert_eq!(
+            names,
+            vec![
+                "inner",
+                "visible",
+                "Hidden",
+                "from_impl",
+                "Doable",
+                "act",
+                "Choice"
+            ]
+        );
         let visible = hits.iter().find(|hit| hit.name == "visible").unwrap();
         assert_eq!(visible.kind, "function");
         assert!(visible.signature.contains("fn visible"));
@@ -370,7 +399,8 @@ enum Choice { A, B }
 
     #[test]
     fn python_definitions_are_extracted() {
-        let source = "class thing:\n    def method(self):\n        pass\n\ndef top_level():\n    pass\n";
+        let source =
+            "class thing:\n    def method(self):\n        pass\n\ndef top_level():\n    pass\n";
         let hits = parse_source(source, Language::Python);
         let names: Vec<&str> = hits.iter().map(|hit| hit.name.as_str()).collect();
         assert_eq!(names, vec!["thing", "method", "top_level"]);
@@ -395,7 +425,14 @@ enum Choice { A, B }
 
     #[test]
     fn unsupported_extensions_return_nothing() {
-        let dir = std::env::temp_dir().join(format!("kensaku-sym-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let dir = std::env::temp_dir().join(format!(
+            "kensaku-sym-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("data.txt");
         std::fs::write(&file, "fn not_code() {}").unwrap();

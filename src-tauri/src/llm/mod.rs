@@ -131,7 +131,11 @@ impl ChatMessage {
 ///
 /// `cloud_allowed` must be true for non-loopbase base URLs; this is the
 /// per-use consent gate for `/ask` and stays false for everything else.
-pub fn chat(target: &LlmTarget, messages: &[ChatMessage], cloud_allowed: bool) -> Result<String, LlmError> {
+pub fn chat(
+    target: &LlmTarget,
+    messages: &[ChatMessage],
+    cloud_allowed: bool,
+) -> Result<String, LlmError> {
     if !is_loopback(&target.base_url) && !cloud_allowed {
         return Err(LlmError::Unavailable(
             "endpoint is not loopback and cloud providers were not consented for this call"
@@ -160,7 +164,9 @@ pub fn chat(target: &LlmTarget, messages: &[ChatMessage], cloud_allowed: bool) -
         ),
     };
 
-    let response = agent().post(&url).send_json(body)
+    let response = agent()
+        .post(&url)
+        .send_json(body)
         .map_err(|e| LlmError::Unavailable(describe_ureq_error(e)))?;
 
     let mut text = String::new();
@@ -200,7 +206,9 @@ pub fn list_models(target: &LlmTarget) -> Result<Vec<String>, LlmError> {
         Provider::Ollama => format!("{}/api/tags", target.base_url),
         Provider::OpenAiCompatible => format!("{}/models", target.base_url),
     };
-    let response = agent().get(&url).call()
+    let response = agent()
+        .get(&url)
+        .call()
         .map_err(|e| LlmError::Unavailable(describe_ureq_error(e)))?;
     let mut text = String::new();
     let reader = response.into_reader();
@@ -211,12 +219,20 @@ pub fn list_models(target: &LlmTarget) -> Result<Vec<String>, LlmError> {
     let value: Value = serde_json::from_str(&text)
         .map_err(|e| LlmError::Unavailable(format!("invalid JSON from provider: {}", e)))?;
     let models = match target.provider {
-        Provider::Ollama => value["models"]
-            .as_array()
-            .map(|models| models.iter().filter_map(|m| m["name"].as_str()).map(str::to_string).collect()),
-        Provider::OpenAiCompatible => value["data"]
-            .as_array()
-            .map(|models| models.iter().filter_map(|m| m["id"].as_str()).map(str::to_string).collect()),
+        Provider::Ollama => value["models"].as_array().map(|models| {
+            models
+                .iter()
+                .filter_map(|m| m["name"].as_str())
+                .map(str::to_string)
+                .collect()
+        }),
+        Provider::OpenAiCompatible => value["data"].as_array().map(|models| {
+            models
+                .iter()
+                .filter_map(|m| m["id"].as_str())
+                .map(str::to_string)
+                .collect()
+        }),
     };
     Ok(models.unwrap_or_default())
 }

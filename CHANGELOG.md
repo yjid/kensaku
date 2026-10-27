@@ -28,9 +28,21 @@ versioning: [SemVer](https://semver.org/).
 - Rust CI links again on older glibc: the ONNX runtime is now loaded
   dynamically instead of statically linked. The prebuilt static archive
   required glibc 2.38+ symbols and broke the `Rust` CI job on ubuntu-22.04
-  from the moment PP-OCRv6 joined the default builds. Behavior is unchanged:
-  when the runtime library is absent, accurate OCR returns nothing and
-  extraction falls back to Tesseract.
+  from the moment PP-OCRv6 joined the default builds. Accurate OCR now probes
+  the dynamic runtime (cached for the process) and contains loader panics, so
+  a missing/unloadable `libonnxruntime` honestly reports the engine as
+  unavailable and extraction falls back to Tesseract instead of losing the
+  file. Install the runtime and restart to enable the accurate pack.
+- Agent root scoping now compares resolved paths. `..`, `.` and symlinks can
+  no longer escape an `agent_scoped_roots` root through `read_snippet` or a
+  scoped search; out-of-scope requests are rejected.
+- One-click connect writes configs atomically (temp file + rename) and keeps a
+  full-name `.bak` copy. Claude Desktop now uses the platform config directory
+  (`~/.config` on Linux, `%APPDATA%` on Windows, Application Support on
+  macOS), and Claude Code project-scoped `mcpServers` entries are detected.
+- The local-LLM query compiler now validates filter values as well as keys, so
+  invalid ranges/categories are rejected instead of being silently downgraded
+  to plain search terms; its prompt lists only categories the engine routes.
 - PP-OCRv6 is now compiled into normal app builds via the default `accurate-ocr`
   feature, so Setup/Settings no longer show "not included in this build".
 - Setup and Settings now treat Tesseract and PP-OCRv6 as an either/or choice:

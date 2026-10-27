@@ -166,13 +166,7 @@ impl IgnoreSet {
             Cow::Borrowed(relative)
         } else {
             // Unanchored patterns match the basename at any depth.
-            Cow::Owned(
-                relative
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or(relative)
-                    .to_string(),
-            )
+            Cow::Owned(relative.rsplit('/').next().unwrap_or(relative).to_string())
         };
         glob_match(&rule.pattern, &candidate)
     }
@@ -256,9 +250,7 @@ fn glob_impl(p: &[char], t: &[char]) -> bool {
                     .any(|i| glob_impl(rest, &t[i..]))
             }
         }
-        '?' => {
-            !t.is_empty() && t[0] != '/' && glob_impl(rest, &t[1..])
-        }
+        '?' => !t.is_empty() && t[0] != '/' && glob_impl(rest, &t[1..]),
         '[' => {
             let Some((&first, tail)) = t.split_first() else {
                 return false;
@@ -375,11 +367,7 @@ mod tests {
     #[test]
     fn negation_and_last_match_wins() {
         let dir = temp("negation");
-        write_ignore(
-            &dir,
-            ".gitignore",
-            "*.log\n!important.log\n!keep/\nkeep/\n",
-        );
+        write_ignore(&dir, ".gitignore", "*.log\n!important.log\n!keep/\nkeep/\n");
         let set = IgnoreSet::from_directories(std::slice::from_ref(&dir));
 
         assert!(set.is_ignored(&dir.join("debug.log"), false));
@@ -444,11 +432,7 @@ mod tests {
     #[test]
     fn double_star_forms() {
         let dir = temp("doublestar");
-        write_ignore(
-            &dir,
-            ".gitignore",
-            "a/**/b\n**/vendor/\ndocs/**\n",
-        );
+        write_ignore(&dir, ".gitignore", "a/**/b\n**/vendor/\ndocs/**\n");
         let set = IgnoreSet::from_directories(std::slice::from_ref(&dir));
 
         assert!(set.is_ignored(&dir.join("a/b"), true));

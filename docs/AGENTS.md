@@ -173,18 +173,24 @@ response. Exit codes: `0` ok, `2` usage, `3` no index (launch Kensaku once).
   semantics).
 - **Read-only scoping per root** — `agent_scoped_roots` in config restricts
   search results and `read_snippet`/`find_symbol` paths to those roots;
-  out-of-scope requests are rejected, not silently trimmed.
+  out-of-scope requests are rejected, not silently trimmed. Paths are resolved
+  before comparison, so `..` and symlink escapes do not pass the check.
 - **One-click connect** — Settings → Agents detects Claude Desktop/Code and
-  Cursor, merges one config entry (with a `.bak` backup); manual JSON stays.
-  CLI: `kensaku-cli connect <client> [--write]`.
+  Cursor, merges one config entry atomically (with a `.bak` backup); manual
+  JSON stays. Claude Desktop paths follow each platform (`~/Library/
+  Application Support` on macOS, `~/.config` on Linux, `%APPDATA%` on
+  Windows). CLI: `kensaku-cli connect <client> [--write]`.
 - **Loopback HTTP/SSE** — `kensaku-cli serve [--port 8765]`: MCP Streamable
   HTTP on `POST /mcp` (JSON or SSE), read-only `GET /health`, `GET /search?q=`,
   and an SSE keepalive at `GET /events`. Bearer token in
   `<config>/http.token` (0600); loopback bind + per-connection peer check;
-  `reindex` is never enabled on this transport.
+  `reindex` is never enabled on this transport. `/ask` is a CLI/GUI feature,
+  not an HTTP route.
 - **Optional local LLM** — query compiler (validated chips) and `/ask` with
   path+line citations. Off by default; the model never retrieves on its own
-  and is never required. CLI: `kensaku-cli ask "<question>"`.
+  and is never required. CLI: `kensaku-cli ask "<question>"`. The compiler
+  validates both filter keys and values against the query grammar, so chips
+  that would do nothing are rejected rather than shown.
 
 ## Planned
 
