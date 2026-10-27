@@ -14,7 +14,7 @@ export function ScopeMenu({
 }) {
   if (items.length === 0) return null;
   return (
-    <div className="mx-4 mb-1 shrink-0 overflow-hidden rounded-[12px] border border-line bg-elevated shadow-sm">
+    <div className="elevated menu-pop relative z-20 mx-8 mb-2 mt-3 shrink-0 overflow-hidden p-1.5">
       {items.map((path, i) => {
         const active = i === activeIndex;
         const name = path.split(/[\\/]/).filter(Boolean).pop() || path;
@@ -26,14 +26,14 @@ export function ScopeMenu({
               e.preventDefault();
               onPick(path);
             }}
-            className={`flex w-full items-center gap-3 px-3 py-2 text-left transition-colors ${
-              active ? "bg-sunken" : "hover:bg-sunken"
+            className={`flex w-full items-center gap-3 rounded-[10px] px-3 py-2 text-left transition-colors ${
+              active ? "bg-accent-soft" : "hover:bg-accent-soft"
             }`}
           >
-            <Folder className={`h-3.5 w-3.5 shrink-0 ${active ? "text-accent" : "text-subtle"}`} />
+            <Folder className={`h-3.5 w-3.5 shrink-0 ${active ? "text-ink" : "text-subtle"}`} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[12px] font-medium text-fg">@{name}</span>
-              <span className="block truncate font-mono text-[11px] text-subtle">{path}</span>
+              <span className="block truncate text-[13px] font-medium text-fg">@{name}</span>
+              <span className="block truncate t-meta text-subtle">{path}</span>
             </span>
           </button>
         );

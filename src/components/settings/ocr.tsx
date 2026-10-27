@@ -152,7 +152,7 @@ export function OcrField({
       <div className="flex items-center justify-between gap-6">
         <div className="min-w-0 space-y-0.5">
           <p className="text-[12px] font-medium text-fg">OCR (images)</p>
-          <p className="text-[11px] leading-relaxed text-muted">{OCR_DESCRIPTION}</p>
+          <p className="text-[12px] leading-[18px] text-muted">{OCR_DESCRIPTION}</p>
           {/* Reserved line: same height whether or not a hint resolves into it. */}
           <p className="flex min-h-[18px] items-center gap-1.5 text-[11px] leading-[18px]">
             {hint}
@@ -168,7 +168,7 @@ export function OcrField({
       <div className="mt-3 flex items-center justify-between gap-4 border-t border-line pt-3">
         <div>
           <p className="text-[11px] font-medium text-fg">OCR engine</p>
-          <p className="text-[11px] text-muted">Pick one. Both read images; they are alternatives.</p>
+          <p className="text-[12px] text-muted">Pick one. Both read images; they are alternatives.</p>
         </div>
         <select
           aria-label="OCR engine"
@@ -178,7 +178,7 @@ export function OcrField({
               c ? { ...c, ocr_engine: e.target.value as "tesseract" | "accurate" } : c,
             )
           }
-          className="h-8 rounded-[8px] border border-line bg-elevated px-2 text-[11px] text-fg"
+          className="h-8 rounded-[8px] border border-line bg-[var(--panel)] px-2 text-[11px] text-fg"
         >
           <option value="tesseract">Tesseract — fast, smaller</option>
           <option value="accurate" disabled={!status?.accurate_compiled}>
@@ -192,7 +192,7 @@ export function OcrField({
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
               <p className="text-[11px] font-medium text-fg">PP-OCRv6 pack</p>
-              <p className="text-[11px] leading-relaxed text-muted">
+              <p className="text-[12px] leading-[18px] text-muted">
                 About 6 MB · slower, in-process · may read small UI text better.
               </p>
               <p className="mt-0.5 font-mono text-[11px] text-subtle">
@@ -213,7 +213,7 @@ export function OcrField({
                   type="button"
                   disabled={packBusy || pack?.downloading}
                   onClick={downloadPack}
-                  className="flex h-8 items-center gap-1.5 rounded-[8px] border border-line bg-elevated px-3 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                  className="btn btn-secondary h-8 px-3 text-[12px]"
                 >
                   <RefreshCw
                     className={`h-3 w-3 ${packBusy || pack?.downloading ? "animate-spin" : ""}`}
@@ -246,7 +246,7 @@ export function OcrField({
         </div>
       ) : (
         <div className="mt-3 border-t border-line pt-3">
-          <p className="text-[11px] leading-relaxed text-muted">
+          <p className="text-[12px] leading-[18px] text-muted">
             PP-OCRv6 is not compiled into this build. Rebuild with default features to enable it.
           </p>
         </div>
@@ -255,7 +255,7 @@ export function OcrField({
       {!unavailable ? null : engineMissing ? (
         /* tesseract absent — show the install command for this platform,
            keep the rest one chevron away, let the user re-check. */
-        <div className="space-y-2 bg-sunken px-4 py-3">
+        <div className="space-y-2 bg-accent-soft px-4 py-3">
           {status?.error && (
             <p className="break-words font-mono text-[11px] leading-4 text-muted">
               {status.error}
@@ -274,7 +274,7 @@ export function OcrField({
               type="button"
               title={`Copy install command — ${platform.command}`}
               onClick={() => copy(platform.command)}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-muted transition-colors hover:bg-elevated hover:text-fg"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-muted transition-colors hover:bg-elevated hover:text-fg"
             >
               {copied === platform.command ? (
                 <Check className="h-3.5 w-3.5 text-accent" />
@@ -285,7 +285,7 @@ export function OcrField({
           </div>
 
           {allPlatforms && (
-            <div className="space-y-0.5 rounded-[8px] border border-line bg-elevated p-1.5">
+            <div className="space-y-0.5 rounded-[8px] border border-line bg-[var(--panel)] p-1.5">
               {INSTALL_COMMANDS.map((p) => (
                 <div key={p.id} className="flex min-w-0 items-center gap-2 px-1.5 py-1">
                   <span className="w-32 shrink-0 truncate text-[11px] text-subtle">
@@ -298,7 +298,7 @@ export function OcrField({
                     type="button"
                     title={`Copy install command — ${p.command}`}
                     onClick={() => copy(p.command)}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-sunken hover:text-fg"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-accent-soft hover:text-fg"
                   >
                     {copied === p.command ? (
                       <Check className="h-3 w-3 text-accent" />
@@ -316,7 +316,7 @@ export function OcrField({
               type="button"
               aria-expanded={allPlatforms}
               onClick={() => setAllPlatforms((v) => !v)}
-              className="flex h-7 items-center gap-1 pl-1 pr-2 text-[11px] text-muted transition-colors hover:text-fg"
+              className="flex h-7 items-center gap-1 pl-1 pr-2 text-[12px] text-muted transition-colors hover:text-fg"
             >
               <ChevronDown
                 className={`h-3 w-3 transition-transform duration-150 ${
@@ -329,7 +329,7 @@ export function OcrField({
               type="button"
               disabled={rechecking}
               onClick={recheck}
-              className="flex h-8 items-center gap-1.5 rounded-[8px] border border-line bg-elevated px-3 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+              className="btn btn-secondary h-8 px-3 text-[12px]"
             >
               <RefreshCw
                 className={`h-3 w-3 ${rechecking ? "animate-spin" : ""}`}
@@ -341,13 +341,13 @@ export function OcrField({
         </div>
       ) : (
         /* Engine present, no language data — setup owns the download. */
-        <div className="space-y-2.5 bg-sunken px-4 py-3">
+        <div className="space-y-2.5 bg-accent-soft px-4 py-3">
           {status?.error && (
             <p className="break-words font-mono text-[11px] leading-4 text-muted">
               {status.error}
             </p>
           )}
-          <p className="text-[11px] leading-relaxed text-muted">
+          <p className="text-[12px] leading-[18px] text-muted">
             Language data is downloaded during setup. Use <b>About → Run setup again</b> to
             acquire it, then re-check here.
           </p>
@@ -355,7 +355,7 @@ export function OcrField({
             type="button"
             disabled={rechecking}
             onClick={recheck}
-            className="flex h-8 items-center gap-1.5 rounded-[8px] border border-line bg-elevated px-3 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+            className="btn btn-secondary h-8 px-3 text-[12px]"
           >
             <RefreshCw className={`h-3 w-3 ${rechecking ? "animate-spin" : ""}`} aria-hidden={rechecking} />
             Re-check

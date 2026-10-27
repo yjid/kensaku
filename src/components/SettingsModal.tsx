@@ -14,8 +14,6 @@ import {
   SlidersHorizontal,
   Sparkles,
   Stethoscope,
-  Sun,
-  Moon,
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -155,22 +153,11 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
   };
 
   return (
-    <div className="fade-in absolute inset-0 z-40 flex flex-col bg-bg">
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-line px-4">
-        <h1 className="text-[15px] font-semibold text-fg">Settings</h1>
-        <button
-          type="button"
-          title="Close (Esc)"
-          onClick={onClose}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors duration-150 hover:bg-sunken hover:text-fg"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </header>
-
-      <div className="flex min-h-0 flex-1">
-        {/* Rail: 200px, 32px icon rows, accent-soft active with 2px left bar. */}
-        <nav className="flex w-[196px] shrink-0 flex-col gap-px overflow-y-auto border-r border-line bg-bg p-2.5">
+    <div className="fade-in grain absolute inset-0 z-40 flex bg-bg">
+      <div className="ambient" data-state="results" aria-hidden="true" />
+      <nav data-tauri-drag-region className="relative z-10 flex w-[220px] shrink-0 flex-col overflow-y-auto px-4 pb-4 pt-7">
+        <p data-tauri-drag-region className="t-title px-3 pb-6 text-fg">Settings</p>
+        <div className="flex flex-col gap-0.5">
           {SECTIONS.map((s) => {
             const active = section === s.id;
             const Icon = s.icon;
@@ -180,70 +167,54 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
                 type="button"
                 onClick={() => setSection(s.id)}
                 aria-current={active ? "page" : undefined}
-                className={`relative flex h-8 w-full items-center gap-2 rounded-[8px] px-2.5 text-[13px] transition-colors duration-150 ${
-                  active
-                    ? "bg-sunken font-medium text-fg"
-                    : "text-muted hover:bg-sunken/60 hover:text-fg"
+                className={`relative flex h-9 w-full items-center gap-3 rounded-[10px] px-3 text-[13px] transition-colors duration-150 ${
+                  active ? "bg-accent-soft font-medium text-fg shadow-[inset_0_0_0_1px_var(--border)]" : "text-muted hover:text-fg"
                 }`}
               >
-                <Icon
-                  className={`h-[15px] w-[15px] shrink-0 transition-colors duration-150 ${
-                    active ? "text-fg" : "text-muted"
-                  }`}
-                />
+                <Icon className={`h-4 w-4 shrink-0 ${active ? "text-ink" : "text-subtle"}`} strokeWidth={1.75} />
                 {s.label}
               </button>
             );
           })}
-        </nav>
+        </div>
+      </nav>
 
-        {/* Content column: scroll area + sticky save bar that never
-            overlaps the last row (scroll area gets bottom padding). */}
-        <main className="relative min-w-0 flex-1">
-          <div className="absolute inset-0 overflow-y-auto bg-sunken/30 p-5 pb-[72px]">
+      <main className="relative z-10 m-3 ml-0 min-w-0 flex-1 overflow-hidden rounded-[24px] bg-[var(--panel)] shadow-[var(--panel-edge)] backdrop-blur-[var(--panel-blur)]">
+        <button
+          type="button"
+          title="Close (Esc)"
+          onClick={onClose}
+          className="btn btn-ghost btn-icon absolute right-4 top-4 z-20 h-8 !rounded-full"
+        >
+          <X className="h-4 w-4" strokeWidth={1.75} />
+        </button>
+        <div className="absolute inset-0 overflow-y-auto px-12 pb-28 pt-12" style={{ scrollbarGutter: "stable" }}>
+          <div className="mx-auto max-w-[640px]">
             {config ? (
-              <SectionShell section={section}>
-                {renderSection(section, config, setConfig)}
-              </SectionShell>
+              <SectionShell section={section}>{renderSection(section, config, setConfig)}</SectionShell>
             ) : (
               <ConfigSkeleton />
             )}
           </div>
+        </div>
 
-          <footer className="absolute inset-x-0 bottom-0 z-10 border-t border-line bg-elevated/80 px-5 py-3 backdrop-blur">
-            <div className="flex items-center justify-between gap-3">
-              {dirty ? (
-                <span className="flex items-center gap-1.5 text-[11px] text-muted">
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
-                  Unsaved changes
-                </span>
-              ) : (
-                <span />
-              )}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleSave(true)}
-                  disabled={saving || !config}
-                  className="flex h-8 items-center gap-1.5 rounded-[8px] border border-line bg-elevated px-3 text-[12px] text-fg transition-colors duration-150 hover:border-line-strong disabled:opacity-50"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  Save &amp; Reindex
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSave(false)}
-                  disabled={saving || !config || !dirty}
-                  className="flex h-8 items-center gap-1.5 rounded-[8px] bg-accent px-3.5 text-[12px] font-medium text-accent-fg transition-opacity duration-150 hover:opacity-90 disabled:opacity-50"
-                >
-                  {saved ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
-                  {saved ? "Saved" : saving ? "Saving…" : "Save"}
-                </button>
-              </div>
-            </div>
-          </footer>
-        </main>
-      </div>
+        <footer className="pointer-events-none absolute inset-x-0 bottom-5 z-10 flex justify-center">
+          <div className="elevated pointer-events-auto flex items-center gap-2 !rounded-full py-1.5 pl-4 pr-1.5">
+            <span className="flex items-center gap-2 pr-2 text-[12px] text-muted">
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors ${dirty ? "bg-ink" : "bg-success/70"}`} />
+              {dirty ? "Unsaved changes" : saved ? "Saved" : "Up to date"}
+            </span>
+            <button type="button" onClick={() => handleSave(true)} disabled={saving || !config} className="btn btn-ghost h-8 !rounded-full px-3 text-[12px]">
+              <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.75} />
+              Save &amp; reindex
+            </button>
+            <button type="button" onClick={() => handleSave(false)} disabled={saving || !config || !dirty} className="btn btn-primary h-8 !rounded-full px-4 text-[12px]">
+              {saved ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" strokeWidth={1.75} />}
+              {saved ? "Saved" : saving ? "Saving" : "Save"}
+            </button>
+          </div>
+        </footer>
+      </main>
     </div>
   );
 }
@@ -284,7 +255,7 @@ function ConfigSkeleton() {
   return (
     <div className="space-y-3">
       {[0, 1, 2].map((i) => (
-        <div key={i} className="h-16 animate-pulse rounded-[12px] border border-line bg-elevated opacity-60" />
+        <div key={i} className="surface h-16 animate-pulse opacity-60" />
       ))}
     </div>
   );
@@ -392,27 +363,11 @@ function GeneralSection({
   return (
     <>
       <Card title="Appearance">
-        <Field label="Theme" description="Light, dark, or glass.">
-          <div className="flex w-56 rounded-full border border-line bg-sunken p-0.5">
-            {([
-              ["light", "Light", Sun],
-              ["dark", "Dark", Moon],
-              ["glass", "Glass", Sparkles],
-            ] as const).map(([value, label, Icon]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setTheme(value)}
-                className={`flex h-6 flex-1 items-center justify-center gap-1.5 rounded-full text-[11px] transition-colors duration-150 ${
-                  theme === value ? "bg-fg text-bg" : "text-muted hover:text-fg"
-                }`}
-              >
-                <Icon className="h-3 w-3" />
-                {label}
-              </button>
-            ))}
-          </div>
-        </Field>
+        <div className="grid grid-cols-3 gap-4 p-5">
+          {(["light", "dark", "glass"] as const).map((value) => (
+            <ThemeSwatch key={value} value={value} active={theme === value} onSelect={() => setTheme(value)} />
+          ))}
+        </div>
       </Card>
 
       <Card title="Invocation">
@@ -423,7 +378,7 @@ function GeneralSection({
             className={`flex h-8 min-w-40 items-center justify-center rounded-[8px] border px-3 font-mono text-[12px] transition-colors duration-150 ${
               capturing
                 ? "border-accent text-accent"
-                : "border-line bg-sunken text-fg hover:border-line-strong"
+                : "border-line bg-accent-soft text-fg hover:border-line-strong"
             }`}
           >
             {capturing ? "press keys…" : config.shortcut}
@@ -516,7 +471,7 @@ function FoldersSection({
                   c ? { ...c, watched_dirs: c.watched_dirs.filter((d) => d !== dir) } : c,
                 )
               }
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-sunken hover:text-danger"
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-accent-soft hover:text-danger"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -548,7 +503,7 @@ function FoldersSection({
           Drop folders here to add them for watching
         </div>
 
-        <div className="flex gap-1.5 border-t border-line bg-sunken p-2">
+        <div className="flex gap-1.5 border-t border-line p-3">
           <input
             type="text"
             value={input}
@@ -556,12 +511,12 @@ function FoldersSection({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addDir()}
             spellCheck={false}
-            className="h-8 min-w-0 flex-1 rounded-[8px] border border-line bg-elevated px-2.5 font-mono text-[11px] text-fg outline-none transition-colors focus:border-accent placeholder:text-subtle"
+            className="field h-8 min-w-0 flex-1 font-mono"
           />
           <button
             type="button"
             onClick={addDir}
-            className="flex h-8 items-center gap-1 rounded-[8px] border border-line bg-elevated px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong"
+            className="btn btn-secondary h-8 px-3 text-[12px]"
           >
             <Plus className="h-3.5 w-3.5" />
             Add
@@ -603,7 +558,7 @@ function ExclusionsSection({
               key={p}
               type="button"
               onClick={() => setConfig((c) => (c ? { ...c, excluded_dirs: [...EXCLUSION_PRESETS[p]] } : c))}
-              className="flex h-7 items-center rounded-full border border-line px-3 text-[11px] text-muted transition-colors duration-150 hover:border-line-strong hover:text-fg"
+              className="flex h-7 items-center rounded-full border border-line px-3 text-[12px] text-muted transition-colors duration-150 hover:border-line-strong hover:text-fg"
             >
               {p}
             </button>
@@ -620,14 +575,14 @@ function ExclusionsSection({
               type="button"
               title={`Remove ${d}`}
               onClick={() => removeDir(d)}
-              className="group flex h-6 items-center gap-1.5 rounded-full bg-sunken px-2.5 font-mono text-[11px] text-muted transition-colors hover:text-danger"
+              className="group flex h-6 items-center gap-1.5 rounded-full bg-accent-soft px-2.5 font-mono text-[11px] text-muted transition-colors hover:text-danger"
             >
               {d}
               <X className="h-3 w-3 opacity-50 group-hover:opacity-100" />
             </button>
           ))}
         </div>
-        <div className="border-t border-line bg-sunken p-2">
+        <div className="border-t border-line p-3">
           <input
             value={dirInput}
             placeholder="directory name, e.g. bundle_cache — Enter to add"
@@ -642,7 +597,7 @@ function ExclusionsSection({
               }
             }}
             spellCheck={false}
-            className="h-8 w-full rounded-[8px] border border-line bg-elevated px-2.5 font-mono text-[11px] text-fg outline-none transition-colors focus:border-accent placeholder:text-subtle"
+            className="field h-8 w-full font-mono"
           />
         </div>
       </Card>
@@ -659,14 +614,14 @@ function ExclusionsSection({
                   c ? { ...c, excluded_extensions: c.excluded_extensions.filter((e) => e !== x) } : c,
                 )
               }
-              className="group flex h-6 items-center gap-1.5 rounded-full bg-sunken px-2.5 font-mono text-[11px] text-muted transition-colors hover:text-danger"
+              className="group flex h-6 items-center gap-1.5 rounded-full bg-accent-soft px-2.5 font-mono text-[11px] text-muted transition-colors hover:text-danger"
             >
               {x}
               <X className="h-3 w-3 opacity-50 group-hover:opacity-100" />
             </button>
           ))}
         </div>
-        <div className="border-t border-line bg-sunken p-2">
+        <div className="border-t border-line p-3">
           <input
             value={extInput}
             placeholder="extension, e.g. .bin — Enter to add"
@@ -683,7 +638,7 @@ function ExclusionsSection({
               }
             }}
             spellCheck={false}
-            className="h-8 w-full rounded-[8px] border border-line bg-elevated px-2.5 font-mono text-[11px] text-fg outline-none transition-colors focus:border-accent placeholder:text-subtle"
+            className="field h-8 w-full font-mono"
           />
         </div>
       </Card>
@@ -796,7 +751,7 @@ function SearchSection({
                   : c,
               )
             }
-            className="h-8 rounded-[8px] border border-line bg-elevated px-2 text-[12px] text-fg outline-none focus:border-accent"
+            className="field h-8"
           >
             <option value="full">Full speed</option>
             <option value="balanced">Balanced</option>
@@ -818,7 +773,7 @@ function SearchSection({
 
       <Card title="Aliases">
         <div className="space-y-2 p-4">
-          <p className="text-[11px] leading-relaxed text-muted">
+          <p className="text-[12px] leading-[18px] text-muted">
             Personal vocabulary: typing the term also matches any of its expansions
             (case-insensitive, OR semantics).
           </p>
@@ -836,7 +791,7 @@ function SearchSection({
                     return { ...c, aliases };
                   })
                 }
-                className="h-8 w-28 shrink-0 rounded-[8px] border border-line bg-elevated px-2 font-mono text-[11px] text-fg outline-none focus:border-accent"
+                className="field h-8 w-28 shrink-0 font-mono"
               />
               <span className="text-subtle">→</span>
               <input
@@ -854,7 +809,7 @@ function SearchSection({
                     return { ...c, aliases };
                   })
                 }
-                className="h-8 min-w-0 flex-1 rounded-[8px] border border-line bg-elevated px-2 font-mono text-[11px] text-fg outline-none focus:border-accent"
+                className="field h-8 min-w-0 flex-1 font-mono"
               />
               <button
                 type="button"
@@ -864,7 +819,7 @@ function SearchSection({
                     c ? { ...c, aliases: (c.aliases ?? []).filter((_, j) => j !== i) } : c,
                   )
                 }
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-sunken hover:text-danger"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-accent-soft hover:text-danger"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -877,7 +832,7 @@ function SearchSection({
                 c ? { ...c, aliases: [...(c.aliases ?? []), { term: "", expansions: [] }] } : c,
               )
             }
-            className="flex h-7 items-center gap-1 rounded-[8px] border border-line px-2.5 text-[11px] text-muted transition-colors hover:border-line-strong hover:text-fg"
+            className="flex h-7 items-center gap-1 rounded-[8px] border border-line px-2.5 text-[12px] text-muted transition-colors hover:border-line-strong hover:text-fg"
           >
             <Plus className="h-3 w-3" /> Add alias
           </button>
@@ -966,7 +921,7 @@ function AiSection({ config, setConfig }: { config: KensakuConfig; setConfig: Re
             <span className="text-muted">Queued units</span>
             <span className="font-mono text-fg">{formatComma(queueDepth)}</span>
           </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-sunken">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-accent-soft">
             <div
               className="h-full rounded-full bg-accent transition-[width] duration-500"
               style={{ width: `${queueDepth > 0 ? Math.max(4, Math.min(100, queueDepth)) : 0}%` }}
@@ -1067,9 +1022,9 @@ function BetaSection({
       <div className="flex items-center justify-between gap-4 px-4 py-3 opacity-50">
         <div className="min-w-0">
           <p className="text-[12px] font-medium text-fg">Visual search</p>
-          <p className="text-[11px] leading-relaxed text-muted">Find images by what they show. Coming later.</p>
+          <p className="text-[12px] leading-[18px] text-muted">Find images by what they show. Coming later.</p>
         </div>
-        <span className="shrink-0 rounded-[6px] border border-line px-2 py-0.5 text-[11px] text-muted">Coming later</span>
+        <span className="shrink-0 rounded-[6px] border border-line px-2 py-0.5 text-[12px] text-muted">Coming later</span>
       </div>
     </Card>
   );
@@ -1117,7 +1072,7 @@ function AgentConnectCard() {
     <Card title="One-click connect">
       <div>
         {statuses.length === 0 && (
-          <p className="px-4 py-3 text-[11px] text-muted">
+          <p className="px-4 py-3 text-[12px] text-muted">
             Detecting installed MCP clients…
           </p>
         )}
@@ -1157,9 +1112,9 @@ function AgentConnectCard() {
         ))}
       </div>
       {notice && (
-        <p className="border-t border-line px-4 py-2 text-[11px] text-muted">{notice}</p>
+        <p className="border-t border-line px-4 py-2 text-[12px] text-muted">{notice}</p>
       )}
-      <p className="border-t border-line px-4 py-2.5 text-[11px] leading-relaxed text-muted">
+      <p className="border-t border-line px-4 py-2.5 text-[12px] leading-[18px] text-muted">
         Adding Kensaku merges one entry into the client's config file (a backup is left next to
         it). Restart the client afterwards. Manual JSON stays available above.
       </p>
@@ -1184,7 +1139,7 @@ function AgentsSection({
 
   return (
     <>
-      <p className="pb-3 text-[12px] leading-relaxed text-muted">
+      <p className="pb-3 text-[12px] leading-[18px] text-muted">
         Let agents search this index. Read-only by default, local, no network.
       </p>
 
@@ -1193,15 +1148,15 @@ function AgentsSection({
       {/* MCP */}
       <Card title="Model Context Protocol">
         <div className="px-4 py-3">
-          <p className="text-[11px] leading-relaxed text-muted">
+          <p className="text-[12px] leading-[18px] text-muted">
             Point Claude Code, Cursor, or any MCP client at the{" "}
             <code className="font-mono text-[11px] text-fg">kensaku-cli</code> binary. It reuses
             this app's data directory: it attaches to the daemon when one is running, otherwise it
             reads the index read-only.
           </p>
         </div>
-        <div className="relative border-t border-line bg-sunken p-3 pr-10">
-          <pre className="select-text whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-muted">
+        <div className="relative border-t border-line bg-accent-soft p-3 pr-10">
+          <pre className="select-text whitespace-pre-wrap break-all font-mono text-[11px] leading-[18px] text-muted">
             {MCP_CONFIG}
           </pre>
           <button
@@ -1217,7 +1172,7 @@ function AgentsSection({
             {configCopied ? <Check className="h-3.5 w-3.5 text-accent" /> : <Copy className="h-3.5 w-3.5" />}
           </button>
         </div>
-        <p className="border-t border-line px-4 py-2.5 text-[11px] leading-relaxed text-muted">
+        <p className="border-t border-line px-4 py-2.5 text-[12px] leading-[18px] text-muted">
           If <code className="font-mono text-[11px] text-fg">kensaku-cli</code> isn't on your
           PATH, use the absolute path to the binary —{" "}
           <code className="font-mono text-[11px] text-fg">~/.cargo/bin/kensaku-cli</code> or{" "}
@@ -1237,7 +1192,7 @@ function AgentsSection({
             />
           ))}
         </div>
-        <p className="border-t border-line px-4 py-2.5 text-[11px] leading-relaxed text-muted">
+        <p className="border-t border-line px-4 py-2.5 text-[12px] leading-[18px] text-muted">
           When the daemon is running the MCP server forwards queries to it and never opens the
           database itself. Without a daemon it falls back to the read-only local index.
         </p>
@@ -1279,7 +1234,7 @@ function AgentsSection({
 
       {/* Security */}
       <Card title="Security">
-        <p className="p-4 text-[11px] leading-relaxed text-muted">
+        <p className="p-4 text-[12px] leading-[18px] text-muted">
           Read-only by default. <code className="font-mono text-[11px] text-fg">reindex</code> is
           off unless enabled above. No shell and no network. Honors your watched folders,
           exclusions and the daemon's opt-in check.
@@ -1396,8 +1351,8 @@ function ResetDialog({ onClose }: { onClose: () => void }) {
         aria-label="Reset Kensaku"
         className="overlay-in elevated w-full max-w-[400px] overflow-hidden border-danger/30"
       >
-        <div className="flex items-center justify-between border-b border-line bg-sunken px-4 py-2.5">
-          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-danger">Danger zone</p>
+        <div className="flex items-center justify-between border-b border-line bg-accent-soft px-4 py-2.5">
+          <p className="text-[11px] font-medium text-danger">Danger zone</p>
           <button
             type="button"
             title="Cancel (Esc)"
@@ -1416,7 +1371,7 @@ function ResetDialog({ onClose }: { onClose: () => void }) {
         >
           <div className="p-4">
             <p className="text-[13px] font-semibold text-fg">Reset Kensaku</p>
-            <p className="pt-0.5 text-[11px] leading-relaxed text-muted">
+            <p className="pt-0.5 text-[12px] leading-[18px] text-muted">
               This will delete your index and settings and restart Kensaku.
             </p>
           </div>
@@ -1432,7 +1387,7 @@ function ResetDialog({ onClose }: { onClose: () => void }) {
               onChange={(e) => setText(e.target.value)}
               autoComplete="off"
               spellCheck={false}
-              className={`h-9 w-full rounded-[8px] border bg-sunken px-2.5 font-mono text-[12px] text-fg outline-none transition-colors focus:border-accent ${
+              className={`h-9 w-full rounded-[8px] border bg-accent-soft px-2.5 font-mono text-[12px] text-fg outline-none transition-colors focus:border-accent ${
                 text && !matches ? "border-danger/50" : "border-line"
               }`}
             />
@@ -1441,7 +1396,7 @@ function ResetDialog({ onClose }: { onClose: () => void }) {
             )}
           </div>
 
-          <div className="flex items-center justify-end gap-1.5 border-t border-line bg-sunken px-3 py-2.5">
+          <div className="flex items-center justify-end gap-1.5 border-t border-line bg-accent-soft px-3 py-2.5">
             <button
               type="button"
               onClick={onClose}
@@ -1452,7 +1407,7 @@ function ResetDialog({ onClose }: { onClose: () => void }) {
             <button
               type="submit"
               disabled={!matches || running}
-              className="flex h-8 items-center rounded-[8px] bg-danger px-3 text-[12px] font-medium text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-8 items-center rounded-[10px] bg-danger px-3 text-[12px] font-medium text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {running ? "Resetting…" : "Reset and restart"}
             </button>
@@ -1472,7 +1427,7 @@ function AboutSection() {
       {resetPending && (
         <div className="flex items-center gap-2 rounded-[12px] border border-warning/40 bg-elevated px-4 py-2.5">
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
-          <p className="text-[11px] text-muted">A reset is pending and will finish on next launch.</p>
+          <p className="text-[12px] text-muted">A reset is pending and will finish on next launch.</p>
         </div>
       )}
       {resetPending && <div className="h-3" />}
@@ -1499,7 +1454,7 @@ function AboutSection() {
       </Card>
 
       <Card title="How to use Kensaku">
-        <div className="space-y-2 p-4 text-[12px] leading-relaxed text-muted">
+        <div className="space-y-2 p-4 text-[12px] leading-[18px] text-muted">
           <p className="text-fg">A few simple tricks make search feel instant:</p>
           <ul className="list-disc space-y-1 pl-5">
             <li><b>Tab</b> shows or hides the details pane next to results.</li>
@@ -1517,7 +1472,7 @@ function AboutSection() {
 
       <Card title="Design thesis">
         <div className="p-4 text-center">
-          <p className="font-serif text-[15px] italic leading-relaxed text-muted">
+          <p className="font-serif text-[15px] italic leading-[18px] text-muted">
             “A warm, local, read-only index of your machine that answers in under 15 ms —
             for you, and for every agent you use.”
           </p>
@@ -1528,7 +1483,7 @@ function AboutSection() {
         <div className="flex items-center justify-between gap-4 p-4">
           <div className="min-w-0">
             <p className="text-[13px] font-medium text-fg">Run setup again</p>
-            <p className="line-clamp-2 pt-0.5 text-[11px] leading-relaxed text-muted">
+            <p className="line-clamp-2 pt-0.5 text-[12px] leading-[18px] text-muted">
               Re-run the guided first-run flow (folders, preferences, optional packs, first scan).
               Your index and config are preserved; setup markers reset.
             </p>
@@ -1552,14 +1507,14 @@ function AboutSection() {
 
       {/* Danger zone — visually distinct but calm: danger hairline, no fills. */}
       <div>
-        <p className="pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-danger">
+        <p className="pb-2 text-[11px] font-medium text-danger">
           Danger zone
         </p>
         <div className="overflow-hidden rounded-[12px] border border-danger/30 bg-elevated">
           <div className="flex items-center justify-between gap-4 p-4">
             <div className="min-w-0">
               <p className="text-[13px] font-medium text-fg">Reset Kensaku</p>
-              <p className="line-clamp-2 pt-0.5 text-[11px] leading-relaxed text-muted">
+              <p className="line-clamp-2 pt-0.5 text-[12px] leading-[18px] text-muted">
                 Deletes the index, metadata database, downloaded models, and settings. This cannot
                 be undone.
               </p>
@@ -1577,5 +1532,44 @@ function AboutSection() {
 
       {confirmOpen && <ResetDialog onClose={() => setConfirmOpen(false)} />}
     </>
+  );
+}
+
+/* A tiny rendering of the app in each finish: field, rule, three tiles.
+   Colors are the real tokens, scoped by data-theme on the swatch. */
+function ThemeSwatch({ value, active, onSelect }: { value: "light" | "dark" | "glass"; active: boolean; onSelect: () => void }) {
+  const label = { light: "Light", dark: "Dark", glass: "Glass" }[value];
+  return (
+    <button type="button" onClick={onSelect} aria-pressed={active} className="group flex flex-col gap-2.5 text-left outline-none">
+      <span
+        data-theme={value}
+        className={`relative block aspect-[16/10] w-full overflow-hidden rounded-[12px] bg-bg transition-[outline-color,transform] duration-200 group-hover:-translate-y-0.5 ${
+          active ? "outline-2 outline-offset-[3px] outline-ink" : "outline-0"
+        }`}
+        style={{ outlineStyle: active ? "solid" : "none", boxShadow: "inset 0 0 0 1px var(--border)" }}
+      >
+        {value !== "light" && (
+          <span
+            className="absolute -right-6 -top-8 h-24 w-24 rounded-full blur-2xl"
+            style={{ background: "var(--glow-a)", opacity: value === "glass" ? 0.7 : 0.35 }}
+          />
+        )}
+        {value === "glass" && (
+          <span className="absolute -bottom-8 -left-6 h-20 w-20 rounded-full blur-2xl" style={{ background: "var(--glow-b)", opacity: 0.6 }} />
+        )}
+        <span className="absolute left-3 right-3 top-3 h-2 w-1/2 rounded-full bg-fg opacity-80" />
+        <span className="absolute left-3 right-3 top-7 h-px bg-line" />
+        <span className="absolute bottom-3 left-3 right-3 grid grid-cols-3 gap-1.5">
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className="block aspect-[4/3] rounded-[4px] backdrop-blur-md"
+              style={{ background: "var(--panel)", boxShadow: i === 0 ? "inset 0 0 0 1px var(--ink)" : "var(--panel-edge)" }}
+            />
+          ))}
+        </span>
+      </span>
+      <span className={`px-0.5 text-[13px] ${active ? "font-medium text-fg" : "text-muted"}`}>{label}</span>
+    </button>
   );
 }

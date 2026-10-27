@@ -86,7 +86,7 @@ export function DoctorSection() {
           <button
             type="button"
             onClick={copyReport}
-            className="flex h-7 items-center gap-1.5 rounded-[8px] border border-line bg-elevated px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong"
+            className="btn btn-secondary h-8 px-3 text-[12px]"
           >
             {copied ? <Check className="h-3 w-3 text-accent" /> : <Copy className="h-3 w-3" />}
             Copy report
@@ -96,7 +96,7 @@ export function DoctorSection() {
           type="button"
           onClick={run}
           disabled={phase === "running"}
-          className="flex h-7 items-center gap-1.5 rounded-[8px] bg-accent px-3 text-[11px] font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+          className="btn btn-primary h-8 px-4 text-[12px]"
         >
           <Stethoscope className="h-3 w-3" />
           Run checks
@@ -106,11 +106,11 @@ export function DoctorSection() {
       {phase === "idle" && (
         <Card>
           <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-line bg-sunken text-subtle">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-line bg-accent-soft text-subtle">
               <Stethoscope className="h-4 w-4" />
             </span>
             <p className="text-[13px] font-medium text-fg">Nothing has been checked yet</p>
-            <p className="max-w-sm text-[11px] leading-relaxed text-muted">
+            <p className="max-w-sm text-[12px] leading-[18px] text-muted">
               A pass over the full-text index, the file watcher, the metadata database and the
               model files. Everything runs on your machine — nothing is sent anywhere.
             </p>
@@ -138,7 +138,7 @@ export function DoctorSection() {
       {phase === "error" && (
         <div className="overflow-hidden rounded-[12px] border border-danger/30 bg-elevated">
           <p className="p-4 text-[12px] font-medium text-danger">Doctor unavailable — backend not connected</p>
-          <p className="px-4 pb-3 text-[11px] leading-relaxed text-muted">
+          <p className="px-4 pb-3 text-[12px] leading-[18px] text-muted">
             The <code className="font-mono">run_doctor</code> command did not answer. It should
             appear once the backend lands; the checks stay local and read-only.
           </p>
@@ -148,8 +148,8 @@ export function DoctorSection() {
       {phase === "done" && report && (
         <Card>
           {/* Summary line with semantic-colored counts. */}
-          <div className="flex items-center justify-between gap-4 border-b border-line bg-sunken px-4 py-2.5">
-            <p className="text-[11px] text-muted">
+          <div className="flex items-center justify-between gap-4 border-b border-line bg-accent-soft px-4 py-2.5">
+            <p className="text-[12px] text-muted">
               {total} checks ·{" "}
               <span className="text-success">{summary.ok} ok</span> ·{" "}
               <span className="text-warning">{summary.warn} warning{summary.warn === 1 ? "" : "s"}</span>
@@ -173,18 +173,18 @@ export function DoctorSection() {
               <div className="min-w-0 flex-1">
                 <p className="text-[13px] font-medium text-fg">{c.label}</p>
                 {c.detail && (
-                  <p className="break-words text-[11px] leading-relaxed text-muted">{c.detail}</p>
+                  <p className="break-words text-[12px] leading-[18px] text-muted">{c.detail}</p>
                 )}
                 {c.fix && (
                   <div className="mt-1 flex min-w-0 items-start gap-1.5">
-                    <code className="min-w-0 select-text break-all rounded bg-sunken px-1.5 py-0.5 font-mono text-[11px] text-muted">
+                    <code className="min-w-0 select-text break-all rounded bg-accent-soft px-1.5 py-0.5 font-mono text-[11px] text-muted">
                       {c.fix}
                     </code>
                     <button
                       type="button"
                       title="Copy fix"
                       onClick={() => copyFix(c.id, c.fix ?? "")}
-                      className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-sunken hover:text-fg"
+                      className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-accent-soft hover:text-fg"
                     >
                       {copiedFix === c.id ? (
                         <Check className="h-3 w-3 text-accent" />

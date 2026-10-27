@@ -21,7 +21,7 @@ export const CategoryChips: React.FC<CategoryChipsProps> = ({ results, facets, s
   const empty = selected.size === 0 && excluded.size === 0;
   const hasAny = results.length > 0;
   return (
-    <div className="no-scrollbar -ml-2.5 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+    <div className="no-scrollbar -ml-2.5 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto pr-6 [mask-image:linear-gradient(to_right,black_calc(100%-32px),transparent)]">
       {CATEGORY_CHIPS.map((chip) => {
         const isExcluded = excluded.has(chip.id);
         const isSelected = chip.id === "all" ? empty : selected.has(chip.id);
