@@ -23,7 +23,7 @@ export function SlashMenu({
 }) {
   if (items.length === 0) return null;
   return (
-    <div className="mx-4 mb-1 shrink-0 overflow-hidden rounded-[14px] border border-line bg-elevated shadow-sm">
+    <div className="mx-4 mb-1 shrink-0 overflow-hidden rounded-[12px] border border-line bg-elevated shadow-sm">
       {items.map((item, i) => {
         const Icon = item.icon;
         const active = i === activeIndex;
@@ -46,7 +46,7 @@ export function SlashMenu({
               </span>
               <span className="block truncate text-[11px] text-muted">{item.description}</span>
             </span>
-            <span className="shrink-0 font-mono text-[10px] text-subtle">{item.label}</span>
+            <span className="shrink-0 font-mono text-[11px] text-subtle">{item.label}</span>
           </button>
         );
       })}

@@ -14,7 +14,7 @@ export function ScopeMenu({
 }) {
   if (items.length === 0) return null;
   return (
-    <div className="mx-4 mb-1 shrink-0 overflow-hidden rounded-[14px] border border-line bg-elevated shadow-sm">
+    <div className="mx-4 mb-1 shrink-0 overflow-hidden rounded-[12px] border border-line bg-elevated shadow-sm">
       {items.map((path, i) => {
         const active = i === activeIndex;
         const name = path.split(/[\\/]/).filter(Boolean).pop() || path;
@@ -33,7 +33,7 @@ export function ScopeMenu({
             <Folder className={`h-3.5 w-3.5 shrink-0 ${active ? "text-accent" : "text-subtle"}`} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[12px] font-medium text-fg">@{name}</span>
-              <span className="block truncate font-mono text-[10px] text-subtle">{path}</span>
+              <span className="block truncate font-mono text-[11px] text-subtle">{path}</span>
             </span>
           </button>
         );

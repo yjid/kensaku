@@ -21,6 +21,9 @@ static THUMB_TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 /// HEIC/HEIF and SVG are deliberately excluded: the former is not supported by
 /// the `image` crate without a platform decoder, the latter is not a raster
 /// format.
+/// Longest side of every generated thumbnail and preview.
+pub const THUMB_SIZE: u32 = 240;
+
 pub fn is_supported_image_extension(ext: &str) -> bool {
     matches!(
         ext.to_ascii_lowercase().as_str(),
@@ -138,6 +141,14 @@ fn tesseract_program() -> PathBuf {
         "tesseract"
     };
 
+    // A copy shipped inside the app wins over whatever the user installed,
+    // so OCR behaves the same on every machine the app is installed on.
+    for candidate in bundled_tesseract_paths(name) {
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
             let candidate = dir.join(name);
@@ -155,6 +166,24 @@ fn tesseract_program() -> PathBuf {
 
     // Nothing found: the OS will now produce the canonical "not found" error.
     PathBuf::from(name)
+}
+
+/// Places an app-bundled Tesseract can live: next to the executable (Windows
+/// installs, Linux packages) and in the macOS bundle's Resources folder.
+fn bundled_tesseract_paths(name: &str) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    let Ok(exe) = std::env::current_exe() else {
+        return paths;
+    };
+    if let Some(dir) = exe.parent() {
+        paths.push(dir.join(name));
+        paths.push(dir.join("tesseract").join(name));
+        // macOS: Kensaku.app/Contents/MacOS/kensaku -> Contents/Resources
+        if let Some(contents) = dir.parent() {
+            paths.push(contents.join("Resources").join("tesseract").join(name));
+        }
+    }
+    paths
 }
 
 /// Well-known install prefixes used when `tesseract` is not on `PATH`.
@@ -487,7 +516,7 @@ pub fn thumbnail_path(path: &Path, out_dir: &Path) -> PathBuf {
     out_dir.join(format!("{:016x}.jpg", hash))
 }
 
-/// Generates (or reuses) a 480px JPEG thumbnail for `path`.
+/// Generates (or reuses) a 240px JPEG thumbnail for `path`.
 ///
 /// Existing thumbnails that are at least as new as the source are returned
 /// unchanged, which makes repeated calls idempotent. New thumbnails are
@@ -509,7 +538,7 @@ pub fn thumbnail(path: &Path, out_dir: &Path) -> Option<PathBuf> {
     ));
 
     let result = (|| -> Option<()> {
-        let rgb = image.thumbnail(480, 480).to_rgb8();
+        let rgb = image.thumbnail(THUMB_SIZE, THUMB_SIZE).to_rgb8();
         let mut writer = BufWriter::new(File::create(&temp).ok()?);
         let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, 80);
         encoder
@@ -549,12 +578,11 @@ fn is_fresh(target: &Path, source: &Path) -> bool {
     let Ok(source_meta) = std::fs::metadata(source) else {
         return false;
     };
-    // Only thumbnails produced by the current 480 px policy are reusable for
-    // hashing. Legacy thumbnails are smaller and are regenerated instead.
+    // Only thumbnails produced by the current size policy are reusable.
     let Ok((target_width, target_height)) = image::image_dimensions(target) else {
         return false;
     };
-    if target_width.max(target_height) != 480 {
+    if target_width.max(target_height) != THUMB_SIZE {
         return false;
     }
     let Ok(_) = image::image_dimensions(source) else {
@@ -744,7 +772,7 @@ mod tests {
         assert_eq!(first.extension().and_then(|e| e.to_str()), Some("jpg"));
 
         let decoded = image::open(&first).expect("decode thumbnail");
-        assert!(decoded.width() <= 480 && decoded.height() <= 480);
+        assert!(decoded.width() <= THUMB_SIZE && decoded.height() <= THUMB_SIZE);
 
         let first_mtime = std::fs::metadata(&first)
             .and_then(|meta| meta.modified())
@@ -772,7 +800,8 @@ mod tests {
 
         let thumb = thumbnail_path(&source, &out_dir);
         std::fs::create_dir_all(&out_dir).expect("thumb dir");
-        let legacy = image::RgbImage::new(320, 240);
+        // A thumbnail from the previous 480 px policy must be replaced.
+        let legacy = image::RgbImage::new(480, 360);
         legacy
             .save_with_format(&thumb, image::ImageFormat::Jpeg)
             .expect("legacy thumbnail");
@@ -781,11 +810,7 @@ mod tests {
         assert_eq!(cached, direct);
 
         let regenerated = image::open(&thumb).expect("regenerated thumbnail");
-        assert!(regenerated.width() <= 480 && regenerated.height() <= 480);
-        assert!(
-            regenerated.width() > 320 || regenerated.height() > 240,
-            "legacy 320 px thumbnail must be replaced"
-        );
+        assert_eq!(regenerated.width().max(regenerated.height()), THUMB_SIZE);
     }
 
     #[test]

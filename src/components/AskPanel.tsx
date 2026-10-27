@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { FileText, Loader2, MessageCircleQuestion, Sparkles, X } from "lucide-react";
+import { FileText, Loader2, MessageCircleQuestion, Search, X } from "lucide-react";
 import type { AskResponse } from "../types";
 
 /**
@@ -71,7 +71,7 @@ export function AskPanel({
         <div className="flex items-center gap-2 border-b border-line px-4 py-3">
           <MessageCircleQuestion className="h-4 w-4 text-accent" />
           <span className="text-[13px] font-semibold text-fg">Ask your files</span>
-          <span className="ml-auto font-mono text-[10px] text-subtle">/ask</span>
+          <span className="ml-auto font-mono text-[11px] text-subtle">/ask</span>
           <button
             type="button"
             onClick={onClose}
@@ -98,9 +98,9 @@ export function AskPanel({
           <button
             type="submit"
             disabled={busy || !question.trim()}
-            className="flex h-7 shrink-0 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+            className="flex h-7 shrink-0 items-center gap-1.5 rounded-[8px] border border-line px-3 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
           >
-            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
             Ask
           </button>
         </form>
@@ -113,13 +113,13 @@ export function AskPanel({
             onChange={(e) => setCloudConfirm(e.target.checked)}
             className="h-3 w-3"
           />
-          <label htmlFor="ask-cloud-consent" className="text-[10px] text-subtle">
+          <label htmlFor="ask-cloud-consent" className="text-[11px] text-subtle">
             Allow a non-local (cloud) endpoint for this answer
           </label>
         </div>
 
         {(cloudConfirm || answer?.cloud) && (
-          <div className="border-t border-warning/40 bg-warning/10 px-4 py-2 text-[10px] leading-relaxed text-warning">
+          <div className="border-t border-warning/40 bg-warning/10 px-4 py-2 text-[11px] leading-relaxed text-warning">
             Cloud endpoint{answer?.endpoint ? ` (${answer.endpoint})` : ""}: this question and
             the retrieved snippets leave this device.
           </div>
@@ -130,7 +130,7 @@ export function AskPanel({
             <p className="text-[12px] leading-relaxed text-warning">
               {error}
               <span className="mt-1 block text-[11px] text-muted">
-                Configure a local model in Settings → Agents → Local AI.
+                Configure a local model in Settings → Agents → Local model.
               </span>
             </p>
           )}
@@ -160,7 +160,7 @@ export function AskPanel({
                       className="flex w-full items-baseline gap-2 rounded px-1 py-1 text-left transition-colors hover:bg-sunken"
                     >
                       <span
-                        className={`shrink-0 font-mono text-[10px] ${
+                        className={`shrink-0 font-mono text-[11px] ${
                           source.cited ? "text-accent" : "text-subtle"
                         }`}
                       >
@@ -170,7 +170,7 @@ export function AskPanel({
                       <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-fg">
                         {source.path}
                       </span>
-                      <span className="shrink-0 font-mono text-[10px] text-subtle">
+                      <span className="shrink-0 font-mono text-[11px] text-subtle">
                         {source.line_start}–{source.line_end}
                       </span>
                     </button>

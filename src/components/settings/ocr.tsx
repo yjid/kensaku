@@ -168,7 +168,7 @@ export function OcrField({
       <div className="mt-3 flex items-center justify-between gap-4 border-t border-line pt-3">
         <div>
           <p className="text-[11px] font-medium text-fg">OCR engine</p>
-          <p className="text-[10px] text-muted">Pick one. Both read images; they are alternatives.</p>
+          <p className="text-[11px] text-muted">Pick one. Both read images; they are alternatives.</p>
         </div>
         <select
           aria-label="OCR engine"
@@ -178,7 +178,7 @@ export function OcrField({
               c ? { ...c, ocr_engine: e.target.value as "tesseract" | "accurate" } : c,
             )
           }
-          className="h-8 rounded-[10px] border border-line bg-elevated px-2 text-[11px] text-fg"
+          className="h-8 rounded-[8px] border border-line bg-elevated px-2 text-[11px] text-fg"
         >
           <option value="tesseract">Tesseract — fast, smaller</option>
           <option value="accurate" disabled={!status?.accurate_compiled}>
@@ -193,10 +193,10 @@ export function OcrField({
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
               <p className="text-[11px] font-medium text-fg">PP-OCRv6 pack</p>
-              <p className="text-[10px] leading-relaxed text-muted">
+              <p className="text-[11px] leading-relaxed text-muted">
                 About 6 MB · slower, in-process · may read small UI text better.
               </p>
-              <p className="mt-0.5 font-mono text-[10px] text-subtle">
+              <p className="mt-0.5 font-mono text-[11px] text-subtle">
                 {pack?.downloading
                   ? `Downloading ${Math.round(
                       ((pack.progress?.downloaded ?? 0) / Math.max(1, pack.progress?.total ?? 1)) * 100,
@@ -214,7 +214,7 @@ export function OcrField({
                   type="button"
                   disabled={packBusy || pack?.downloading}
                   onClick={downloadPack}
-                  className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-elevated px-3 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                  className="flex h-8 items-center gap-1.5 rounded-[8px] border border-line bg-elevated px-3 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
                 >
                   <RefreshCw
                     className={`h-3 w-3 ${packBusy || pack?.downloading ? "animate-spin" : ""}`}
@@ -226,7 +226,7 @@ export function OcrField({
           </div>
           {pack && (
             <div className="mt-3 space-y-1 border-t border-line pt-2">
-              <p className="truncate font-mono text-[10px] text-subtle">{pack.dir}</p>
+              <p className="truncate font-mono text-[11px] text-subtle">{pack.dir}</p>
               {pack.artifacts.map((a) => (
                 <div key={a.name + a.url} className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -235,9 +235,9 @@ export function OcrField({
                         a.present ? "bg-success" : "bg-subtle"
                       }`}
                     />
-                    <code className="font-mono text-[10px] text-fg">{a.name}</code>
+                    <code className="font-mono text-[11px] text-fg">{a.name}</code>
                   </div>
-                  <span className="font-mono text-[10px] text-subtle">
+                  <span className="font-mono text-[11px] text-subtle">
                     {formatBytes(a.present ? a.bytes_on_disk || a.bytes_expected : a.bytes_expected)}
                   </span>
                 </div>
@@ -258,13 +258,13 @@ export function OcrField({
            keep the rest one chevron away, let the user re-check. */
         <div className="space-y-2 bg-sunken px-4 py-3">
           {status?.error && (
-            <p className="break-words font-mono text-[10px] leading-4 text-muted">
+            <p className="break-words font-mono text-[11px] leading-4 text-muted">
               {status.error}
             </p>
           )}
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-2">
-              <span className="shrink-0 font-mono text-[10px] text-subtle">
+              <span className="shrink-0 font-mono text-[11px] text-subtle">
                 {platform.label}
               </span>
               <code className="no-scrollbar min-w-0 flex-1 select-text overflow-x-auto whitespace-nowrap font-mono text-[11px] leading-5 text-fg">
@@ -275,7 +275,7 @@ export function OcrField({
               type="button"
               title={`Copy install command — ${platform.command}`}
               onClick={() => copy(platform.command)}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-muted transition-colors hover:bg-elevated hover:text-fg"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-muted transition-colors hover:bg-elevated hover:text-fg"
             >
               {copied === platform.command ? (
                 <Check className="h-3.5 w-3.5 text-accent" />
@@ -286,10 +286,10 @@ export function OcrField({
           </div>
 
           {allPlatforms && (
-            <div className="space-y-0.5 rounded-[10px] border border-line bg-elevated p-1.5">
+            <div className="space-y-0.5 rounded-[8px] border border-line bg-elevated p-1.5">
               {INSTALL_COMMANDS.map((p) => (
                 <div key={p.id} className="flex min-w-0 items-center gap-2 px-1.5 py-1">
-                  <span className="w-32 shrink-0 truncate text-[10px] text-subtle">
+                  <span className="w-32 shrink-0 truncate text-[11px] text-subtle">
                     {p.label}
                   </span>
                   <code className="no-scrollbar min-w-0 flex-1 select-text overflow-x-auto whitespace-nowrap font-mono text-[11px] leading-4 text-fg">
@@ -317,7 +317,7 @@ export function OcrField({
               type="button"
               aria-expanded={allPlatforms}
               onClick={() => setAllPlatforms((v) => !v)}
-              className="flex h-7 items-center gap-1 pl-1 pr-2 text-[10px] text-muted transition-colors hover:text-fg"
+              className="flex h-7 items-center gap-1 pl-1 pr-2 text-[11px] text-muted transition-colors hover:text-fg"
             >
               <ChevronDown
                 className={`h-3 w-3 transition-transform duration-150 ${
@@ -330,7 +330,7 @@ export function OcrField({
               type="button"
               disabled={rechecking}
               onClick={recheck}
-              className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-elevated px-3 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+              className="flex h-8 items-center gap-1.5 rounded-[8px] border border-line bg-elevated px-3 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
             >
               <RefreshCw
                 className={`h-3 w-3 ${rechecking ? "animate-spin" : ""}`}
@@ -344,7 +344,7 @@ export function OcrField({
         /* Engine present, no language data — setup owns the download. */
         <div className="space-y-2.5 bg-sunken px-4 py-3">
           {status?.error && (
-            <p className="break-words font-mono text-[10px] leading-4 text-muted">
+            <p className="break-words font-mono text-[11px] leading-4 text-muted">
               {status.error}
             </p>
           )}
@@ -356,7 +356,7 @@ export function OcrField({
             type="button"
             disabled={rechecking}
             onClick={recheck}
-            className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-elevated px-3 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+            className="flex h-8 items-center gap-1.5 rounded-[8px] border border-line bg-elevated px-3 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
           >
             <RefreshCw className={`h-3 w-3 ${rechecking ? "animate-spin" : ""}`} aria-hidden={rechecking} />
             Re-check

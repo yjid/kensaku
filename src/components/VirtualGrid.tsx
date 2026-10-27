@@ -1,33 +1,34 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-/* Windowed square-card grid for infinite results.
-
-   Only the rows inside the viewport (plus a small overscan) are mounted, so
-   a list of 50k matches costs the same as a list of 50. Columns are derived
-   from the container width and the minimum card width, so no per-item
-   measuring happens. Cards are square, so every row height is known up
-   front: cell width + gap.
-
-   When the user scrolls within `prefetchRows` of the last loaded row, the
-   next page is requested once, guarded by `loading`. */
+/* Windowed results. Only rows inside the viewport (plus overscan) are mounted,
+   so long result sets stay as light as short ones. Grid mode fits as many
+   square-ish cards per row as the width allows. List mode is one column of
+   fixed-height rows. Row heights are known up front, so nothing is measured
+   per item. */
 
 const MIN_CELL = 156;
-const GAP = 12;
+const GAP = 16;
 const PAD = 16;
-const OVERSCAN_ROWS = 3;
+const LIST_GAP = 2;
+const LIST_PAD = 8;
+const LIST_ROW = 56;
+const OVERSCAN_ROWS = 4;
 
 export interface VirtualGridProps<T> {
   items: T[];
   getKey: (item: T, index: number) => string;
   renderItem: (item: T, index: number) => React.ReactNode;
-  /** Index of the keyboard-selected item; the grid scrolls it into view. */
   selectedIndex: number;
   hasMore: boolean;
   loading: boolean;
   onNearEnd: () => void;
-  /** Reports the current column count so keyboard navigation can use it. */
+  /** Reports the column count so keyboard navigation can use it. */
   onColumns?: (cols: number) => void;
   prefetchRows?: number;
+  /** Card height for a given cell width (grid mode). */
+  cardHeight?: (cellWidth: number) => number;
+  /** One column of fixed-height rows instead of a grid of cards. */
+  list?: boolean;
   containerRef?: React.RefObject<HTMLDivElement | null>;
 }
 
@@ -41,6 +42,8 @@ export function VirtualGrid<T>({
   onNearEnd,
   onColumns,
   prefetchRows = 4,
+  cardHeight = (w) => w,
+  list = false,
   containerRef,
 }: VirtualGridProps<T>) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -65,24 +68,25 @@ export function VirtualGrid<T>({
     return () => ro.disconnect();
   }, []);
 
-  const inner = Math.max(0, size.width - PAD * 2);
-  const cols = Math.max(1, Math.floor((inner + GAP) / (MIN_CELL + GAP)));
-  const cell = cols > 0 ? (inner - GAP * (cols - 1)) / cols : MIN_CELL;
-  const rowH = cell + GAP;
+  const pad = list ? LIST_PAD : PAD;
+  const gap = list ? LIST_GAP : GAP;
+  const inner = Math.max(0, size.width - pad * 2);
+  const cols = list ? 1 : Math.max(1, Math.floor((inner + gap) / (MIN_CELL + gap)));
+  const cell = list ? inner : (inner - gap * (cols - 1)) / cols;
+  const cardH = list ? LIST_ROW : cardHeight(cell);
+  const rowH = cardH + gap;
   const totalRows = Math.ceil(items.length / cols);
-  const contentHeight = totalRows > 0 ? totalRows * rowH - GAP + PAD * 2 : 0;
+  const contentHeight = totalRows > 0 ? totalRows * rowH - gap + pad * 2 : 0;
 
   useEffect(() => {
     onColumns?.(cols);
   }, [cols, onColumns]);
 
-  // Visible row window.
-  const firstVisible = Math.floor(Math.max(0, scrollTop - PAD) / rowH);
-  const lastVisible = Math.ceil((scrollTop - PAD + size.height) / rowH);
+  const firstVisible = Math.floor(Math.max(0, scrollTop - pad) / rowH);
+  const lastVisible = Math.ceil((scrollTop - pad + size.height) / rowH);
   const startRow = Math.max(0, firstVisible - OVERSCAN_ROWS);
   const endRow = Math.min(totalRows - 1, lastVisible + OVERSCAN_ROWS);
 
-  // Infinite: request the next page when the bottom of the loaded list is near.
   useEffect(() => {
     if (!hasMore || loading || totalRows === 0) return;
     if (endRow >= totalRows - prefetchRows) onNearEnd();
@@ -93,13 +97,12 @@ export function VirtualGrid<T>({
     const el = scrollRef.current;
     if (!el || selectedIndex < 0 || cols === 0) return;
     const row = Math.floor(selectedIndex / cols);
-    const top = PAD + row * rowH;
-    const bottom = top + cell;
-    if (top < el.scrollTop) el.scrollTop = top - PAD;
-    else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight + PAD;
-  }, [selectedIndex, cols, rowH, cell]);
+    const top = pad + row * rowH;
+    const bottom = top + cardH;
+    if (top < el.scrollTop) el.scrollTop = top - pad;
+    else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight + pad;
+  }, [selectedIndex, cols, rowH, cardH, pad]);
 
-  // Scroll updates are cheap: state only changes when the window moves.
   const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const next = e.currentTarget.scrollTop;
     setScrollTop((prev) => (Math.abs(prev - next) >= rowH / 2 ? next : prev));
@@ -124,12 +127,12 @@ export function VirtualGrid<T>({
         className="grid"
         style={{
           gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-          gap: GAP,
-          height: cell,
+          gap,
+          height: cardH,
           position: "absolute",
-          left: PAD,
-          right: PAD,
-          top: PAD + row * rowH,
+          left: pad,
+          right: pad,
+          top: pad + row * rowH,
         }}
       >
         {cells}
