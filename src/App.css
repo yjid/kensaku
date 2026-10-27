@@ -24,7 +24,8 @@
 /* var(--token). No raw colors in components.                          */
 /* ================================================================== */
 
-:root {
+:root,
+[data-theme="light"] {
   color-scheme: light;
   /* light */
   --bg: #f6f6f4;
@@ -43,7 +44,9 @@
   --glow-a: #ff6a3d;
   --glow-b: #8b9bff;
   --glow-strength: 0.32;
-  --panel: rgba(255, 255, 255, 0.92);
+  --grain: 0.05;
+  --grain-blend: multiply;
+  --panel: rgba(255, 255, 255, 0.985);
   --panel-blur: 0px;
   --panel-edge: inset 0 0 0 1px var(--border);
   --shadow-float: 0 1px 2px rgb(0 0 0 / 0.04), 0 12px 32px -8px rgb(0 0 0 / 0.14);
@@ -76,7 +79,7 @@
   --glow-a: #ff4d2e;
   --glow-b: #4b5cff;
   --glow-strength: 0.42;
-  --panel: rgba(22, 22, 24, 0.94);
+  --panel: rgba(24, 24, 26, 0.985);
   --panel-blur: 0px;
   --panel-edge: inset 0 0 0 1px var(--border);
   --shadow-float: 0 1px 2px rgb(0 0 0 / 0.5), 0 16px 40px -8px rgb(0 0 0 / 0.6);
@@ -110,6 +113,8 @@
   --glow-a: #ff7a45;
   --glow-b: #7c8cff;
   --glow-strength: 0.95;
+  --grain: 0.05;
+  --grain-blend: multiply;
   --panel: rgba(255, 255, 255, 0.5);
   --panel-blur: 28px;
   --panel-edge: inset 0 0 0 1px rgba(255, 255, 255, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.9);
@@ -289,7 +294,7 @@
   content: "";
   position: absolute;
   border-radius: 50%;
-  filter: blur(80px);
+  filter: blur(110px);
   will-change: transform;
 }
 .ambient::before {
@@ -297,7 +302,7 @@
   height: 56vmax;
   left: 52%;
   top: -34vmax;
-  background: radial-gradient(circle at 40% 60%, var(--glow-a), transparent 62%);
+  background: radial-gradient(circle at 40% 60%, var(--glow-a) 0%, color-mix(in oklab, var(--glow-a) 55%, transparent) 28%, color-mix(in oklab, var(--glow-a) 18%, transparent) 50%, transparent 70%);
   animation: drift-a 22s var(--ease) infinite alternate;
 }
 .ambient::after {
@@ -305,7 +310,7 @@
   height: 48vmax;
   left: -18vmax;
   top: 30vh;
-  background: radial-gradient(circle at 60% 40%, var(--glow-b), transparent 64%);
+  background: radial-gradient(circle at 60% 40%, var(--glow-b) 0%, color-mix(in oklab, var(--glow-b) 55%, transparent) 28%, color-mix(in oklab, var(--glow-b) 18%, transparent) 50%, transparent 72%);
   animation: drift-b 28s var(--ease) infinite alternate;
 }
 .ambient[data-state="searching"]::before { animation-duration: 6s; }
@@ -319,8 +324,8 @@
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  opacity: 0.035;
-  mix-blend-mode: overlay;
+  opacity: var(--grain, 0.04);
+  mix-blend-mode: var(--grain-blend, overlay);
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
 }
 

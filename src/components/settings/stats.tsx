@@ -32,14 +32,14 @@ function StatNumber({
         {value}
         {suffix && <span className="ml-1 text-[11px] text-subtle">{suffix}</span>}
       </p>
-      <p className="text-[11px] uppercase tracking-wide text-subtle">{caption}</p>
+      <p className="text-[11px] text-subtle">{caption}</p>
     </div>
   );
 }
 
 function Dot({ ok, label }: { ok: boolean; label: string }) {
   return (
-    <div className="flex items-center gap-1.5 text-[11px] text-muted">
+    <div className="flex items-center gap-1.5 text-[12px] text-muted">
       <span className={`h-1.5 w-1.5 rounded-full ${ok ? "bg-success" : "bg-subtle"}`} />
       {label}
     </div>
@@ -83,7 +83,7 @@ export function StatsForNerds() {
         <button
           type="button"
           onClick={copyDiagnostics}
-          className="flex h-7 items-center gap-1.5 rounded-[8px] border border-line bg-elevated px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong"
+          className="btn btn-secondary h-8 px-3 text-[12px]"
         >
           {copied ? <Check className="h-3 w-3 text-accent" /> : <Copy className="h-3 w-3" />}
           Copy diagnostics
@@ -101,7 +101,7 @@ export function StatsForNerds() {
               setRebuilding(false);
             }
           }}
-          className="flex h-7 items-center gap-1.5 rounded-[8px] border border-line bg-elevated px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+          className="btn btn-secondary h-8 px-3 text-[12px]"
         >
           {rebuilding ? "Rebuilding…" : "Rebuild index"}
         </button>
@@ -171,7 +171,7 @@ export function StatsForNerds() {
                   ing.is_indexing ? "bg-accent dot-pulse" : "bg-subtle"
                 }`}
               />
-              <span className="font-mono text-[12px] uppercase tracking-wide text-fg">
+              <span className="font-mono text-[12px] text-fg">
                 {ing.phase}
               </span>
               {!live && <Badge>placeholder</Badge>}
@@ -182,7 +182,7 @@ export function StatsForNerds() {
             </span>
           </div>
           {/* Indeterminate when no total is known; depth signals backlog. */}
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-sunken">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-accent-soft">
             <div
               className={`h-full rounded-full bg-accent ${ing.is_indexing && ing.files_per_sec > 0 ? "progress-bar" : ""}`}
               style={!(ing.is_indexing && ing.files_per_sec > 0) ? { width: "0%" } : undefined}

@@ -64,14 +64,14 @@ export function DuplicatesModal({ onClose }: { onClose: () => void }) {
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-line px-5">
         <div>
           <h1 className="text-[15px] font-semibold tracking-tight text-fg">Duplicates</h1>
-          <p className="text-[11px] text-muted">
+          <p className="text-[12px] text-muted">
             Exact-content matches and near-identical images. Review only — delete in your file manager.
           </p>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="flex h-8 w-8 items-center justify-center rounded-[8px] text-muted transition-colors hover:bg-sunken hover:text-fg"
+          className="flex h-8 w-8 items-center justify-center rounded-[10px] text-muted transition-colors hover:bg-accent-soft hover:text-fg"
           title="Close"
         >
           <X className="h-4 w-4" />
@@ -89,7 +89,7 @@ export function DuplicatesModal({ onClose }: { onClose: () => void }) {
         ) : groups.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-1 text-center">
             <p className="text-[13px] font-medium text-fg">No duplicates found.</p>
-            <p className="text-[11px] text-muted">
+            <p className="text-[12px] text-muted">
               Exact-content, screenshot-burst, and perceptual-image duplicates will appear here.
             </p>
           </div>
@@ -99,7 +99,7 @@ export function DuplicatesModal({ onClose }: { onClose: () => void }) {
               <div key={`${g.kind}-${g.hash}-${i}`} className="surface">
                 <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
                   <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-sunken px-2 py-0.5 font-mono text-[11px] uppercase tracking-wide text-muted">
+                    <span className="rounded-full bg-accent-soft px-2 py-0.5 font-mono text-[11px] text-muted">
                       {g.kind === "burst" ? "screenshot burst" : g.kind}
                     </span>
                     <span className="text-[12px] font-medium text-fg">
@@ -127,7 +127,7 @@ export function DuplicatesModal({ onClose }: { onClose: () => void }) {
                           type="button"
                           title="Copy path"
                           onClick={() => copy(p)}
-                          className="flex h-6 w-6 items-center justify-center rounded text-subtle transition-colors hover:bg-sunken hover:text-fg"
+                          className="flex h-6 w-6 items-center justify-center rounded text-subtle transition-colors hover:bg-accent-soft hover:text-fg"
                         >
                           <Copy className="h-3 w-3" />
                         </button>
@@ -135,7 +135,7 @@ export function DuplicatesModal({ onClose }: { onClose: () => void }) {
                           type="button"
                           title="Reveal in folder"
                           onClick={() => reveal(p)}
-                          className="flex h-6 w-6 items-center justify-center rounded text-subtle transition-colors hover:bg-sunken hover:text-fg"
+                          className="flex h-6 w-6 items-center justify-center rounded text-subtle transition-colors hover:bg-accent-soft hover:text-fg"
                         >
                           <FolderOpen className="h-3 w-3" />
                         </button>

@@ -74,7 +74,7 @@ export function ModelFilesCard() {
               type="button"
               title="Copy path"
               onClick={copyDir}
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-sunken hover:text-fg"
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-accent-soft hover:text-fg"
             >
               {copied ? <Check className="h-3 w-3 text-accent" /> : <Copy className="h-3 w-3" />}
             </button>
@@ -110,12 +110,12 @@ export function ModelFilesCard() {
 
       {/* State (read-only — downloads live in setup). */}
       {!live ? (
-        <p className="px-4 py-3.5 text-[11px] leading-relaxed text-muted">
+        <p className="px-4 py-3.5 text-[12px] leading-[18px] text-muted">
           Model status unavailable — the backend command is not connected yet.
         </p>
       ) : status?.downloading ? (
         <div className="space-y-2 border-t border-line px-4 py-3">
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-sunken">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-accent-soft">
             <div
               className="h-full rounded-full bg-accent transition-[width] duration-300"
               style={{ width: `${Math.max(4, pct)}%` }}
@@ -132,7 +132,7 @@ export function ModelFilesCard() {
       ) : status?.error ? (
         <div className="border-t border-line px-4 py-3">
           <p className="break-words text-[11px] text-danger">{status.error}</p>
-          <p className="pt-1.5 text-[11px] leading-relaxed text-muted">
+          <p className="pt-1.5 text-[12px] leading-[18px] text-muted">
             Use <b>About → Run setup again</b> to retry the download.
           </p>
         </div>
@@ -143,7 +143,7 @@ export function ModelFilesCard() {
         </div>
       ) : (
         <div className="border-t border-line px-4 py-3">
-          <p className="text-[11px] leading-relaxed text-muted">
+          <p className="text-[12px] leading-[18px] text-muted">
             Not downloaded. Use <b>About → Run setup again</b> to acquire the optional neural
             tier.
           </p>
@@ -151,7 +151,7 @@ export function ModelFilesCard() {
       )}
 
       {/* Honest note. */}
-      <p className="border-t border-line bg-sunken px-4 py-2.5 text-[11px] leading-relaxed text-muted">
+      <p className="border-t border-line bg-accent-soft px-4 py-2.5 text-[12px] leading-[18px] text-muted">
         The default semantic tier is built in. These files pre-fetch the optional neural tier for
         offline use.
       </p>

@@ -31,7 +31,7 @@ export function DetailsDialog({
 
   return (
     <div
-      className="overlay-in fixed inset-0 z-[80] flex items-center justify-center bg-scrim p-6"
+      className="fade-in fixed inset-0 z-[80] flex items-center justify-center bg-scrim p-6 backdrop-blur-[6px]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -39,24 +39,24 @@ export function DetailsDialog({
       <div
         role="dialog"
         aria-label="Details"
-        className="elevated w-full max-w-[460px] p-6"
+        className="elevated overlay-in w-full max-w-[440px] !rounded-[24px] p-7"
       >
-        <p className="text-[15px] font-semibold text-fg">{result.filename}</p>
-        <dl className="mt-4 divide-y divide-line">
+        <p className="t-title break-words text-fg">{result.filename}</p>
+        <dl className="mt-6 divide-y divide-line">
           {rows.map(([label, value]) => (
             <div key={label} className="flex items-baseline justify-between gap-6 py-2.5">
-              <dt className="shrink-0 text-[12px] text-muted">{label}</dt>
-              <dd className="min-w-0 truncate text-right font-mono text-[11.5px] text-fg">
+              <dt className="shrink-0 text-[13px] text-muted">{label}</dt>
+              <dd className="t-meta min-w-0 truncate text-right text-fg">
                 {value}
               </dd>
             </div>
           ))}
         </dl>
-        <div className="mt-4 flex justify-end">
+        <div className="mt-6 flex justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="h-8 rounded-[8px] bg-accent px-4 text-[12px] font-medium text-accent-fg"
+            className="btn btn-primary h-9 px-5"
           >
             Done
           </button>

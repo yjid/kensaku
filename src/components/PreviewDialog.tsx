@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { FileTypeIcon } from "./FileTypeIcon";
+import { TypeTile } from "./TypeTile";
+import { displayParent } from "../lib/format";
 import { isThumbImage } from "../lib/thumbnails";
 import type { SearchResult } from "../types";
 
@@ -79,37 +80,38 @@ export function PreviewDialog({
 
   return (
     <div
-      className="overlay-in fixed inset-0 z-[80] flex items-center justify-center bg-scrim p-8"
+      className="fade-in fixed inset-0 z-[80] flex items-center justify-center bg-scrim p-10 backdrop-blur-[6px]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div role="dialog" aria-label="Preview" className="elevated flex max-h-full w-full max-w-3xl flex-col overflow-hidden">
-        <div className="flex items-center justify-between gap-4 border-b border-line px-5 py-3">
+      <div role="dialog" aria-label="Preview" className="elevated overlay-in flex max-h-full w-full max-w-3xl flex-col overflow-hidden !rounded-[24px]">
+        <div className="flex items-center justify-between gap-4 px-6 pb-4 pt-5">
           <div className="min-w-0">
-            <p className="truncate text-[13px] font-semibold text-fg">{result.filename}</p>
-            <p className="truncate font-mono text-[11px] text-muted">{result.path}</p>
+            <p className="t-lead truncate font-medium text-fg">{result.filename}</p>
+            <p className="truncate text-[12px] text-subtle">{displayParent(result.path)}</p>
           </div>
           <button type="button" onClick={onOpen} className="btn btn-primary h-8 shrink-0 px-4">
             Open
           </button>
         </div>
-        <div className="flex min-h-[320px] flex-1 items-center justify-center overflow-auto bg-sunken p-6">
+        <div className="mx-3 flex min-h-[340px] flex-1 items-center justify-center overflow-auto rounded-[16px] bg-accent-soft p-6 shadow-[inset_0_0_0_1px_var(--border)]">
           {src ? (
-            <img src={src} alt="" className="fade-in max-h-[70vh] max-w-full rounded-[10px] object-contain shadow-sm" />
+            <img src={src} alt="" className="fade-in max-h-[66vh] max-w-full rounded-[10px] object-contain shadow-[var(--shadow-float)]" />
           ) : text ? (
             <pre className="w-full self-stretch overflow-auto whitespace-pre-wrap font-mono text-[12px] leading-[18px] text-fg">
               {text}
             </pre>
           ) : (
             <div className="flex flex-col items-center gap-3 text-muted">
-              <FileTypeIcon result={result} size={72} bare />
-              <p className="text-[12px]">{loading ? "Loading preview…" : "No preview for this file type"}</p>
+              <span className="relative block h-40 w-52"><TypeTile filename={result.filename} isDir={result.is_dir} /></span>
+              <p className="t-meta text-subtle">{loading ? "Loading preview…" : "No preview for this file type"}</p>
             </div>
           )}
         </div>
-        <div className="flex items-center justify-between px-5 py-2.5 text-[11px] text-muted">
-          <span>Space or Esc to close · Enter to open</span>
+        <div className="flex items-center gap-4 px-6 py-3.5 text-[11px] text-subtle">
+          <span className="flex items-center gap-1.5"><span className="kbd">Space</span> Close</span>
+          <span className="flex items-center gap-1.5"><span className="kbd">↵</span> Open</span>
         </div>
       </div>
     </div>

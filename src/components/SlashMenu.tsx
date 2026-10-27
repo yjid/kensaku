@@ -23,7 +23,7 @@ export function SlashMenu({
 }) {
   if (items.length === 0) return null;
   return (
-    <div className="mx-4 mb-1 shrink-0 overflow-hidden rounded-[12px] border border-line bg-elevated shadow-sm">
+    <div className="elevated menu-pop relative z-20 mx-8 mb-2 mt-3 shrink-0 overflow-hidden p-1.5">
       {items.map((item, i) => {
         const Icon = item.icon;
         const active = i === activeIndex;
@@ -35,18 +35,18 @@ export function SlashMenu({
               e.preventDefault();
               onPick(item);
             }}
-            className={`flex w-full items-center gap-3 px-3 py-2 text-left transition-colors ${
-              active ? "bg-sunken" : "hover:bg-sunken"
+            className={`flex w-full items-center gap-3 rounded-[10px] px-3 py-2 text-left transition-colors ${
+              active ? "bg-accent-soft" : "hover:bg-accent-soft"
             }`}
           >
-            <Icon className={`h-3.5 w-3.5 shrink-0 ${active ? "text-accent" : "text-subtle"}`} />
+            <Icon className={`h-3.5 w-3.5 shrink-0 ${active ? "text-ink" : "text-subtle"}`} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[12px] font-medium text-fg">
+              <span className="block truncate text-[13px] font-medium text-fg">
                 /{item.name}
               </span>
-              <span className="block truncate text-[11px] text-muted">{item.description}</span>
+              <span className="block truncate text-[12px] text-muted">{item.description}</span>
             </span>
-            <span className="shrink-0 font-mono text-[11px] text-subtle">{item.label}</span>
+            <span className="shrink-0 t-meta text-subtle">{item.label}</span>
           </button>
         );
       })}

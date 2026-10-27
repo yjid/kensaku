@@ -30,39 +30,39 @@ const FILTERS: [string, string][] = [
 
 export function HelpDialog({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg/70 backdrop-blur-sm">
-      <div className="surface w-full max-w-2xl max-h-[80vh] overflow-y-auto p-5">
+    <div className="fade-in fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6 backdrop-blur-[6px]">
+      <div className="elevated overlay-in max-h-[80vh] w-full max-w-2xl overflow-y-auto !rounded-[24px] p-7">
         <div className="flex items-center justify-between pb-3">
-          <h2 className="text-[17px] font-semibold tracking-tight text-fg">How to search</h2>
+          <h2 className="t-title text-fg">How to search</h2>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-sunken hover:text-fg"
+            className="btn btn-ghost btn-icon h-8 !rounded-full"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
         <section className="pb-4">
-          <h3 className="pb-2 text-[12px] font-medium uppercase tracking-wide text-subtle">Keyboard</h3>
-          <table className="w-full text-[12px]">
+          <h3 className="t-meta pb-2 pt-4 text-subtle">Keyboard</h3>
+          <table className="w-full">
             <tbody>
               {KEYS.map(([k, v]) => (
                 <tr key={k} className="border-t border-line">
-                  <td className="py-1.5 pr-4 font-mono text-fg">{k}</td>
-                  <td className="py-1.5 text-muted">{v}</td>
+                  <td className="t-meta py-2 pr-6 text-fg">{k}</td>
+                  <td className="py-2 text-[13px] text-muted">{v}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </section>
         <section>
-          <h3 className="pb-2 text-[12px] font-medium uppercase tracking-wide text-subtle">Filters</h3>
-          <table className="w-full text-[12px]">
+          <h3 className="t-meta pb-2 pt-4 text-subtle">Filters</h3>
+          <table className="w-full">
             <tbody>
               {FILTERS.map(([k, v]) => (
                 <tr key={k} className="border-t border-line">
-                  <td className="py-1.5 pr-4 font-mono text-fg">{k}</td>
-                  <td className="py-1.5 text-muted">{v}</td>
+                  <td className="t-meta py-2 pr-6 text-fg">{k}</td>
+                  <td className="py-2 text-[13px] text-muted">{v}</td>
                 </tr>
               ))}
             </tbody>
