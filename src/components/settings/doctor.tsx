@@ -86,7 +86,7 @@ export function DoctorSection() {
           <button
             type="button"
             onClick={copyReport}
-            className="flex h-7 items-center gap-1.5 rounded-[10px] border border-line bg-elevated px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong"
+            className="flex h-7 items-center gap-1.5 rounded-[8px] border border-line bg-elevated px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong"
           >
             {copied ? <Check className="h-3 w-3 text-accent" /> : <Copy className="h-3 w-3" />}
             Copy report
@@ -96,7 +96,7 @@ export function DoctorSection() {
           type="button"
           onClick={run}
           disabled={phase === "running"}
-          className="flex h-7 items-center gap-1.5 rounded-[10px] bg-accent px-3 text-[11px] font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+          className="flex h-7 items-center gap-1.5 rounded-[8px] bg-accent px-3 text-[11px] font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
         >
           <Stethoscope className="h-3 w-3" />
           Run checks
@@ -136,7 +136,7 @@ export function DoctorSection() {
       )}
 
       {phase === "error" && (
-        <div className="overflow-hidden rounded-[14px] border border-danger/30 bg-elevated">
+        <div className="overflow-hidden rounded-[12px] border border-danger/30 bg-elevated">
           <p className="p-4 text-[12px] font-medium text-danger">Doctor unavailable — backend not connected</p>
           <p className="px-4 pb-3 text-[11px] leading-relaxed text-muted">
             The <code className="font-mono">run_doctor</code> command did not answer. It should
@@ -161,7 +161,7 @@ export function DoctorSection() {
               )}
             </p>
             {report.ran_at > 0 && (
-              <p className="shrink-0 font-mono text-[10px] text-subtle">
+              <p className="shrink-0 font-mono text-[11px] text-subtle">
                 {new Date(report.ran_at < 1e12 ? report.ran_at * 1000 : report.ran_at).toLocaleTimeString()}
               </p>
             )}

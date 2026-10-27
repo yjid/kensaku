@@ -48,7 +48,7 @@ export function Card({ title, children }: { title?: string; children: React.Reac
   return (
     <div className="mb-3">
       {title && <p className="eyebrow pb-2">{title}</p>}
-      <div className="overflow-hidden rounded-[14px] border border-line bg-elevated">{children}</div>
+      <div className="overflow-hidden rounded-[12px] border border-line bg-elevated">{children}</div>
     </div>
   );
 }
@@ -65,7 +65,7 @@ export function SectionHeader({ title, description }: { title: string; descripti
 
 export function Badge({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded-full border border-line px-2.5 py-1 font-mono text-[10px] text-muted">
+    <span className="rounded-full border border-line px-2.5 py-1 font-mono text-[11px] text-muted">
       {children}
     </span>
   );
@@ -115,7 +115,7 @@ export function Stepper({
 }) {
   const clamp = (v: number) => Math.min(max, Math.max(min, v));
   return (
-    <div className="flex h-8 items-center rounded-[10px] border border-line bg-sunken">
+    <div className="flex h-8 items-center rounded-[8px] border border-line bg-sunken">
       <button
         type="button"
         onClick={() => onChange(clamp(value - step))}

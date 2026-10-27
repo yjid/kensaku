@@ -20,7 +20,7 @@ export function SortControl({
   onChange: (value: string) => void;
 }) {
   return (
-    <div role="radiogroup" aria-label="Sort" className="flex items-center gap-0.5 rounded-[10px] bg-sunken p-0.5">
+    <div role="radiogroup" aria-label="Sort" className="flex items-center gap-0.5 rounded-[8px] bg-sunken p-0.5">
       {OPTIONS.map(({ value: v, label, icon: Icon }) => {
         const active = v === value;
         return (

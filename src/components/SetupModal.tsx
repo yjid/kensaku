@@ -215,7 +215,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
           <Check className="h-5 w-5" />
         </div>
         <div className="space-y-1">
-          <h1 className="text-[18px] font-semibold tracking-tight text-fg">Done.</h1>
+          <h1 className="text-[17px] font-semibold tracking-tight text-fg">Done.</h1>
           <p className="text-[12px] text-muted">Your index is ready. Start searching.</p>
         </div>
         <div className="grid grid-cols-3 gap-6 text-center">
@@ -235,7 +235,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         <button
           type="button"
           onClick={onSetupCompleted}
-          className="flex h-9 items-center gap-1.5 rounded-[10px] bg-accent px-5 text-[12px] font-medium text-accent-fg transition-opacity hover:opacity-90"
+          className="flex h-9 items-center gap-1.5 rounded-[8px] bg-accent px-5 text-[12px] font-medium text-accent-fg transition-opacity hover:opacity-90"
         >
           Start searching <ArrowRight className="h-3.5 w-3.5" />
         </button>
@@ -279,7 +279,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         </div>
         <LoaderCircle className="h-8 w-8 animate-spin text-accent" />
         <div className="space-y-1">
-          <h1 className="text-[18px] font-semibold tracking-tight text-fg">
+          <h1 className="text-[17px] font-semibold tracking-tight text-fg">
             Indexing your files…
           </h1>
           <p className="text-[12px] text-muted">
@@ -295,7 +295,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 style={{ width: `${Math.max(3, pct)}%` }}
               />
             </div>
-            <div className="flex items-center justify-between text-[10px] text-subtle">
+            <div className="flex items-center justify-between text-[11px] text-subtle">
               <span className="font-mono">
                 {done.toLocaleString()} / {total.toLocaleString()}
               </span>
@@ -364,7 +364,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               alt="Kensaku"
               className="h-28 w-28 object-contain"
             />
-            <h1 className="pt-4 text-[22px] font-semibold tracking-tight text-fg">
+            <h1 className="pt-4 text-[20px] font-semibold tracking-tight text-fg">
               Find anything on this computer.
             </h1>
             <p className="max-w-sm text-[13px] leading-relaxed text-muted">
@@ -377,7 +377,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         {step === 1 && (
           <div className="w-full max-w-lg space-y-4">
             <div className="pb-1">
-              <h2 className="text-[16px] font-semibold tracking-tight text-fg">
+              <h2 className="text-[17px] font-semibold tracking-tight text-fg">
                 What should we index?
               </h2>
               <p className="text-[12px] text-muted">
@@ -393,7 +393,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                     key={dir}
                     type="button"
                     onClick={() => toggleDir(dir)}
-                    className={`flex h-14 items-center gap-2.5 rounded-[14px] border px-3 text-left transition-colors duration-150 ${
+                    className={`flex h-14 items-center gap-2.5 rounded-[12px] border px-3 text-left transition-colors duration-150 ${
                       selected
                         ? "border-fg bg-sunken"
                         : "bg-elevated hover:border-line-strong"
@@ -408,7 +408,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate text-[12px] font-medium text-fg">{name}</span>
-                      <span className="block truncate font-mono text-[10px] text-subtle">{dir}</span>
+                      <span className="block truncate font-mono text-[11px] text-subtle">{dir}</span>
                     </span>
                   </button>
                 );
@@ -422,12 +422,12 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 onChange={(e) => setCustomDirInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addCustomDir()}
                 spellCheck={false}
-                className="h-9 min-w-0 flex-1 rounded-[10px] border border-line bg-elevated px-3 font-mono text-[11px] text-fg outline-none transition-colors focus:border-accent placeholder:text-subtle"
+                className="h-9 min-w-0 flex-1 rounded-[8px] border border-line bg-elevated px-3 font-mono text-[11px] text-fg outline-none transition-colors focus:border-accent placeholder:text-subtle"
               />
               <button
                 type="button"
                 onClick={addCustomDir}
-                className="flex h-9 items-center gap-1 rounded-[10px] border border-line bg-elevated px-3 text-[11px] text-fg transition-colors hover:border-line-strong"
+                className="flex h-9 items-center gap-1 rounded-[8px] border border-line bg-elevated px-3 text-[11px] text-fg transition-colors hover:border-line-strong"
               >
                 <Plus className="h-3.5 w-3.5" /> Add
               </button>
@@ -438,7 +438,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         {step === 2 && (
           <div className="w-full max-w-lg space-y-4">
             <div className="pb-1">
-              <h2 className="text-[16px] font-semibold tracking-tight text-fg">
+              <h2 className="text-[17px] font-semibold tracking-tight text-fg">
                 What should we skip?
               </h2>
               <p className="text-[12px] text-muted">
@@ -457,14 +457,14 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 </button>
               ))}
             </div>
-            <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto rounded-[14px] border border-line bg-elevated p-3">
+            <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto rounded-[12px] border border-line bg-elevated p-3">
               {excludedDirs.map((d) => (
                 <button
                   key={d}
                   type="button"
                   title={`Remove ${d}`}
                   onClick={() => setExcludedDirs((prev) => prev.filter((x) => x !== d))}
-                  className="group flex h-6 items-center gap-1.5 rounded-full bg-sunken px-2.5 font-mono text-[10px] text-muted transition-colors hover:text-danger"
+                  className="group flex h-6 items-center gap-1.5 rounded-full bg-sunken px-2.5 font-mono text-[11px] text-muted transition-colors hover:text-danger"
                 >
                   {d}
                   <X className="h-3 w-3 opacity-50 group-hover:opacity-100" />
@@ -484,21 +484,21 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 }
               }}
               spellCheck={false}
-              className="h-9 w-full rounded-[10px] border border-line bg-elevated px-3 font-mono text-[11px] text-fg outline-none transition-colors focus:border-accent placeholder:text-subtle"
+              className="h-9 w-full rounded-[8px] border border-line bg-elevated px-3 font-mono text-[11px] text-fg outline-none transition-colors focus:border-accent placeholder:text-subtle"
             />
           </div>
         )}
         {step === 3 && (
           <div className="w-full max-w-lg space-y-4">
             <div className="pb-1">
-              <h2 className="text-[16px] font-semibold tracking-tight text-fg">
+              <h2 className="text-[17px] font-semibold tracking-tight text-fg">
                 Preferences
               </h2>
               <p className="text-[12px] text-muted">
                 Appearance and one keyboard shortcut. You can change both later.
               </p>
             </div>
-            <div className="flex items-center justify-between rounded-[14px] border border-line bg-elevated px-4 py-3">
+            <div className="flex items-center justify-between rounded-[12px] border border-line bg-elevated px-4 py-3">
               <div>
                 <span className="block text-[12px] font-medium text-fg">Theme</span>
                 <span className="block text-[11px] text-muted">paper or void</span>
@@ -506,19 +506,19 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               <button
                 type="button"
                 onClick={() => setTheme(theme === "paper" ? "void" : "paper")}
-                className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong"
+                className="flex h-8 items-center gap-1.5 rounded-[8px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong"
               >
                 {theme === "paper" ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
                 {theme}
               </button>
             </div>
-            <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+            <div className="rounded-[12px] border border-line bg-elevated px-4 py-3">
               <span className="block text-[12px] font-medium text-fg">Global shortcut</span>
               <span className="block text-[11px] text-muted">Toggles the window anywhere.</span>
               <button
                 type="button"
                 onClick={() => setCapturing(true)}
-                className={`mt-2 flex h-9 min-w-40 items-center justify-center rounded-[10px] border px-3 font-mono text-[11px] transition-colors ${
+                className={`mt-2 flex h-9 min-w-40 items-center justify-center rounded-[8px] border px-3 font-mono text-[11px] transition-colors ${
                   capturing
                     ? "border-fg text-fg"
                     : "border-line bg-bg text-fg hover:border-line-strong"
@@ -533,14 +533,14 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         {step === 4 && (
           <div className="w-full max-w-lg space-y-4">
             <div className="pb-1">
-              <h2 className="text-[16px] font-semibold tracking-tight text-fg">
+              <h2 className="text-[17px] font-semibold tracking-tight text-fg">
                 Optional packs
               </h2>
               <p className="text-[12px] text-muted">
                 Optional. Keyword search works without any of these.
               </p>
             </div>
-            <div className="flex items-center justify-between rounded-[14px] border border-line bg-elevated px-4 py-3">
+            <div className="flex items-center justify-between rounded-[12px] border border-line bg-elevated px-4 py-3">
               <div className="min-w-0 pr-4">
                 <span className="block text-[12px] font-medium text-fg">Start at sign-in</span>
                 <span className="block text-[11px] text-muted">
@@ -550,7 +550,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               <Switch checked={startAtLogin} onChange={setStartAtLogin} />
             </div>
             <div className="space-y-2">
-              <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+              <div className="rounded-[12px] border border-line bg-elevated px-4 py-3">
                 <span className="block text-[12px] font-medium text-fg">Choose one OCR engine</span>
                 <span className="block text-[11px] text-muted">
                   Download only the engine you want. Both read images; they are alternatives.
@@ -566,7 +566,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                     }`}
                   >
                     <span className="block text-[11px] font-medium text-fg">Tesseract</span>
-                    <span className="block text-[10px] text-muted">Fast · smaller · default</span>
+                    <span className="block text-[11px] text-muted">Fast · smaller · default</span>
                   </button>
                   <button
                     type="button"
@@ -579,25 +579,25 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                     }`}
                   >
                     <span className="block text-[11px] font-medium text-fg">PP-OCRv6</span>
-                    <span className="block text-[10px] text-muted">Slower · may read small UI text better</span>
+                    <span className="block text-[11px] text-muted">Slower · may read small UI text better</span>
                   </button>
                 </div>
                 {!ocrStatus?.accurate_compiled && (
-                  <p className="pt-2 text-[10px] text-subtle">
+                  <p className="pt-2 text-[11px] text-subtle">
                     PP-OCRv6 is not compiled into this build. Rebuild with default features to enable it.
                   </p>
                 )}
               </div>
 
               {ocrEngine === "tesseract" && (
-              <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+              <div className="rounded-[12px] border border-line bg-elevated px-4 py-3">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <span className="block text-[12px] font-medium text-fg">OCR language data</span>
                     <span className="block text-[11px] text-muted">English tessdata, ~4 MB · uses Tesseract</span>
                   </div>
                   {ocrStatus?.available ? (
-                    <span className="flex h-8 items-center gap-1.5 rounded-[10px] px-2 text-[11px] text-success">
+                    <span className="flex h-8 items-center gap-1.5 rounded-[8px] px-2 text-[11px] text-success">
                       <Check className="h-3.5 w-3.5" /> Ready
                     </span>
                   ) : (
@@ -616,7 +616,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                           setOcrBusy(false);
                         }
                       }}
-                      className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                      className="flex h-8 items-center gap-1.5 rounded-[8px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
                     >
                       {ocrBusy ? (
                         <>
@@ -641,7 +641,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               )}
 
               {ocrEngine === "accurate" && (ocrStatus?.accurate_compiled ? (
-                <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+                <div className="rounded-[12px] border border-line bg-elevated px-4 py-3">
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <span className="block text-[12px] font-medium text-fg">
@@ -652,7 +652,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                       </span>
                     </div>
                     {ocrPackStatus?.ready ? (
-                      <span className="flex h-8 items-center gap-1.5 rounded-[10px] px-2 text-[11px] text-success">
+                      <span className="flex h-8 items-center gap-1.5 rounded-[8px] px-2 text-[11px] text-success">
                         <Check className="h-3.5 w-3.5" /> Ready
                       </span>
                     ) : (
@@ -669,7 +669,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                             setPackError(`PP-OCRv6 download failed: ${String(e)}`);
                           }
                         }}
-                        className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                        className="flex h-8 shrink-0 items-center gap-1.5 rounded-[8px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
                       >
                         {ocrPackStatus?.downloading ? (
                           <>
@@ -688,7 +688,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                   )}
                 </div>
               ) : (
-                <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+                <div className="rounded-[12px] border border-line bg-elevated px-4 py-3">
                   <div>
                     <span className="block text-[12px] font-medium text-fg">PP-OCRv6 pack</span>
                     <span className="block text-[11px] text-muted">Not compiled into this build.</span>
@@ -696,7 +696,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 </div>
               ))}
 
-              <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+              <div className="rounded-[12px] border border-line bg-elevated px-4 py-3">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <span className="block text-[12px] font-medium text-fg">Semantic model</span>
@@ -705,7 +705,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                     </span>
                   </div>
                   {modelsStatus?.ready ? (
-                    <span className="flex h-8 items-center gap-1.5 rounded-[10px] px-2 text-[11px] text-success">
+                    <span className="flex h-8 items-center gap-1.5 rounded-[8px] px-2 text-[11px] text-success">
                       <Check className="h-3.5 w-3.5" /> Ready
                     </span>
                   ) : (
@@ -722,7 +722,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                           setPackError(`Model download failed: ${String(e)}`);
                         }
                       }}
-                      className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                      className="flex h-8 shrink-0 items-center gap-1.5 rounded-[8px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
                     >
                       {modelsStatus?.downloading ? (
                         <>
@@ -753,7 +753,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                         }}
                       />
                     </div>
-                    <div className="flex items-center justify-between gap-2 text-[10px] text-subtle">
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-subtle">
                       <code className="min-w-0 truncate font-mono">
                         {modelsStatus.progress.file || "downloading…"}
                       </code>
@@ -771,7 +771,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             </div>
 
             {packError && (
-              <p className="break-words rounded-[10px] border border-danger/30 bg-danger/5 px-3 py-2 font-mono text-[10px] text-danger">
+              <p className="break-words rounded-[8px] border border-danger/30 bg-danger/5 px-3 py-2 font-mono text-[11px] text-danger">
                 {packError}
               </p>
             )}
@@ -792,7 +792,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             <button
               type="button"
               onClick={() => setStep((s) => (s - 1) as 0 | 1 | 2 | 3 | 4)}
-              className="flex h-9 items-center gap-1.5 rounded-[10px] px-3 text-[13px] text-muted transition-colors hover:text-fg"
+              className="flex h-9 items-center gap-1.5 rounded-[8px] px-3 text-[13px] text-muted transition-colors hover:text-fg"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Back
             </button>
@@ -802,7 +802,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               type="button"
               onClick={() => setStep((s) => (s + 1) as 0 | 1 | 2 | 3 | 4)}
               disabled={step === 1 && selectedDirs.length === 0}
-              className="flex h-9 items-center gap-1.5 rounded-[10px] bg-fg px-5 text-[13px] font-medium text-bg transition-opacity hover:opacity-85 disabled:opacity-40"
+              className="flex h-9 items-center gap-1.5 rounded-[8px] bg-fg px-5 text-[13px] font-medium text-bg transition-opacity hover:opacity-85 disabled:opacity-40"
             >
               Continue <ArrowRight className="h-3.5 w-3.5" />
             </button>
@@ -811,7 +811,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               type="button"
               onClick={handleFinish}
               disabled={isSubmitting || selectedDirs.length === 0}
-              className="flex h-9 items-center gap-2 rounded-[10px] bg-fg px-5 text-[13px] font-medium text-bg transition-opacity hover:opacity-85 disabled:opacity-40"
+              className="flex h-9 items-center gap-2 rounded-[8px] bg-fg px-5 text-[13px] font-medium text-bg transition-opacity hover:opacity-85 disabled:opacity-40"
             >
               {isSubmitting && <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}
               Start indexing

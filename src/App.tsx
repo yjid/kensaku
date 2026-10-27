@@ -854,7 +854,7 @@ function App() {
                     type="button"
                     title="Settings"
                     onClick={() => openSettings()}
-                    className="flex h-8 w-8 items-center justify-center rounded-[10px] text-muted transition-colors duration-150 hover:bg-sunken hover:text-fg"
+                    className="flex h-8 w-8 items-center justify-center rounded-[8px] text-muted transition-colors duration-150 hover:bg-sunken hover:text-fg"
                   >
                     <SettingsIcon className="h-4 w-4" />
                   </button>
@@ -892,7 +892,7 @@ function App() {
                           prev.replace(c.source, "").replace(/\s+/g, " ").trim(),
                         )
                       }
-                      className="group flex h-6 items-center gap-1.5 rounded-full bg-accent-soft px-2.5 text-[10px] text-fg transition-colors hover:text-danger"
+                      className="group flex h-6 items-center gap-1.5 rounded-full bg-accent-soft px-2.5 text-[11px] text-fg transition-colors hover:text-danger"
                     >
                       {c.label}
                       <X className="h-2.5 w-2.5 opacity-50 group-hover:opacity-100" />
@@ -983,7 +983,7 @@ function App() {
                 <div className="flex shrink-0 items-start justify-between gap-3 border-b border-line bg-elevated px-4 py-2">
                   <div className="flex min-w-0 items-start gap-2">
                     <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
-                    <pre className="select-text whitespace-pre-wrap break-all font-mono text-[10.5px] leading-relaxed text-muted">
+                    <pre className="select-text whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-muted">
                       {commandOutput}
                     </pre>
                   </div>
@@ -1085,7 +1085,7 @@ function SuggestChip({ label, onClick }: { label: string; onClick: () => void })
     <button
       type="button"
       onClick={onClick}
-      className="flex h-6 items-center rounded-full border border-line px-2.5 font-mono text-[10.5px] text-muted transition-colors duration-150 hover:border-line-strong hover:text-fg"
+      className="flex h-6 items-center rounded-full border border-line px-2.5 font-mono text-[11px] text-muted transition-colors duration-150 hover:border-line-strong hover:text-fg"
     >
       {label}
     </button>

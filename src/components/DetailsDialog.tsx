@@ -56,7 +56,7 @@ export function DetailsDialog({
           <button
             type="button"
             onClick={onClose}
-            className="h-8 rounded-[10px] bg-accent px-4 text-[12px] font-medium text-accent-fg"
+            className="h-8 rounded-[8px] bg-accent px-4 text-[12px] font-medium text-accent-fg"
           >
             Done
           </button>

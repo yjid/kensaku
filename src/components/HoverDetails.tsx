@@ -40,7 +40,7 @@ export function HoverDetails({ result }: { result: SearchResult }) {
       aria-hidden="true"
       className="hover-reveal pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col gap-0.5 rounded-b-[16px] bg-elevated/95 px-3 pb-2.5 pt-2 backdrop-blur-md"
     >
-      <span className="truncate font-mono text-[10.5px] leading-[14px] text-muted">
+      <span className="truncate font-mono text-[11px] leading-[14px] text-muted">
         {parts.join("  ·  ")}
       </span>
     </span>

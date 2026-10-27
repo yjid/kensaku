@@ -50,7 +50,7 @@ export const CategoryChips: React.FC<CategoryChipsProps> = ({
             <span>{chip.label}</span>
             {count != null && count > 0 && (
               <span
-                className={`font-mono text-[10px] ${
+                className={`font-mono text-[11px] ${
                   isSelected ? "opacity-70" : "text-subtle"
                 }`}
               >

@@ -102,7 +102,7 @@ export function ModelFilesCard() {
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${a.present ? "bg-success" : "bg-subtle"}`} />
               <code className="truncate font-mono text-[11px] text-fg">{a.name}</code>
             </div>
-            <span className="shrink-0 font-mono text-[10px] text-subtle">
+            <span className="shrink-0 font-mono text-[11px] text-subtle">
               {formatBytes(a.present ? a.bytes_on_disk || a.bytes_expected : a.bytes_expected)}
             </span>
           </div>
@@ -121,13 +121,13 @@ export function ModelFilesCard() {
               style={{ width: `${Math.max(4, pct)}%` }}
             />
           </div>
-          <div className="flex items-center justify-between gap-3 text-[10px]">
+          <div className="flex items-center justify-between gap-3 text-[11px]">
             <code className="min-w-0 truncate font-mono text-muted">{prog?.file ?? "downloading…"}</code>
             <span className="shrink-0 font-mono text-fg">
               {mb(prog?.downloaded ?? 0)} / {mb(prog?.total || expected)} · {pct}%
             </span>
           </div>
-          <p className="font-mono text-[10px] text-subtle">downloading in setup…</p>
+          <p className="font-mono text-[11px] text-subtle">downloading in setup…</p>
         </div>
       ) : status?.error ? (
         <div className="border-t border-line px-4 py-3">
