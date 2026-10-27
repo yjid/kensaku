@@ -7,7 +7,10 @@ import { useEffect, useState } from "react";
    silently to the caller rendering the plain file icon. */
 
 /** Extensions the backend thumbnailer handles. Everything else never asks. */
-const THUMB_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff"]);
+const THUMB_EXTS = new Set([
+  "png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff", "tif",
+  "pdf", "mp4", "mov", "m4v", "mkv", "webm", "avi",
+]);
 
 export const THUMBNAIL_LAZY_LIMIT = 30;
 

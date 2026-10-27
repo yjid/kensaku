@@ -27,7 +27,7 @@ export const CategoryChips: React.FC<CategoryChipsProps> = ({
     : categoryCounts(results);
   const empty = selected.size === 0 && excluded.size === 0;
   return (
-    <div className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto px-4 pb-2">
+    <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
       {CATEGORY_CHIPS.map((chip) => {
         const isExcluded = excluded.has(chip.id);
         const isSelected =
@@ -39,18 +39,13 @@ export const CategoryChips: React.FC<CategoryChipsProps> = ({
             type="button"
             onClick={(e) => onToggle(chip.id, e.altKey)}
             title={isExcluded ? "Excluded — click to clear" : "Click to include, Alt-click to exclude"}
-            className={`flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[12px] font-medium transition-colors duration-150 ${
-              isExcluded
-                ? "bg-danger/10 text-danger line-through"
-                : isSelected
-                  ? "bg-fg text-bg"
-                  : "text-muted hover:bg-sunken hover:text-fg"
-            }`}
+            data-active={isSelected && !isExcluded}
+            className={`pill ${isExcluded ? "bg-danger/10 text-danger line-through" : ""}`}
           >
             <span>{chip.label}</span>
             {count != null && count > 0 && (
               <span
-                className={`font-mono text-[10px] ${
+                className={`font-mono text-[11px] ${
                   isSelected ? "opacity-70" : "text-subtle"
                 }`}
               >

@@ -39,7 +39,7 @@ export function DetailsDialog({
       <div
         role="dialog"
         aria-label="Details"
-        className="w-full max-w-[460px] rounded-[16px] border border-line bg-elevated p-5 shadow-lg"
+        className="elevated w-full max-w-[460px] p-6"
       >
         <p className="text-[15px] font-semibold text-fg">{result.filename}</p>
         <dl className="mt-4 divide-y divide-line">
@@ -56,7 +56,7 @@ export function DetailsDialog({
           <button
             type="button"
             onClick={onClose}
-            className="h-8 rounded-[10px] bg-accent px-4 text-[12px] font-medium text-accent-fg"
+            className="h-8 rounded-[8px] bg-accent px-4 text-[12px] font-medium text-accent-fg"
           >
             Done
           </button>

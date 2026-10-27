@@ -631,24 +631,12 @@ fn ensure_thumbnail_cache_dir() -> Result<PathBuf, String> {
 
 fn generate_thumbnail(path: &str) -> Result<String, String> {
     let source = Path::new(path);
-    let extension = source
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-
-    if !crate::indexer::extract::image::is_supported_image_extension(&extension) {
-        return Err("not an image".to_string());
-    }
-
     let dir = ensure_thumbnail_cache_dir()?;
-    let thumbnail = crate::indexer::extract::image::thumbnail(source, &dir)
-        .ok_or_else(|| format!("Failed to generate thumbnail for '{}'", path))?;
-
-    thumbnail
+    let preview = crate::preview::preview_jpeg(source, &dir)?;
+    preview
         .to_str()
-        .map(|path| path.to_string())
-        .ok_or_else(|| "Thumbnail path is not valid UTF-8".to_string())
+        .map(|p| p.to_string())
+        .ok_or_else(|| "Preview path is not valid UTF-8".to_string())
 }
 
 /// Returns an absolute path to a cached 320px JPEG thumbnail.
@@ -1638,7 +1626,7 @@ pub async fn get_file_details(path: String) -> Result<FileDetails, String> {
 
 /// Thumbnail bytes as a `data:` URL. Using a data URL means the card never
 /// depends on the asset protocol or its scope, so it renders the same on every
-/// platform. Thumbnails are 480px JPEGs (tens of KB), which keeps the payload
+/// platform. Previews are 240px JPEGs (a few KB), which keeps the payload
 /// small for the visible cards.
 #[tauri::command]
 pub async fn get_thumbnail_data(path: String) -> Result<String, String> {

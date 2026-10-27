@@ -31,7 +31,7 @@ function StatNumber({
         {value}
         {suffix && <span className="ml-1 text-[11px] text-subtle">{suffix}</span>}
       </p>
-      <p className="text-[10px] uppercase tracking-wide text-subtle">{caption}</p>
+      <p className="text-[11px] uppercase tracking-wide text-subtle">{caption}</p>
     </div>
   );
 }
@@ -81,7 +81,7 @@ export function StatsForNerds() {
         <button
           type="button"
           onClick={copyDiagnostics}
-          className="flex h-7 items-center gap-1.5 rounded-[10px] border border-line bg-elevated px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong"
+          className="flex h-7 items-center gap-1.5 rounded-[8px] border border-line bg-elevated px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong"
         >
           {copied ? <Check className="h-3 w-3 text-accent" /> : <Copy className="h-3 w-3" />}
           Copy diagnostics
@@ -109,7 +109,7 @@ export function StatsForNerds() {
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1.5">
             <Sparkline values={q.history} width={110} height={36} />
-            <span className="font-mono text-[10px] text-subtle">
+            <span className="font-mono text-[11px] text-subtle">
               {formatComma(q.total)} queries
             </span>
           </div>
@@ -157,7 +157,7 @@ export function StatsForNerds() {
               </span>
               {!live && <Badge>placeholder</Badge>}
             </div>
-            <span className="font-mono text-[10px] text-subtle">
+            <span className="font-mono text-[11px] text-subtle">
               {ing.files_per_sec > 0 ? `${formatComma(Math.round(ing.files_per_sec))} f/s` : "idle"}
               {ing.eta_secs != null && ing.eta_secs > 0 && ` · eta ${formatDuration(ing.eta_secs)}`}
             </span>
