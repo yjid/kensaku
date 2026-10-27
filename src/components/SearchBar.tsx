@@ -11,8 +11,6 @@ interface SearchBarProps {
   isSearching: boolean;
   onFocusInput: () => void;
   resultCount: number;
-  /** Global shortcut to surface as a hint. */
-  shortcut?: string;
   /** 28px icon buttons rendered to the right of the pill (theme, settings). */
   trailing?: React.ReactNode;
 }
@@ -30,7 +28,6 @@ export function SearchBar({
   isSearching,
   onFocusInput,
   resultCount,
-  shortcut,
   trailing,
 }: SearchBarProps) {
   const [phIdx, setPhIdx] = useState(0);
@@ -81,12 +78,6 @@ export function SearchBar({
           className="min-w-0 flex-1 bg-transparent text-[17px] leading-none text-fg outline-none placeholder:text-subtle caret-fg"
           style={{ letterSpacing: "-0.02em" }}
         />
-
-        {!query && shortcut && (
-          <kbd className="hidden shrink-0 rounded-[6px] border border-line px-1.5 py-0.5 font-mono text-[10px] text-subtle sm:inline-block">
-            {shortcut}
-          </kbd>
-        )}
 
         {isSearching && (
           <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-subtle" />

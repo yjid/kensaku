@@ -56,7 +56,7 @@ const SECTIONS: { id: SectionId; label: string; icon: LucideIcon }[] = [
   { id: "folders", label: "Folders", icon: FolderTree },
   { id: "exclusions", label: "Exclusions", icon: Filter },
   { id: "search", label: "Search", icon: Search },
-  { id: "ai", label: "Meaning search", icon: Search },
+  { id: "ai", label: "Meaning search", icon: Sparkles },
   { id: "agents", label: "Agents", icon: Bot },
   { id: "doctor", label: "Health", icon: Stethoscope },
   { id: "about", label: "About", icon: Info },
@@ -354,6 +354,7 @@ function GeneralSection({
 
   useEffect(() => {
     if (!capturing) return;
+    document.body.dataset.ksCapture = "1";
     // Modifiers accumulate across keydowns, so tapping Ctrl then K works as
     // well as holding Ctrl+K.
     const pressed = new Set<string>();
@@ -382,7 +383,10 @@ function GeneralSection({
       setCapturing(false);
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      delete document.body.dataset.ksCapture;
+      window.removeEventListener("keydown", onKey);
+    };
   }, [capturing, setConfig]);
 
   return (

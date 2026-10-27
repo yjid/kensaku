@@ -744,6 +744,43 @@ function App() {
     [showSettings, showDuplicates, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope, preview],
   );
 
+  // Master Escape: window-level so it fires even when focus is on body.
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (e.defaultPrevented) return;
+      if (document.body.dataset.ksCapture === "1") return;
+      // Let open overlays handle their own Escape.
+      if (showSettings || showDuplicates || showHelp || preview || details || saveOpen) return;
+
+      if (slashFilter !== null) {
+        e.preventDefault();
+        setQuery("");
+        return;
+      }
+      if (scopePrefix !== null) {
+        e.preventDefault();
+        setQuery((prev) => prev.replace(/@[^\s]*$/, "").trimEnd());
+        return;
+      }
+      if (commandOutput) {
+        e.preventDefault();
+        setCommandOutput(null);
+        return;
+      }
+      if (query.trim()) {
+        e.preventDefault();
+        setQuery("");
+        inputRef.current?.focus();
+        return;
+      }
+      e.preventDefault();
+      invoke("hide_window").catch(() => undefined);
+    };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [showSettings, showDuplicates, showHelp, preview, details, saveOpen, slashFilter, scopePrefix, commandOutput, query]);
+
   /* ---------------- render ---------------- */
 
   const displayResults = useMemo(
@@ -834,7 +871,6 @@ function App() {
                 isSearching={isSearching}
                 onFocusInput={() => {}}
                 resultCount={results.length}
-                shortcut={config?.shortcut ?? "Alt+Space"}
                 trailing={
                   <button
                     type="button"
