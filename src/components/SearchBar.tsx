@@ -49,10 +49,10 @@ export function SearchBar({
   return (
     <div className="flex h-[60px] shrink-0 items-center gap-2 px-4">
       <div
-        className={`flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-[14px] border bg-elevated px-3 transition-colors duration-150 ${
+        className={`flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-[12px] border bg-elevated px-3 transition-colors duration-150 ${
           isCommandMode
             ? "border-line-strong"
-            : "border-line focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/30"
+            : "border-line focus-within:border-line-strong focus-within:ring-1 focus-within:ring-fg/15"
         }`}
       >
         {isCommandMode ? (

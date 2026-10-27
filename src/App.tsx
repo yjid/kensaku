@@ -27,15 +27,16 @@ import { ContextMenu, ContextMenuItem } from "./components/ContextMenu";
 import { DetailsDialog } from "./components/DetailsDialog";
 import { SearchBar } from "./components/SearchBar";
 import { CategoryChips } from "./components/CategoryChips";
-import { SortControl } from "./components/SortControl";
+import { ResultControls } from "./components/ResultControls";
 import { VirtualGrid } from "./components/VirtualGrid";
+import { FileRow } from "./components/FileRow";
 import { classify } from "./lib/categories";
 import {
   Settings as SettingsIcon,
   RefreshCw,
   Copy,
   FileText,
-  Sparkles,
+  MessageSquare,
   Image as ImageIcon,
   FileCode,
   Film,
@@ -43,7 +44,6 @@ import {
   Terminal,
   Stethoscope,
   TriangleAlert,
-  Bookmark,
   X,
 } from "lucide-react";
 import "./App.css";
@@ -91,8 +91,7 @@ function App() {
   const [scopeItems, setScopeItems] = useState<string[]>([]);
   const [scopeIndex, setScopeIndex] = useState(0);
   const [commandOutput, setCommandOutput] = useState<string | null>(null);
-  const [sort, setSort] = useState("best");
-  const view: ResultView = "grid";
+  const sort = "best";
   /* Right-click menu and the details dialog replace the old preview pane. */
   // Thumbnail setting, read from config. Reloaded whenever Settings closes.
   const [config, setConfig] = useState<KensakuConfig | null>(null);
@@ -102,6 +101,7 @@ function App() {
       .catch(() => undefined);
   }, [showSettings]);
   const showThumbs = config?.show_thumbnails !== false;
+  const view: ResultView = config?.results_view === "list" ? "list" : "grid";
   const [menu, setMenu] = useState<{ x: number; y: number; result: SearchResult } | null>(null);
   const [details, setDetails] = useState<SearchResult | null>(null);
 
@@ -588,7 +588,7 @@ function App() {
       { id: "errors", name: "errors", label: "error", description: "Search for error text", icon: TriangleAlert, run: () => focus("error ") },
       { id: "diagrams", name: "diagrams", label: "diagram", description: "Search for diagrams", icon: FileCode, run: () => focus("diagram ") },
       { id: "dupes", name: "dupes", label: "review", description: "Find duplicate files and images", icon: Copy, run: () => { setQuery(""); setShowDuplicates(true); } },
-      { id: "ask", name: "ask", label: "answers", description: "Ask your files (local model, cited)", icon: Sparkles, run: () => { setQuery(""); setShowAsk(true); } },
+      { id: "ask", name: "ask", label: "answers", description: "Ask your files, with sources", icon: MessageSquare, run: () => { setQuery(""); setShowAsk(true); } },
       { id: "reindex", name: "reindex", label: "action", description: "Re-scan watched folders", icon: RefreshCw, run: () => { setQuery(""); handleRunCommand("/reindex"); } },
       { id: "doctor", name: "doctor", label: "action", description: "Index health report", icon: Stethoscope, run: () => { setQuery(""); handleRunCommand("/doctor"); } },
       { id: "settings", name: "settings", label: "⌘,", description: "Open Settings", icon: SettingsIcon, run: () => { setQuery(""); openSettings(); } },
@@ -854,7 +854,7 @@ function App() {
                     type="button"
                     title="Settings"
                     onClick={() => openSettings()}
-                    className="flex h-8 w-8 items-center justify-center rounded-[10px] text-muted transition-colors duration-150 hover:bg-sunken hover:text-fg"
+                    className="flex h-8 w-8 items-center justify-center rounded-[8px] text-muted transition-colors duration-150 hover:bg-sunken hover:text-fg"
                   >
                     <SettingsIcon className="h-4 w-4" />
                   </button>
@@ -868,16 +868,6 @@ function App() {
                 <ScopeMenu items={scopeItems} activeIndex={scopeIndex} onPick={applyScope} />
               )}
 
-              {/* Category chips */}
-              {!isCommandMode && (
-                <CategoryChips
-                  results={results}
-                  facets={facets}
-                  selected={facetInclude}
-                  excluded={facetExclude}
-                  onToggle={handleFacetToggle}
-                />
-              )}
 
               {!isCommandMode && interpretation.length > 0 && (
                 <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line px-4 py-1.5">
@@ -892,7 +882,7 @@ function App() {
                           prev.replace(c.source, "").replace(/\s+/g, " ").trim(),
                         )
                       }
-                      className="group flex h-6 items-center gap-1.5 rounded-full bg-accent-soft px-2.5 text-[10px] text-fg transition-colors hover:text-danger"
+                      className="group flex h-6 items-center gap-1.5 rounded-full bg-accent-soft px-2.5 text-[11px] text-fg transition-colors hover:text-danger"
                     >
                       {c.label}
                       <X className="h-2.5 w-2.5 opacity-50 group-hover:opacity-100" />
@@ -901,17 +891,27 @@ function App() {
                 </div>
               )}
 
-              {!isCommandMode && displayResults.length > 0 && (
-                <div className="flex shrink-0 items-center justify-end gap-2 border-b border-line px-4 py-1.5">
-                  <SortControl value={sort} onChange={setSort} />
-                  <button
-                    type="button"
-                    title="Save this search"
-                    onClick={() => setSaveOpen((v) => !v)}
-                    className="flex h-7 w-7 items-center justify-center rounded-[8px] text-muted transition-colors hover:bg-sunken hover:text-fg"
-                  >
-                    <Bookmark className="h-3.5 w-3.5" />
-                  </button>
+              {/* One control bar: category chips on the left, layout and save on the right. */}
+              {!isCommandMode && (
+                <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2">
+                  <CategoryChips
+                    results={results}
+                    facets={facets}
+                    selected={facetInclude}
+                    excluded={facetExclude}
+                    onToggle={handleFacetToggle}
+                  />
+                  <ResultControls
+                    view={view}
+                    onView={(v) => {
+                      setConfig((c) => (c ? { ...c, results_view: v } : c));
+                      invoke<KensakuConfig>("get_config")
+                        .then((cfg) => invoke("save_config", { config: { ...cfg, results_view: v } }))
+                        .catch(() => undefined);
+                    }}
+                    canSave={displayResults.length > 0}
+                    onSave={() => setSaveOpen((v) => !v)}
+                  />
                 </div>
               )}
 
@@ -983,7 +983,7 @@ function App() {
                 <div className="flex shrink-0 items-start justify-between gap-3 border-b border-line bg-elevated px-4 py-2">
                   <div className="flex min-w-0 items-start gap-2">
                     <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
-                    <pre className="select-text whitespace-pre-wrap break-all font-mono text-[10.5px] leading-relaxed text-muted">
+                    <pre className="select-text whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-muted">
                       {commandOutput}
                     </pre>
                   </div>
@@ -1009,6 +1009,8 @@ function App() {
                     <VirtualGrid
                       items={displayResults}
                       getKey={(res) => res.path}
+                      cardHeight={(w) => w * 0.75 + 56}
+                      list={view === "list"}
                       selectedIndex={selectedIndex}
                       hasMore={results.length < total && exhaustedKey !== pageKey}
                       loading={loadingMore}
@@ -1016,21 +1018,33 @@ function App() {
                       onColumns={(cols) => {
                         columnsRef.current = cols;
                       }}
-                      renderItem={(res, idx) => (
-                        <ResultItem
-                          result={res}
-                          query={query}
-                          index={idx}
-                          isSelected={idx === selectedIndex}
-                          view="grid"
-                          onSelect={() => setSelectedIndex(idx)}
-                          onOpen={() => handleOpenFile(res.path)}
-                          onReveal={() => handleOpenFolder(res.path)}
-                          onCopyPath={() => handleCopyPath(res.path)}
-                          onContextMenu={(x, y) => setMenu({ x, y, result: res })}
-                          showThumbs={showThumbs}
-                        />
-                      )}
+                      renderItem={(res, idx) =>
+                        view === "list" ? (
+                          <FileRow
+                            item={{ path: res.path, filename: res.filename, file_size: res.file_size, modified: res.modified, is_dir: res.is_dir }}
+                            query={query}
+                            selected={idx === selectedIndex}
+                            showThumbs={showThumbs}
+                            onSelect={() => setSelectedIndex(idx)}
+                            onOpen={() => handleOpenFile(res.path)}
+                            onContextMenu={(x, y) => setMenu({ x, y, result: res })}
+                          />
+                        ) : (
+                          <ResultItem
+                            result={res}
+                            query={query}
+                            index={idx}
+                            isSelected={idx === selectedIndex}
+                            view="grid"
+                            onSelect={() => setSelectedIndex(idx)}
+                            onOpen={() => handleOpenFile(res.path)}
+                            onReveal={() => handleOpenFolder(res.path)}
+                            onCopyPath={() => handleCopyPath(res.path)}
+                            onContextMenu={(x, y) => setMenu({ x, y, result: res })}
+                            showThumbs={showThumbs}
+                          />
+                        )
+                      }
                     />
                   ) : noResults ? (
                     <div className="flex h-full flex-col items-center justify-center gap-1 p-8 text-center select-none">
@@ -1061,6 +1075,7 @@ function App() {
                     <HomeView
                       data={home}
                       onOpen={(path) => handleOpenFile(path)}
+                      showThumbs={showThumbs}
                       onSearch={(q) => {
                         setQuery(q);
                         inputRef.current?.focus();
@@ -1085,7 +1100,7 @@ function SuggestChip({ label, onClick }: { label: string; onClick: () => void })
     <button
       type="button"
       onClick={onClick}
-      className="flex h-6 items-center rounded-full border border-line px-2.5 font-mono text-[10.5px] text-muted transition-colors duration-150 hover:border-line-strong hover:text-fg"
+      className="flex h-6 items-center rounded-full border border-line px-2.5 font-mono text-[11px] text-muted transition-colors duration-150 hover:border-line-strong hover:text-fg"
     >
       {label}
     </button>

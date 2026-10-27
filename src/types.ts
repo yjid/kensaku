@@ -188,6 +188,8 @@ export interface KensakuConfig {
   include_ignored?: boolean;
   /** Show generated thumbnails on result cards (default on). */
   show_thumbnails?: boolean;
+  /** Result layout. */
+  results_view?: "grid" | "list";
 }
 
 /* ---------------- Local LLM ---------------- */

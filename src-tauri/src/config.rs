@@ -192,6 +192,9 @@ pub struct KensakuConfig {
     /// the type icon only (no thumbnail generation at all).
     #[serde(default = "default_true")]
     pub show_thumbnails: bool,
+    /// Result layout: "grid" (cards, default) or "list" (one row per file).
+    #[serde(default = "default_results_view")]
+    pub results_view: String,
     /// Config schema version, used for one-time migrations.
     #[serde(default)]
     pub config_version: u32,
@@ -207,6 +210,10 @@ fn default_ocr_engine() -> String {
 
 fn default_semantic_model() -> String {
     "static".to_string()
+}
+
+fn default_results_view() -> String {
+    "grid".to_string()
 }
 
 fn default_theme() -> String {
@@ -330,6 +337,7 @@ impl Default for KensakuConfig {
             saved_searches: Vec::new(),
             pins: Vec::new(),
             show_thumbnails: true,
+            results_view: default_results_view(),
             config_version: 4,
         }
     }

@@ -1,56 +1,39 @@
 import { Search } from "lucide-react";
-import type { HomeData, HomeItem } from "../types";
-import { FileTypeIcon } from "./FileTypeIcon";
-import { formatBytes, formatRelativeTime } from "../lib/format";
+import type { HomeData } from "../types";
+import { FileRow } from "./FileRow";
 
-/* Home shows one thing: recent files as the same square cards the results
-   use. With nothing recent yet, it offers a few starting searches instead. */
+/* Home shows recent files as a clean list, the same rows as list results.
+   With nothing recent yet, it offers a few starting searches instead. */
 
-const SUGGESTIONS = [
-  "latest resume",
-  "screenshots from last week",
-  "big videos",
-  "invoice",
-];
-
-function RecentCard({ item, onOpen }: { item: HomeItem; onOpen: () => void }) {
-  const name = item.filename || item.path;
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="group flex aspect-square w-full flex-col justify-between rounded-[16px] border border-line bg-elevated p-3 text-left transition-[transform,border-color] duration-200 [transition-timing-function:var(--ease-apple)] hover:-translate-y-px hover:border-line-strong"
-    >
-      <FileTypeIcon result={{ is_dir: item.is_dir, filename: name }} size={40} />
-      <span className="min-w-0">
-        <span className="line-clamp-2 block text-[13px] font-medium leading-[17px] text-fg">{name}</span>
-        <span className="block truncate font-mono text-[11px] leading-[15px] text-muted">
-          {item.is_dir ? "Folder" : formatBytes(item.size)} · {formatRelativeTime(item.modified)}
-        </span>
-      </span>
-    </button>
-  );
-}
+const SUGGESTIONS = ["latest resume", "screenshots from last week", "big videos", "invoice"];
 
 export function HomeView({
   data,
   onSearch,
   onOpen,
+  showThumbs,
 }: {
   data: HomeData | null;
   onSearch: (query: string) => void;
   onOpen: (path: string) => void;
+  showThumbs?: boolean;
 }) {
   if (!data) return null;
-  const recent = data.recent.slice(0, 12);
+  const recent = data.recent.slice(0, 30);
 
   if (recent.length > 0) {
     return (
-      <div className="mx-auto w-full max-w-5xl p-4">
-        <p className="px-1 pb-3 text-[12px] font-medium text-muted">Recent</p>
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(156px,1fr))] gap-3">
+      <div className="mx-auto w-full max-w-4xl px-3 py-4">
+        <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-muted">Recent</p>
+        <div className="flex flex-col gap-0.5">
           {recent.map((r) => (
-            <RecentCard key={r.path} item={r} onOpen={() => onOpen(r.path)} />
+            <FileRow
+              key={r.path}
+              item={{ path: r.path, filename: r.filename || r.path, file_size: r.size, modified: r.modified, is_dir: r.is_dir }}
+              showThumbs={showThumbs}
+              onSelect={() => onOpen(r.path)}
+              onOpen={() => onOpen(r.path)}
+            />
           ))}
         </div>
       </div>
@@ -66,7 +49,7 @@ export function HomeView({
             key={q}
             type="button"
             onClick={() => onSearch(q)}
-            className="flex h-8 items-center gap-1.5 rounded-full border border-line px-3 text-[12px] text-muted transition-colors duration-150 hover:border-line-strong hover:text-fg"
+            className="btn btn-secondary h-8 gap-1.5 rounded-full px-3 text-[12px] text-muted hover:text-fg"
           >
             <Search className="h-3 w-3" />
             {q}

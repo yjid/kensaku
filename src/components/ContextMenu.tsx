@@ -53,7 +53,7 @@ export function ContextMenu({
       ref={ref}
       role="menu"
       style={{ left, top, width }}
-      className="menu-pop fixed z-[70] overflow-hidden rounded-[12px] border border-line bg-elevated p-1 shadow-lg"
+      className="menu-pop elevated fixed z-[70] overflow-hidden p-1"
     >
       {items.map((item) => (
         <div key={item.label}>
@@ -65,7 +65,7 @@ export function ContextMenu({
               onClose();
               item.onSelect();
             }}
-            className="flex h-8 w-full items-center rounded-[8px] px-2.5 text-left text-[12.5px] text-fg transition-colors hover:bg-sunken"
+            className="menu-row w-full text-left"
           >
             {item.label}
           </button>

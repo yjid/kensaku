@@ -1,11 +1,11 @@
 import type { LucideIcon } from "lucide-react";
-import { ArrowDownAZ, Clock, HardDrive, History, Sparkles } from "lucide-react";
+import { ArrowDownAZ, Clock, HardDrive, History, ListFilter } from "lucide-react";
 
 /* Sort as a quiet segmented row: icon first, label after. Icons carry the
    meaning on narrow widths; the label appears on the active option. */
 
 const OPTIONS: { value: string; label: string; icon: LucideIcon }[] = [
-  { value: "best", label: "Best", icon: Sparkles },
+  { value: "best", label: "Best", icon: ListFilter },
   { value: "newest", label: "Newest", icon: Clock },
   { value: "oldest", label: "Oldest", icon: History },
   { value: "largest", label: "Largest", icon: HardDrive },
@@ -20,7 +20,7 @@ export function SortControl({
   onChange: (value: string) => void;
 }) {
   return (
-    <div role="radiogroup" aria-label="Sort" className="flex items-center gap-0.5 rounded-[10px] bg-sunken p-0.5">
+    <div role="radiogroup" aria-label="Sort" className="flex items-center gap-0.5 rounded-[8px] bg-sunken p-0.5">
       {OPTIONS.map(({ value: v, label, icon: Icon }) => {
         const active = v === value;
         return (

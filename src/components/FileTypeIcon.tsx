@@ -1,77 +1,53 @@
 import React from "react";
 import {
-  FileText,
-  FileCode,
-  Folder,
-  FileArchive,
-  Image,
-  File,
-  Table,
-  Presentation,
-  AudioLines,
-  Film,
+  AudioLines, File, FileArchive, FileCode, FileText, Film, Folder, Image,
+  Presentation, Table, type LucideIcon,
 } from "lucide-react";
-import { classify, Category } from "../lib/categories";
+import { classify } from "../lib/categories";
 
-/* File-type icon in a tinted square. Color by category:
-   image=pink, doc=olive, code=blue, media=accent teal, folder/file/archive=neutral.
-   The glyph stays full-strength; the square carries the tint. */
+/* File-type mark. One muted ink for every category, so the type reads from
+   the glyph alone. `bare` drops the frame, used on cards where the tile
+   already provides the background. */
 
-interface Meta {
-  color: string;
-  neutral?: boolean;
-  glyph: (filename: string) => React.ReactNode;
+function iconFor(filename: string, isDir: boolean): LucideIcon {
+  const cat = classify({ is_dir: isDir, filename });
+  const ext = filename.includes(".") ? (filename.split(".").pop() ?? "").toLowerCase() : "";
+  switch (cat) {
+    case "folder":
+      return Folder;
+    case "image":
+      return Image;
+    case "code":
+      return FileCode;
+    case "archive":
+      return FileArchive;
+    case "media":
+      return ["mp4", "mov", "avi", "mkv", "webm", "m4v"].includes(ext) ? Film : AudioLines;
+    case "doc":
+      if (["xls", "xlsx", "csv", "tsv", "ods", "numbers"].includes(ext)) return Table;
+      if (["ppt", "pptx", "odp", "key"].includes(ext)) return Presentation;
+      return FileText;
+    default:
+      return File;
+  }
 }
-
-const CATEGORY_META: Record<Category, Meta> = {
-  folder: { color: "var(--fg-muted)", neutral: true, glyph: () => <Folder className="h-4 w-4" /> },
-  image: { color: "var(--pink)", glyph: () => <Image className="h-4 w-4" /> },
-  doc: {
-    color: "var(--olive)",
-    glyph: (fn) => {
-      const ext = fn.split(".").pop()?.toLowerCase() || "";
-      if (["xls", "xlsx", "csv", "tsv", "ods", "numbers"].includes(ext))
-        return <Table className="h-4 w-4" />;
-      if (["ppt", "pptx", "odp", "key"].includes(ext))
-        return <Presentation className="h-4 w-4" />;
-      return <FileText className="h-4 w-4" />;
-    },
-  },
-  code: { color: "var(--blue)", glyph: () => <FileCode className="h-4 w-4" /> },
-  media: {
-    color: "var(--accent)",
-    glyph: (fn) => {
-      const ext = fn.split(".").pop()?.toLowerCase() || "";
-      if (["mp4", "mov", "avi", "mkv", "webm", "m4v"].includes(ext))
-        return <Film className="h-4 w-4" />;
-      return <AudioLines className="h-4 w-4" />;
-    },
-  },
-  archive: { color: "var(--fg-muted)", neutral: true, glyph: () => <FileArchive className="h-4 w-4" /> },
-  file: { color: "var(--fg-muted)", neutral: true, glyph: () => <File className="h-4 w-4" /> },
-};
 
 export const FileTypeIcon: React.FC<{
   result: { is_dir: boolean; filename: string };
   size?: number;
-}> = ({ result, size = 32 }) => {
-  const cat = classify(result);
-  const meta = CATEGORY_META[cat];
+  bare?: boolean;
+}> = ({ result, size = 32, bare = false }) => {
+  const Icon = iconFor(result.filename, result.is_dir);
+  const glyph = Math.round(size * 0.46);
   return (
     <span
       aria-hidden="true"
-      className="flex shrink-0 items-center justify-center rounded-lg"
-      style={{
-        width: size,
-        height: size,
-        color: meta.color,
-        backgroundColor: meta.neutral
-          ? "var(--bg-sunken)"
-          : `color-mix(in srgb, ${meta.color} calc(var(--icon-tint-opacity) * 100%), transparent)`,
-        border: "1px solid var(--border)",
-      }}
+      style={{ width: size, height: size }}
+      className={`flex shrink-0 items-center justify-center text-muted ${
+        bare ? "" : "rounded-[10px] border border-line bg-elevated"
+      }`}
     >
-      {meta.glyph(result.filename)}
+      <Icon width={glyph} height={glyph} strokeWidth={1.5} />
     </span>
   );
 };

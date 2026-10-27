@@ -63,7 +63,7 @@ export function DuplicatesModal({ onClose }: { onClose: () => void }) {
     <div className="absolute inset-0 z-50 flex flex-col bg-bg">
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-line px-5">
         <div>
-          <h1 className="text-[14px] font-semibold tracking-tight text-fg">Duplicates</h1>
+          <h1 className="text-[15px] font-semibold tracking-tight text-fg">Duplicates</h1>
           <p className="text-[11px] text-muted">
             Exact-content matches and near-identical images. Review only — delete in your file manager.
           </p>
@@ -71,7 +71,7 @@ export function DuplicatesModal({ onClose }: { onClose: () => void }) {
         <button
           type="button"
           onClick={onClose}
-          className="flex h-8 w-8 items-center justify-center rounded-[10px] text-muted transition-colors hover:bg-sunken hover:text-fg"
+          className="flex h-8 w-8 items-center justify-center rounded-[8px] text-muted transition-colors hover:bg-sunken hover:text-fg"
           title="Close"
         >
           <X className="h-4 w-4" />
@@ -96,17 +96,17 @@ export function DuplicatesModal({ onClose }: { onClose: () => void }) {
         ) : (
           <div className="mx-auto max-w-3xl space-y-3">
             {groups.map((g, i) => (
-              <div key={`${g.kind}-${g.hash}-${i}`} className="rounded-[14px] border border-line bg-elevated">
+              <div key={`${g.kind}-${g.hash}-${i}`} className="surface">
                 <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
                   <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-sunken px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted">
+                    <span className="rounded-full bg-sunken px-2 py-0.5 font-mono text-[11px] uppercase tracking-wide text-muted">
                       {g.kind === "burst" ? "screenshot burst" : g.kind}
                     </span>
                     <span className="text-[12px] font-medium text-fg">
                       {g.paths.length} files
                     </span>
                   </div>
-                  <code className="truncate font-mono text-[10px] text-subtle">{g.hash}</code>
+                  <code className="truncate font-mono text-[11px] text-subtle">{g.hash}</code>
                 </div>
                 <ul>
                   {g.paths.map((p) => (
@@ -148,7 +148,7 @@ export function DuplicatesModal({ onClose }: { onClose: () => void }) {
           </div>
         )}
         {copied && (
-          <p className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-fg px-3 py-1 font-mono text-[10px] text-bg">
+          <p className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-fg px-3 py-1 font-mono text-[11px] text-bg">
             copied
           </p>
         )}

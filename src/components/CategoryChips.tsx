@@ -27,7 +27,7 @@ export const CategoryChips: React.FC<CategoryChipsProps> = ({
     : categoryCounts(results);
   const empty = selected.size === 0 && excluded.size === 0;
   return (
-    <div className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto px-4 pb-2">
+    <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
       {CATEGORY_CHIPS.map((chip) => {
         const isExcluded = excluded.has(chip.id);
         const isSelected =
@@ -50,7 +50,7 @@ export const CategoryChips: React.FC<CategoryChipsProps> = ({
             <span>{chip.label}</span>
             {count != null && count > 0 && (
               <span
-                className={`font-mono text-[10px] ${
+                className={`font-mono text-[11px] ${
                   isSelected ? "opacity-70" : "text-subtle"
                 }`}
               >
