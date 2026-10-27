@@ -185,7 +185,7 @@ Schema:
 | `size` | u64, fast | `size:` range |
 | `lang` | u8, fast | `lang:` filter |
 
-- **Custom tokenizer (K15):** The `"kensaku"` tokenizer decomposes CJK scripts (Han, Hiragana, Katakana, Hangul) into interleaved unigrams and bigrams with exact offsets and sequential positions, enabling exact word and substring searches across unbroken CJK runs. SimpleTokenizer behavior is preserved for Latin, code, and paths. Schema marker `content.schema` (v2) automates legacy migration.
+- **Custom tokenizer (K15):** The `"kensaku"` tokenizer decomposes CJK scripts (Han, Hiragana, Katakana, Hangul) into interleaved unigrams and bigrams with exact offsets and sequential positions, enabling exact word and substring searches across unbroken CJK runs. SimpleTokenizer behavior is preserved for Latin, code, and paths. Schema marker `content.schema` (v3) automates legacy migration.
 - **Never** `QueryParser`. Build `Query` objects from our AST. No OR-by-default.
 - **Content policy:** full text up to 1 MB; head 512 KB + tail 512 KB for larger; metadata-only above 20 MB.
 - **Commit policy:** debounce 2 s or 2,000 docs; the current writer arena is 16 MB (tune with [K12](ROADMAP.md#k12-index-format-spike-timeboxed)). `wait_merging_threads()` + `garbage_collect_files()` at idle, and a weekly force-merge.
@@ -242,6 +242,12 @@ tier handles partial words and OCR look-alikes:
 - Budget: the tier only runs when the exact/fuzzy/semantic tiers leave a
   shortfall, so a normal query never pays for it. On the synthetic 500-doc
   corpus, `p95 = 262 µs`; index growth was 1.61x with stored raw text.
+- **Filter pushdown (schema v3, K12/B4):** the content index stores the
+  lowercase `ext` (indexed `STRING`) and `size` (fast `u64`) for every
+  document. Positive `ext:`/`size:` filters are added as `Must` clauses before
+  top-k collection, so BM25 and folded tiers never score documents the
+  metadata filter would reject. Type/lang/name/path and negated filters remain
+  post-filters; the metadata check is still authoritative.
 - Upgrading an older index preserves it as `index.legacy-*`, creates a fresh
   index, and queues every file for one content re-extraction.
 
@@ -456,10 +462,14 @@ Design rules:
 | fusion + rank | 0.2 ms |
 | IPC serialize (50 results) | 0.5 ms |
 | React render (virtualized) | 3–8 ms |
+| facets (100k / 1M matched, release) | 3.1 / 17.3 ms |
 | **first paint** | **≈ 8–18 ms** |
 | snippet fetch (post-paint, top 20) | 5–20 ms |
 
-Gates: p50 < 15 ms, p95 < 40 ms, p99 < 60 ms. **Daemon idle RSS at 1M files:** ≤ 150 MB interim (compact arena, [K2](ROADMAP.md#k2-compact-metadata-arena)); ≤ 60 MB target once the daemon + mmap'd index land ([K1](ROADMAP.md#k1-daemon-split-epic)). **Indexer peak RSS:** ≤ 100 MB for an image-heavy backfill ([K3](ROADMAP.md#k3-thumbnail-based-hashing--memory-release)); the current measured peak is ~73 MB for a mixed 700-file crawl. Indexing throughput > 2,000 files/s metadata, > 150 files/s text content (OCR-bound image content is limited by tesseract; see [BENCHMARKS.md](BENCHMARKS.md#indexing-and-extraction-reference)). Semantic embedding > 2,000 docs/s.
+Gates: p50 < 15 ms, p95 < 40 ms, p99 < 60 ms. The 1M facet pass is now
+within its measured budget, but the full 1M query path still materializes the
+metadata arena per query (~207 ms p50 in `mem_probe`, down from 675 ms); that gap is tracked as
+the arena-backed query path in [REMAINING.md](REMAINING.md) section D. **Daemon idle RSS at 1M files:** ≤ 150 MB interim (compact arena, [K2](ROADMAP.md#k2-compact-metadata-arena)); ≤ 60 MB target once the daemon + mmap'd index land ([K1](ROADMAP.md#k1-daemon-split-epic)). **Indexer peak RSS:** ≤ 100 MB for an image-heavy backfill ([K3](ROADMAP.md#k3-thumbnail-based-hashing--memory-release)); the current measured peak is ~73 MB for a mixed 700-file crawl. Indexing throughput > 2,000 files/s metadata, > 150 files/s text content (OCR-bound image content is limited by tesseract; see [BENCHMARKS.md](BENCHMARKS.md#indexing-and-extraction-reference)). Semantic embedding > 2,000 docs/s.
 
 ---
 

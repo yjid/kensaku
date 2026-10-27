@@ -600,15 +600,16 @@ fn handle_directory_rename(
 
         for entry in entries {
             let is_indexable = !entry.is_dir
-                && (is_indexable_extension(entry.extension.as_deref())
+                && (is_indexable_extension(entry.extension)
                     || is_indexable_file_name(&entry.name)
                     || crate::indexer::extract::external::handles(&entry.path));
             let path = entry.path.clone();
             let name = entry.name.clone();
             let modified = entry.modified;
+            let size = entry.size;
+            let extension = entry.extension;
             let is_image = entry
                 .extension
-                .as_deref()
                 .is_some_and(image_util::is_supported_image_extension);
 
             metadata.write().add(entry);
@@ -647,7 +648,7 @@ fn handle_directory_rename(
             if let Some(content) = content.as_deref()
                 && let Some(c_index) = content_index.read().as_ref()
             {
-                let _ = c_index.add_or_update(&path, &name, content, modified);
+                let _ = c_index.add_or_update(&path, &name, content, modified, size, extension);
                 pending_commits += 1;
                 if pending_commits >= 1000 {
                     let _ = c_index.commit();
@@ -711,7 +712,7 @@ fn handle_file_upsert(
         id: 0,
         path: path.to_path_buf(),
         name: name.clone(),
-        extension: extension.clone(),
+        extension: crate::indexer::walker::intern_extension(extension.as_deref()),
         size,
         modified,
         is_dir,
@@ -767,7 +768,14 @@ fn handle_file_upsert(
     if let Some(content) = content.as_deref()
         && let Some(c_index) = content_index.read().as_ref()
     {
-        let _ = c_index.add_or_update(path, &name, content, modified);
+        let _ = c_index.add_or_update(
+            path,
+            &name,
+            content,
+            modified,
+            meta.len(),
+            extension.as_deref(),
+        );
     }
 
     if !is_dir && is_image && !is_cloud_placeholder(&meta) {

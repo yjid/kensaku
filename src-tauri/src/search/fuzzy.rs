@@ -1,6 +1,7 @@
 use crate::indexer::walker::FileEntry;
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
+use rayon::prelude::*;
 
 /// Computes a 64-bit character presence bitmask for fast prefiltering.
 pub fn compute_char_mask(text: &str) -> u64 {
@@ -20,6 +21,30 @@ pub fn compute_char_mask(text: &str) -> u64 {
         mask |= 1u64 << (bit & 63);
     }
     mask
+}
+
+/// Scores one entry for a parsed pattern. Callers provide the matcher and
+/// scratch buffer so parallel workers can keep their own state.
+fn score_entry(
+    pattern: &Pattern,
+    matcher: &mut Matcher,
+    char_buf: &mut Vec<char>,
+    entry: &FileEntry,
+    query_mask: u64,
+    match_path: bool,
+) -> Option<u32> {
+    // Char-bloom prefilter: 64-bit letter mask per name.
+    if !match_path && (entry.char_bloom & query_mask) != query_mask {
+        return None;
+    }
+    let path_str = entry.path.to_string_lossy();
+    let utf32 = Utf32Str::new(&path_str, char_buf);
+    let mut final_score = pattern.score(utf32, matcher)?;
+    let name_utf32 = Utf32Str::new(&entry.name, char_buf);
+    if let Some(name_score) = pattern.score(name_utf32, matcher) {
+        final_score += name_score * 2;
+    }
+    Some(final_score)
 }
 
 pub struct FuzzySearcher {
@@ -52,35 +77,48 @@ impl FuzzySearcher {
         }
 
         let pattern = Pattern::parse(trimmed, CaseMatching::Ignore, Normalization::Smart);
-        let mut char_buf = Vec::new();
-        let mut scored_indices: Vec<(usize, u32)> = Vec::new();
-
         let query_mask = compute_char_mask(trimmed);
         let match_path = trimmed.contains('/') || trimmed.contains('\\');
 
-        for &orig_idx in candidate_indices {
-            let entry = match all_entries.get(orig_idx) {
-                Some(e) => e,
-                None => continue,
-            };
-
-            // Char-bloom prefilter: 64-bit letter mask per name.
-            if !match_path && (entry.char_bloom & query_mask) != query_mask {
-                continue;
-            }
-
-            let path_str = entry.path.to_string_lossy();
-            let utf32 = Utf32Str::new(&path_str, &mut char_buf);
-
-            if let Some(score) = pattern.score(utf32, &mut self.matcher) {
-                let mut final_score = score;
-                let name_utf32 = Utf32Str::new(&entry.name, &mut char_buf);
-                if let Some(name_score) = pattern.score(name_utf32, &mut self.matcher) {
-                    final_score += name_score * 2;
+        // Large candidate sets (1M-file corpora) are scored across the rayon
+        // pool; small ones stay sequential so a keystroke never pays
+        // scheduling overhead.
+        const PARALLEL_THRESHOLD: usize = 20_000;
+        let mut scored_indices: Vec<(usize, u32)> = if candidate_indices.len() >= PARALLEL_THRESHOLD
+        {
+            candidate_indices
+                .par_iter()
+                .map_init(
+                    || (Matcher::new(Config::DEFAULT.match_paths()), Vec::new()),
+                    |(matcher, char_buf), &orig_idx| {
+                        all_entries.get(orig_idx).and_then(|entry| {
+                            score_entry(&pattern, matcher, char_buf, entry, query_mask, match_path)
+                                .map(|score| (orig_idx, score))
+                        })
+                    },
+                )
+                .flatten()
+                .collect()
+        } else {
+            let mut char_buf = Vec::new();
+            let mut scored = Vec::new();
+            for &orig_idx in candidate_indices {
+                let Some(entry) = all_entries.get(orig_idx) else {
+                    continue;
+                };
+                if let Some(score) = score_entry(
+                    &pattern,
+                    &mut self.matcher,
+                    &mut char_buf,
+                    entry,
+                    query_mask,
+                    match_path,
+                ) {
+                    scored.push((orig_idx, score));
                 }
-                scored_indices.push((orig_idx, final_score));
             }
-        }
+            scored
+        };
 
         // Top-k heap/selection using select_nth_unstable: O(N) instead of O(N log N)
         if scored_indices.len() > limit {
@@ -113,10 +151,8 @@ mod tests {
     /// characters as the path that nucleo scores.
     fn entry(relative: &str) -> FileEntry {
         let path = PathBuf::from(relative);
-        let extension = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(str::to_lowercase);
+        let extension =
+            crate::indexer::walker::intern_extension(path.extension().and_then(|e| e.to_str()));
         FileEntry {
             id: 0,
             char_bloom: compute_char_mask(relative),

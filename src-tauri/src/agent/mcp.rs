@@ -1129,10 +1129,9 @@ mod tests {
                     id: idx as u64 + 1,
                     path: file.clone(),
                     name: name.to_string(),
-                    extension: Path::new(name)
-                        .extension()
-                        .and_then(|ext| ext.to_str())
-                        .map(|ext| ext.to_ascii_lowercase()),
+                    extension: crate::indexer::walker::intern_extension(
+                        Path::new(name).extension().and_then(|ext| ext.to_str()),
+                    ),
                     size: content.len() as u64,
                     modified,
                     is_dir: false,
@@ -1143,7 +1142,14 @@ mod tests {
                 })
                 .unwrap();
                 content_index
-                    .add_or_update(&file, name, content, modified)
+                    .add_or_update(
+                        &file,
+                        name,
+                        content,
+                        modified,
+                        content.len() as u64,
+                        Path::new(name).extension().and_then(|ext| ext.to_str()),
+                    )
                     .unwrap();
             }
             content_index.commit().unwrap();
