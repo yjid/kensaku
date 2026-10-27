@@ -3,6 +3,15 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [1.0.3] — 2026-10-27
+
+### Changed
+- Scope: Ask-a-file, the local model query refinement, `kensaku-cli ask`, and video previews are removed.
+- Quick shortcut: Settings label, Wayland note, and `kensaku --toggle` for desktop keys.
+- Keyboard: Cmd/Ctrl+C copies the selected path, Cmd/Ctrl+I opens details.
+- Time travel: "last Tuesday" and "N days ago" become time filters.
+- README: speed-first hero, measured performance section, new hero image.
+
 ## [1.0.2] — 2026-10-27
 
 ### Added
