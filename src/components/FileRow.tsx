@@ -1,11 +1,11 @@
 import React from "react";
-import { FileTypeIcon } from "./FileTypeIcon";
 import { HighlightedName } from "./EmptyState";
 import { isThumbImage, useThumbnail } from "../lib/thumbnails";
-import { formatBytes, formatRelativeTime } from "../lib/format";
+import { displayParent, formatBytes, formatRelativeTime } from "../lib/format";
+import { extOf } from "./TypeTile";
 
-/* One file per row, fixed height. Used for list results and recents, so the
-   two lists look identical. Columns: icon, name and path, size, age. */
+/* One file per row, fixed height. Used for list results and recents so the
+   two lists look identical. Mark, name over parent folder, size, age. */
 
 export interface FileRowItem {
   path: string;
@@ -15,7 +15,7 @@ export interface FileRowItem {
   is_dir: boolean;
 }
 
-export const FILE_ROW_HEIGHT = 56;
+export const FILE_ROW_HEIGHT = 52;
 
 export const FileRow = React.memo(function FileRow({
   item,
@@ -37,6 +37,7 @@ export const FileRow = React.memo(function FileRow({
   const eligible = showThumbs && !item.is_dir && isThumbImage(item.filename);
   const { src, failed } = useThumbnail(item.path, eligible);
   const thumb = eligible && src && !failed ? src : null;
+  const ext = extOf(item.filename, item.is_dir);
 
   return (
     <div
@@ -58,27 +59,28 @@ export const FileRow = React.memo(function FileRow({
         e.dataTransfer.setData("text/uri-list", `file://${item.path}`);
       }}
       style={{ height: FILE_ROW_HEIGHT }}
-      className={`flex w-full cursor-default items-center gap-3 rounded-[10px] px-3 transition-colors duration-150 [transition-timing-function:var(--ease-apple)] ${
-        selected ? "bg-sunken" : "hover:bg-sunken/70"
+      className={`group relative flex w-full cursor-default items-center gap-3 rounded-[10px] px-3 transition-colors duration-150 ${
+        selected ? "bg-accent-soft" : "hover:bg-accent-soft"
       }`}
     >
+      {selected && <span className="absolute left-0 top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-full bg-ink" />}
       {thumb ? (
-        <img src={thumb} alt="" draggable={false} className="h-9 w-9 shrink-0 rounded-[8px] border border-line object-cover" />
+        <img src={thumb} alt="" draggable={false} className="h-8 w-8 shrink-0 rounded-[8px] object-cover shadow-[var(--panel-edge)]" />
       ) : (
-        <FileTypeIcon result={item} size={36} />
+        <span className="surface flex h-8 w-8 shrink-0 items-center justify-center !rounded-[8px] font-mono text-[10px] font-medium text-muted">
+          {item.is_dir ? "/" : ext.slice(0, 4)}
+        </span>
       )}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-medium text-fg">
+        <p className="truncate text-[13px] font-medium leading-[18px] text-fg">
           <HighlightedName text={item.filename} query={query} />
         </p>
-        <p className="truncate font-mono text-[11px] text-muted">{item.path}</p>
+        <p className="truncate text-[12px] leading-[16px] text-subtle">{displayParent(item.path)}</p>
       </div>
-      <span className="w-20 shrink-0 text-right font-mono text-[11px] tabular-nums text-muted">
-        {item.is_dir ? "Folder" : formatBytes(item.file_size)}
+      <span className="t-meta w-16 shrink-0 text-right text-subtle">
+        {item.is_dir ? "—" : formatBytes(item.file_size)}
       </span>
-      <span className="w-20 shrink-0 text-right font-mono text-[11px] tabular-nums text-muted">
-        {formatRelativeTime(item.modified)}
-      </span>
+      <span className="t-meta w-16 shrink-0 text-right text-subtle">{formatRelativeTime(item.modified)}</span>
     </div>
   );
 });
