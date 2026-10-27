@@ -520,20 +520,39 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
 
             <div className="pb-1">
               <h2 className="text-[17px] font-semibold tracking-tight text-fg">
-                How to use it
+                Global shortcut
               </h2>
               <p className="text-[12px] text-muted">
-                Press the shortcut from anywhere. Start typing, then press Enter to open.
+                Press it anywhere to open Kensaku. Click to change.
               </p>
             </div>
             <div className="flex items-center justify-between rounded-[12px] border border-line px-4 py-3">
               <span className="text-[12px] text-muted">Open Kensaku</span>
-              <kbd className="rounded-[6px] border border-line px-2 py-1 font-mono text-[12px] text-fg">{shortcut}</kbd>
+              <button
+                type="button"
+                onClick={() => setCapturing(true)}
+                className={`flex h-9 min-w-32 items-center justify-center rounded-[8px] border px-3 font-mono text-[12px] transition-colors ${
+                  capturing
+                    ? "border-fg text-fg"
+                    : "border-line bg-bg text-fg hover:border-line-strong"
+                }`}
+              >
+                {capturing ? "press keys… (Esc to cancel)" : shortcut}
+              </button>
             </div>
-            <ul className="space-y-2 text-[12px] text-muted">
-              <li>Just type what you remember — a name, a line of text, or what it was about.</li>
-              <li>Enter opens the file. Space previews it. Shift+Enter shows it in its folder.</li>
-              <li>Use <span className="font-mono text-fg">/</span> for commands and <span className="font-mono text-fg">@</span> to scope to a folder.</li>
+
+            <div className="pb-1 pt-2">
+              <h2 className="text-[17px] font-semibold tracking-tight text-fg">
+                What Kensaku does
+              </h2>
+            </div>
+            <ul className="space-y-1.5 text-[12px] text-muted">
+              <li>Search file names, contents, and images (OCR) in one box.</li>
+              <li>Filters: type, extension, folder, date, size, regex.</li>
+              <li>Quick Look preview with Space; drag results into other apps.</li>
+              <li>Semantic search for “what it was about”, not just the name.</li>
+              <li>Works with AI agents over MCP (read-only by default).</li>
+              <li>Nothing leaves your machine.</li>
             </ul>
           </div>
         )}
