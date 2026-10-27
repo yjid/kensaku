@@ -4,7 +4,7 @@
 //! - PDF: the first page, rendered by `pdftoppm` (poppler) when it is installed.
 //! - Video: a frame at one second, extracted by `ffmpeg` when it is installed.
 //!
-//! Previews are generated only when a card is shown, cached as 480px JPEGs next
+//! Previews are generated only when a card is shown, cached as 240px JPEGs next
 //! to the image thumbnails, and reused until the source file changes. External
 //! tools are optional: when a tool is missing the file keeps its type icon.
 //! Renders run with a timeout and a small concurrency limit, so a grid full of
@@ -15,7 +15,9 @@ use std::process::{Command, Stdio};
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-const PREVIEW_SIZE: u32 = 480;
+/// On-screen preview size. Analysis thumbnails (duplicates, visual search)
+/// stay at 480px in the indexer; this only controls what cards display.
+const PREVIEW_SIZE: u32 = 240;
 const RENDER_TIMEOUT: Duration = Duration::from_secs(12);
 const MAX_CONCURRENT_RENDERS: usize = 2;
 
@@ -79,8 +81,7 @@ pub fn preview_jpeg(source: &Path, out_dir: &Path) -> Result<PathBuf, String> {
         .and_then(|n| n.to_str())
         .ok_or_else(|| "file has no name".to_string())?;
     match kind_for(name) {
-        Some(Kind::Image) => crate::indexer::extract::image::thumbnail(source, out_dir)
-            .ok_or_else(|| format!("could not decode image {}", name)),
+        Some(Kind::Image) => downscaled_image(source, out_dir),
         Some(Kind::Pdf) => render_external(source, out_dir, Kind::Pdf),
         Some(Kind::Video) => render_external(source, out_dir, Kind::Video),
         None => Err(format!("no preview for {}", name)),
@@ -89,7 +90,25 @@ pub fn preview_jpeg(source: &Path, out_dir: &Path) -> Result<PathBuf, String> {
 
 fn target_for(source: &Path, out_dir: &Path) -> PathBuf {
     let hash = fnv1a(source.to_string_lossy().as_bytes());
-    out_dir.join(format!("{:016x}-preview.jpg", hash))
+    out_dir.join(format!("{:016x}-preview{}.jpg", hash, PREVIEW_SIZE))
+}
+
+/// Images: take the indexer's 480px thumbnail and produce a 240px display copy.
+/// The 480px file is left untouched, so duplicate hashes and visual embeddings
+/// keep their inputs.
+fn downscaled_image(source: &Path, out_dir: &Path) -> Result<PathBuf, String> {
+    let target = target_for(source, out_dir);
+    if is_fresh(&target, source) {
+        return Ok(target);
+    }
+    let base = crate::indexer::extract::image::thumbnail(source, out_dir)
+        .ok_or_else(|| format!("could not decode image {}", source.display()))?;
+    let img = image::open(&base).map_err(|e| format!("could not read thumbnail: {}", e))?;
+    img.thumbnail(PREVIEW_SIZE, PREVIEW_SIZE)
+        .to_rgb8()
+        .save_with_format(&target, image::ImageFormat::Jpeg)
+        .map_err(|e| format!("could not write preview: {}", e))?;
+    Ok(target)
 }
 
 fn is_fresh(target: &Path, source: &Path) -> bool {

@@ -1626,7 +1626,7 @@ pub async fn get_file_details(path: String) -> Result<FileDetails, String> {
 
 /// Thumbnail bytes as a `data:` URL. Using a data URL means the card never
 /// depends on the asset protocol or its scope, so it renders the same on every
-/// platform. Thumbnails are 480px JPEGs (tens of KB), which keeps the payload
+/// platform. Previews are 240px JPEGs (a few KB), which keeps the payload
 /// small for the visible cards.
 #[tauri::command]
 pub async fn get_thumbnail_data(path: String) -> Result<String, String> {
