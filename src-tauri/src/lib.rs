@@ -87,8 +87,12 @@ fn acquire_instance_lock_or_exit() -> Option<std::fs::File> {
 }
 
 /// Marker consumed on the next launch to wipe all Kensaku state.
+fn reset_marker_path_in(dir: &std::path::Path) -> std::path::PathBuf {
+    dir.join(".reset-requested")
+}
+
 fn reset_marker_path() -> std::path::PathBuf {
-    KensakuConfig::config_dir().join(".reset-requested")
+    reset_marker_path_in(&KensakuConfig::config_dir())
 }
 
 /// True when a reset was requested but not applied yet.
@@ -96,32 +100,29 @@ pub fn reset_pending() -> bool {
     reset_marker_path().exists()
 }
 
-/// Clears Kensaku state when a reset was requested by `reset_all`.
-///
-/// Must run before `KensakuConfig::load()` and before `IndexerManager::new()`:
-/// removing the directory while the database or index is open would leave
-/// handles pointing at deleted inodes.
-fn maybe_apply_pending_reset() {
-    let marker = reset_marker_path();
+/// Applies a reset marker in `dir`. Returns true when a marker was found and
+/// the directory was cleared/recreated. Split from the startup path so the
+/// marker/restart contract has an automated test.
+fn apply_pending_reset_in(dir: &std::path::Path) -> bool {
+    let marker = reset_marker_path_in(dir);
     if !marker.exists() {
-        return;
+        return false;
     }
 
-    let dir = KensakuConfig::config_dir();
-    match std::fs::remove_dir_all(&dir) {
+    match std::fs::remove_dir_all(dir) {
         Ok(()) => {
-            if let Err(e) = std::fs::create_dir_all(&dir) {
+            if let Err(e) = std::fs::create_dir_all(dir) {
                 eprintln!(
                     "[Kensaku] Reset requested but could not recreate {}: {}",
                     dir.display(),
                     e
                 );
-                return;
+                return true;
             }
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+                let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
             }
             eprintln!(
                 "[Kensaku] Reset requested: cleared all data in {}",
@@ -134,6 +135,16 @@ fn maybe_apply_pending_reset() {
             e
         ),
     }
+    true
+}
+
+/// Clears Kensaku state when a reset was requested by `reset_all`.
+///
+/// Must run before `KensakuConfig::load()` and before `IndexerManager::new()`:
+/// removing the directory while the database or index is open would leave
+/// handles pointing at deleted inodes.
+fn maybe_apply_pending_reset() {
+    apply_pending_reset_in(&KensakuConfig::config_dir());
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -345,4 +356,39 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Kensaku application");
+}
+
+#[cfg(test)]
+mod reset_tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn pending_reset_clears_and_recreates_the_directory() {
+        let dir = std::env::temp_dir().join(format!(
+            "kensaku-reset-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("metadata.db"), b"stale").unwrap();
+        std::fs::write(reset_marker_path_in(&dir), b"1").unwrap();
+        assert!(reset_pending_at(&dir));
+
+        assert!(apply_pending_reset_in(&dir));
+        assert!(dir.is_dir());
+        assert!(!reset_marker_path_in(&dir).exists());
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+
+        // A second call without a marker is a no-op.
+        assert!(!apply_pending_reset_in(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn reset_pending_at(dir: &std::path::Path) -> bool {
+        reset_marker_path_in(dir).exists()
+    }
 }

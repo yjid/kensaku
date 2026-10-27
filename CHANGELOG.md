@@ -3,270 +3,74 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.0.0] — 2026-10-27
+
+Kensaku 1.0 is the first release with the full agent surface, optional local
+LLM, the search-quality pass, and a cleaned public documentation set. The
+desktop app, daemon, CLI, and MCP/HTTP transports are read-only by default and
+local-first.
 
 ### Added
-- Agent surface v2: `find_symbol` MCP tool backed by tree-sitter (Rust,
-  Python, JavaScript, TypeScript), keyset cursors that paginate past the 10k
-  exhaustive cap, `.gitignore`/`.cursorignore` parity honored at index time
-  (`include_ignored` opts out), and `agent_scoped_roots` read-only scoping.
-- Loopback HTTP/SSE agent transport: `kensaku-cli serve` exposes the MCP tool
-  surface over Streamable HTTP on `127.0.0.1` with bearer-token auth; JSON or
-  SSE responses, plus read-only `/health` and `/search` endpoints. `reindex`
-  is never available on this transport.
-- One-click agent connect: Settings → Agents detects Claude Desktop, Claude
-  Code, and Cursor and merges the Kensaku MCP entry (with a `.bak` backup);
-  `kensaku-cli connect <client> [--write]` mirrors it in the shell. The
-  manual JSON fallback stays.
-- Optional local LLM (Ollama / LM Studio / OpenAI-compatible, off by
-  default): a query compiler that validates model output token-by-token
-  against the query grammar before showing it as removable chips, and `/ask`
-  with path+line citations. No retrieval, no answer; no cloud by default and
-  per-use consent for non-loopback endpoints. CLI: `kensaku-cli ask`.
-
-- Search quality/performance (section D): interned `FileEntry.extension`
-  (`Option<&'static str>`, no per-entry allocation), content schema v3 with
-  indexed `ext` and fast `size` fields plus positive filter pushdown into BM25
-  and folded queries, and an allocation-light, rayon-folded facet pass
-  (release p50 3.1 ms at 100k matched results, 17.3 ms at 1M). The 1M query
-  path also parallelizes metadata materialization, skips the path index for
-  non-trie queries, uses an all-candidates membership fast path, and skips the
-  semantic node map when that tier is off (full search p50 207 ms at 1M, down
-  from 675 ms; fuzzy 3.6–5.2 ms). Adds `examples/facet_bench.rs` and a
-  `KENSAKU_SEARCH_BENCH=1` mode for `mem_probe`; the Tantivy writer-thread
-  trade-off is measured and documented (single thread kept for memory).
-  Contents indexes rebuild once to v3 and preserve `index.legacy-*`.
-### Fixed
-- Rust CI links again on older glibc: the ONNX runtime is now loaded
-  dynamically instead of statically linked. The prebuilt static archive
-  required glibc 2.38+ symbols and broke the `Rust` CI job on ubuntu-22.04
-  from the moment PP-OCRv6 joined the default builds. Accurate OCR now probes
-  the dynamic runtime (cached for the process) and contains loader panics, so
-  a missing/unloadable `libonnxruntime` honestly reports the engine as
-  unavailable and extraction falls back to Tesseract instead of losing the
-  file. Install the runtime and restart to enable the accurate pack.
-- Agent root scoping now compares resolved paths. `..`, `.` and symlinks can
-  no longer escape an `agent_scoped_roots` root through `read_snippet` or a
-  scoped search; out-of-scope requests are rejected.
-- One-click connect writes configs atomically (temp file + rename) and keeps a
-  full-name `.bak` copy. Claude Desktop now uses the platform config directory
-  (`~/.config` on Linux, `%APPDATA%` on Windows, Application Support on
-  macOS), and Claude Code project-scoped `mcpServers` entries are detected.
-- The local-LLM query compiler now validates filter values as well as keys, so
-  invalid ranges/categories are rejected instead of being silently downgraded
-  to plain search terms; its prompt lists only categories the engine routes.
-- PP-OCRv6 is now compiled into normal app builds via the default `accurate-ocr`
-  feature, so Setup/Settings no longer show "not included in this build".
-- Setup and Settings now treat Tesseract and PP-OCRv6 as an either/or choice:
-  pick one engine and only its download is offered. Tesseract is described as
-  fast/smaller; PP-OCRv6 as slower with possible small-UI-text benefits.
-- Settings shows a disabled `Native — not available yet` OCR option. Native
-  macOS/Windows OCR remains blocked; no fake implementation is exposed.
-- Removed the fake visual and native-OCR paths introduced by the automated
-  K18–K21 pass. Visual search is now a Settings → Beta model-download experiment
-  only and is not wired into search; `similar_images` is hidden from MCP when
-  unavailable; native OCR is documented as blocked. This prevents mock vectors
-  and stub backends from producing false results.
-
-### Added
-- K22 golden query set: 43 non-visual intent, lexical, content, CJK, and
-  accented-Latin queries on a 50-document synthetic corpus. Debug results:
-  Recall@1 0.9767, Recall@5 1.0000, MRR 0.9884, NDCG@10 0.9914, p50 5.881 ms,
-  p95 6.676 ms. Visual cases stay in the fixture but are skipped until K18 has a
-  real encoder.
-- K21 native platform OCR (partial/blocked): the initial automated attempt used an
-  `osascript` shim for macOS and a no-op Windows stub. Both were removed because
-  they were not native implementations and could claim a backend that did not
-  work. Scanned PDFs now attempt OCR on embedded image streams, which is a partial
-  improvement but not full page rendering. See `docs/NATIVE_OCR_VERIFICATION.md`.
-- K20 similar-image lookup (deferred): read-only command, daemon IPC, and MCP
-  tool plumbing exist. The beta visual pack is not wired into search, so these
-  paths return "not available" instead of comparing mock vectors.
-- K19 visual search tier (deferred): RRF plumbing, `visual:` parsing, image-only
-  filtering, and the `Visual` badge exist, but the tier is not wired into the
-  product. Tests inject a mock encoder; production does not.
-- K18 visual-search beta surface: Settings → Beta can opt into the experiment and
-  download the pinned CLIP ViT-B/32 vision/text pack (~150 MB) with the existing
-  checksum, resume, mirror, and disk-precheck rules. `VisualStore`, SQLite
-  persistence, 224x224 CLIP preprocessing, thumbnail reuse, and cancel checks
-  exist, but no image vectors are generated or searched in the normal build.
-  The setup flow and the main search path do not mention or use visual search.
-- K17 optional ONNX smart embedding pack (code path): `bge-small-en-v1.5` int8 text
-  embedding model behind the `smart-embeddings` Cargo feature using `ort`. Pinned
-  artifact manifest in `models.rs` (`models/smart/`) with SHA-256 verification,
-  resume, and mirror support. Shared BERT WordPiece tokenizer
-  (`embed::wordpiece`). Model isolation via `model_id = 3` with automatic fallback
-  to `StaticTable` when artifacts are missing or the feature is disabled.
-  Tauri commands `get_smart_pack_status` and `download_smart_pack` registered.
-  The real-model quality/recall run has not been performed yet.
-- K16 embedding provider contract: real provider selection supporting `Static`
-  (quantized Potion table / hashing estimator), `Smart` (reserved for ONNX),
-  and `None` (lexical-only mode). Reads `semantic_enabled`, `semantic_model`, and
-  `semantic_f32_table`. Disabling semantic indexing or selecting `none` completely
-  bypasses semantic scoring. Incompatible or missing model configurations fall back
-  to `Static` with an explicit reason string. Added model-id isolation in `ExactScanner`
-  and `UnitStore`, ensuring units from different models/dimensions can never be
-  compared or mixed. Surfaced provider, model id, dimension, and fallback reason in
-  Doctor checks and stats.
-- K15 CJK-aware Tantivy tokenization: custom "kensaku" tokenizer decomposing Han,
-  Hiragana, Katakana, and Hangul into interleaved unigram and bigram tokens with
-  exact byte offsets while preserving standard SimpleTokenizer behavior on Latin,
-  identifiers, and paths. Flushes at mixed script boundaries (`README最終.md`, `src/组件/index.ts`).
-  Schema marker `content.schema` (v2) detects legacy indexes, cleanly triggers
-  one-time index rebuilds, and surfaces the rebuild reason in Doctor and stats.
-  Measured 50 CJK docs (100 CJK chars each): index size grows from 4,944 B to
-  48,128 B (9.73x) due to unigram, bigram, and folded trigram expansion.
-- K13 native quick-search spike: an opt-in `kensaku-quick` egui binary
-  (`--features quick-ui`) backed by the daemon. Debug measurements: 8.6 ms to
-  first UI, 46 ms daemon round-trip, ~223 MB hidden RSS versus ~350 MB for the
-  Tauri debug window. Not wired into the product.
-- K6 optional PP-OCRv6 OCR pack: PP-OCRv6 tiny detector + recognizer behind
-  the `accurate-ocr` feature, downloaded with pinned SHA-256 and selectable in
-  Settings/Setup with automatic Tesseract fallback. A frozen 104-image UI-text
-  fixture scores 104/104 exact lines. Native macOS/Windows OCR remains future
-  platform work.
-- K1 daemon parity: the GUI now fetches snippets, `read_snippet`, stats, home
-  data, duplicate groups, scope suggestions and pin toggles through the daemon
-  instead of opening metadata in-process. IPC now uses `interprocess` local
-  sockets, giving the same protocol a Unix socket and a Windows named pipe.
-  K4 visible-row snippets use a bounded insertion-order LRU, and
-  `read_snippet` returns line ranges.
-- K14 startup quantization drops the temporary f32 matrix after quantizing.
-  Validated on real Potion artifacts: 7,559,168-byte i8 matrix + 118,112 bytes
-  of scales, with MRR 1.000 for both f32 and i8 on the labelled set.
-- K9 download hygiene framework: resumable `.part` downloads, HTTP Range resume,
-  mirror fallback, atomic rename, SHA-256 verification, progress reporting, a
-  disk-space precheck, and pinned checksums for the three Potion and three
-  PP-OCRv6 artifacts. Existing files are re-verified instead of trusted by name.
-- K7 default scheduling mode is now `full`; balanced/eco still opt in.
-- K3 thumbnail version fix: legacy 320 px thumbnails are no longer hashed;
-  `image_hash_version` bumped to 2.
-- K2 metadata memory fix: replaced the `HashMap` path/id/burst maps with a
-  compact open-addressed path index, lazy id index, and lazy burst vector.
-  1M synthetic entries now measure 92.8 MB RSS (target ≤ 100 MB); path lookup
-  p50 0.261 µs.
-- Index-format decision memo and reproducible benchmark: at 1M synthetic
-  documents, SQLite FTS5 trigram used 918 MB and took 258 ms for a broad BM25
-  query, versus 100 MB and 275 µs for Tantivy + folded. Keep Tantivy; no
-  production index change.
-- Screenshot burst grouping: images captured within ten minutes in the same
-  folder are compared by text-line overlap and thumbnail dHash, chained to the
-  lowest-id burst, and collapsed to one search row with a version count.
-  Assignments store `burst` and `look`; old rows are backfilled 50 at a time
-  while idle. `/dupes` reuses the same burst data. Distinct pages that share
-  chrome stay separate.
-- Opt-in external extractors: config-defined commands keyed by extension or
-  MIME selector, with an absolute-executable allowlist, no shell, cleared
-  environment, 100–7000 ms timeout, 1 KiB–4 MiB stdout cap, and process-group
-  kill. Zero plugins ship by default and each entry requires `enabled: true`;
-  changing the registry clears cached results and queues affected files for
-  re-extraction. Doctor lists configured commands and recent failure reasons.
-  See [docs/EXTRACTORS.md](docs/EXTRACTORS.md).
-- MCP v2: daemon-first sessions avoid opening SQLite, Tantivy or the embedding
-  table in the agent process; `health_check`, bounded `regex_search`, cursor +
-  `page_size` pagination, per-tool token budgets, `truncated` snippet flags, and
-  an extended `index_state` (phase/progress/model freshness). The only write
-  tool, `reindex`, is hidden and disabled unless `mcp_allow_reindex` is enabled
-  in config and the daemon is running; Settings → Agents exposes the switch.
-  Daemon search now queries the live manager stores instead of re-opening the
-  index per request. Verified with a manual MCP stdio session and daemon
-  handshake; see BENCHMARKS.md.
-- Folded/trigram content tier: `content_folded` plus stored `content_raw`
-  fields, OCR-lookalike folding, raw-text verification (1 misread for 4–7
-  letters, 2 for 8+), and a `ContentFolded` result badge. The tier only runs
-  when exact/fuzzy/semantic results leave a shortfall. Existing indexes are
-  preserved as `index.legacy-*` and rebuilt; all files are queued for content
-  re-extraction once.
-- Background indexing policy: `crawl_mode` (`full` / `balanced` / `eco`) and a
-  persisted `pause_indexing` switch, both in Settings → Search. Balanced/eco use
-  OS idle CPU/I/O priority; eco also paces new extraction jobs on battery.
-  Pausing still applies renames and deletes.
-- Watcher hardening: 400 ms settle per path, coalesced events, fresh-file
-  fingerprint retries for 10 s, overflow rescan that reconciles missing and
-  ghost paths, and newest-first ordering within text/image classes.
-- Instrumented fast-search test proving the Tauri path never reads or returns
-  snippets; snippets remain a separate batched `get_snippets` round-trip.
-- Thumbnail-based perceptual hashing (480 px thumbnails reused for dHash and
-  previews), `image_hash_version` invalidation, and best-effort
-  `release_memory()` after image/PDF/Office work.
-- `kensaku-daemon` scaffold: a headless process that owns `IndexerManager`,
-  listens on `$XDG_RUNTIME_DIR/kensaku.sock` (0600), enforces single-instance
-  locking, writes `daemon.pid`, and serves token-authenticated JSON-RPC
-  `health`/`index_state`/`shutdown`. CLI/MCP `state`/`index_state` now prefer
-  the daemon and fall back to direct read-only access when it is absent.
-  The daemon also exposes `get_status`, `ping`, `health`, `reindex`, and
-  search with an offset; it handles SIGTERM/SIGINT, validates the
-  token/protocol handshake, removes its socket/PID on SIGTERM and shutdown, and
-  clients can opt out with `KENSAKU_NO_DAEMON=1`. CLI/MCP search now prefers
-  the warm daemon and falls back locally. The Tauri app still runs the
-  in-process indexer (the `--no-daemon` fallback).
-- Compact metadata arena (`NodeArena`/`NameArena`): per-entry node is 64 bytes
-  (down from 128-byte `FileEntry`), full paths are reconstructed from parent
-  chains instead of being stored per entry.
-- Guided first-run setup: folders → exclusions → preferences → optional packs →
-  first scan → Done. The first scan is gated by `first_scan_done`; interrupted
-  scans resume. Settings → About offers **Run setup again**.
-- Deterministic plain-language compiler ("latest resume", "screenshots from last
-  week", "big videos in Projects") with removable interpretation chips.
-- Personal aliases (`resume → cv`, seeded + editable in Settings → Search).
-- Inline `/` command menu and `@` directory scope picker.
-- Explicit sort: Best match / Newest / Oldest / Largest / Name, applied
-  server-side before the result limit.
-- Server-side facet counts and multi-select/exclude category facets.
-- Version grouping (`resume_v2`, `resume_final`, `(1)`, `-copy`).
-- Home screen with pins, recent files, saved searches, and suggested queries.
-- Pagination / **Load more**.
-- Duplicate review view (`/dupes`).
-- Default-deny sensitive paths and credential extensions.
-- `Makefile` with dev/build/test/bench and `reset` / `reset-index` targets.
+- Agent surface v2: `find_symbol` (tree-sitter for Rust, Python, JavaScript,
+  TypeScript), `.gitignore`/`.cursorignore` parity at index time
+  (`include_ignored` opts out), keyset cursors past the 10k exhaustive cap,
+  and `agent_scoped_roots` read-only scoping with resolved-path containment.
+- Loopback HTTP/SSE transport: `kensaku-cli serve` exposes the MCP tools on
+  `127.0.0.1` with a bearer token, JSON or SSE responses, and read-only
+  `/health` and `/search` endpoints. `reindex` is never available there.
+- One-click agent connect for Claude Desktop, Claude Code, and Cursor via
+  Settings → Agents (atomic merge, `.bak` backup), mirrored by
+  `kensaku-cli connect <client> [--write]`.
+- Optional local LLM (Ollama / LM Studio / OpenAI-compatible; off by default):
+  a query compiler that validates filter keys and values before showing chips,
+  and `/ask` with path+line citations and no-retrieval-no-answer semantics.
+  Non-loopback endpoints require explicit consent and show a cloud indicator in
+  the app; the default remains fully local.
+- `facet_bench` and a `KENSAKU_SEARCH_BENCH=1` mode for `mem_probe`, plus the
+  golden-query integration set in CI.
 
 ### Changed
-- Removed the `Ctrl/Cmd+K` command palette and the old `>` commands; `/` replaces
-  them. The full query grammar remains for power users, CLI, and MCP.
-- Setup owns OCR/model downloads. Settings shows installed status and links to
-  **Run setup again**.
-- First-run scanning shows live counts, a progress bar, and an ETA for metadata
-  indexing and extraction.
-
-### Performance
-- **Static embedding table shrunk ~4x.** `potion-base-8M` is stored as i8 with
-  one scale per row (30.2 MB → 7.7 MB) and dequantized while mean-pooling.
-  `semantic_f32_table` (or `KENSAKU_F32_TABLE=1`) keeps the f32 matrix for
-  comparison; rankings and query p50 are unchanged.
-- **One extraction pass.** The crawl now feeds the lexical (Tantivy) and
-  semantic indexes from the same extraction instead of re-reading and
-  re-extracting every file for embeddings. Images are OCR'd once, not twice.
-- **OCR no longer thrashes the CPU.** Each tesseract child is pinned to one
-  thread (`OMP_THREAD_LIMIT=1`) while Kensaku runs several OCR processes in
-  parallel; previously every child spawned one OpenMP thread per core, which
-  made concurrent OCR slower than sequential.
-- **No unbounded timeout backlog.** Extraction slots are bounded, so slow
-  documents can no longer queue detached work faster than it completes (which
-  used to turn a crawl into hundreds of spurious 8-second timeouts).
-- **Perceptual hashing no longer blocks indexing.** Images contribute their
-  dimensions from the header during the crawl; the perceptual hash is computed
-  afterwards by a one-decode-at-a-time background pass for `/dupes`. Previously
-  a two-slot decode gate sat in front of OCR and serialized image-heavy crawls.
-- **Live progress counters.** Document and embedding counts are published during
-  extraction instead of only at commit boundaries, so the first-run UI no
-  longer shows `0` while work is happening.
-- **Faster dev builds.** `make dev` now compiles dependencies (`image`, Tantivy,
-  PDF/Office parsers) at `opt-level = 2` without dependency debug info, so
-  profile builds are much closer to release and `target/debug` is several GB
-  smaller.
-- **Streaming index commit.** Extracted text is written through a bounded
-  channel instead of accumulating every document in memory until the end.
-- **No full index purge per crawl.** Disappeared files are removed by path
-  directly instead of scanning every stored document.
-- **Smaller steady-state footprint.** Tantivy's writer arena is 16 MB (down from
-  50 MB), extraction/snippet caches are bounded, semantic units load without a
-  duplicate copy, and image hashing decodes at most two images at a time.
+- Search performance: interned extensions (no per-entry `String`), content
+  schema v3 with indexed `ext` and fast `size` filter pushdown, allocation-light
+  rayon-folded facets (release p50 3.1 ms at 100k, 17.3 ms at 1M), parallel
+  metadata materialization, a path index only for trie queries, and parallel
+  fuzzy scoring. Full `search_response_fast` p50 is 207 ms at 1M and 24 ms at
+  100k; the fuzzy filename tier is 3.6–5.2 ms. Content indexes rebuild once to
+  v3 and preserve `index.legacy-*`.
+- The Tantivy writer stays single-threaded with a 16 MB arena after measuring
+  the 1M trade-off (2 threads were 1.9× faster but used ~47 MB more peak RSS).
+- Doctor now checks free disk space alongside its existing per-root
+  readability, database, index, watcher, extractor, model, OCR, and version
+  checks. The reset marker/restart path has an automated smoke test.
+- `RELEASING.md` now documents the draft-release workflow, which uploads every
+  bundle, CLI binary, and `SHA256SUMS` to a draft GitHub release on tag push.
+- Project version is `1.0.0` in the app, CLI, Tauri config, and docs.
 
 ### Fixed
-- Shortcut recording now captures a real key combo (modifiers accumulate across
-  key presses) instead of staying on the default.
-- Optional-pack downloads show live progress, success, and errors.
-- React hook-order crash after setup gating that blanked the window.
+- The ONNX runtime loads dynamically, so older glibc toolchains link again.
+  Accurate OCR probes the runtime, contains loader/run panics, reports the
+  engine unavailable when the library is missing, and falls back to Tesseract
+  instead of losing the file.
+- Agent root scoping resolves `..`, `.` and symlinks before comparison;
+  out-of-scope reads are rejected.
+- One-click connect uses the platform Claude config directory, detects
+  project-scoped Claude Code entries, and writes atomically with full-name
+  `.bak` backups.
+- The query compiler rejects invalid filter values instead of silently
+  downgrading them to text terms.
+- PP-OCRv6 is compiled into normal builds; Setup/Settings present Tesseract and
+  PP-OCRv6 as an either/or choice, and the unsupported native-OCR option is
+  disabled rather than faked.
+- The fake visual/native paths from the automated pass were removed. Visual
+  search remains a Settings → Beta model-download experiment and is not wired
+  into search.
+
+### Release notes
+- Bundles and the CLI are **unsigned**. See `INSTALL.md` for how to verify a
+  download and what the OS warnings mean. Signing/notarization and the
+  auto-updater are follow-ups after 1.0.
+- Linux: `.deb`, `.rpm`, `.AppImage`; macOS: universal `.dmg`; Windows: `.msi`
+  and NSIS `.exe`; plus `kensaku-cli` for each platform and `SHA256SUMS`.
 
 ## [0.3.3] — 2026-10-26
 

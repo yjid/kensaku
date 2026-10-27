@@ -1416,6 +1416,8 @@ pub struct LlmStatus {
     pub base_url: String,
     pub model: String,
     pub models: Vec<String>,
+    /// True when the configured endpoint is not loopback.
+    pub cloud: bool,
     pub error: Option<String>,
 }
 
@@ -1433,6 +1435,7 @@ pub async fn llm_status(state: State<'_, AppState>) -> Result<LlmStatus, String>
         config.llm_base_url.clone()
     };
     let model = config.llm_model.clone();
+    let cloud = !base_url.is_empty() && !crate::llm::is_loopback(&base_url);
     let Some(target) = crate::llm::LlmTarget::from_config(&config) else {
         return Ok(LlmStatus {
             configured: false,
@@ -1441,6 +1444,7 @@ pub async fn llm_status(state: State<'_, AppState>) -> Result<LlmStatus, String>
             base_url,
             model,
             models: Vec::new(),
+            cloud,
             error: None,
         });
     };
@@ -1455,6 +1459,7 @@ pub async fn llm_status(state: State<'_, AppState>) -> Result<LlmStatus, String>
             base_url,
             model,
             models,
+            cloud,
             error: None,
         }),
         Err(crate::llm::LlmError::Unavailable(error)) => Ok(LlmStatus {
@@ -1464,6 +1469,7 @@ pub async fn llm_status(state: State<'_, AppState>) -> Result<LlmStatus, String>
             base_url,
             model,
             models: Vec::new(),
+            cloud,
             error: Some(error),
         }),
         Err(crate::llm::LlmError::NotConfigured) => Ok(LlmStatus {
@@ -1473,6 +1479,7 @@ pub async fn llm_status(state: State<'_, AppState>) -> Result<LlmStatus, String>
             base_url,
             model,
             models: Vec::new(),
+            cloud,
             error: None,
         }),
     }
@@ -1507,6 +1514,8 @@ pub async fn ask_question(
             sources: Vec::new(),
             model: target.model.clone(),
             provider: target.provider.as_str().to_string(),
+            endpoint: target.base_url.clone(),
+            cloud: !crate::llm::is_loopback(&target.base_url),
             answered: false,
             as_of: crate::agent::now_unix_secs(),
         };
