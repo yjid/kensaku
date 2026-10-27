@@ -3554,7 +3554,7 @@ dependencies = [
 
 [[package]]
 name = "kensaku"
-version = "1.0.1"
+version = "1.0.4"
 dependencies = [
  "auto-launch",
  "base64 0.22.1",
@@ -3595,7 +3595,7 @@ dependencies = [
 
 [[package]]
 name = "kensaku-cli"
-version = "1.0.0"
+version = "1.0.4"
 dependencies = [
  "eframe",
  "fs4",
