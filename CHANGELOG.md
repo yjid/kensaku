@@ -3,7 +3,7 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
-## [1.1.0] — 2026-10-27
+## [1.0.2] — 2026-10-27
 
 ### Added
 - Grid or list results, chosen in the results bar and in Settings.
