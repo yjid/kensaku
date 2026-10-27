@@ -310,9 +310,6 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         <p className="max-w-sm text-[11px] text-subtle">
           Phase: {phase}. This only happens on the first run. Later launches are instant.
         </p>
-        <div className="absolute bottom-6 left-0 right-0 text-center text-[11px] text-muted">
-          Open: your shortcut · Close: Esc
-        </div>
       </div>
     );
   }
@@ -559,6 +556,9 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                   <Pencil className="h-3.5 w-3.5" />
                 </button>
               </div>
+              <p className="pt-1 text-[13px] font-semibold text-accent">
+                Open: {shortcut} · Close: Esc
+              </p>
               {capturing && (
                 <p className="text-[11px] text-muted">Press your new shortcut… (Esc to cancel)</p>
               )}
