@@ -733,7 +733,7 @@ function App() {
         e.preventDefault();
         if (commandOutput) {
           setCommandOutput(null);
-        } else if (query) {
+        } else if (query.trim()) {
           setQuery("");
           inputRef.current?.focus();
         } else {
