@@ -42,17 +42,21 @@ const FILES: R[] = [
   f("/Users/mira/Pictures/Trips/Kyoto/IMG_4502.HEIC", 3_100_000, 21 * day),
 ];
 
-const THUMB_HUES: Record<string, [string, string]> = {
-  png: ["#c7d2fe", "#312e81"], jpg: ["#e7e5e4", "#57534e"], heic: ["#fde68a", "#9a3412"],
-  svg: ["#f5f5f4", "#18181b"], mp4: ["#a5f3fc", "#164e63"],
-};
+/* Flat sample pictures: sky, ground, one form. No gradients. */
+const SCENES: [string, string, string][] = [
+  ["#d9dde3", "#7d8590", "#f4f1ea"],
+  ["#e8e4dc", "#5d5a52", "#c9b79c"],
+  ["#c9d3dc", "#2f3a45", "#e9e6df"],
+  ["#ece9e4", "#a39e94", "#3a3a3a"],
+  ["#d4d8d0", "#56604f", "#f2efe8"],
+];
 function thumb(path: string): string | null {
-  const ext = path.split(".").pop()!.toLowerCase();
-  const hue = THUMB_HUES[ext];
-  if (!hue) return null;
+  if (!/\.(png|jpe?g|heic|svg|mp4)$/i.test(path)) return null;
   const seed = [...path].reduce((a, c) => a + c.charCodeAt(0), 0);
-  const cx = 20 + (seed % 60), cy = 20 + ((seed >> 3) % 60);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><defs><radialGradient id="g" cx="${cx}%" cy="${cy}%" r="90%"><stop offset="0" stop-color="${hue[0]}"/><stop offset="1" stop-color="${hue[1]}"/></radialGradient></defs><rect width="400" height="300" fill="url(#g)"/></svg>`;
+  const [sky, ground, form] = SCENES[seed % SCENES.length];
+  const horizon = 150 + (seed % 70);
+  const cx = 80 + (seed % 240), r = 26 + (seed % 30);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><rect width="400" height="300" fill="${sky}"/><circle cx="${cx}" cy="${horizon - 50}" r="${r}" fill="${form}"/><rect y="${horizon}" width="400" height="${300 - horizon}" fill="${ground}"/></svg>`;
   return "data:image/svg+xml;base64," + btoa(svg);
 }
 
@@ -123,6 +127,22 @@ const handlers: Record<string, (a: any) => unknown> = {
   "plugin:event|listen": () => 1,
   "plugin:event|unlisten": () => null,
 };
+
+function note(msg: string) {
+  const el = document.createElement("div");
+  el.textContent = msg;
+  el.className = "elevated overlay-in";
+  Object.assign(el.style, {
+    position: "fixed", left: "50%", bottom: "56px", transform: "translateX(-50%)", zIndex: "999",
+    padding: "8px 16px", borderRadius: "999px", fontSize: "13px", fontWeight: "500", color: "var(--fg)",
+    pointerEvents: "none", whiteSpace: "nowrap",
+  });
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1800);
+}
+handlers.open_file = (a) => note(`Preview: would open ${a.path.split("/").pop()}`);
+handlers.open_folder = (a) => note(`Preview: would reveal ${a.path.split("/").pop()} in its folder`);
+handlers.hide_window = () => null;
 
 let cbId = 0;
 (window as any).__TAURI_INTERNALS__ = {

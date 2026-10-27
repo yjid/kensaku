@@ -8,9 +8,9 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 
 const MIN_CELL = 188;
 const GAP = 20;
-const PAD = 32;
+const PAD = 24;
 const LIST_GAP = 2;
-const LIST_PAD = 20;
+const LIST_PAD = 16;
 const LIST_ROW = 52;
 const OVERSCAN_ROWS = 4;
 /** Top/bottom inset. Smaller than the side gutter: the tab row above already
@@ -33,6 +33,8 @@ export interface VirtualGridProps<T> {
   /** One column of fixed-height rows instead of a grid of cards. */
   list?: boolean;
   containerRef?: React.RefObject<HTMLDivElement | null>;
+  /** Space reserved at the top for a bar that floats over the content. */
+  insetTop?: number;
 }
 
 export function VirtualGrid<T>({
@@ -48,6 +50,7 @@ export function VirtualGrid<T>({
   cardHeight = (w) => w,
   list = false,
   containerRef,
+  insetTop = 0,
 }: VirtualGridProps<T>) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const setRefs = useCallback(
@@ -72,7 +75,7 @@ export function VirtualGrid<T>({
   }, []);
 
   const pad = list ? LIST_PAD : PAD;
-  const padY = list ? 4 : PAD_Y;
+  const padY = (list ? 4 : PAD_Y) + insetTop;
   const gap = list ? LIST_GAP : GAP;
   const inner = Math.max(0, size.width - pad * 2);
   const cols = list ? 1 : Math.max(1, Math.floor((inner + gap) / (MIN_CELL + gap)));
@@ -80,7 +83,7 @@ export function VirtualGrid<T>({
   const cardH = list ? LIST_ROW : cardHeight(cell);
   const rowH = cardH + gap;
   const totalRows = Math.ceil(items.length / cols);
-  const contentHeight = totalRows > 0 ? totalRows * rowH - gap + padY * 2 + 24 : 0;
+  const contentHeight = totalRows > 0 ? totalRows * rowH - gap + padY + PAD_Y + 24 : 0;
 
   useEffect(() => {
     onColumns?.(cols);
@@ -103,8 +106,8 @@ export function VirtualGrid<T>({
     const row = Math.floor(selectedIndex / cols);
     const top = padY + row * rowH;
     const bottom = top + cardH;
-    if (top < el.scrollTop) el.scrollTop = top - padY;
-    else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight + padY + 8;
+    if (top < el.scrollTop + insetTop) el.scrollTop = Math.max(0, top - insetTop - PAD_Y);
+    else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight + PAD_Y + 8;
   }, [selectedIndex, cols, rowH, cardH, padY]);
 
   const onScroll = (e: React.UIEvent<HTMLDivElement>) => {

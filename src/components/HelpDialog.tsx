@@ -1,15 +1,18 @@
+import { useEffect } from "react";
 import { X } from "lucide-react";
 
 const KEYS: [string, string][] = [
   ["Alt+Space", "show or hide the window"],
-  ["↑ ↓", "move selection (grid: by row)"],
-  ["← →", "move within a grid row"],
-  ["Space", "Quick Look preview"],
+  ["↑ ↓", "move into and through results"],
+  ["← →", "move within a row, once you're in the results"],
+  ["Space", "preview, once you're in the results"],
+  ["⌘/Ctrl+Y", "preview, from anywhere"],
   ["Enter", "open selected file"],
   ["Shift+Enter", "show in folder"],
-  ["⌘/Ctrl+C", "copy selected path (outside search box)"],
+  ["⌘/Ctrl+C", "copy the selected path (unless text is selected)"],
   ["⌘/Ctrl+I", "details for selected file"],
   ["⌘/Ctrl+,", "settings"],
+  ["?", "this sheet"],
   ["Esc", "close dialog, clear search, then hide"],
 ];
 
@@ -29,6 +32,17 @@ const FILTERS: [string, string][] = [
 ];
 
 export function HelpDialog({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" || e.key === "?") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   return (
     <div className="fade-in fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6 backdrop-blur-[6px]">
       <div className="elevated overlay-in max-h-[80vh] w-full max-w-2xl overflow-y-auto !rounded-[24px] p-7">
