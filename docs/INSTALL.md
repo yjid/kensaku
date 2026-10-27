@@ -192,8 +192,7 @@ small UI text better). Only the selected engine's download is offered. PP-OCRv6
 is ~6.1 MB (detector 1.7 MB, recognizer 4.3 MB, dictionary 27 KB) and is verified
 against pinned SHA-256 checksums. Tesseract remains the default. If the pack is
 missing, or the build uses `--no-default-features`, Kensaku falls back to
-Tesseract. Native macOS/Windows OCR is not implemented yet and the Settings
-option is disabled.
+Tesseract.
 
 Models: PaddleOCR PP-OCRv6 tiny (Apache-2.0), published by PaddlePaddle. The Rust
 ONNX wrapper is `paddleocr_rs_onnx` (MIT).

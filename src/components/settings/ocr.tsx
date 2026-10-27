@@ -184,7 +184,6 @@ export function OcrField({
           <option value="accurate" disabled={!status?.accurate_compiled}>
             PP-OCRv6 — slower, UI text
           </option>
-          <option disabled>Native — not available yet</option>
         </select>
       </div>
 

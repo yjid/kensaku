@@ -187,7 +187,7 @@ Full threat model: [SECURITY.md](SECURITY.md).
 **Known limitations**
 
 - Builds are not yet code-signed, and the auto-updater is not wired up yet.
-- Native platform OCR is not implemented. Tesseract and the optional PP-OCRv6 pack are the engines.
+- OCR engines: Tesseract (default) and the optional PP-OCRv6 pack.
 - Thumbnails cover image files only. Documents and code show type icons.
 - Visual search is a beta model download and is not part of search results yet.
 

@@ -32,7 +32,7 @@ flagged, not indexed.
 By filename, by OCR text when `tesseract` **and** language data are available,
 or with the optional PP-OCRv6 pack (slower, in-process; may read small UI text
 better). Also by perceptual near-duplicate. Natural-language visual search ("red cap",
-"system design diagram"), similar-image lookup, native Vision/Windows OCR, and an
+"system design diagram"), similar-image lookup, and an
 optional local "this is me" identity are not part of 1.0.
 Semantic image search (CLIP) is not implemented yet.
 
@@ -48,7 +48,7 @@ the state; download the English language pack in the guided setup flow
 (**About → Run setup again → Optional packs**) or install `tesseract-ocr-eng`.
 Choose one OCR engine in setup or Settings: Tesseract (fast, smaller) or
 PP-OCRv6 (slower, may read small UI text better). Only the selected engine's
-pack is offered. Native OCR is not available yet.
+pack is offered.
 Existing images are re-scanned. Doctor repeats the check. The setup pack button
 shows download state, success, or the backend error.
 
