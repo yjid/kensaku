@@ -21,6 +21,7 @@ import { HomeView } from "./components/HomeView";
 import { ResultItem, ResultView } from "./components/ResultItem";
 import { Settings } from "./components/SettingsModal";
 import { FilterChips } from "./components/FilterChips";
+import { KeyHintStrip } from "./components/KeyHintStrip";
 import { ContextMenu, ContextMenuItem } from "./components/ContextMenu";
 import { DetailsDialog } from "./components/DetailsDialog";
 import { SearchBar } from "./components/SearchBar";
@@ -823,6 +824,7 @@ function App() {
                 isSearching={isSearching}
                 onFocusInput={() => {}}
                 resultCount={results.length}
+                shortcut={config?.shortcut ?? "Alt+Space"}
                 trailing={
                   <button
                     type="button"
@@ -1062,6 +1064,7 @@ function App() {
                 </div>
               </div>
 
+              <KeyHintStrip />
             </>
           )}
         </>
