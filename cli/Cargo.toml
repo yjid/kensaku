@@ -1,6 +1,6 @@
 [package]
 name = "kensaku-cli"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 description = "Agent-facing CLI and MCP server for Kensaku"
 license = "MIT"
