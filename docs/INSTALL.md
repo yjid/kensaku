@@ -192,7 +192,8 @@ small UI text better). Only the selected engine's download is offered. PP-OCRv6
 is ~6.1 MB (detector 1.7 MB, recognizer 4.3 MB, dictionary 27 KB) and is verified
 against pinned SHA-256 checksums. Tesseract remains the default. If the pack is
 missing, or the build uses `--no-default-features`, Kensaku falls back to
-Tesseract.
+Tesseract. Native macOS/Windows OCR is not implemented yet and the Settings
+option is disabled.
 
 Models: PaddleOCR PP-OCRv6 tiny (Apache-2.0), published by PaddlePaddle. The Rust
 ONNX wrapper is `paddleocr_rs_onnx` (MIT).
@@ -235,9 +236,29 @@ Contents: `config.json`, `metadata.db` (SQLite WAL), `index/` (Tantivy),
 ## Linux
 
 Kensaku ships as an AppImage, a `.deb`, and an `.rpm`. The build is tested on
-Ubuntu 22.04 (X11). Other desktops and Wayland sessions are not yet verified:
+Ubuntu 22.04 (X11). Other desktops are not yet verified.
 
-- **X11:** the Alt+Space quick key works through the desktop's global keys.
-- **Wayland (GNOME, KDE, and others):** many desktops block global keys for apps.
-  Bind a custom shortcut to `kensaku --toggle` in your desktop's keyboard settings.
-- **Tiling window managers:** bind `kensaku --toggle` to a key in your WM config.
+### Set a quick shortcut
+
+Kensaku's own Alt+Space shortcut may not work on Wayland, where desktops block
+global keys for apps. Instead, bind any key to this command:
+
+```
+kensaku --toggle
+```
+
+`--toggle` shows the window if it's hidden and hides it if it's shown. If the
+app isn't running yet, it starts it.
+
+Use the full path to the app if `kensaku` isn't on your PATH (for an AppImage,
+the path where you saved the file).
+
+- **GNOME:** Settings → Keyboard → View and Customize Shortcuts → Custom Shortcuts → `+`.
+  Name it "Kensaku", set the command to `kensaku --toggle`, then press your key.
+- **KDE Plasma:** System Settings → Shortcuts → Add New → Global Shortcut → Command/URL.
+  Set the trigger and the command `kensaku --toggle`.
+- **sway:** add `bindsym $mod+space exec kensaku --toggle` to `~/.config/sway/config`, then reload.
+- **i3:** add `bindsym $mod+space exec kensaku --toggle` to `~/.config/i3/config`, then reload.
+- **Hyprland:** add `bind = SUPER, space, exec, kensaku --toggle` to `~/.config/hypr/hyprland.conf`.
+
+Pick a key that no other app uses. Kensaku doesn't change or reserve any keys.
