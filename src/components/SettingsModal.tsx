@@ -21,7 +21,13 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { KensakuConfig, ModelsStatus } from "../types";
+import {
+  KensakuConfig,
+  ModelsStatus,
+  ClientStatus,
+  InstallOutcome,
+  LlmStatus,
+} from "../types";
 import { useTheme } from "../hooks/useTheme";
 import { useStats } from "../hooks/useStats";
 import { Card, Field, Switch, Stepper, SectionHeader, reasonFrom } from "./settings/kit";
@@ -982,6 +988,7 @@ const MCP_TOOLS: [string, string][] = [
   ["read_snippet", "path, query?, max_tokens ≤ 1024"],
   ["index_state", "counts, phase, queue, freshness"],
   ["regex_search", "bounded pattern, page_size, cursor"],
+  ["find_symbol", "symbol name, language?, page_size ≤ 50"],
   ["reindex", "opt-in only; requires daemon"],
 ];
 
@@ -1128,6 +1135,263 @@ function BetaSection({
   );
 }
 
+
+/* ---------------------------------------------------------------- */
+/* One-click connect + Local AI (Agents section)                     */
+/* ---------------------------------------------------------------- */
+
+/** Per-client connect row: detected status plus one-click install. */
+function AgentConnectCard() {
+  const [statuses, setStatuses] = useState<ClientStatus[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const refresh = async () => {
+    try {
+      setStatuses(await invoke<ClientStatus[]>("agent_connect_status"));
+    } catch {
+      setStatuses([]);
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  const install = async (id: string) => {
+    setBusy(id);
+    setNotice(null);
+    try {
+      const outcome = await invoke<InstallOutcome>("agent_connect_install", { client: id });
+      setNotice(outcome.message);
+    } catch (err) {
+      setNotice(reasonFrom(err));
+    } finally {
+      setBusy(null);
+      void refresh();
+    }
+  };
+
+  const statusLabel = (status: ClientStatus): string => {
+    if (status.configured) return "Connected";
+    if (status.installed) return "Found";
+    if (status.config_path) return "Not set up";
+    return "Not detected";
+  };
+
+  return (
+    <Card title="One-click connect">
+      <div>
+        {statuses.length === 0 && (
+          <p className="px-4 py-3 text-[11px] text-muted">
+            Detecting installed MCP clients…
+          </p>
+        )}
+        {statuses.map((status) => (
+          <div
+            key={status.id}
+            className="flex items-center justify-between gap-4 border-b border-line/60 px-4 py-2.5 last:border-b-0"
+          >
+            <div className="min-w-0">
+              <p className="text-[12px] font-medium text-fg">{status.name}</p>
+              <p className="truncate font-mono text-[10px] text-subtle">
+                {status.config_path ?? "config location not found"}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <span
+                className={`rounded-full px-2 py-0.5 font-mono text-[10px] ${
+                  status.configured
+                    ? "bg-accent-soft text-accent"
+                    : "border border-line text-subtle"
+                }`}
+              >
+                {statusLabel(status)}
+              </span>
+              {!status.configured && (
+                <button
+                  type="button"
+                  disabled={busy === status.id || !status.config_path}
+                  onClick={() => void install(status.id)}
+                  className="flex h-6 items-center rounded-[8px] border border-line px-2 text-[10.5px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                >
+                  {busy === status.id ? "Adding…" : "Add Kensaku"}
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      {notice && (
+        <p className="border-t border-line px-4 py-2 text-[11px] text-muted">{notice}</p>
+      )}
+      <p className="border-t border-line px-4 py-2.5 text-[11px] leading-relaxed text-muted">
+        Adding Kensaku merges one entry into the client's config file (a backup is left next to
+        it). Restart the client afterwards. Manual JSON stays available above.
+      </p>
+    </Card>
+  );
+}
+
+const LLM_PROVIDERS: { id: string; label: string }[] = [
+  { id: "off", label: "Off (deterministic only)" },
+  { id: "ollama", label: "Ollama (127.0.0.1:11434)" },
+  { id: "lmstudio", label: "LM Studio (127.0.0.1:1234)" },
+  { id: "openai", label: "Custom / OpenAI-compatible" },
+];
+
+/** Local LLM config: query compiler + /ask. The model is optional and never
+    required; everything degrades to the deterministic path when off. */
+function LocalAiCard({
+  config,
+  setConfig,
+}: {
+  config: KensakuConfig;
+  setConfig: React.Dispatch<React.SetStateAction<KensakuConfig | null>>;
+}) {
+  const [status, setStatus] = useState<LlmStatus | null>(null);
+  const [detecting, setDetecting] = useState(false);
+
+  const detect = async () => {
+    setDetecting(true);
+    try {
+      setStatus(await invoke<LlmStatus>("llm_status"));
+    } catch (err) {
+      setStatus({
+        configured: false,
+        reachable: false,
+        provider: config.llm_provider ?? "off",
+        base_url: config.llm_base_url ?? "",
+        model: config.llm_model ?? "",
+        models: [],
+        error: reasonFrom(err),
+      });
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  useEffect(() => {
+    void detect();
+    // Detect on open; config edits are picked up on the next Detect press.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const provider = config.llm_provider ?? "off";
+  const providerOn = provider !== "off";
+
+  return (
+    <Card title="Local AI (optional)">
+      <Field
+        label="Provider"
+        description="Runs on your machine (Ollama, LM Studio) or an OpenAI-compatible endpoint. Off by default: the deterministic query compiler needs no model."
+      >
+        <select
+          value={provider}
+          onChange={(e) =>
+            setConfig((c) => (c ? { ...c, llm_provider: e.target.value } : c))
+          }
+          className="h-7 rounded-[8px] border border-line bg-elevated px-2 text-[11px] text-fg"
+        >
+          {LLM_PROVIDERS.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      {providerOn && (
+        <>
+          <Field
+            label="Base URL"
+            description="Leave empty for the provider default. For custom endpoints, use the OpenAI-compatible /v1 base."
+          >
+            <input
+              value={config.llm_base_url ?? ""}
+              placeholder={
+                provider === "ollama" ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234/v1"
+              }
+              onChange={(e) =>
+                setConfig((c) => (c ? { ...c, llm_base_url: e.target.value } : c))
+              }
+              className="h-7 w-56 rounded-[8px] border border-line bg-elevated px-2 font-mono text-[11px] text-fg"
+            />
+          </Field>
+          <Field
+            label="Model"
+            description="Model name exactly as the provider lists it, e.g. llama3.2 or qwen2.5-7b-instruct."
+          >
+            <input
+              value={config.llm_model ?? ""}
+              onChange={(e) =>
+                setConfig((c) => (c ? { ...c, llm_model: e.target.value } : c))
+              }
+              className="h-7 w-56 rounded-[8px] border border-line bg-elevated px-2 font-mono text-[11px] text-fg"
+            />
+          </Field>
+          <Field
+            label="Refine natural-language queries"
+            description="After the deterministic results land, the model may propose a compiled refinement (chips shown, removable). The model never retrieves on its own."
+          >
+            <Switch
+              checked={config.llm_compile_queries ?? false}
+              onChange={(v) =>
+                setConfig((c) => (c ? { ...c, llm_compile_queries: v } : c))
+              }
+            />
+          </Field>
+          <Field
+            label="Allow cloud endpoints"
+            description="Permits non-loopback LLM endpoints. /ask also asks per use. Off by default; keep it off for a fully local setup."
+          >
+            <Switch
+              checked={config.llm_allow_cloud ?? false}
+              onChange={(v) => setConfig((c) => (c ? { ...c, llm_allow_cloud: v } : c))}
+            />
+          </Field>
+          <div className="flex items-center justify-between border-t border-line px-4 py-2.5">
+            <span className="text-[11px] text-muted">
+              {status?.reachable
+                ? `Connected · ${status.models.length} model${status.models.length === 1 ? "" : "s"}`
+                : status?.configured
+                  ? `Not reachable${status.error ? `: ${status.error}` : ""}`
+                  : "Not configured yet"}
+            </span>
+            <button
+              type="button"
+              onClick={() => void detect()}
+              disabled={detecting}
+              className="flex h-7 items-center gap-1.5 rounded-[10px] border border-line px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3 w-3 ${detecting ? "animate-spin" : ""}`} />
+              Detect
+            </button>
+          </div>
+          {status?.reachable && status.models.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 border-t border-line px-4 py-2.5">
+              {status.models.slice(0, 8).map((model) => (
+                <button
+                  key={model}
+                  type="button"
+                  onClick={() => setConfig((c) => (c ? { ...c, llm_model: model } : c))}
+                  className={`rounded-full border px-2 py-0.5 font-mono text-[10px] transition-colors ${
+                    config.llm_model === model
+                      ? "border-accent text-accent"
+                      : "border-line text-subtle hover:border-line-strong hover:text-fg"
+                  }`}
+                >
+                  {model}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
 function AgentsSection({
   config,
   setConfig,
@@ -1148,6 +1412,9 @@ function AgentsSection({
       <p className="pb-3 text-[12px] leading-relaxed text-muted">
         Let your AI agents search this index. Read-only by default, local, no network.
       </p>
+
+      <AgentConnectCard />
+      <LocalAiCard config={config} setConfig={setConfig} />
 
       {/* MCP */}
       <Card title="Model Context Protocol">

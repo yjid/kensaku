@@ -3,7 +3,7 @@
 //! The binary in `src/bin/cli.rs` is a thin wrapper around [`run`]. All output
 //! for the machine-readable modes goes to stdout; diagnostics go to stderr.
 
-use crate::agent::{HeadlessIndex, NO_INDEX_MESSAGE, compose_query, mcp};
+use crate::agent::{HeadlessIndex, NO_INDEX_MESSAGE, compose_query, connect, http, mcp};
 
 pub const EXIT_OK: i32 = 0;
 /// Runtime failure (unreadable config, I/O error, ...).
@@ -20,6 +20,9 @@ USAGE:
     kensaku-cli search \"<query>\" [--json] [--limit N] [--exhaustive] [--path P] [--ext E] [--since 7d|30d|1h]
     kensaku-cli state [--json]
     kensaku-cli mcp
+    kensaku-cli serve [--port N]
+    kensaku-cli connect <claude-desktop|claude-code|cursor> [--write]
+    kensaku-cli ask \"<question>\" [--allow-cloud]
     kensaku-cli --help | -h | help
 
 EXIT CODES:
@@ -52,6 +55,9 @@ where
                 EXIT_FAILURE
             }
         },
+        "serve" => run_serve(&args[1..]),
+        "connect" => connect::run_cli(&args[1..]),
+        "ask" => run_ask(&args[1..]),
         "-h" | "--help" | "help" => {
             println!("{}", USAGE);
             EXIT_OK
@@ -305,6 +311,108 @@ fn run_state(args: &[String]) -> i32 {
     }
 
     EXIT_OK
+}
+
+/// `kensaku-cli serve`: loopback HTTP/SSE transport for MCP-style clients.
+fn run_serve(args: &[String]) -> i32 {
+    if args.iter().any(|arg| arg == "-h" || arg == "--help") {
+        println!("{}", USAGE);
+        return EXIT_OK;
+    }
+
+    let port = match http::parse_port(args) {
+        Ok(port) => port,
+        Err(message) => {
+            eprintln!("kensaku-cli: {}", message);
+            return EXIT_USAGE;
+        }
+    };
+
+    let shutdown = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    http::install_ctrl_c();
+
+    match http::serve(&crate::config::KensakuConfig::config_dir(), port, shutdown) {
+        Ok(()) => EXIT_OK,
+        Err(e) => {
+            eprintln!("kensaku-cli: {}", e);
+            EXIT_FAILURE
+        }
+    }
+}
+
+/// `kensaku-cli ask "<question>"`: retrieval-grounded answer from the local
+/// model, with path+line citations.
+fn run_ask(args: &[String]) -> i32 {
+    if args.iter().any(|arg| arg == "-h" || arg == "--help") {
+        println!("{}", USAGE);
+        return EXIT_OK;
+    }
+    let allow_cloud = args.iter().any(|arg| arg == "--allow-cloud");
+    let json = args.iter().any(|arg| arg == "--json");
+    let question = args
+        .iter()
+        .filter(|arg| !arg.starts_with('-'))
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if question.trim().is_empty() {
+        eprintln!("kensaku-cli: ask requires a question");
+        return EXIT_USAGE;
+    }
+
+    let index = match open_index() {
+        Ok(index) => index,
+        Err(code) => return code,
+    };
+
+    let config = index.config.clone();
+    let Some(target) = crate::llm::LlmTarget::from_config(&config) else {
+        eprintln!(
+            "kensaku-cli: no local LLM configured. Set llm_provider/llm_model in config.json (see docs/USAGE.md)."
+        );
+        return EXIT_FAILURE;
+    };
+
+    let session = if crate::daemon::request("ping", serde_json::json!({})).is_ok() {
+        crate::agent::AgentSession::Daemon
+    } else {
+        crate::agent::AgentSession::Local(&index)
+    };
+
+    match crate::llm::ask::ask(&session, &target, &question, allow_cloud) {
+        Ok(response) => {
+            if json {
+                match serde_json::to_string_pretty(&response) {
+                    Ok(encoded) => println!("{}", encoded),
+                    Err(e) => {
+                        eprintln!("kensaku-cli: could not encode answer: {}", e);
+                        return EXIT_FAILURE;
+                    }
+                }
+            } else {
+                println!("{}", response.answer);
+                if !response.sources.is_empty() {
+                    println!();
+                    println!("Sources:");
+                    for source in &response.sources {
+                        println!(
+                            "[{}] {} (lines {}-{}){}",
+                            source.index,
+                            source.path,
+                            source.line_start,
+                            source.line_end,
+                            if source.cited { "" } else { " (not cited)" }
+                        );
+                    }
+                }
+            }
+            EXIT_OK
+        }
+        Err(e) => {
+            eprintln!("kensaku-cli: {}", e);
+            EXIT_FAILURE
+        }
+    }
 }
 
 fn open_index() -> Result<HeadlessIndex, i32> {

@@ -180,6 +180,27 @@ impl DaemonClient {
         serde_json::from_value(value).map_err(|e| e.to_string())
     }
 
+    /// Keyset-paginated exhaustive search past the 10k cap (agent surfaces).
+    pub fn search_page_after(
+        &self,
+        query: String,
+        limit: usize,
+        start_after: &str,
+    ) -> Result<crate::search::SearchResponse, String> {
+        let value = request(
+            "search",
+            serde_json::json!({
+                "query": query,
+                "limit": limit,
+                "offset": 0,
+                "snippets": false,
+                "start_after": start_after,
+                "mode": "exhaustive",
+            }),
+        )?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
     pub fn get_snippets(
         &self,
         paths: Vec<String>,

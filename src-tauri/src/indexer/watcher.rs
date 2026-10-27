@@ -381,7 +381,7 @@ fn rescan_watched_dirs(
     metadata: &Arc<RwLock<MetadataStore>>,
     content_index: &Arc<RwLock<Option<ContentIndex>>>,
 ) -> usize {
-    let entries = walk_directories(watched_dirs, &cfg.excluded_dirs);
+    let entries = walk_directories(watched_dirs, &cfg.excluded_dirs, cfg.include_ignored);
     let seen: HashSet<PathBuf> = entries.iter().map(|entry| entry.path.clone()).collect();
 
     let mut changed = 0;
@@ -584,13 +584,18 @@ fn handle_directory_rename(
 
     let new_dir = new_path.to_path_buf();
     let excluded_dirs = cfg.excluded_dirs.clone();
+    let include_ignored = cfg.include_ignored;
     let metadata = Arc::clone(metadata);
     let content_index = Arc::clone(content_index);
 
     // A large directory move can take a while; re-index it off the watcher
     // thread so event draining is not blocked.
     thread::spawn(move || {
-        let entries = walk_directories(std::slice::from_ref(&new_dir), &excluded_dirs);
+        let entries = walk_directories(
+            std::slice::from_ref(&new_dir),
+            &excluded_dirs,
+            include_ignored,
+        );
         let mut pending_commits = 0usize;
 
         for entry in entries {

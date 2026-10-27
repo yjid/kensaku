@@ -348,9 +348,15 @@ fn handle_client(stream: LocalSocketStream, token: &str, manager: &Arc<IndexerMa
                     .get("snippets")
                     .and_then(Value::as_bool)
                     .unwrap_or(true);
-                manager
-                    .search_page(query, limit, offset, with_snippets)
-                    .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string()))
+                if let Some(start_after) = params.get("start_after").and_then(|v| v.as_str()) {
+                    manager
+                        .search_page_after(query, limit, start_after, with_snippets)
+                        .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string()))
+                } else {
+                    manager
+                        .search_page(query, limit, offset, with_snippets)
+                        .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string()))
+                }
             }
             "get_snippets" => {
                 let paths: Vec<String> = params

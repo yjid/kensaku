@@ -1,3 +1,4 @@
+use crate::indexer::ignore::IgnoreSet;
 use crate::search::fuzzy::compute_char_mask;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -82,8 +83,20 @@ pub fn is_cloud_placeholder_path(path: &std::path::Path) -> bool {
     }
 }
 
-pub fn walk_directories(dirs: &[PathBuf], excluded_dirs: &[String]) -> Vec<FileEntry> {
+/// Walks `dirs` and returns file entries.
+///
+/// When `include_ignored` is false (the default), `.gitignore` /
+/// `.cursorignore` rules under the roots are honored so agents see the same
+/// tree developers do; see [`crate::indexer::ignore`]. The walk itself still
+/// traverses ignored directories (the cheap default `excluded_dirs` list
+/// handles the heavy hitters); their entries are filtered before returning.
+pub fn walk_directories(
+    dirs: &[PathBuf],
+    excluded_dirs: &[String],
+    include_ignored: bool,
+) -> Vec<FileEntry> {
     let mut result = Vec::new();
+    let mut ignore_dirs: Vec<PathBuf> = Vec::new();
     let excluded_set: HashSet<String> = excluded_dirs.iter().map(|s| s.to_lowercase()).collect();
 
     // Default-deny sensitive paths. These are skipped even if the user has not
@@ -177,7 +190,7 @@ pub fn walk_directories(dirs: &[PathBuf], excluded_dirs: &[String]) -> Vec<FileE
             let char_bloom = compute_char_mask(&name);
             let file_entry = FileEntry {
                 id: 0,
-                path,
+                path: path.clone(),
                 name,
                 extension,
                 size,
@@ -189,7 +202,20 @@ pub fn walk_directories(dirs: &[PathBuf], excluded_dirs: &[String]) -> Vec<FileE
                 content_pending: false,
             };
 
+            if !include_ignored && is_dir {
+                ignore_dirs.push(path);
+            }
+
             result.push(file_entry);
+        }
+    }
+
+    // Ignore parity: probe each visited directory for `.gitignore` /
+    // `.cursorignore` and drop ignored entries.
+    if !include_ignored {
+        let ignore_set = IgnoreSet::from_directories(&ignore_dirs);
+        if !ignore_set.is_empty() {
+            result.retain(|entry| !ignore_set.is_ignored(&entry.path, entry.is_dir));
         }
     }
 
