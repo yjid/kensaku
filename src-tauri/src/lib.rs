@@ -234,6 +234,8 @@ pub fn run() {
             commands::get_file_preview,
             commands::get_snippets,
             commands::get_thumbnail,
+            commands::get_thumbnail_data,
+            commands::get_file_details,
             commands::get_ocr_status,
             commands::download_ocr_language,
             commands::get_ocr_pack_status,

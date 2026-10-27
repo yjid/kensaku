@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Search, X, SlidersHorizontal, Terminal, LoaderCircle } from "lucide-react";
+import { Search, X, Terminal, LoaderCircle } from "lucide-react";
 
 /* 60px search pill. 20px input, focus ring on the whole pill, right side:
    filter button + clear + Esc kbd hint. Placeholder rotates contextually. */
@@ -9,7 +9,6 @@ interface SearchBarProps {
   setQuery: (q: string) => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
   isSearching: boolean;
-  onOpenCommands: () => void;
   onFocusInput: () => void;
   resultCount: number;
   /** 28px icon buttons rendered to the right of the pill (theme, settings). */
@@ -27,7 +26,6 @@ export function SearchBar({
   setQuery,
   inputRef,
   isSearching,
-  onOpenCommands,
   onFocusInput,
   resultCount,
   trailing,
@@ -77,7 +75,7 @@ export function SearchBar({
                 : PLACEHOLDERS[phIdx]
           }
           onFocus={onFocusInput}
-          className="min-w-0 flex-1 bg-transparent text-[20px] leading-none text-fg outline-none placeholder:text-fg-subtle caret-accent"
+          className="min-w-0 flex-1 bg-transparent text-[17px] leading-none text-fg outline-none placeholder:text-subtle caret-fg"
           style={{ letterSpacing: "-0.02em" }}
         />
 
@@ -88,7 +86,7 @@ export function SearchBar({
         {query && (
           <button
             type="button"
-            title="Clear (Esc)"
+            title="Clear"
             onClick={() => {
               setQuery("");
               inputRef.current?.focus();
@@ -99,17 +97,6 @@ export function SearchBar({
           </button>
         )}
 
-        <button
-          type="button"
-          title="Commands (/)"
-          onClick={onOpenCommands}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-fg-subtle transition-colors duration-150 hover:bg-sunken hover:text-fg"
-        >
-          <SlidersHorizontal className="h-4 w-4" />
-        </button>
-
-        <kbd className="kbd mr-1 shrink-0" title="Toggle details">tab</kbd>
-        <kbd className="kbd mr-1 shrink-0">esc</kbd>
       </div>
 
       {trailing && (

@@ -1133,8 +1133,7 @@ pub async fn get_scope_suggestions(
 pub async fn get_suggested_directories() -> Result<Vec<String>, String> {
     let mut dirs_list = Vec::new();
     if let Some(home) = dirs::home_dir() {
-        dirs_list.push(home.to_string_lossy().to_string());
-
+        // Suggestions only: the home folder itself is never preselected.
         let candidates = [
             "Documents",
             "Downloads",
@@ -1604,4 +1603,55 @@ fn parse_connect_client(client: &str) -> Result<crate::agent::connect::Client, S
         .into_iter()
         .find(|candidate| candidate.id() == client)
         .ok_or_else(|| format!("unknown client: {}", client))
+}
+
+/// Extra facts for the hover card, fetched on demand. Dimensions are read
+/// only for image files, so this never runs during search.
+#[derive(Debug, Clone, Serialize)]
+pub struct FileDetails {
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
+
+#[tauri::command]
+pub async fn get_file_details(path: String) -> Result<FileDetails, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = Path::new(&path);
+        let is_image = p
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| crate::indexer::extract::image::is_supported_image_extension(&e.to_ascii_lowercase()))
+            .unwrap_or(false);
+        let dims = if is_image {
+            crate::indexer::extract::image::dimensions(p)
+        } else {
+            None
+        };
+        Ok(FileDetails {
+            width: dims.map(|(w, _)| w),
+            height: dims.map(|(_, h)| h),
+        })
+    })
+    .await
+    .map_err(|e| format!("Details task failed: {}", e))?
+}
+
+/// Thumbnail bytes as a `data:` URL. Using a data URL means the card never
+/// depends on the asset protocol or its scope, so it renders the same on every
+/// platform. Thumbnails are 480px JPEGs (tens of KB), which keeps the payload
+/// small for the visible cards.
+#[tauri::command]
+pub async fn get_thumbnail_data(path: String) -> Result<String, String> {
+    use base64::Engine;
+    tauri::async_runtime::spawn_blocking(move || {
+        let thumb = generate_thumbnail(&path)?;
+        let bytes = std::fs::read(&thumb)
+            .map_err(|e| format!("Failed to read thumbnail: {}", e))?;
+        Ok(format!(
+            "data:image/jpeg;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        ))
+    })
+    .await
+    .map_err(|e| format!("Thumbnail task failed: {}", e))?
 }

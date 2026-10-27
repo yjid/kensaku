@@ -188,6 +188,10 @@ pub struct KensakuConfig {
     /// Pinned file paths shown on the home screen.
     #[serde(default)]
     pub pins: Vec<String>,
+    /// Show generated thumbnails on result cards. On by default; off shows
+    /// the type icon only (no thumbnail generation at all).
+    #[serde(default = "default_true")]
+    pub show_thumbnails: bool,
     /// Config schema version, used for one-time migrations.
     #[serde(default)]
     pub config_version: u32,
@@ -325,6 +329,7 @@ impl Default for KensakuConfig {
             aliases: default_aliases(),
             saved_searches: Vec::new(),
             pins: Vec::new(),
+            show_thumbnails: true,
             config_version: 4,
         }
     }
