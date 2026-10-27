@@ -11,7 +11,6 @@ import {
   RefreshCw,
   Save,
   Search,
-  Sparkles,
   SlidersHorizontal,
   Stethoscope,
   Sun,
@@ -58,7 +57,7 @@ const SECTIONS: { id: SectionId; label: string; icon: LucideIcon }[] = [
   { id: "folders", label: "Folders", icon: FolderTree },
   { id: "exclusions", label: "Exclusions", icon: Filter },
   { id: "search", label: "Search", icon: Search },
-  { id: "ai", label: "Smart search", icon: Sparkles },
+  { id: "ai", label: "Meaning search", icon: Search },
   { id: "agents", label: "Agents", icon: Bot },
   { id: "doctor", label: "Health", icon: Stethoscope },
   { id: "about", label: "About", icon: Info },
@@ -1288,7 +1287,7 @@ function LocalAiCard({
   const providerOn = provider !== "off";
 
   return (
-    <Card title="Local AI (optional)">
+    <Card title="Local model">
       <Field
         label="Provider"
         description="Runs on your machine (Ollama, LM Studio) or an OpenAI-compatible endpoint. Off by default: the deterministic query compiler needs no model."
@@ -1423,7 +1422,7 @@ function AgentsSection({
   return (
     <>
       <p className="pb-3 text-[12px] leading-relaxed text-muted">
-        Let your AI agents search this index. Read-only by default, local, no network.
+        Let agents search this index. Read-only by default, local, no network.
       </p>
 
       <AgentConnectCard />

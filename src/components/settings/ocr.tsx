@@ -214,7 +214,7 @@ export function OcrField({
                   type="button"
                   disabled={packBusy || pack?.downloading}
                   onClick={downloadPack}
-                  className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-elevated px-3 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                  className="btn btn-secondary"
                 >
                   <RefreshCw
                     className={`h-3 w-3 ${packBusy || pack?.downloading ? "animate-spin" : ""}`}
@@ -330,7 +330,7 @@ export function OcrField({
               type="button"
               disabled={rechecking}
               onClick={recheck}
-              className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-elevated px-3 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+              className="btn btn-secondary"
             >
               <RefreshCw
                 className={`h-3 w-3 ${rechecking ? "animate-spin" : ""}`}
@@ -356,7 +356,7 @@ export function OcrField({
             type="button"
             disabled={rechecking}
             onClick={recheck}
-            className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-elevated px-3 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+            className="btn btn-secondary"
           >
             <RefreshCw className={`h-3 w-3 ${rechecking ? "animate-spin" : ""}`} aria-hidden={rechecking} />
             Re-check

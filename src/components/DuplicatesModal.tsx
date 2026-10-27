@@ -96,7 +96,7 @@ export function DuplicatesModal({ onClose }: { onClose: () => void }) {
         ) : (
           <div className="mx-auto max-w-3xl space-y-3">
             {groups.map((g, i) => (
-              <div key={`${g.kind}-${g.hash}-${i}`} className="rounded-[14px] border border-line bg-elevated">
+              <div key={`${g.kind}-${g.hash}-${i}`} className="surface">
                 <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-sunken px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted">

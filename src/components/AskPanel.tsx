@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { FileText, Loader2, MessageCircleQuestion, Sparkles, X } from "lucide-react";
+import { FileText, Loader2, MessageCircleQuestion, Search, X } from "lucide-react";
 import type { AskResponse } from "../types";
 
 /**
@@ -100,7 +100,7 @@ export function AskPanel({
             disabled={busy || !question.trim()}
             className="flex h-7 shrink-0 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
           >
-            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
             Ask
           </button>
         </form>
@@ -130,7 +130,7 @@ export function AskPanel({
             <p className="text-[12px] leading-relaxed text-warning">
               {error}
               <span className="mt-1 block text-[11px] text-muted">
-                Configure a local model in Settings → Agents → Local AI.
+                Configure a local model in Settings → Agents → Local model.
               </span>
             </p>
           )}

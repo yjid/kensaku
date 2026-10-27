@@ -498,7 +498,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 Appearance and one keyboard shortcut. You can change both later.
               </p>
             </div>
-            <div className="flex items-center justify-between rounded-[14px] border border-line bg-elevated px-4 py-3">
+            <div className="surface flex items-center justify-between px-4 py-3">
               <div>
                 <span className="block text-[12px] font-medium text-fg">Theme</span>
                 <span className="block text-[11px] text-muted">paper or void</span>
@@ -512,7 +512,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 {theme}
               </button>
             </div>
-            <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+            <div className="surface px-4 py-3">
               <span className="block text-[12px] font-medium text-fg">Global shortcut</span>
               <span className="block text-[11px] text-muted">Toggles the window anywhere.</span>
               <button
@@ -540,7 +540,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 Optional. Keyword search works without any of these.
               </p>
             </div>
-            <div className="flex items-center justify-between rounded-[14px] border border-line bg-elevated px-4 py-3">
+            <div className="surface flex items-center justify-between px-4 py-3">
               <div className="min-w-0 pr-4">
                 <span className="block text-[12px] font-medium text-fg">Start at sign-in</span>
                 <span className="block text-[11px] text-muted">
@@ -550,7 +550,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               <Switch checked={startAtLogin} onChange={setStartAtLogin} />
             </div>
             <div className="space-y-2">
-              <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+              <div className="surface px-4 py-3">
                 <span className="block text-[12px] font-medium text-fg">Choose one OCR engine</span>
                 <span className="block text-[11px] text-muted">
                   Download only the engine you want. Both read images; they are alternatives.
@@ -590,7 +590,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               </div>
 
               {ocrEngine === "tesseract" && (
-              <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+              <div className="surface px-4 py-3">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <span className="block text-[12px] font-medium text-fg">OCR language data</span>
@@ -641,7 +641,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               )}
 
               {ocrEngine === "accurate" && (ocrStatus?.accurate_compiled ? (
-                <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+                <div className="surface px-4 py-3">
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <span className="block text-[12px] font-medium text-fg">
@@ -669,7 +669,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                             setPackError(`PP-OCRv6 download failed: ${String(e)}`);
                           }
                         }}
-                        className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                        className="btn btn-secondary"
                       >
                         {ocrPackStatus?.downloading ? (
                           <>
@@ -688,7 +688,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                   )}
                 </div>
               ) : (
-                <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+                <div className="surface px-4 py-3">
                   <div>
                     <span className="block text-[12px] font-medium text-fg">PP-OCRv6 pack</span>
                     <span className="block text-[11px] text-muted">Not compiled into this build.</span>
@@ -696,7 +696,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 </div>
               ))}
 
-              <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">
+              <div className="surface px-4 py-3">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <span className="block text-[12px] font-medium text-fg">Semantic model</span>
@@ -722,7 +722,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                           setPackError(`Model download failed: ${String(e)}`);
                         }
                       }}
-                      className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                      className="btn btn-secondary"
                     >
                       {modelsStatus?.downloading ? (
                         <>
@@ -792,7 +792,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             <button
               type="button"
               onClick={() => setStep((s) => (s - 1) as 0 | 1 | 2 | 3 | 4)}
-              className="flex h-9 items-center gap-1.5 rounded-[10px] px-3 text-[13px] text-muted transition-colors hover:text-fg"
+              className="btn btn-ghost"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Back
             </button>
@@ -802,7 +802,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               type="button"
               onClick={() => setStep((s) => (s + 1) as 0 | 1 | 2 | 3 | 4)}
               disabled={step === 1 && selectedDirs.length === 0}
-              className="flex h-9 items-center gap-1.5 rounded-[10px] bg-fg px-5 text-[13px] font-medium text-bg transition-opacity hover:opacity-85 disabled:opacity-40"
+              className="btn btn-primary px-5"
             >
               Continue <ArrowRight className="h-3.5 w-3.5" />
             </button>
@@ -811,7 +811,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               type="button"
               onClick={handleFinish}
               disabled={isSubmitting || selectedDirs.length === 0}
-              className="flex h-9 items-center gap-2 rounded-[10px] bg-fg px-5 text-[13px] font-medium text-bg transition-opacity hover:opacity-85 disabled:opacity-40"
+              className="btn btn-primary px-5"
             >
               {isSubmitting && <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}
               Start indexing
