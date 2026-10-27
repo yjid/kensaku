@@ -133,6 +133,42 @@ pub fn compile_with_aliases(raw: &str, aliases: &[(String, Vec<String>)]) -> Int
             }
         }
 
+        // --- Time travel: weekday and "N days ago" ---------------------
+        // "last Tuesday" is the most recent Tuesday before today. "N days ago"
+        // is that day. Both become a one-day window and a removable chip.
+        for (pat, days_fn, label) in [
+            (
+                r"(?i)\blast\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+                weekday_days_back as fn(&str, u32) -> Option<u32>,
+                "Modified: last",
+            ),
+            (
+                r"(?i)\b(\d{1,3})\s+days?\s+ago\b",
+                days_ago_days as fn(&str, u32) -> Option<u32>,
+                "Modified: days ago",
+            ),
+        ] {
+            if let Ok(re) = Regex::new(pat)
+                && let Some(m) = re.captures(&work)
+            {
+                let whole = m.get(0).map(|x| x.as_str().to_string()).unwrap_or_default();
+                let arg = m.get(1).map(|x| x.as_str()).unwrap_or("");
+                let weekday_today = chrono_weekday_today();
+                if let Some(back) = days_fn(arg, weekday_today) {
+                    let filter = format!("modified:{}d..{}d", back, back + 1);
+                    let shown = format!("{} {}", label, arg);
+                    work = work.replacen(&whole, " ", 1);
+                    appends.push(filter.clone());
+                    chips.push(InterpretationChip {
+                        kind: "time".to_string(),
+                        label: shown,
+                        raw: filter,
+                        source: whole,
+                    });
+                }
+            }
+        }
+
         // --- Size -------------------------------------------------------
         if let Ok(re) =
             Regex::new(r"(?i)\b(?:under|less than|smaller than)\s+(\d+(?:\.\d+)?)\s*(kb|mb|gb)\b")
@@ -402,5 +438,80 @@ mod tests {
         let intent = compile("docker error");
         assert!(intent.chips.is_empty());
         assert_eq!(intent.query, "docker error");
+    }
+}
+
+/// Today's weekday as 0=Monday..6=Sunday, from the system clock (UTC is
+/// accurate enough for a one-day window).
+fn chrono_weekday_today() -> u32 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let days = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() / 86_400)
+        .unwrap_or(0);
+    // 1970-01-01 was a Thursday (index 3 when Monday is 0).
+    ((days + 3) % 7) as u32
+}
+
+/// Days back from today to the most recent given weekday, never today itself.
+fn weekday_days_back(name: &str, today: u32) -> Option<u32> {
+    let target = match name.to_ascii_lowercase().as_str() {
+        "monday" => 0,
+        "tuesday" => 1,
+        "wednesday" => 2,
+        "thursday" => 3,
+        "friday" => 4,
+        "saturday" => 5,
+        "sunday" => 6,
+        _ => return None,
+    };
+    let back = (today + 7 - target) % 7;
+    Some(if back == 0 { 7 } else { back })
+}
+
+/// "N days ago" is N days back, with a floor of one day.
+fn days_ago_days(n: &str, _today: u32) -> Option<u32> {
+    let n: u32 = n.parse().ok()?;
+    (1..=365).contains(&n).then_some(n)
+}
+
+#[cfg(test)]
+mod time_travel_tests {
+    use super::*;
+
+    #[test]
+    fn last_weekday_is_never_today() {
+        // Thursday (3) asking for "last Thursday" must go back a full week.
+        assert_eq!(weekday_days_back("thursday", 3), Some(7));
+        // Thursday asking for "last Monday" is three days back.
+        assert_eq!(weekday_days_back("monday", 3), Some(3));
+        // Monday asking for "last Sunday" is one day back.
+        assert_eq!(weekday_days_back("sunday", 0), Some(1));
+        assert_eq!(weekday_days_back("noday", 0), None);
+    }
+
+    #[test]
+    fn days_ago_is_bounded() {
+        assert_eq!(days_ago_days("3", 0), Some(3));
+        assert_eq!(days_ago_days("0", 0), None);
+        assert_eq!(days_ago_days("9999", 0), None);
+    }
+
+    #[test]
+    fn weekday_phrase_becomes_a_time_filter_chip() {
+        let intent = compile("invoice from last tuesday");
+        let chip = intent
+            .chips
+            .iter()
+            .find(|c| c.kind == "time")
+            .expect("time chip for last tuesday");
+        assert!(chip.raw.starts_with("modified:"), "got {}", chip.raw);
+        assert!(!intent.query.to_lowercase().contains("tuesday"));
+    }
+
+    #[test]
+    fn days_ago_phrase_becomes_a_time_filter_chip() {
+        let intent = compile("notes 3 days ago");
+        assert!(intent.chips.iter().any(|c| c.kind == "time" && c.raw.contains("..")));
     }
 }

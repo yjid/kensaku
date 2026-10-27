@@ -2,7 +2,6 @@
 //!
 //! - Images: the shared 240px thumbnail path.
 //! - PDF: the first page, rendered by `pdftoppm` (poppler) when it is installed.
-//! - Video: a frame at one second, extracted by `ffmpeg` when it is installed.
 //!
 //! Previews are generated only when a card is shown, cached as 240px JPEGs next
 //! to the image thumbnails, and reused until the source file changes. External
@@ -57,7 +56,6 @@ impl Drop for SlotGuard {
 pub enum Kind {
     Image,
     Pdf,
-    Video,
 }
 
 /// Classifies a file by extension. `None` means it has no preview.
@@ -66,7 +64,6 @@ pub fn kind_for(filename: &str) -> Option<Kind> {
     match ext.to_ascii_lowercase().as_str() {
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "tiff" | "tif" => Some(Kind::Image),
         "pdf" => Some(Kind::Pdf),
-        "mp4" | "mov" | "m4v" | "mkv" | "webm" | "avi" => Some(Kind::Video),
         _ => None,
     }
 }
@@ -81,7 +78,6 @@ pub fn preview_jpeg(source: &Path, out_dir: &Path) -> Result<PathBuf, String> {
         Some(Kind::Image) => crate::indexer::extract::image::thumbnail(source, out_dir)
             .ok_or_else(|| format!("could not decode image {}", name)),
         Some(Kind::Pdf) => render_external(source, out_dir, Kind::Pdf),
-        Some(Kind::Video) => render_external(source, out_dir, Kind::Video),
         None => Err(format!("no preview for {}", name)),
     }
 }
@@ -111,7 +107,6 @@ fn render_external(source: &Path, out_dir: &Path, kind: Kind) -> Result<PathBuf,
 
     let tool = match kind {
         Kind::Pdf => find_tool("pdftoppm").ok_or("pdftoppm (poppler) is not installed")?,
-        Kind::Video => find_tool("ffmpeg").ok_or("ffmpeg is not installed")?,
         Kind::Image => return Err("images use the thumbnail path".into()),
     };
 
@@ -132,13 +127,6 @@ fn render_external(source: &Path, out_dir: &Path, kind: Kind) -> Result<PathBuf,
                 .args(["-jpeg", "-r", "110", "-f", "1", "-l", "1", "-singlefile"])
                 .arg(source)
                 .arg(&raw_base),
-        ),
-        Kind::Video => run_timed(
-            Command::new(tool)
-                .args(["-v", "error", "-ss", "1", "-i"])
-                .arg(source)
-                .args(["-frames:v", "1", "-y"])
-                .arg(raw_base.with_extension("jpg")),
         ),
         Kind::Image => false,
     };
@@ -213,7 +201,7 @@ mod tests {
     fn classifies_previewable_extensions() {
         assert_eq!(kind_for("photo.JPG"), Some(Kind::Image));
         assert_eq!(kind_for("report.pdf"), Some(Kind::Pdf));
-        assert_eq!(kind_for("clip.MOV"), Some(Kind::Video));
+        assert_eq!(kind_for("clip.MOV"), None);
         assert_eq!(kind_for("notes.txt"), None);
         assert_eq!(kind_for("README"), None);
     }

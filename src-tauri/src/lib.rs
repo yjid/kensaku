@@ -7,7 +7,6 @@ pub mod daemon;
 pub mod doctor;
 pub mod embed;
 pub mod indexer;
-pub mod llm;
 pub mod models;
 pub mod ocr;
 pub mod preview;
@@ -69,11 +68,32 @@ fn acquire_instance_lock() -> Result<Option<std::fs::File>, String> {
     }
 }
 
+/// Request file a second launch writes to ask the running app to toggle its
+/// window. A file works on every OS and needs no sockets; the running app
+/// polls for it.
+fn toggle_request_path() -> PathBuf {
+    KensakuConfig::config_dir().join("toggle.request")
+}
+
+/// `kensaku --toggle`: ask the running app to show or hide its window, then
+/// exit. Used by desktop shortcuts on Linux, where global keys may be blocked.
+fn request_toggle_and_exit() -> ! {
+    let path = toggle_request_path();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(&path, b"toggle");
+    std::process::exit(0);
+}
+
 /// Acquires the lock, exiting quietly when another instance is running.
 fn acquire_instance_lock_or_exit() -> Option<std::fs::File> {
     match acquire_instance_lock() {
         Ok(Some(file)) => Some(file),
         Ok(None) => {
+            if std::env::args().any(|a| a == "--toggle") {
+                request_toggle_and_exit();
+            }
             eprintln!("[Kensaku] Another Kensaku instance is already running; exiting.");
             std::process::exit(0);
         }
@@ -265,9 +285,6 @@ pub fn run() {
             commands::get_reset_pending,
             commands::get_autostart,
             commands::set_autostart,
-            commands::llm_compile_query,
-            commands::llm_status,
-            commands::ask_question,
             commands::agent_connect_status,
             commands::agent_connect_install,
             commands::agent_connect_snippet,
@@ -276,6 +293,27 @@ pub fn run() {
             models::delete_models,
         ])
         .setup(move |app| {
+            // Watch for `kensaku --toggle` from a second launch: it drops a request
+            // file, and we toggle the window here. Cheap: one stat every 150 ms.
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_millis(150));
+                    let path = toggle_request_path();
+                    if path.exists() {
+                        let _ = std::fs::remove_file(&path);
+                        if let Some(window) = tauri::Manager::get_webview_window(&handle, "main") {
+                            if window.is_visible().unwrap_or(false) {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                });
+            }
+
             if app.state::<AppState>().daemon.is_none() {
                 app.state::<AppState>()
                     .indexer

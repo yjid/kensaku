@@ -231,3 +231,14 @@ Contents: `config.json`, `metadata.db` (SQLite WAL), `index/` (Tantivy),
   Deletes the index, database, models, and config, then restarts.
 - **Manual:** quit Kensaku, delete the config directory above.
 - **Uninstall:** remove the app bundle/package; the data directory is separate.
+
+
+## Linux
+
+Kensaku ships as an AppImage, a `.deb`, and an `.rpm`. The build is tested on
+Ubuntu 22.04 (X11). Other desktops and Wayland sessions are not yet verified:
+
+- **X11:** the Alt+Space quick key works through the desktop's global keys.
+- **Wayland (GNOME, KDE, and others):** many desktops block global keys for apps.
+  Bind a custom shortcut to `kensaku --toggle` in your desktop's keyboard settings.
+- **Tiling window managers:** bind `kensaku --toggle` to a key in your WM config.

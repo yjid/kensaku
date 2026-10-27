@@ -5,12 +5,12 @@
 <h1 align="center">Kensaku <span title="kensaku = search, in Japanese">検索</span></h1>
 
 <p align="center">
-  <b>Find any file on your computer in milliseconds.</b>
+  <b>You remember the file. We'll find it.</b>
 </p>
 
 <p align="center">
-  Search filenames, file contents, and meaning in one fast, local index.<br/>
-  Nothing leaves your machine.
+  Type what you remember: a name, a line of text, or what it was about.<br/>
+  Fast, light, and private. Nothing leaves your machine.
 </p>
 
 <p align="center">
@@ -58,6 +58,7 @@ Type what you remember. Kensaku searches names, text inside files, and meaning, 
 
 **Precise**
 - Filters and sort: Best match, Newest, Oldest, Largest, Name.
+- Time travel: "last Tuesday", "3 days ago", "last week", "today", "yesterday".
 - A query language when you want it (below).
 
 **Works with AI agents**
@@ -172,7 +173,6 @@ Full threat model: [SECURITY.md](SECURITY.md).
 - Documents, code, and images (with OCR), CJK-aware
 - Incremental indexing that tracks renames and deletes
 - Agent access over MCP and loopback HTTP, with one-click setup for Claude and Cursor
-- Optional local model for query refinement and cited answers (`/ask`)
 - `.gitignore` and `.cursorignore` respected by default
 
 **Known limitations**
