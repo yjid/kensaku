@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/fastest-semantic-file-search.png" width="100%" alt="Kensaku search results" />
+  <img src="assets/search-at-full-speed.png" width="100%" alt="Kensaku searching at full speed" />
 </p>
 
 ---
