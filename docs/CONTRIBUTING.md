@@ -5,10 +5,9 @@ Thanks for helping. Bug reports, docs fixes, and focused PRs are all welcome.
 ## Before you start
 
 - Open an issue for anything larger than a small fix, so we can agree on scope.
-- Read [`VISION.md`](VISION.md) for where the product is going and which
-  milestone a change serves. Read [`ARCHITECTURE.md`](ARCHITECTURE.md) and
-  [`EDGE-CASES.md`](EDGE-CASES.md) — they explain why the index is shaped the
-  way it is. The engineering backlog is [`REMAINING.md`](REMAINING.md).
+- Read [`ARCHITECTURE.md`](ARCHITECTURE.md) for the index/search shape and
+  [`AGENTS.md`](AGENTS.md) for the read-only agent contract.
+- Keep the local-first, read-only-by-default thesis intact.
 - Security issues: do **not** open a public issue. See [`../SECURITY.md`](../SECURITY.md).
 
 ## Setup
@@ -79,4 +78,5 @@ If you touch the query path or the indexer, include before/after numbers from
 - Writing through the agent API.
 - Bundling large model runtimes by default.
 
-See [`REMAINING.md`](REMAINING.md) for the current roadmap.
+Keep changes scoped to the shipped surface; larger product directions should
+start as an issue.

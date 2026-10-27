@@ -1,11 +1,10 @@
 # Kensaku v2 — Architecture & Implementation Plan
 
-> **Status:** design through `v0.3.3`, updated after the K1–K14 execution pass.
-> The daemon topology in §3 is now shipped: the GUI, CLI, and MCP are clients of
-> `kensaku-daemon` over a Unix socket or Windows named pipe, with a read-only
-> in-process fallback. The loopback HTTP transport in §9.3 is still planned.
-> Product direction and sequencing live in [`VISION.md`](VISION.md); the
-> engineering backlog lives in [`REMAINING.md`](REMAINING.md).
+> **Status:** shipped `v1.0.0`. The daemon topology in §3 is shipped: the GUI,
+> CLI, and MCP are clients of `kensaku-daemon` over a Unix socket or Windows
+> named pipe, with a read-only in-process fallback. The loopback HTTP transport
+> in §9.3 is also shipped (`kensaku-cli serve`). This document describes the
+> architecture as built; internal planning documents were removed for release.
 
 > **One sentence:** a warm, local, read-only index of your machine that answers in under 15 ms — for you, and for every AI agent you use.
 
@@ -78,7 +77,7 @@
 
 **Two binaries, one core crate:** `kensaku` (daemon + CLI + MCP) and `kensaku-app` (Tauri GUI). The GUI auto-spawns the daemon if it isn't running.
 
-**Current state (v0.3.x + K1):** the GUI connects to the daemon for search, snippets, status, config, home data, duplicates, scope suggestions, and pin toggles. It constructs only a read-only `IndexerManager` for fallback when the daemon is unavailable. CLI and MCP also prefer the daemon. Unix and Windows transports use `interprocess` local sockets (Unix socket / named pipe); release packaging of the daemon sidecar is tracked in [REMAINING.md](REMAINING.md) section F.
+**Current state (v1.0):** the GUI connects to the daemon for search, snippets, status, config, home data, duplicates, scope suggestions, and pin toggles. It constructs only a read-only `IndexerManager` for fallback when the daemon is unavailable. CLI and MCP also prefer the daemon. Unix and Windows transports use `interprocess` local sockets (Unix socket / named pipe); release packaging of the daemon sidecar remains a packaging follow-up.
 
 ---
 
@@ -185,12 +184,12 @@ Schema:
 | `size` | u64, fast | `size:` range |
 | `lang` | u8, fast | `lang:` filter |
 
-- **Custom tokenizer (K15):** The `"kensaku"` tokenizer decomposes CJK scripts (Han, Hiragana, Katakana, Hangul) into interleaved unigrams and bigrams with exact offsets and sequential positions, enabling exact word and substring searches across unbroken CJK runs. SimpleTokenizer behavior is preserved for Latin, code, and paths. Schema marker `content.schema` (v3) automates legacy migration.
+- **Custom tokenizer:** The `"kensaku"` tokenizer decomposes CJK scripts (Han, Hiragana, Katakana, Hangul) into interleaved unigrams and bigrams with exact offsets and sequential positions, enabling exact word and substring searches across unbroken CJK runs. SimpleTokenizer behavior is preserved for Latin, code, and paths. Schema marker `content.schema` (v3) automates legacy migration.
 - **Never** `QueryParser`. Build `Query` objects from our AST. No OR-by-default.
 - **Content policy:** full text up to 1 MB; head 512 KB + tail 512 KB for larger; metadata-only above 20 MB.
-- **Commit policy:** debounce 2 s or 2,000 docs; the current writer arena is 16 MB (tune with [K12](ROADMAP.md#k12-index-format-spike-timeboxed)). `wait_merging_threads()` + `garbage_collect_files()` at idle, and a weekly force-merge.
-- **Snippets:** never read a file inside the query. Fetch after ranking, in the blocking pool, for the visible rows only ([K4](ROADMAP.md#k4-lazy-snippets-and-line-highlighting)), with a small LRU.
-- **Format decision:** the 1M-document K12 run rejected replacing this tier with SQLite FTS5 trigram (918 MB, 258 ms broad BM25) and rejected a sidecar; keep Tantivy and the folded field. See [docs/decisions/index-format.md](decisions/index-format.md).
+- **Commit policy:** debounce 2 s or 2,000 docs; the current writer arena is 16 MB. `wait_merging_threads()` + `garbage_collect_files()` at idle, and a weekly force-merge.
+- **Snippets:** never read a file inside the query. Fetch after ranking, in the blocking pool, for the visible rows only, with a small LRU.
+- **Format decision:** the 1M-document benchmark rejected replacing this tier with SQLite FTS5 trigram (918 MB, 258 ms broad BM25) and rejected a sidecar; keep Tantivy and the folded field. See [BENCHMARKS.md](BENCHMARKS.md).
 
 ### 5.3 Semantic tier — budget **0.5–2 ms**
 
@@ -217,7 +216,7 @@ struct Unit { node_id, byte_start, byte_end, model_idx }  // 1 vector per unit
 
 **Embedding queue:** bounded, resumable cursor in `nodes.indexed_gen`, priority = recently-modified first, then small files first. Hard rules: stop on battery, stop when a query is in flight, stop during fullscreen apps, max 2 threads.
 
-**Optional ONNX smart embedding pack (K17):**
+**Optional ONNX smart embedding pack:**
 - **Model:** `bge-small-en-v1.5` (quantized int8 ONNX).
 - **License:** MIT License.
 - **Parameters & Dimensions:** 33.4M parameters, 384 dimensions (quantized to i8, unit-normalized).
@@ -226,7 +225,7 @@ struct Unit { node_id, byte_start, byte_end, model_idx }  // 1 vector per unit
 - **Memory overhead:** ~45–55 MB peak RSS when active; exactly 0 MB when the feature is off or provider is `static`/`none`.
 - **Model isolation:** Managed with `model_id = 3` (distinct from default hashing `1` and static table `2`), ensuring units are strictly filtered and incompatible vectors never mix. Missing or disabled smart pack falls back to the static table with an explicit fallback reason surfaced in Doctor/stats.
 
-### 5.4 Folded / substring tier ([K5](ROADMAP.md#k5-folded--trigram-content-tier))
+### 5.4 Folded / substring tier
 
 Exact BM25 is the first tier. When it cannot fill the result limit, a folded
 tier handles partial words and OCR look-alikes:
@@ -242,7 +241,7 @@ tier handles partial words and OCR look-alikes:
 - Budget: the tier only runs when the exact/fuzzy/semantic tiers leave a
   shortfall, so a normal query never pays for it. On the synthetic 500-doc
   corpus, `p95 = 262 µs`; index growth was 1.61x with stored raw text.
-- **Filter pushdown (schema v3, K12/B4):** the content index stores the
+- **Filter pushdown (schema v3):** the content index stores the
   lowercase `ext` (indexed `STRING`) and `size` (fast `u64`) for every
   document. Positive `ext:`/`size:` filters are added as `Must` clauses before
   top-k collection, so BM25 and folded tiers never score documents the
@@ -398,11 +397,9 @@ State machine: `pending → ok | skipped(reason) | failed(reason)`, max 3 attemp
 - **Semantic badge:** a subtle `≈` on results that only the vector tier found. No mode switch — semantics are part of the one box.
 - **Settings:** progressive disclosure. Watched folders, exclusions preset, shortcut, and AI toggle stay visible. Downloads live in setup; Settings shows installed status and **Run setup again** (§18.8). Everything else is a config file, documented, not a UI.
 
-> This is the **shipped `v0.3.x`** surface. The planned zero-syntax interaction —
-> plain-language intent, `/` commands, `@` scopes, interpretation chips, facet
-> counts, grouped versions — is specified in §18.1–18.2 and
-> [`VISION.md`](VISION.md). `>` is intended to become `/`; the old grammar stays
-> available underneath.
+> This is the **shipped `v1.0.0`** surface: plain-language intent, `/`
+> commands, `@` scopes, interpretation chips, facet counts, and grouped
+> versions. The legacy `>` grammar stays available underneath.
 
 **Perceived-speed rules:** render previous results during computation; fire immediately on Enter/paste; prefetch top-5 snippets; never animate reordering; empty state = recent files, rendered before any query.
 
@@ -469,7 +466,7 @@ Design rules:
 Gates: p50 < 15 ms, p95 < 40 ms, p99 < 60 ms. The 1M facet pass is now
 within its measured budget, but the full 1M query path still materializes the
 metadata arena per query (~207 ms p50 in `mem_probe`, down from 675 ms); that gap is tracked as
-the arena-backed query path in [REMAINING.md](REMAINING.md) section D. **Daemon idle RSS at 1M files:** ≤ 150 MB interim (compact arena, [K2](ROADMAP.md#k2-compact-metadata-arena)); ≤ 60 MB target once the daemon + mmap'd index land ([K1](ROADMAP.md#k1-daemon-split-epic)). **Indexer peak RSS:** ≤ 100 MB for an image-heavy backfill ([K3](ROADMAP.md#k3-thumbnail-based-hashing--memory-release)); the current measured peak is ~73 MB for a mixed 700-file crawl. Indexing throughput > 2,000 files/s metadata, > 150 files/s text content (OCR-bound image content is limited by tesseract; see [BENCHMARKS.md](BENCHMARKS.md#indexing-and-extraction-reference)). Semantic embedding > 2,000 docs/s.
+the arena-backed query path remains the next optimization. **Daemon idle RSS at 1M files:** ≤ 150 MB interim (compact arena); ≤ 60 MB target once the daemon + mmap'd index land. **Indexer peak RSS:** ≤ 100 MB for an image-heavy backfill; the current measured peak is ~73 MB for a mixed 700-file crawl. Indexing throughput > 2,000 files/s metadata, > 150 files/s text content (OCR-bound image content is limited by tesseract; see [BENCHMARKS.md](BENCHMARKS.md#indexing-and-extraction-reference)). Semantic embedding > 2,000 docs/s.
 
 ---
 
@@ -514,14 +511,12 @@ Rule: **`kensaku-core` must not depend on Tauri.** The GUI must not depend on in
 
 ## 13. Phase plan (each phase ships something usable)
 
-**Status (v0.3.x + K1–K14):** the foundation, query layer, semantic tier,
-document extraction, OCR/thumbnail work, opt-in external extractors, daemon
-split, PP-OCRv6 pack, model/download hygiene, and native quick-window spike
-are implemented. The GUI, CLI, and MCP are daemon clients with a read-only
-fallback. The next slice is the remaining product backlog in
-[REMAINING.md](REMAINING.md): visual search, native platform OCR, HTTP/SSE,
-one-click agent connect, 1M prefilter, and packaging/signing.
-The phases below are the original plan; use ROADMAP for current ordering.
+**Status (v1.0.0):** the foundation, query layer, semantic tier, document
+extraction, OCR/thumbnail work, opt-in external extractors, daemon split,
+PP-OCRv6 pack, model/download hygiene, HTTP/SSE agent transport, one-click
+connect, and the search-quality pass are implemented. The GUI, CLI, and MCP
+are daemon clients with a read-only fallback. Signing/notarization and the
+auto-updater remain packaging follow-ups.
 
 ### Phase 0 — Trustworthy foundation · ~2 weeks
 Workspace split · SQLite schema + snapshot warm-load · `(dev, ino)` identity · mtime/size diffing · rename & subtree delete · watcher rewrite (overflow → rescan, single owned watcher, events during crawl) · search-first/reconcile-after startup · `spawn_blocking` + snapshot queries + cancellation · single instance · atomic config · schema versioning · `kensaku doctor`.
@@ -595,11 +590,11 @@ GitHub Actions (AppImage/deb/AUR, dmg universal, msi/exe) · benchmark harness +
 8. **Exact scan + fast fields before fancy relevance.** Filters are the real speed feature.
 9. **Read-only agent surface.** Security, simplicity, and a clean mental model.
 10. **No bundled LLM.** Ollama integration gives "ask" without shipping a 4 GB dependency.
-11. **Daemon owns the index before more workers land.** The webview must not be in the memory path for OCR, image decoding, or model packs. ([K1](ROADMAP.md#k1-daemon-split-epic))
-12. **Compact arena inside the daemon.** The daemon owns the name/attribute arenas; clients never receive the full metadata payload. ([K2](ROADMAP.md#k2-compact-metadata-arena))
-13. **Thumbnail hashing, not full-image hashing.** A 480 px thumbnail is the source for dHash; full decodes never happen just to compute a duplicate key. ([K3](ROADMAP.md#k3-thumbnail-based-hashing--memory-release))
-14. **Tesseract by default, PP-OCRv6 opt-in.** Bulk indexing stays fast and light; the PP-OCRv6 tiny pack is a ~6 MB, slower alternative for small UI text, with native platform OCR still planned. ([K6](ROADMAP.md#k6-optional-pp-ocrv6-ocr-pack))
-15. **Exact → folded → semantic.** Never let tolerant matching run when exact results already fill the limit; verify folded candidates against the raw text. ([K5](ROADMAP.md#k5-folded--trigram-content-tier))
+11. **Daemon owns the index before more workers land.** The webview must not be in the memory path for OCR, image decoding, or model packs.
+12. **Compact arena inside the daemon.** The daemon owns the name/attribute arenas; clients never receive the full metadata payload.
+13. **Thumbnail hashing, not full-image hashing.** A 480 px thumbnail is the source for dHash; full decodes never happen just to compute a duplicate key.
+14. **Tesseract by default, PP-OCRv6 opt-in.** Bulk indexing stays fast and light; the PP-OCRv6 tiny pack is a ~6 MB, slower alternative for small UI text. Native platform OCR is not implemented.
+15. **Exact → folded → semantic.** Never let tolerant matching run when exact results already fill the limit; verify folded candidates against the raw text.
 
 ---
 
@@ -613,10 +608,9 @@ After those three, the remaining phases are additive rather than corrective.
 
 ---
 
-## 18. Planned product layers (v0.4+)
+## 18. Future product layers
 
-Product intent and acceptance tests are in [`VISION.md`](VISION.md). This
-section is the technical shape of those layers.
+This section is the technical shape of future layers.
 
 ### 18.1 Intent layer
 
@@ -738,8 +732,8 @@ MCP ─┘        │
 - Loopback HTTP/SSE is shipped for web-capable MCP clients (`kensaku-cli
   serve`); it reuses the same token and read-only rules. `/ask` is CLI/GUI
   only and is not exposed on this transport.
-- Release packaging of the daemon sidecar (installer/bundle) is the remaining
-  release task, tracked in [REMAINING.md](REMAINING.md) section F.
+- Release packaging of the daemon sidecar (installer/bundle) remains a
+  packaging follow-up.
 
 ### 18.5 Memory and personalization
 

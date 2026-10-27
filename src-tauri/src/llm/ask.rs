@@ -46,6 +46,11 @@ pub struct AskResponse {
     pub sources: Vec<AskSource>,
     pub model: String,
     pub provider: String,
+    /// Endpoint used for this answer, for the cloud-consent indicator.
+    pub endpoint: String,
+    /// True when `endpoint` is not loopback, so the question/snippets left the
+    /// device.
+    pub cloud: bool,
     /// True when the model was reachable and produced an answer; false means
     /// the response carries only the retrieval results (deterministic path).
     pub answered: bool,
@@ -123,6 +128,8 @@ pub fn answer_from_results(
         sources,
         model: target.model.clone(),
         provider: target.provider.as_str().to_string(),
+        endpoint: target.base_url.clone(),
+        cloud: !super::is_loopback(&target.base_url),
         answered: false,
         as_of,
     };
