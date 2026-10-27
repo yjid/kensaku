@@ -26,7 +26,7 @@ export const TypeTile: React.FC<{
   const size = compact ? 15 : label.length > 5 ? 26 : 32;
 
   return (
-    <span className="absolute inset-0 flex flex-col justify-between p-4">
+    <span className="absolute inset-0 flex flex-col justify-between p-3">
       {snippet && !compact ? (
         <span
           className={`line-clamp-4 text-muted ${

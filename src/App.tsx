@@ -928,7 +928,7 @@ function App() {
                     type="button"
                     title="Settings"
                     onClick={() => openSettings()}
-                    className="btn btn-ghost btn-icon h-10 w-10 !rounded-full"
+                    className="btn btn-ghost btn-icon h-9 w-9 !rounded-[10px]"
                   >
                     <SettingsIcon className="h-4 w-4" strokeWidth={1.75} />
                   </button>
@@ -944,7 +944,7 @@ function App() {
 
 
               {!isCommandMode && interpretation.length > 0 && (
-                <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-8 pb-3">
+                <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-4 pb-2">
                   <span className="t-meta mr-1 text-subtle">Understood as</span>
                   {interpretation.map((c, i) => (
                     <button
@@ -967,7 +967,7 @@ function App() {
 
               {/* One control bar: category chips on the left, layout and save on the right. */}
               {!isCommandMode && hasQuery && (
-                <div className="fade-in flex shrink-0 items-center gap-3 px-6 pb-3">
+                <div className="fade-in flex shrink-0 items-center gap-2 px-4 pb-2">
                   <CategoryChips
                     results={results}
                     facets={facets}
@@ -992,7 +992,7 @@ function App() {
               )}
 
               {saveOpen && (
-                <div className="overlay-in flex shrink-0 items-center gap-2 px-6 pb-3">
+                <div className="overlay-in flex shrink-0 items-center gap-2 px-4 pb-2">
                   <input
                     autoFocus
                     value={saveName}
@@ -1056,7 +1056,7 @@ function App() {
 
               {/* Command output banner */}
               {commandOutput && (
-                <div className="surface overlay-in mx-6 mb-3 flex shrink-0 items-start justify-between gap-3 px-4 py-3">
+                <div className="surface overlay-in mx-4 mb-2 flex shrink-0 items-start justify-between gap-3 px-4 py-3">
                   <div className="flex min-w-0 items-start gap-2">
                     <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />
                     <pre className="select-text whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-muted">
@@ -1127,7 +1127,7 @@ function App() {
                       }
                     />
                   ) : noResults ? (
-                    <div className="flex h-full flex-col items-start justify-end gap-5 px-8 pb-16 select-none">
+                    <div className="flex h-full flex-col items-start justify-end gap-4 px-5 pb-10 select-none">
                       <p className="t-moment rise-in max-w-lg text-muted">
                         Nothing called <span className="text-fg">{query.trim()}</span>, yet.
                       </p>

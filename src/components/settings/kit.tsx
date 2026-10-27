@@ -29,7 +29,7 @@ export function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-[60px] items-center justify-between gap-8 border-b border-line px-5 py-3.5 last:border-b-0">
+    <div className="flex min-h-[52px] items-center justify-between gap-6 border-b border-line px-4 py-2.5 last:border-b-0">
       <div className="min-w-0 space-y-0.5">
         <p className="text-[13px] font-medium text-fg">{label}</p>
         {description && <p className="line-clamp-2 text-[12px] leading-[18px] text-muted">{description}</p>}
@@ -42,7 +42,7 @@ export function Field({
 
 export function Card({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
-    <section className="mb-8">
+    <section className="mb-5">
       {title && <p className="t-meta px-1 pb-2.5 text-subtle">{title}</p>}
       <div className="surface overflow-hidden">{children}</div>
     </section>
@@ -51,8 +51,8 @@ export function Card({ title, children }: { title?: string; children: React.Reac
 
 export function SectionHeader({ title, description }: { title: string; description: string }) {
   return (
-    <div className="pb-8">
-      <h2 className="text-fg" style={{ fontSize: 28, lineHeight: "34px", fontWeight: 600, letterSpacing: "-0.03em" }}>
+    <div className="pb-5">
+      <h2 className="text-fg" style={{ fontSize: 24, lineHeight: "30px", fontWeight: 600, letterSpacing: "-0.03em" }}>
         {title}
       </h2>
       <p className="t-lead pt-1.5 text-muted">{description}</p>

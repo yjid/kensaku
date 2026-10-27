@@ -154,8 +154,8 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
 
   return (
     <div className="fade-in absolute inset-0 z-40 flex bg-bg">
-      <nav data-tauri-drag-region className="relative z-10 flex w-[220px] shrink-0 flex-col overflow-y-auto px-4 pb-4 pt-7">
-        <p data-tauri-drag-region className="t-title px-3 pb-6 text-fg">Settings</p>
+      <nav data-tauri-drag-region className="relative z-10 flex w-[200px] shrink-0 flex-col overflow-y-auto px-3 pb-3 pt-5">
+        <p data-tauri-drag-region className="t-title px-3 pb-4 text-fg">Settings</p>
         <div className="flex flex-col gap-0.5">
           {SECTIONS.map((s) => {
             const active = section === s.id;
@@ -178,7 +178,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
         </div>
       </nav>
 
-      <main className="surface relative z-10 m-3 ml-0 min-w-0 flex-1 overflow-hidden !rounded-[28px]">
+      <main className="surface relative z-10 m-2 ml-0 min-w-0 flex-1 overflow-hidden !rounded-[28px]">
         <button
           type="button"
           title="Close (Esc)"
@@ -187,7 +187,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
         >
           <X className="h-4 w-4" strokeWidth={1.75} />
         </button>
-        <div className="absolute inset-0 overflow-y-auto px-12 pb-28 pt-12" style={{ scrollbarGutter: "stable" }}>
+        <div className="absolute inset-0 overflow-y-auto px-8 pb-24 pt-8" style={{ scrollbarGutter: "stable" }}>
           <div className="mx-auto max-w-[640px]">
             {config ? (
               <SectionShell section={section}>{renderSection(section, config, setConfig)}</SectionShell>
@@ -362,8 +362,8 @@ function GeneralSection({
   return (
     <>
       <Card title="Appearance">
-        <div className="grid grid-cols-3 gap-4 p-5">
-          {(["light", "dark", "glass"] as const).map((value) => (
+        <div className="grid grid-cols-2 gap-4 p-4">
+          {(["light", "dark"] as const).map((value) => (
             <ThemeSwatch key={value} value={value} active={theme === value} onSelect={() => setTheme(value)} />
           ))}
         </div>
@@ -1536,8 +1536,8 @@ function AboutSection() {
 
 /* A tiny rendering of the app in each finish: field, rule, three tiles.
    Colors are the real tokens, scoped by data-theme on the swatch. */
-function ThemeSwatch({ value, active, onSelect }: { value: "light" | "dark" | "glass"; active: boolean; onSelect: () => void }) {
-  const label = { light: "Light", dark: "Dark", glass: "Glass" }[value];
+function ThemeSwatch({ value, active, onSelect }: { value: "light" | "dark"; active: boolean; onSelect: () => void }) {
+  const label = { light: "Light", dark: "Dark" }[value];
   return (
     <button type="button" onClick={onSelect} aria-pressed={active} className="group flex flex-col gap-2.5 text-left outline-none">
       <span

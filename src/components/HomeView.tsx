@@ -38,7 +38,7 @@ function RecentTile({
           <TypeTile filename={name} isDir={item.is_dir} />
         )}
       </span>
-      <span className="flex min-w-0 flex-col px-0.5 pt-3">
+      <span className="flex min-w-0 flex-col px-0.5 pt-2">
         <span className="truncate text-[13px] font-medium leading-[18px] text-fg">{name}</span>
         <span className="t-meta truncate text-subtle">{formatRelativeTime(item.modified)}</span>
       </span>
@@ -63,7 +63,7 @@ export function HomeView({
 
   if (recent.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-start justify-end gap-6 px-8 pb-16">
+      <div className="flex flex-1 flex-col items-start justify-end gap-4 px-5 pb-10">
         <p className="t-moment rise-in max-w-md text-muted">Ask for a file the way you'd describe it to a friend.</p>
         <div className="flex flex-wrap gap-1.5">
           {SUGGESTIONS.map((q, i) => (
@@ -83,9 +83,9 @@ export function HomeView({
   }
 
   return (
-    <div className="px-8 pb-10 pt-6">
+    <div className="px-4 pb-6 pt-2">
       {saved.length > 0 && (
-        <div className="mb-8 flex flex-wrap items-baseline gap-x-5 gap-y-2">
+        <div className="mb-4 flex flex-wrap items-baseline gap-x-5 gap-y-2">
           <span className="t-meta text-subtle">Saved</span>
           {saved.map((s) => (
             <button
@@ -99,8 +99,8 @@ export function HomeView({
           ))}
         </div>
       )}
-      <p className="t-meta mb-4 text-subtle">Recent</p>
-      <div className="grid gap-x-5 gap-y-6" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(188px, 1fr))" }}>
+      <p className="t-meta mb-2.5 px-0.5 text-subtle">Recent</p>
+      <div className="grid gap-x-3 gap-y-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(168px, 1fr))" }}>
         {recent.map((r, i) => (
           <RecentTile key={r.path} item={r} index={i} showThumbs={showThumbs} onOpen={() => onOpen(r.path)} />
         ))}
