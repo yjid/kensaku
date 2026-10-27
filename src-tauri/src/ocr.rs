@@ -94,7 +94,7 @@ pub fn accurate_available() -> bool {
 /// Updates the process-wide OCR backend from config.
 ///
 /// Values other than `accurate` (including the old `native` string) fall back
-/// to Tesseract. Native platform OCR is not implemented yet.
+/// to Tesseract.
 pub fn set_engine(engine: &str) {
     let value = if engine.eq_ignore_ascii_case(ACCURATE) {
         1
@@ -115,8 +115,7 @@ pub fn engine_name() -> &'static str {
 ///
 /// Returns `None` so the caller falls back to Tesseract when the pack is
 /// missing, the dynamic runtime cannot be loaded, the engine is disabled, or
-/// it returns no text. Native macOS/Windows OCR is a separate,
-/// not-yet-implemented backlog item.
+/// it returns no text.
 pub fn extract_image_ocr(path: &Path) -> Option<String> {
     #[cfg(feature = "accurate-ocr")]
     {

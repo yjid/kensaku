@@ -20,7 +20,6 @@ import {
 import type { LucideIcon } from "lucide-react";
 import {
   KensakuConfig,
-  ModelsStatus,
   ClientStatus,
   InstallOutcome,
 } from "../types";
@@ -1059,114 +1058,21 @@ function BetaSection({
   config: KensakuConfig;
   setConfig: React.Dispatch<React.SetStateAction<KensakuConfig | null>>;
 }) {
-  const [pack, setPack] = useState<ModelsStatus | null>(null);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
-
-  const refresh = async () => {
-    try {
-      setPack(await invoke<ModelsStatus>("get_visual_pack_status"));
-    } catch {
-      setPack(null);
-    }
-  };
-
-  useEffect(() => {
-    refresh();
-    const timer = window.setInterval(refresh, 2000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const download = async () => {
-    setDownloadError(null);
-    try {
-      setPack(await invoke<ModelsStatus>("download_visual_pack"));
-    } catch (err) {
-      setDownloadError(String(err));
-    }
-  };
-
+  void config;
+  void setConfig;
   return (
-    <>
-      <Card title="Visual search (beta)">
-        <Field
-          label="Enable beta visual search"
-          description="Stores the preference and unlocks the model pack below. Search integration is not enabled in this build."
-        >
-          <Switch
-            checked={config.visual_search_beta_enabled ?? false}
-            onChange={(v) =>
-              setConfig((c) => (c ? { ...c, visual_search_beta_enabled: v } : c))
-            }
-          />
-        </Field>
-        <div className="space-y-3 border-t border-line px-4 py-3">
-          <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-[11px] font-medium text-fg">CLIP ViT-B/32 pack</p>
-              <p className="text-[11px] leading-relaxed text-muted">
-                Vision + text encoders, int8. About 150 MB. Download only for now.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={download}
-              disabled={!config.visual_search_beta_enabled || pack?.downloading}
-              className="flex h-7 shrink-0 items-center gap-1.5 rounded-[8px] border border-line px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              <RefreshCw className={`h-3 w-3 ${pack?.downloading ? "animate-spin" : ""}`} />
-              {pack?.ready ? "Re-check" : pack?.downloading ? "Downloading…" : "Download"}
-            </button>
-          </div>
-          {pack?.progress && (
-            <div className="space-y-1">
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-sunken">
-                <div
-                  className="h-full rounded-full bg-accent transition-[width] duration-500"
-                  style={{
-                    width: `${pack.progress.total > 0 ? Math.min(100, (pack.progress.downloaded / pack.progress.total) * 100) : 0}%`,
-                  }}
-                />
-              </div>
-              <p className="truncate font-mono text-[11px] text-subtle">
-                {pack.progress.file} · {formatBytes(pack.progress.downloaded)} /{" "}
-                {formatBytes(pack.progress.total)}
-              </p>
-            </div>
-          )}
-          {pack && (
-            <div className="space-y-1">
-              <p className="truncate font-mono text-[11px] text-subtle">{pack.dir}</p>
-              {pack.artifacts.map((artifact) => (
-                <div key={artifact.name + artifact.url} className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                        artifact.present ? "bg-success" : "bg-subtle"
-                      }`}
-                    />
-                    <code className="font-mono text-[11px] text-fg">{artifact.name}</code>
-                  </div>
-                  <span className="font-mono text-[11px] text-subtle">
-                    {formatBytes(artifact.present ? artifact.bytes_on_disk || artifact.bytes_expected : artifact.bytes_expected)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          {downloadError && <p className="text-[11px] text-warning">{downloadError}</p>}
-          {pack?.error && <p className="text-[11px] text-warning">{pack.error}</p>}
+    <Card title="Visual search">
+      <div className="flex items-center justify-between gap-4 px-4 py-3 opacity-50">
+        <div className="min-w-0">
+          <p className="text-[12px] font-medium text-fg">Visual search</p>
+          <p className="text-[11px] leading-relaxed text-muted">Find images by what they show. Coming later.</p>
         </div>
-      </Card>
-    </>
+        <span className="shrink-0 rounded-[6px] border border-line px-2 py-0.5 text-[11px] text-muted">Coming later</span>
+      </div>
+    </Card>
   );
 }
 
-
-/* ---------------------------------------------------------------- */
-/* One-click connect + Local AI (Agents section)                     */
-/* ---------------------------------------------------------------- */
-
-/** Per-client connect row: detected status plus one-click install. */
 function AgentConnectCard() {
   const [statuses, setStatuses] = useState<ClientStatus[]>([]);
   const [busy, setBusy] = useState<string | null>(null);

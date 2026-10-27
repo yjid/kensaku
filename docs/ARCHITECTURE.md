@@ -372,7 +372,7 @@ magic-byte sniff ─► dispatcher ─► built-in or opt-in external extractor
 | text/code/config | encoding detect → UTF-8 | UTF-16 BOM, Latin-1 fallback; strict-UTF-8 rejection is a bug |
 | DOCX/PPTX/XLSX/EPUB | ZIP + quick-xml | shared strings, speaker notes, hidden sheets; **DTDs disabled** (billion-laughs) |
 | PDF | `pdf-extract` first; `pdfium` feature flag if quality fails | page-level offsets → "jump to page"; encrypted/scanned → explicit state |
-| Images | tesseract by default; optional PP-OCRv6 tiny pack; native Vision/Windows OCR planned → text units | OCR before CLIP; screenshots prioritized |
+| Images | tesseract by default; optional PP-OCRv6 tiny pack → text units | OCR before CLIP; screenshots prioritized |
 | Archives | metadata only (v2) | no recursive indexing |
 | External | config-defined executable, extension/MIME allowlist | no shell, cleared env, 100–7000 ms timeout, bounded stdout, process-group kill; zero plugins by default |
 
@@ -539,7 +539,7 @@ Daemon socket + protocol (shipped) · CLI commands (shipped) · MCP stdio (shipp
 **Gate:** `search` p95 < 50 ms; MCP client round-trip works from Cursor and Claude Code; exhaustive mode paginates 100k matches without OOM.
 
 ### Phase 5 — Vision & OCR · ~1.5 weeks
-Screenshot OCR (tesseract default, PP-OCRv6 pack shipped, native Vision/Windows OCR planned) → text units · image embeddings (SigLIP or CLIP ViT-B/32 int8, **not** MobileCLIP on x86) · EXIF orientation · megapixel/size caps · perceptual-hash dedupe · thumbnails.
+Screenshot OCR (tesseract default, PP-OCRv6 pack shipped) → text units · image embeddings (SigLIP or CLIP ViT-B/32 int8, **not** MobileCLIP on x86) · EXIF orientation · megapixel/size caps · perceptual-hash dedupe · thumbnails.
 **Gate:** "screenshot of docker error" returns the right image in top 5; 50k-image scan < 10 ms.
 
 ### Phase 6 — Ask & act · ~1 week
