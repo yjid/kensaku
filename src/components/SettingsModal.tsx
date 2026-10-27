@@ -1,12 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  Activity,
   Bot,
   Check,
   Copy,
   Filter,
-  FlaskConical,
   FolderTree,
   Info,
   Plus,
@@ -60,11 +58,9 @@ const SECTIONS: { id: SectionId; label: string; icon: LucideIcon }[] = [
   { id: "folders", label: "Folders", icon: FolderTree },
   { id: "exclusions", label: "Exclusions", icon: Filter },
   { id: "search", label: "Search", icon: Search },
-  { id: "ai", label: "AI & Semantic", icon: Sparkles },
-  { id: "beta", label: "Beta", icon: FlaskConical },
+  { id: "ai", label: "Smart search", icon: Sparkles },
   { id: "agents", label: "Agents", icon: Bot },
-  { id: "stats", label: "Stats for Nerds", icon: Activity },
-  { id: "doctor", label: "Doctor", icon: Stethoscope },
+  { id: "doctor", label: "Health", icon: Stethoscope },
   { id: "about", label: "About", icon: Info },
 ];
 
@@ -73,11 +69,11 @@ const SECTION_META: Record<SectionId, { title: string; description: string }> = 
   folders: { title: "Folders", description: "Directories watched and indexed on this machine." },
   exclusions: { title: "Exclusions", description: "Names and extensions kept out of the index." },
   search: { title: "Search", description: "Ranking, OCR and the query language." },
-  ai: { title: "AI & Semantic", description: "Embedding model, vector tier and model files." },
+  ai: { title: "Smart search", description: "Understands meaning, not just words. Runs on this computer." },
   beta: { title: "Beta", description: "Optional experiments that are not part of the default search path." },
   agents: { title: "Agents", description: "Read-only access for MCP clients and the CLI." },
   stats: { title: "Stats for Nerds", description: "Live telemetry from the running index." },
-  doctor: { title: "Doctor", description: "Health checks across index, watcher and models." },
+  doctor: { title: "Health", description: "Is the index up to date and everything running?" },
   about: { title: "About", description: "Version, thesis and the reset control." },
 };
 
@@ -276,14 +272,17 @@ function renderSection(
       return <SearchSection config={config} setConfig={setConfig} />;
     case "ai":
       return <AiSection config={config} setConfig={setConfig} />;
-    case "beta":
-      return <BetaSection config={config} setConfig={setConfig} />;
     case "agents":
       return <AgentsSection config={config} setConfig={setConfig} />;
-    case "stats":
-      return <StatsForNerds />;
     case "doctor":
-      return <DoctorSection />;
+      // Health groups what used to be Doctor, Stats for Nerds and Beta.
+      return (
+        <>
+          <DoctorSection />
+          <StatsForNerds />
+          <BetaSection config={config} setConfig={setConfig} />
+        </>
+      );
     case "about":
       return <AboutSection />;
   }
@@ -303,7 +302,8 @@ function ConfigSkeleton() {
 function SectionShell({ section, children }: { section: SectionId; children: React.ReactNode }) {
   const meta = SECTION_META[section];
   return (
-    <div>
+    // Keyed by section so each switch replays a short ease-in.
+    <div key={section} className="section-enter">
       <SectionHeader title={meta.title} description={meta.description} />
       {children}
     </div>
