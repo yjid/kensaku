@@ -51,7 +51,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     at: 0,
     total: 0,
   });
-  const { theme, setTheme } = useTheme();
+  const { theme, toggle } = useTheme();
 
   useEffect(() => {
     invoke<string[]>("get_suggested_directories")
@@ -336,10 +336,10 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
           <button
             type="button"
             title="Toggle theme"
-            onClick={() => setTheme(theme === "paper" ? "void" : "paper")}
+            onClick={toggle}
             className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-sunken hover:text-fg"
           >
-            {theme === "paper" ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
+            {theme === "light" ? <Moon className="h-3.5 w-3.5" /> : theme === "dark" ? <Sparkles className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
           </button>
         </div>
       </header>

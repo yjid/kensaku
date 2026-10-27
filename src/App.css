@@ -7,48 +7,99 @@
 /* ------------------------------------------------------------------ */
 
 :root {
-  /* paper (light) */
-  --bg: #f5f5f4;
+  --bg: #f5f5f7;
   --bg-elevated: #ffffff;
-  --bg-sunken: #efefed;
-  --fg: #111110;
-  --fg-muted: #6b6b66;
-  --fg-subtle: #9a9a94;
-  --border: #e7e7e4;
-  --border-strong: #c4c4bc;
-  --accent: #1c1c1e;
+  --bg-sunken: #f0f0f3;
+  --fg: #1d1d1f;
+  --fg-muted: #6e6e73;
+  --fg-subtle: #8e8e93;
+  --border: #e5e5ea;
+  --border-strong: #d2d2d7;
+  --accent: #1d1d1f;
   --accent-fg: #ffffff;
-  --accent-soft: #ededeb;
-  --blue: #3d5af1;
-  --pink: #d98b8b;
-  --olive: #8f8f5a;
-  --danger: #c2452d;
-  --warning: #b5761f;
-  --success: #3f7a55;
-  --scrim: rgba(17, 17, 16, 0.32);
+  --accent-soft: #ebebf0;
+  --blue: #0071e3;
+  --pink: #c96b78;
+  --olive: #7d7d4f;
+  --danger: #d70015;
+  --warning: #b25000;
+  --success: #248a3d;
+  --scrim: rgba(0, 0, 0, 0.22);
   --icon-tint-opacity: 0.12;
 }
 
+[data-theme="dark"] {
+  --bg: #000000;
+  --bg-elevated: #1c1c1e;
+  --bg-sunken: #0a0a0b;
+  --fg: #f5f5f7;
+  --fg-muted: #98989d;
+  --fg-subtle: #6e6e73;
+  --border: #2c2c2e;
+  --border-strong: #3a3a3c;
+  --accent: #f5f5f7;
+  --accent-fg: #000000;
+  --accent-soft: #2c2c2e;
+  --blue: #0a84ff;
+  --pink: #ff8fa3;
+  --olive: #c4c48a;
+  --danger: #ff453a;
+  --warning: #ff9f0a;
+  --success: #30d158;
+  --scrim: rgba(0, 0, 0, 0.6);
+  --icon-tint-opacity: 0.14;
+}
+
 [data-theme="void"] {
-  --bg: #111112;
-  --bg-elevated: #18181a;
-  --bg-sunken: #0d0d0e;
-  --fg: #f2f2ef;
-  --fg-muted: #9a9a96;
-  --fg-subtle: #6a6a66;
-  --border: #222225;
-  --border-strong: #3a3a41;
-  --accent: #f2f2f2;
-  --accent-fg: #111111;
-  --accent-soft: #1f1f21;
-  --blue: #6b86ff;
-  --pink: #e0a0a0;
-  --olive: #b0b07a;
-  --danger: #e5644a;
-  --warning: #e0a44a;
-  --success: #6fbf8f;
-  --scrim: rgba(0, 0, 0, 0.55);
-  --icon-tint-opacity: 0.1;
+  --bg: #000000;
+  --bg-elevated: #1c1c1e;
+  --bg-sunken: #0a0a0b;
+  --fg: #f5f5f7;
+  --fg-muted: #98989d;
+  --fg-subtle: #6e6e73;
+  --border: #2c2c2e;
+  --border-strong: #3a3a3c;
+  --accent: #f5f5f7;
+  --accent-fg: #000000;
+  --accent-soft: #2c2c2e;
+  --blue: #0a84ff;
+  --pink: #ff8fa3;
+  --olive: #c4c48a;
+  --danger: #ff453a;
+  --warning: #ff9f0a;
+  --success: #30d158;
+  --scrim: rgba(0, 0, 0, 0.6);
+  --icon-tint-opacity: 0.14;
+}
+
+[data-theme="glass"] {
+  --bg: rgba(246, 246, 248, 0.42);
+  --bg-elevated: rgba(255, 255, 255, 0.58);
+  --bg-sunken: rgba(255, 255, 255, 0.28);
+  --fg: #1d1d1f;
+  --fg-muted: rgba(60, 60, 67, 0.72);
+  --fg-subtle: rgba(60, 60, 67, 0.48);
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.14);
+  --accent: #1d1d1f;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(0, 0, 0, 0.06);
+  --blue: #0071e3;
+  --pink: #c96b78;
+  --olive: #7d7d4f;
+  --danger: #d70015;
+  --warning: #b25000;
+  --success: #248a3d;
+  --scrim: rgba(20, 20, 24, 0.25);
+  --icon-tint-opacity: 0.12;
+}
+
+/* Glass: the window is already transparent, so panels blur what sits behind. */
+html[data-theme="glass"],
+html[data-theme="glass"] body {
+  background: transparent;
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
 }
 
 /* Map tokens into Tailwind's theme so utilities like `bg-elevated`,
@@ -440,7 +491,7 @@
     border-radius: 12px;
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px rgb(0 0 0 / 0.10);
   }
-  [data-theme="void"] .elevated {
+  [data-theme="dark"] .elevated, [data-theme="void"] .elevated {
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.45);
   }
   /* Menu rows: quiet hover, tight rhythm. */

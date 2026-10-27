@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="void">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,8 +8,8 @@
       // Apply stored theme before first paint to avoid a flash.
       try {
         var t = localStorage.getItem("kensaku.theme");
-        document.documentElement.dataset.theme =
-          t === "paper" || t === "void" ? t : "void";
+        var map = { paper: "light", light: "light", void: "dark", dark: "dark", glass: "glass" };
+        document.documentElement.dataset.theme = map[t] || "dark";
       } catch (e) {}
     </script>
   </head>

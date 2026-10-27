@@ -12,6 +12,7 @@ import {
   Save,
   Search,
   SlidersHorizontal,
+  Sparkles,
   Stethoscope,
   Sun,
   Moon,
@@ -387,28 +388,25 @@ function GeneralSection({
   return (
     <>
       <Card title="Appearance">
-        <Field label="Theme" description="Two finishes only: warm paper or deep void.">
-          <div className="flex w-44 rounded-full border border-line bg-sunken p-0.5">
-            <button
-              type="button"
-              onClick={() => setTheme("paper")}
-              className={`flex h-6 flex-1 items-center justify-center gap-1.5 rounded-full text-[11px] transition-colors duration-150 ${
-                theme === "paper" ? "bg-fg text-bg" : "text-muted hover:text-fg"
-              }`}
-            >
-              <Sun className="h-3 w-3" />
-              paper
-            </button>
-            <button
-              type="button"
-              onClick={() => setTheme("void")}
-              className={`flex h-6 flex-1 items-center justify-center gap-1.5 rounded-full text-[11px] transition-colors duration-150 ${
-                theme === "void" ? "bg-fg text-bg" : "text-muted hover:text-fg"
-              }`}
-            >
-              <Moon className="h-3 w-3" />
-              void
-            </button>
+        <Field label="Theme" description="Light, dark, or glass.">
+          <div className="flex w-56 rounded-full border border-line bg-sunken p-0.5">
+            {([
+              ["light", "Light", Sun],
+              ["dark", "Dark", Moon],
+              ["glass", "Glass", Sparkles],
+            ] as const).map(([value, label, Icon]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setTheme(value)}
+                className={`flex h-6 flex-1 items-center justify-center gap-1.5 rounded-full text-[11px] transition-colors duration-150 ${
+                  theme === value ? "bg-fg text-bg" : "text-muted hover:text-fg"
+                }`}
+              >
+                <Icon className="h-3 w-3" />
+                {label}
+              </button>
+            ))}
           </div>
         </Field>
       </Card>
