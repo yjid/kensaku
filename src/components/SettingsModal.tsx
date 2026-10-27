@@ -153,8 +153,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
   };
 
   return (
-    <div className="fade-in grain absolute inset-0 z-40 flex bg-bg">
-      <div className="ambient" data-state="results" aria-hidden="true" />
+    <div className="fade-in absolute inset-0 z-40 flex bg-bg">
       <nav data-tauri-drag-region className="relative z-10 flex w-[220px] shrink-0 flex-col overflow-y-auto px-4 pb-4 pt-7">
         <p data-tauri-drag-region className="t-title px-3 pb-6 text-fg">Settings</p>
         <div className="flex flex-col gap-0.5">
@@ -168,10 +167,10 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
                 onClick={() => setSection(s.id)}
                 aria-current={active ? "page" : undefined}
                 className={`relative flex h-9 w-full items-center gap-3 rounded-[10px] px-3 text-[13px] transition-colors duration-150 ${
-                  active ? "bg-accent-soft font-medium text-fg shadow-[inset_0_0_0_1px_var(--border)]" : "text-muted hover:text-fg"
+                  active ? "control font-medium text-fg" : "text-muted hover:text-fg"
                 }`}
               >
-                <Icon className={`h-4 w-4 shrink-0 ${active ? "text-ink" : "text-subtle"}`} strokeWidth={1.75} />
+                <Icon className={`h-4 w-4 shrink-0 ${active ? "text-fg" : "text-subtle"}`} strokeWidth={1.75} />
                 {s.label}
               </button>
             );
@@ -179,7 +178,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
         </div>
       </nav>
 
-      <main className="relative z-10 m-3 ml-0 min-w-0 flex-1 overflow-hidden rounded-[24px] bg-[var(--panel)] shadow-[var(--panel-edge)] backdrop-blur-[var(--panel-blur)]">
+      <main className="surface relative z-10 m-3 ml-0 min-w-0 flex-1 overflow-hidden !rounded-[28px]">
         <button
           type="button"
           title="Close (Esc)"
@@ -199,9 +198,9 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
         </div>
 
         <footer className="pointer-events-none absolute inset-x-0 bottom-5 z-10 flex justify-center">
-          <div className="elevated pointer-events-auto flex items-center gap-2 !rounded-full py-1.5 pl-4 pr-1.5">
+          <div className="control pointer-events-auto flex items-center gap-2 rounded-full py-1.5 pl-4 pr-1.5">
             <span className="flex items-center gap-2 pr-2 text-[12px] text-muted">
-              <span className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors ${dirty ? "bg-ink" : "bg-success/70"}`} />
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors ${dirty ? "bg-warning" : "bg-success/70"}`} />
               {dirty ? "Unsaved changes" : saved ? "Saved" : "Up to date"}
             </span>
             <button type="button" onClick={() => handleSave(true)} disabled={saving || !config} className="btn btn-ghost h-8 !rounded-full px-3 text-[12px]">
@@ -1548,25 +1547,21 @@ function ThemeSwatch({ value, active, onSelect }: { value: "light" | "dark" | "g
         }`}
         style={{ outlineStyle: active ? "solid" : "none", boxShadow: "inset 0 0 0 1px var(--border)" }}
       >
-        {value !== "light" && (
-          <span
-            className="absolute -right-6 -top-8 h-24 w-24 rounded-full blur-2xl"
-            style={{ background: "var(--glow-a)", opacity: value === "glass" ? 0.7 : 0.35 }}
-          />
-        )}
-        {value === "glass" && (
-          <span className="absolute -bottom-8 -left-6 h-20 w-20 rounded-full blur-2xl" style={{ background: "var(--glow-b)", opacity: 0.6 }} />
-        )}
-        <span className="absolute left-3 right-3 top-3 h-2 w-1/2 rounded-full bg-fg opacity-80" />
-        <span className="absolute left-3 right-3 top-7 h-px bg-line" />
-        <span className="absolute bottom-3 left-3 right-3 grid grid-cols-3 gap-1.5">
-          {[0, 1, 2].map((i) => (
+        <span className="absolute bottom-3 left-3 right-3 top-9 grid grid-cols-3 gap-1.5">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
             <span
               key={i}
-              className="block aspect-[4/3] rounded-[4px] backdrop-blur-md"
-              style={{ background: "var(--panel)", boxShadow: i === 0 ? "inset 0 0 0 1px var(--ink)" : "var(--panel-edge)" }}
+              className="block rounded-[4px]"
+              style={{
+                background: i % 3 === 1 ? "var(--fg-subtle)" : "var(--bg-elevated)",
+                opacity: i % 3 === 1 ? 0.5 : 1,
+                boxShadow: "var(--panel-edge)",
+              }}
             />
           ))}
+        </span>
+        <span className="control absolute left-3 right-3 top-2.5 flex h-5 items-center rounded-full px-2">
+          <span className="h-1 w-1/3 rounded-full bg-fg opacity-70" />
         </span>
       </span>
       <span className={`px-0.5 text-[13px] ${active ? "font-medium text-fg" : "text-muted"}`}>{label}</span>

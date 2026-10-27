@@ -317,7 +317,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                   </span>
                   <span
                     className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors duration-200 ${
-                      selected ? "bg-ink text-white" : "shadow-[inset_0_0_0_1.5px_var(--border-strong)]"
+                      selected ? "bg-ink text-bg" : "shadow-[inset_0_0_0_1.5px_var(--border-strong)]"
                     }`}
                   >
                     {selected && <Check className="h-3 w-3" strokeWidth={2.5} />}
@@ -413,7 +413,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             >
               <span className="flex items-center gap-1.5">
                 {capturing ? (
-                  <span className="text-[13px] text-ink">Press a new shortcut…</span>
+                  <span className="text-[13px] text-fg">Press a new shortcut…</span>
                 ) : (
                   shortcut.split("+").map((k, i) => (
                     <span key={i} className="kbd !h-7 !min-w-7 !rounded-[7px] !px-2 !text-[12px] text-fg">{k}</span>
@@ -479,15 +479,14 @@ function Shell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="grain absolute inset-0 z-50 flex bg-bg">
-      <div className="ambient" aria-hidden="true" />
+    <div className="absolute inset-0 z-50 flex bg-bg">
       <aside data-tauri-drag-region className="relative z-10 hidden w-[42%] min-w-[320px] flex-col justify-between p-10 md:flex">
         <span className="text-[14px] font-semibold tracking-[-0.02em] text-fg">Kensaku</span>
         {brand}
         <span className="t-meta text-subtle">{mark}</span>
       </aside>
       <section className="relative z-10 flex min-w-0 flex-1 flex-col">
-        <div className="m-3 flex min-h-0 flex-1 flex-col rounded-[24px] bg-[var(--panel)] px-10 pt-6 shadow-[var(--panel-edge)] backdrop-blur-[var(--panel-blur)] md:ml-0">
+        <div className="surface m-3 flex min-h-0 flex-1 flex-col !rounded-[28px] px-10 pt-6 md:ml-0">
           <div data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-end">{trailing}</div>
           <div className="mx-auto flex min-h-0 w-full max-w-[460px] flex-1 flex-col">{children}</div>
         </div>
@@ -558,7 +557,7 @@ function EngineOption({
       }`}
     >
       <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors ${selected ? "bg-ink" : "shadow-[inset_0_0_0_1.5px_var(--border-strong)]"}`}>
-        {selected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+        {selected && <span className="h-1.5 w-1.5 rounded-full bg-bg" />}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-[14px] font-medium text-fg">{name}</span>

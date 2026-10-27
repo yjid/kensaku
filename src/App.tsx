@@ -122,6 +122,17 @@ function App() {
 
 
   const inputRef = useRef<HTMLInputElement>(null);
+  /* The top bar floats over the content; content is inset by its height. */
+  const barRef = useRef<HTMLDivElement>(null);
+  const [barHeight, setBarHeight] = useState(88);
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setBarHeight(el.offsetHeight));
+    ro.observe(el);
+    setBarHeight(el.offsetHeight);
+    return () => ro.disconnect();
+  });
   const resultsContainerRef = useRef<HTMLDivElement>(null);
 
   /** Number of cards in the first grid row (1 in list view). Measured from
@@ -535,9 +546,22 @@ function App() {
     setShowSettings(true);
   }, []);
 
-  const handleCopyPath = useCallback((path: string) => {
-    navigator.clipboard.writeText(path);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<number | undefined>(undefined);
+  const flash = useCallback((msg: string) => {
+    setToast(msg);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 1600);
   }, []);
+  const handleCopyPath = useCallback(
+    (path: string) => {
+      navigator.clipboard.writeText(path).then(
+        () => flash("Path copied"),
+        () => flash("Couldn't copy the path"),
+      );
+    },
+    [flash],
+  );
 
 
   /* ---------------- `/` commands ---------------- */
@@ -613,11 +637,24 @@ function App() {
     inputRef.current?.focus();
   }, []);
 
+  /* Space previews only once the user has moved into the results with the
+     arrow keys. Typing clears it, so Space still types a space in a query. */
+  const navigatingRef = useRef(false);
+  useEffect(() => {
+    navigatingRef.current = false;
+  }, [query]);
+
   const handleKeyDown = useCallback(
-    async (e: React.KeyboardEvent) => {
-      // Overlays capture their own Esc; everything else pauses the main list.
-      if (showSettings) return;
-      if (showDuplicates) return;
+    async (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (document.body.dataset.ksCapture === "1") return;
+      // Overlays own the keyboard while they are open.
+      if (showSettings || showDuplicates || showHelp || preview || details || menu) return;
+      const inInput = document.activeElement === inputRef.current;
+      const inOtherField =
+        !inInput &&
+        (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement);
+      if (inOtherField) return;
 
       // "/" focuses search when the focus is elsewhere.
       if (e.key === "/" && document.activeElement !== inputRef.current) {
@@ -683,8 +720,12 @@ function App() {
         }
       }
 
+      // Left/Right keep moving the caret while the query is being edited.
+      if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && inInput && !navigatingRef.current) return;
+
       if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
         e.preventDefault();
+        navigatingRef.current = true;
         if (navList.length === 0) {
           setSelectedIndex(0);
           return;
@@ -710,7 +751,12 @@ function App() {
             setSelectedIndex((prev) => (prev - 1 + navList.length) % navList.length);
           }
         }
-      } else if (e.key === " " && !preview && navList[selectedIndex] && document.activeElement !== inputRef.current) {
+      } else if (
+        navList[selectedIndex] &&
+        ((e.key === " " && (!inInput || navigatingRef.current || !query.trim())) ||
+          ((e.key === "y" || e.key === "Y") && (e.metaKey || e.ctrlKey)))
+      ) {
+        // Space after arrowing into results, or Cmd/Ctrl+Y anywhere (Quick Look).
         e.preventDefault();
         setPreview(navList[selectedIndex]);
       } else if (e.key === "Enter" && navList[selectedIndex]) {
@@ -721,7 +767,13 @@ function App() {
         } else {
           handleOpenFile(target.path);
         }
-      } else if ((e.key === "c" || e.key === "C") && (e.metaKey || e.ctrlKey) && navList[selectedIndex] && document.activeElement !== inputRef.current) {
+      } else if (
+        (e.key === "c" || e.key === "C") &&
+        (e.metaKey || e.ctrlKey) &&
+        navList[selectedIndex] &&
+        // In the search box, only take over when no text is selected.
+        (!inInput || inputRef.current!.selectionStart === inputRef.current!.selectionEnd)
+      ) {
         // Copy the selected result's path (Cmd/Ctrl+C outside the search box).
         e.preventDefault();
         handleCopyPath(navList[selectedIndex].path);
@@ -729,20 +781,20 @@ function App() {
         // Details for the selected result.
         e.preventDefault();
         setDetails(navList[selectedIndex]);
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        if (commandOutput) {
-          setCommandOutput(null);
-        } else if (query.trim()) {
-          setQuery("");
-          inputRef.current?.focus();
-        } else {
-          await invoke("hide_window");
-        }
       }
     },
-    [showSettings, showDuplicates, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope, preview],
+    [showSettings, showDuplicates, showHelp, details, menu, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope, preview],
   );
+
+  // Window-level, so shortcuts keep working after a dialog closes and focus
+  // falls back to the page body.
+  const keyHandlerRef = useRef(handleKeyDown);
+  keyHandlerRef.current = handleKeyDown;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => keyHandlerRef.current(e);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Master Escape: window-level so it fires even when focus is on body.
   useEffect(() => {
@@ -795,9 +847,7 @@ function App() {
   );
   if (isSetupComplete === null) {
     return (
-      <div className="grain flex h-screen items-center justify-center bg-bg">
-        <div className="ambient" data-state="searching" />
-      </div>
+      <div className="flex h-screen items-center justify-center bg-bg" />
     );
   }
 
@@ -810,14 +860,8 @@ function App() {
 
   return (
     <div
-      onKeyDown={handleKeyDown}
-      className="grain relative flex h-screen w-screen select-none flex-col overflow-hidden bg-bg text-fg"
+      className="relative flex h-screen w-screen select-none flex-col overflow-hidden bg-bg text-fg"
     >
-      <div
-        className="ambient"
-        aria-hidden="true"
-        data-state={isSearching ? "searching" : hasQuery && displayResults.length > 0 ? "results" : "idle"}
-      />
       {isSetupComplete === false && (
         <SetupModal
           onSetupCompleted={() => {
@@ -869,6 +913,8 @@ function App() {
 
           {!showSettings && (
             <>
+             <div className="relative min-h-0 flex-1">
+              <div ref={barRef} className="bar absolute inset-x-0 top-0 z-20">
               <SearchBar
                 query={query}
                 setQuery={setQuery}
@@ -882,7 +928,7 @@ function App() {
                     type="button"
                     title="Settings"
                     onClick={() => openSettings()}
-                    className="btn btn-ghost btn-icon h-8 !rounded-full"
+                    className="btn btn-ghost btn-icon h-10 w-10 !rounded-full"
                   >
                     <SettingsIcon className="h-4 w-4" strokeWidth={1.75} />
                   </button>
@@ -898,7 +944,7 @@ function App() {
 
 
               {!isCommandMode && interpretation.length > 0 && (
-                <div className="relative z-10 flex shrink-0 flex-wrap items-center gap-1.5 px-8 pt-3">
+                <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-8 pb-3">
                   <span className="t-meta mr-1 text-subtle">Understood as</span>
                   {interpretation.map((c, i) => (
                     <button
@@ -910,7 +956,7 @@ function App() {
                           prev.replace(c.source, "").replace(/\s+/g, " ").trim(),
                         )
                       }
-                      className="group flex h-6 items-center gap-1.5 rounded-[6px] bg-ink-soft px-2 text-[12px] text-ink transition-colors"
+                      className="group flex h-6 items-center gap-1.5 rounded-full bg-accent-soft px-2.5 text-[12px] text-fg shadow-[inset_0_0_0_1px_var(--border)] transition-colors hover:text-danger"
                     >
                       {c.label}
                       <X className="h-2.5 w-2.5 opacity-50 group-hover:opacity-100" />
@@ -921,7 +967,7 @@ function App() {
 
               {/* One control bar: category chips on the left, layout and save on the right. */}
               {!isCommandMode && hasQuery && (
-                <div className="fade-in relative z-10 flex shrink-0 items-center gap-2 px-8 py-2.5">
+                <div className="fade-in flex shrink-0 items-center gap-3 px-6 pb-3">
                   <CategoryChips
                     results={results}
                     facets={facets}
@@ -946,7 +992,7 @@ function App() {
               )}
 
               {saveOpen && (
-                <div className="overlay-in relative z-10 flex shrink-0 items-center gap-2 px-8 pb-2">
+                <div className="overlay-in flex shrink-0 items-center gap-2 px-6 pb-3">
                   <input
                     autoFocus
                     value={saveName}
@@ -1010,9 +1056,9 @@ function App() {
 
               {/* Command output banner */}
               {commandOutput && (
-                <div className="surface overlay-in relative z-10 mx-8 mb-2 flex shrink-0 items-start justify-between gap-3 px-4 py-3">
+                <div className="surface overlay-in mx-6 mb-3 flex shrink-0 items-start justify-between gap-3 px-4 py-3">
                   <div className="flex min-w-0 items-start gap-2">
-                    <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink" />
+                    <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />
                     <pre className="select-text whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-muted">
                       {commandOutput}
                     </pre>
@@ -1027,10 +1073,13 @@ function App() {
                 </div>
               )}
 
-              {/* Content: list/grid + preview */}
-              <div className="relative z-10 flex min-h-0 flex-1 overflow-hidden">
+              </div>
+
+              {/* Content scrolls underneath the bar. */}
+              <div className="absolute inset-0 z-10 flex overflow-hidden">
                 <div
                   ref={resultsContainerRef}
+                  style={displayResults.length > 0 ? undefined : { paddingTop: barHeight }}
                   className={`flex min-h-0 min-w-0 flex-1 flex-col ${
                     !hasQuery || displayResults.length === 0 ? "overflow-y-auto" : ""
                   }`}
@@ -1041,6 +1090,7 @@ function App() {
                       getKey={(res) => res.path}
                       cardHeight={(w) => w * 0.75 + 56}
                       list={view === "list"}
+                      insetTop={barHeight}
                       selectedIndex={selectedIndex}
                       hasMore={results.length < total && exhaustedKey !== pageKey}
                       loading={loadingMore}
@@ -1115,6 +1165,14 @@ function App() {
 
                 </div>
               </div>
+
+             </div>
+
+              {toast && (
+                <div className="pointer-events-none absolute inset-x-0 bottom-12 z-[90] flex justify-center">
+                  <span className="elevated overlay-in !rounded-full px-4 py-2 text-[13px] font-medium text-fg">{toast}</span>
+                </div>
+              )}
 
               <KeyHintStrip status={indexingStatus} />
             </>
