@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 static CURRENT_SEARCH_SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -1145,10 +1145,19 @@ pub async fn get_suggested_directories() -> Result<Vec<String>, String> {
 
 #[tauri::command]
 pub async fn hide_window(app_handle: AppHandle) -> Result<(), String> {
-    if let Some(win) = app_handle.get_webview_window("main") {
-        let _ = win.hide();
-    }
+    crate::main_window::hide(&app_handle);
     Ok(())
+}
+
+/// Keeps the search text so a recreated window restores it.
+#[tauri::command]
+pub fn remember_query(query: String) {
+    crate::main_window::remember_query(&query);
+}
+
+#[tauri::command]
+pub fn last_query() -> String {
+    crate::main_window::last_query()
 }
 
 /// Wipes all Kensaku state on the next launch.

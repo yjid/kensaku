@@ -8,6 +8,7 @@ pub mod doctor;
 pub mod embed;
 pub mod indexer;
 pub mod models;
+pub mod main_window;
 pub mod ocr;
 pub mod preview;
 pub mod query;
@@ -20,7 +21,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock};
 use tauri::{
-    Manager, WindowEvent,
+    Manager,
     menu::{Menu, MenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
 };
@@ -230,15 +231,8 @@ pub fn run() {
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed
-                        && let Some(window) = app.get_webview_window("main")
-                    {
-                        if window.is_visible().unwrap_or(false) {
-                            let _ = window.hide();
-                        } else {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                    if event.state() == ShortcutState::Pressed {
+                        main_window::toggle(app);
                     }
                 })
                 .build(),
@@ -280,6 +274,8 @@ pub fn run() {
             commands::get_home_data,
             commands::toggle_pin,
             commands::hide_window,
+            commands::remember_query,
+            commands::last_query,
             commands::run_doctor,
             commands::reset_all,
             commands::get_reset_pending,
@@ -302,14 +298,7 @@ pub fn run() {
                     let path = toggle_request_path();
                     if path.exists() {
                         let _ = std::fs::remove_file(&path);
-                        if let Some(window) = tauri::Manager::get_webview_window(&handle, "main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
+                        main_window::toggle(&handle);
                     }
                 });
             }
@@ -339,16 +328,7 @@ pub fn run() {
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
-                    "toggle" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                    }
+                    "toggle" => main_window::toggle(app),
                     "quit" => {
                         app.exit(0);
                     }
@@ -360,15 +340,7 @@ pub fn run() {
                         ..
                     } = event
                     {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
+                        main_window::toggle(tray.app_handle());
                     }
                 });
 
@@ -378,25 +350,22 @@ pub fn run() {
 
             let _ = tray_builder.build(app);
 
-            // 3. Keep app alive in background on window close
-            if let Some(window) = app.get_webview_window("main") {
-                let window_clone = window.clone();
-                window.on_window_event(move |event| {
-                    if let WindowEvent::CloseRequested { api, .. } = event {
-                        api.prevent_close();
-                        let _ = window_clone.hide();
-                    }
-                });
-
-                // Show window on launch
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            // 3. Create the search window on launch. Closing or hiding it destroys
+            // it (see main_window.rs), so the app keeps running with no UI in memory.
+            main_window::show(app.handle());
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Kensaku application");
+        .build(tauri::generate_context!())
+        .expect("error while running Kensaku application")
+        .run(|_app, event| {
+            // Destroying the search window (hide) must not end the app. The
+            // indexer, watcher and tray keep running. Only the tray's Quit
+            // (app.exit) ends it, and that call is not prevented here.
+            if let tauri::RunEvent::ExitRequested { api, code: None, .. } = event {
+                api.prevent_exit();
+            }
+        });
 }
 
 #[cfg(test)]
