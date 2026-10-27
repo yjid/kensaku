@@ -730,6 +730,18 @@ function SearchSection({
 }) {
   return (
     <>
+      <Card title="Results">
+        <Field
+          label="Show thumbnails"
+          description="Preview images and documents on result cards. Turn off to show only the file-type icon and skip thumbnail generation."
+        >
+          <Switch
+            checked={config.show_thumbnails ?? true}
+            onChange={(v) => setConfig((c) => (c ? { ...c, show_thumbnails: v } : c))}
+          />
+        </Field>
+      </Card>
+
       <Card title="Ranking">
         <Field
           label="Semantic search"

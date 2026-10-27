@@ -186,6 +186,8 @@ export interface KensakuConfig {
   agent_scoped_roots?: string[];
   /** Include .gitignore/.cursorignore-matched files in the index. */
   include_ignored?: boolean;
+  /** Show generated thumbnails on result cards (default on). */
+  show_thumbnails?: boolean;
 }
 
 /* ---------------- Local LLM ---------------- */

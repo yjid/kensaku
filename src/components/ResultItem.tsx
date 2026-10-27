@@ -4,6 +4,7 @@ import { FileTypeIcon } from "./FileTypeIcon";
 import { HighlightedName } from "./EmptyState";
 import { isThumbImage, useThumbnail } from "../lib/thumbnails";
 import { formatBytes, formatRelativeTime } from "../lib/format";
+import { HoverDetails } from "./HoverDetails";
 
 /* Result card. Grid only. Every card is a true square. Files with a
    thumbnail show it full-bleed; everything else shows its type glyph.
@@ -23,32 +24,14 @@ interface ResultItemProps {
   onReveal?: () => void;
   onCopyPath?: () => void;
   onContextMenu?: (x: number, y: number) => void;
-}
-
-function matchLabel(matchType: SearchResult["match_type"]): string {
-  switch (matchType) {
-    case "FileName":
-      return "name";
-    case "Content":
-      return "content";
-    case "ContentFolded":
-      return "fuzzy content";
-    case "Semantic":
-      return "meaning";
-    case "Both":
-      return "name + content";
-    case "Visual":
-      return "visual";
-    default:
-      return "";
-  }
+  showThumbs?: boolean;
 }
 
 export const ResultItem = React.memo<ResultItemProps>(
-  ({ result, query, isSelected, onSelect, onOpen, onContextMenu }) => {
+  ({ result, query, isSelected, onSelect, onOpen, onReveal, onCopyPath, onContextMenu, showThumbs }) => {
     /* Thumbnails only for image files in the initial window. */
     // The virtual grid mounts only visible cards, so every image card may ask.
-    const imageEligible = !result.is_dir && isThumbImage(result.filename);
+    const imageEligible = Boolean(showThumbs) && !result.is_dir && isThumbImage(result.filename);
     const { src: thumbSrc, failed: thumbFailed } = useThumbnail(result.path, imageEligible);
     const hasThumb = Boolean(thumbSrc) && !thumbFailed;
 
@@ -112,19 +95,14 @@ export const ResultItem = React.memo<ResultItemProps>(
           </span>
         </span>
 
-        {/* Hover detail panel: appears after a short pause, from the bottom. */}
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-2 bottom-2 z-20 hidden rounded-[12px] border border-line bg-elevated/95 p-3 text-left shadow-lg backdrop-blur-sm group-hover:block"
-          style={{ animation: "menu-pop 220ms var(--ease-apple) 280ms both" }}
-        >
-          <span className="block truncate font-mono text-[11px] text-fg">{result.path}</span>
-          <span className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
-            <span>{result.is_dir ? "Folder" : formatBytes(result.file_size)}</span>
-            <span>{formatRelativeTime(result.modified)}</span>
-            {matchLabel(result.match_type) && <span>matched {matchLabel(result.match_type)}</span>}
-          </span>
-        </span>
+        {/* Hover details: facts, actions, and a primary Open. */}
+        <HoverDetails
+          result={result}
+          onOpen={onOpen}
+          onReveal={onReveal ?? onOpen}
+          onCopy={onCopyPath ?? (() => undefined)}
+          onMore={(x, y) => onContextMenu?.(x, y)}
+        />
       </button>
     );
   },
@@ -135,5 +113,6 @@ export const ResultItem = React.memo<ResultItemProps>(
     prev.result.group_count === next.result.group_count &&
     prev.isSelected === next.isSelected &&
     prev.query === next.query &&
-    prev.index === next.index,
+    prev.index === next.index &&
+    prev.showThumbs === next.showThumbs,
 );

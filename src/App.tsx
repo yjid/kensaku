@@ -94,6 +94,14 @@ function App() {
   const [sort, setSort] = useState("best");
   const view: ResultView = "grid";
   /* Right-click menu and the details dialog replace the old preview pane. */
+  // Thumbnail setting, read from config. Reloaded whenever Settings closes.
+  const [config, setConfig] = useState<KensakuConfig | null>(null);
+  useEffect(() => {
+    invoke<KensakuConfig>("get_config")
+      .then(setConfig)
+      .catch(() => undefined);
+  }, [showSettings]);
+  const showThumbs = config?.show_thumbnails !== false;
   const [menu, setMenu] = useState<{ x: number; y: number; result: SearchResult } | null>(null);
   const [details, setDetails] = useState<SearchResult | null>(null);
 
@@ -1020,6 +1028,7 @@ function App() {
                           onReveal={() => handleOpenFolder(res.path)}
                           onCopyPath={() => handleCopyPath(res.path)}
                           onContextMenu={(x, y) => setMenu({ x, y, result: res })}
+                          showThumbs={showThumbs}
                         />
                       )}
                     />

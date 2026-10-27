@@ -1604,3 +1604,34 @@ fn parse_connect_client(client: &str) -> Result<crate::agent::connect::Client, S
         .find(|candidate| candidate.id() == client)
         .ok_or_else(|| format!("unknown client: {}", client))
 }
+
+/// Extra facts for the hover card, fetched on demand. Dimensions are read
+/// only for image files, so this never runs during search.
+#[derive(Debug, Clone, Serialize)]
+pub struct FileDetails {
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
+
+#[tauri::command]
+pub async fn get_file_details(path: String) -> Result<FileDetails, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = Path::new(&path);
+        let is_image = p
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| crate::indexer::extract::image::is_supported_image_extension(&e.to_ascii_lowercase()))
+            .unwrap_or(false);
+        let dims = if is_image {
+            crate::indexer::extract::image::dimensions(p)
+        } else {
+            None
+        };
+        Ok(FileDetails {
+            width: dims.map(|(w, _)| w),
+            height: dims.map(|(_, h)| h),
+        })
+    })
+    .await
+    .map_err(|e| format!("Details task failed: {}", e))?
+}

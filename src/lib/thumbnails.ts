@@ -9,8 +9,6 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 /** Extensions the backend thumbnailer handles. Everything else never asks. */
 const THUMB_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff"]);
 
-/** Rows beyond this index are rendered as icons — fetching stays near the
-    initial viewport where thumbnails are actually seen. */
 export const THUMBNAIL_LAZY_LIMIT = 30;
 
 export function isThumbImage(filename: string): boolean {
