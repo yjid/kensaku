@@ -23,7 +23,6 @@ import {
   ModelsStatus,
   ClientStatus,
   InstallOutcome,
-  LlmStatus,
 } from "../types";
 import { useTheme } from "../hooks/useTheme";
 import { useStats } from "../hooks/useStats";
@@ -416,7 +415,7 @@ function GeneralSection({
       </Card>
 
       <Card title="Invocation">
-        <Field label="Global shortcut" description="Click, then press the combo to capture. Applied on Save.">
+        <Field label="Quick shortcut" description="Press it from anywhere to open search. Click, then press a combo to change it. On Linux Wayland, desktops may block global keys: bind a shortcut to the command kensaku --toggle instead.">
           <button
             type="button"
             onClick={() => setCapturing(true)}
@@ -732,7 +731,7 @@ function SearchSection({
       <Card title="Results">
         <Field
           label="Show thumbnails"
-          description="Previews for images, PDFs (first page) and videos (a frame). PDFs need poppler and videos need ffmpeg, e.g. brew install poppler ffmpeg. Missing tools fall back to the file icon. Turn off to skip previews entirely."
+          description="Previews for images and PDFs (first page). PDFs need poppler, e.g. brew install poppler. Without it, PDFs show their file icon. Turn off to skip previews."
         >
           <Switch
             checked={config.show_thumbnails ?? true}
@@ -1260,172 +1259,6 @@ function AgentConnectCard() {
   );
 }
 
-const LLM_PROVIDERS: { id: string; label: string }[] = [
-  { id: "off", label: "Off (deterministic only)" },
-  { id: "ollama", label: "Ollama (127.0.0.1:11434)" },
-  { id: "lmstudio", label: "LM Studio (127.0.0.1:1234)" },
-  { id: "openai", label: "Custom / OpenAI-compatible" },
-];
-
-/** Local LLM config: query compiler + /ask. The model is optional and never
-    required; everything degrades to the deterministic path when off. */
-function LocalAiCard({
-  config,
-  setConfig,
-}: {
-  config: KensakuConfig;
-  setConfig: React.Dispatch<React.SetStateAction<KensakuConfig | null>>;
-}) {
-  const [status, setStatus] = useState<LlmStatus | null>(null);
-  const [detecting, setDetecting] = useState(false);
-
-  const detect = async () => {
-    setDetecting(true);
-    try {
-      setStatus(await invoke<LlmStatus>("llm_status"));
-    } catch (err) {
-      setStatus({
-        configured: false,
-        reachable: false,
-        provider: config.llm_provider ?? "off",
-        base_url: config.llm_base_url ?? "",
-        model: config.llm_model ?? "",
-        models: [],
-        cloud: false,
-        error: reasonFrom(err),
-      });
-    } finally {
-      setDetecting(false);
-    }
-  };
-
-  useEffect(() => {
-    void detect();
-    // Detect on open; config edits are picked up on the next Detect press.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const provider = config.llm_provider ?? "off";
-  const providerOn = provider !== "off";
-
-  return (
-    <Card title="Local model">
-      <Field
-        label="Provider"
-        description="Runs on your machine (Ollama, LM Studio) or an OpenAI-compatible endpoint. Off by default: the deterministic query compiler needs no model."
-      >
-        <select
-          value={provider}
-          onChange={(e) =>
-            setConfig((c) => (c ? { ...c, llm_provider: e.target.value } : c))
-          }
-          className="h-7 rounded-[8px] border border-line bg-elevated px-2 text-[11px] text-fg"
-        >
-          {LLM_PROVIDERS.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </Field>
-
-      {providerOn && (
-        <>
-          <Field
-            label="Base URL"
-            description="Leave empty for the provider default. For custom endpoints, use the OpenAI-compatible /v1 base."
-          >
-            <input
-              value={config.llm_base_url ?? ""}
-              placeholder={
-                provider === "ollama" ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234/v1"
-              }
-              onChange={(e) =>
-                setConfig((c) => (c ? { ...c, llm_base_url: e.target.value } : c))
-              }
-              className="h-7 w-56 rounded-[8px] border border-line bg-elevated px-2 font-mono text-[11px] text-fg"
-            />
-          </Field>
-          <Field
-            label="Model"
-            description="Model name exactly as the provider lists it, e.g. llama3.2 or qwen2.5-7b-instruct."
-          >
-            <input
-              value={config.llm_model ?? ""}
-              onChange={(e) =>
-                setConfig((c) => (c ? { ...c, llm_model: e.target.value } : c))
-              }
-              className="h-7 w-56 rounded-[8px] border border-line bg-elevated px-2 font-mono text-[11px] text-fg"
-            />
-          </Field>
-          <Field
-            label="Refine natural-language queries"
-            description="After the deterministic results land, the model may propose a compiled refinement (chips shown, removable). The model never retrieves on its own."
-          >
-            <Switch
-              checked={config.llm_compile_queries ?? false}
-              onChange={(v) =>
-                setConfig((c) => (c ? { ...c, llm_compile_queries: v } : c))
-              }
-            />
-          </Field>
-          <Field
-            label="Allow cloud endpoints"
-            description="Permits non-loopback LLM endpoints. /ask also asks per use. Off by default; keep it off for a fully local setup."
-          >
-            <Switch
-              checked={config.llm_allow_cloud ?? false}
-              onChange={(v) => setConfig((c) => (c ? { ...c, llm_allow_cloud: v } : c))}
-            />
-          </Field>
-          <div className="flex items-center justify-between border-t border-line px-4 py-2.5">
-            <span className="text-[11px] text-muted">
-              {status?.reachable
-                ? `Connected · ${status.models.length} model${status.models.length === 1 ? "" : "s"}`
-                : status?.configured
-                  ? `Not reachable${status.error ? `: ${status.error}` : ""}`
-                  : "Not configured yet"}
-            </span>
-            <button
-              type="button"
-              onClick={() => void detect()}
-              disabled={detecting}
-              className="flex h-7 items-center gap-1.5 rounded-[8px] border border-line px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3 w-3 ${detecting ? "animate-spin" : ""}`} />
-              Detect
-            </button>
-          </div>
-          {status?.cloud && (
-            <p className="border-t border-warning/40 bg-warning/10 px-4 py-2 text-[11px] leading-relaxed text-warning">
-              Cloud endpoint ({status.base_url}): queries and retrieved snippets leave this
-              device. Keep this off for a fully local setup.
-            </p>
-          )}
-          {status?.reachable && status.models.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 border-t border-line px-4 py-2.5">
-              {status.models.slice(0, 8).map((model) => (
-                <button
-                  key={model}
-                  type="button"
-                  onClick={() => setConfig((c) => (c ? { ...c, llm_model: model } : c))}
-                  className={`rounded-full border px-2 py-0.5 font-mono text-[11px] transition-colors ${
-                    config.llm_model === model
-                      ? "border-accent text-accent"
-                      : "border-line text-subtle hover:border-line-strong hover:text-fg"
-                  }`}
-                >
-                  {model}
-                </button>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-    </Card>
-  );
-}
-
 function AgentsSection({
   config,
   setConfig,
@@ -1448,7 +1281,6 @@ function AgentsSection({
       </p>
 
       <AgentConnectCard />
-      <LocalAiCard config={config} setConfig={setConfig} />
 
       {/* MCP */}
       <Card title="Model Context Protocol">

@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 /** Extensions the backend thumbnailer handles. Everything else never asks. */
 const THUMB_EXTS = new Set([
   "png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff", "tif",
-  "pdf", "mp4", "mov", "m4v", "mkv", "webm", "avi",
+  "pdf",
 ]);
 
 export const THUMBNAIL_LAZY_LIMIT = 30;

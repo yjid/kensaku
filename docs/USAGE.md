@@ -21,19 +21,23 @@ statistic and setting lives in Settings, so the search surface stays quiet.
 
 ## Keyboard
 
+Every action has a key. Keys work from the search box unless noted.
+
 | Key | Action |
 |---|---|
-| <kbd>Alt</kbd>+<kbd>Space</kbd> | show/hide the window |
-| <kbd>/</kbd> | focus search |
+| <kbd>Alt</kbd>+<kbd>Space</kbd> | show or hide the window (set this in Settings) |
+| <kbd>/</kbd> | focus search, or open the command menu |
 | <kbd>↑</kbd> <kbd>↓</kbd> | move selection (grid: by row) |
 | <kbd>←</kbd> <kbd>→</kbd> | move within a grid row |
-| <kbd>Enter</kbd> | open |
-| <kbd>Shift</kbd>+<kbd>Enter</kbd> | reveal in folder |
-| <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+<kbd>Enter</kbd> | open (line-aware when available) |
-| <kbd>Tab</kbd> | toggle preview |
-| <kbd>/</kbd> | open the command menu (type `/`) |
+| <kbd>Space</kbd> | Quick Look: preview the selected file |
+| <kbd>Enter</kbd> | open the selected file |
+| <kbd>Shift</kbd>+<kbd>Enter</kbd> | show in folder |
+| <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+<kbd>C</kbd> | copy the selected path (outside the search box) |
+| <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+<kbd>I</kbd> | details for the selected file |
 | <kbd>⌘,</kbd>/<kbd>Ctrl</kbd>+<kbd>,</kbd> | settings |
-| <kbd>Esc</kbd> | clear, then dismiss |
+| <kbd>Esc</kbd> | close a dialog, clear the search, then hide |
+
+On Linux Wayland, desktops can block global keys. Bind a shortcut to the command `kensaku --toggle` instead.
 
 ## Query language
 
