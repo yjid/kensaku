@@ -211,6 +211,7 @@ export interface LlmStatus {
   base_url: string;
   model: string;
   models: string[];
+  cloud: boolean;
   error?: string | null;
 }
 
@@ -230,6 +231,8 @@ export interface AskResponse {
   sources: AskSource[];
   model: string;
   provider: string;
+  endpoint: string;
+  cloud: boolean;
   answered: boolean;
   as_of: number;
 }

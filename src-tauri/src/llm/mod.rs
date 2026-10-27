@@ -263,7 +263,7 @@ fn describe_ureq_error(error: ureq::Error) -> String {
 }
 
 /// Only loopback hosts are considered local; anything else is cloud.
-fn is_loopback(base_url: &str) -> bool {
+pub(crate) fn is_loopback(base_url: &str) -> bool {
     let authority = base_url
         .strip_prefix("http://")
         .or_else(|| base_url.strip_prefix("https://"))

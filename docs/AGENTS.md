@@ -199,5 +199,4 @@ response. Exit codes: `0` ok, `2` usage, `3` no index (launch Kensaku once).
   vision tier is wired into search; `similar_images` exists and self-hides
   until then. Read-only and local like everything else.
 
-Scope and acceptance tests: [VISION.md](VISION.md). Technical shape:
-[ARCHITECTURE.md](ARCHITECTURE.md) §18.
+Technical shape: [ARCHITECTURE.md](ARCHITECTURE.md) §18.
