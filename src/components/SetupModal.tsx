@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, Plus, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon } from "lucide-react";
+import { Check, Plus, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
-import type { IndexingStatus } from "../types";
+import type { IndexingStatus, OcrStatus, ModelsStatus } from "../types";
 
 /* First run: three screens, one decision each.
    1 Welcome → 2 Pick folders → 3 Exclusions + start. */
@@ -33,6 +33,11 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const [selectedDirs, setSelectedDirs] = useState<string[]>([]);
   const [customDirInput, setCustomDirInput] = useState("");
   const excludedDirs = DEFAULT_EXCLUSIONS;
+  const [ocrStatus, setOcrStatus] = useState<OcrStatus | null>(null);
+  const [ocrPackStatus, setOcrPackStatus] = useState<ModelsStatus | null>(null);
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrPackBusy, setOcrPackBusy] = useState(false);
+  const [packError, setPackError] = useState<string | null>(null);
   const [shortcut, setShortcut] = useState("Alt+Space");
   const [capturing, setCapturing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -98,6 +103,22 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     return () => window.removeEventListener("keydown", onKey);
   }, [capturing]);
 
+  // Load OCR state when the final screen opens.
+  useEffect(() => {
+    if (step !== 1) return;
+    invoke<OcrStatus>("get_ocr_status").then(setOcrStatus).catch(() => {});
+    invoke<ModelsStatus>("get_ocr_pack_status").then(setOcrPackStatus).catch(() => {});
+  }, [step]);
+
+  // Poll while an OCR pack download is running.
+  useEffect(() => {
+    if (step !== 1 || !ocrPackStatus?.downloading) return;
+    const id = window.setInterval(() => {
+      invoke<ModelsStatus>("get_ocr_pack_status").then(setOcrPackStatus).catch(() => {});
+    }, 600);
+    return () => window.clearInterval(id);
+  }, [step, ocrPackStatus?.downloading]);
+
   // Poll indexing status while scanning; finish when the crawl completes.
   useEffect(() => {
     if (!scanning || done) return;
@@ -147,7 +168,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         watchedDirs: selectedDirs,
         excludedDirs: excludedDirs,
         shortcut: shortcut,
-        ocrEngine: "tesseract",
+        ocrEngine: ocrStatus?.available ? "tesseract" : "accurate",
       });
       // The default text model downloads without asking. Failure is not fatal:
       // keyword search works without it, and Settings can retry.
@@ -387,6 +408,116 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
 
         {step === 1 && (
           <div className="w-full max-w-lg space-y-5">
+            <div className="space-y-3">
+              <div className="pb-1">
+                <h2 className="text-[17px] font-semibold tracking-tight text-fg">
+                  Read images (OCR)
+                </h2>
+                <p className="text-[12px] text-muted">
+                  Optional but recommended. Start stays disabled until one engine is ready.
+                </p>
+              </div>
+
+              {/* Tesseract */}
+              <div className="flex items-center justify-between rounded-[12px] border border-line px-4 py-3">
+                <div className="min-w-0 pr-4">
+                  <span className="block text-[12px] font-medium text-fg">Tesseract</span>
+                  <span className="block text-[11px] text-muted">
+                    {ocrStatus?.engine_present
+                      ? "Fast · smaller · default"
+                      : "Not installed on this system"}
+                  </span>
+                </div>
+                {ocrStatus?.available ? (
+                  <span className="flex h-8 items-center gap-1.5 rounded-[8px] px-2 text-[11px] text-success">
+                    <Check className="h-3.5 w-3.5" /> Ready
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={ocrBusy || !ocrStatus?.engine_present}
+                    onClick={async () => {
+                      setPackError(null);
+                      setOcrBusy(true);
+                      try {
+                        const status = await invoke<OcrStatus>("download_ocr_language");
+                        setOcrStatus(status);
+                      } catch (e) {
+                        setPackError(`OCR download failed: ${String(e)}`);
+                      } finally {
+                        setOcrBusy(false);
+                      }
+                    }}
+                    className="flex h-8 items-center gap-1.5 rounded-[8px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                  >
+                    {ocrBusy ? (
+                      <>
+                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> Downloading…
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-3.5 w-3.5" /> Download
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {/* PP-OCRv6 */}
+              <div className="flex items-center justify-between rounded-[12px] border border-line px-4 py-3">
+                <div className="min-w-0 pr-4">
+                  <span className="block text-[12px] font-medium text-fg">PP-OCRv6</span>
+                  <span className="block text-[11px] text-muted">
+                    Slower · may read small UI text better
+                  </span>
+                </div>
+                {ocrPackStatus?.ready ? (
+                  <span className="flex h-8 items-center gap-1.5 rounded-[8px] px-2 text-[11px] text-success">
+                    <Check className="h-3.5 w-3.5" /> Ready
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={ocrPackStatus?.downloading || !ocrStatus?.accurate_compiled}
+                    onClick={async () => {
+                      setPackError(null);
+                      setOcrPackBusy(true);
+                      try {
+                        const status = await invoke<ModelsStatus>("download_ocr_pack");
+                        setOcrPackStatus(status);
+                      } catch (e) {
+                        setPackError(`PP-OCRv6 download failed: ${String(e)}`);
+                      } finally {
+                        setOcrPackBusy(false);
+                      }
+                    }}
+                    className="flex h-8 items-center gap-1.5 rounded-[8px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                  >
+                    {ocrPackStatus?.downloading || ocrPackBusy ? (
+                      <>
+                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> Downloading…
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-3.5 w-3.5" /> Download
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {packError && (
+                <p className="break-words rounded-[8px] border border-danger/30 bg-danger/5 px-3 py-2 font-mono text-[11px] text-danger">
+                  {packError}
+                </p>
+              )}
+              {!ocrStatus?.engine_present && !ocrStatus?.accurate_compiled && (
+                <p className="text-[11px] text-subtle">
+                  Tesseract is not installed and PP-OCRv6 is not compiled into this build.
+                </p>
+              )}
+            </div>
+
             <div className="pb-1">
               <h2 className="text-[17px] font-semibold tracking-tight text-fg">
                 How to use it
@@ -413,7 +544,9 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
       <footer className="flex h-16 shrink-0 items-center justify-between border-t border-line px-5">
         <div className="min-w-0 text-[11px] text-subtle">
           {step === 1 && `${selectedDirs.length} folder${selectedDirs.length === 1 ? "" : "s"} selected`}
-
+          {step === 1 && !(ocrStatus?.available || ocrPackStatus?.ready) && (
+            <span className="ml-2 text-warning">· download an OCR engine to enable Start</span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {step > 0 && (
@@ -438,7 +571,11 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             <button
               type="button"
               onClick={handleFinish}
-              disabled={isSubmitting || selectedDirs.length === 0}
+              disabled={
+                isSubmitting ||
+                selectedDirs.length === 0 ||
+                !(ocrStatus?.available || ocrPackStatus?.ready)
+              }
               className="flex h-9 items-center gap-2 rounded-[8px] bg-fg px-5 text-[13px] font-medium text-bg transition-opacity hover:opacity-85 disabled:opacity-40"
             >
               {isSubmitting && <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}
