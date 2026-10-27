@@ -202,6 +202,11 @@ jobs:
       - name: Checkout (for release notes generation)
         uses: actions/checkout@v4
 
+      - name: Check artifacts arrived
+        run: |
+          mkdir -p artifacts
+          test -n "$(ls -A artifacts)" || { echo "no artifacts downloaded"; exit 1; }
+
       - name: Checksums
         run: |
           cd artifacts
