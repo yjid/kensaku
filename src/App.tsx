@@ -692,14 +692,19 @@ function App() {
       } else if (e.key === "Enter" && navList[selectedIndex]) {
         e.preventDefault();
         const target = navList[selectedIndex];
-        if (e.metaKey || e.ctrlKey) {
-          // "Open at line" — backend currently opens at default; reveal path is a safe stand-in.
-          handleOpenFile(target.path);
-        } else if (e.shiftKey) {
+        if (e.shiftKey) {
           handleOpenFolder(target.path);
         } else {
           handleOpenFile(target.path);
         }
+      } else if ((e.key === "c" || e.key === "C") && (e.metaKey || e.ctrlKey) && navList[selectedIndex] && document.activeElement !== inputRef.current) {
+        // Copy the selected result's path (Cmd/Ctrl+C outside the search box).
+        e.preventDefault();
+        handleCopyPath(navList[selectedIndex].path);
+      } else if ((e.key === "i" || e.key === "I") && (e.metaKey || e.ctrlKey) && navList[selectedIndex]) {
+        // Details for the selected result.
+        e.preventDefault();
+        setDetails(navList[selectedIndex]);
       } else if (e.key === "Escape") {
         e.preventDefault();
         if (commandOutput) {
