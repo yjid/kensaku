@@ -434,7 +434,6 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-[13px] font-medium text-fg">Tesseract</span>
-                        <span className="rounded-full border border-accent/40 px-1.5 py-0.5 text-[10px] text-accent">Recommended</span>
                       </div>
                       <span className="text-[11px] text-muted">Fast · smaller · default</span>
                     </div>
