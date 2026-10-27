@@ -24,6 +24,7 @@ import { FilterChips } from "./components/FilterChips";
 import { KeyHintStrip } from "./components/KeyHintStrip";
 import { ContextMenu, ContextMenuItem } from "./components/ContextMenu";
 import { DetailsDialog } from "./components/DetailsDialog";
+import { HelpDialog } from "./components/HelpDialog";
 import { SearchBar } from "./components/SearchBar";
 import { CategoryChips } from "./components/CategoryChips";
 import { ResultControls } from "./components/ResultControls";
@@ -116,6 +117,7 @@ function App() {
   const view: ResultView = config?.results_view === "list" ? "list" : "grid";
   const [menu, setMenu] = useState<{ x: number; y: number; result: SearchResult } | null>(null);
   const [details, setDetails] = useState<SearchResult | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
   const [preview, setPreview] = useState<SearchResult | null>(null);
 
 
@@ -629,6 +631,12 @@ function App() {
         return;
       }
 
+      if (e.key === "?" && document.activeElement !== inputRef.current) {
+        e.preventDefault();
+        setShowHelp(true);
+        return;
+      }
+
       // `/` command menu
       if (query.startsWith("/")) {
         if (e.key === "ArrowDown") {
@@ -794,6 +802,7 @@ function App() {
             />
           )}
           {details && <DetailsDialog result={details} onClose={() => setDetails(null)} />}
+          {showHelp && <HelpDialog onClose={() => setShowHelp(false)} />}
           {preview && (
             <PreviewDialog
               result={preview}
