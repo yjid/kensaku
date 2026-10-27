@@ -539,7 +539,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 <Keyboard className="h-4 w-4 text-muted" />
                 <div>
                   <h2 className="text-[15px] font-semibold tracking-tight text-fg">Global shortcut</h2>
-                  <p className="text-[11px] text-muted">Open Kensaku from anywhere. Click to change.</p>
+                  <p className="text-[11px] text-muted">Open Kensaku from anywhere. Esc hides it; the app keeps running in the background.</p>
                 </div>
               </div>
               <div className="flex items-center justify-between rounded-[12px] border border-line bg-elevated px-4 py-3">
@@ -585,7 +585,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 <div className="rounded-[10px] border border-line bg-elevated p-3">
                   <Eye className="h-4 w-4 text-muted" />
                   <p className="pt-1.5 text-[12px] font-medium text-fg">Quick preview</p>
-                  <p className="text-[11px] text-muted">Press Space to preview. Enter to open. Shift+Enter to show in folder.</p>
+                  <p className="text-[11px] text-muted">Press Space to preview. Enter to open. Shift+Enter to show in folder. Esc clears, then hides.</p>
                 </div>
                 <div className="rounded-[10px] border border-line bg-elevated p-3">
                   <Copy className="h-4 w-4 text-muted" />
