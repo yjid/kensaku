@@ -310,6 +310,9 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         <p className="max-w-sm text-[11px] text-subtle">
           Phase: {phase}. This only happens on the first run. Later launches are instant.
         </p>
+        <div className="absolute bottom-6 left-0 right-0 text-center text-[11px] text-muted">
+          Open: your shortcut · Close: Esc
+        </div>
       </div>
     );
   }
@@ -539,7 +542,6 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 <div>
                   <h2 className="text-[15px] font-semibold tracking-tight text-fg">Global shortcut</h2>
                   <p className="text-[11px] text-muted">Open Kensaku from anywhere. Esc hides it; the app keeps running in the background.</p>
-                  <p className="pt-1 text-[12px] font-semibold text-accent">Open: your shortcut · Close: Esc</p>
                 </div>
               </div>
               <div className="flex items-center justify-between rounded-[12px] border border-line bg-elevated px-4 py-3">
