@@ -105,7 +105,7 @@ impl MetadataStore {
         // First pass: push nodes (parents resolved later).
         let mut idxs = Vec::with_capacity(entries.len());
         for entry in &entries {
-            let ext_id = self.arena.intern_ext(entry.extension.as_deref());
+            let ext_id = self.arena.intern_ext(entry.extension);
             let (name_off, name_len) = self.arena.names.push(&entry.name);
             let mut flags = 0u8;
             if entry.is_dir {
@@ -206,7 +206,7 @@ impl MetadataStore {
                 pending = true;
             }
             // update node
-            let ext_id = self.arena.intern_ext(entry.extension.as_deref());
+            let ext_id = self.arena.intern_ext(entry.extension);
             let parent = self.parent_index_for(&entry.path);
             let node_name = if parent == NO_PARENT {
                 entry.path.to_string_lossy().into_owned()
@@ -237,7 +237,7 @@ impl MetadataStore {
             *self.arena.node_mut(idx) = node;
             idx
         } else {
-            let ext_id = self.arena.intern_ext(entry.extension.as_deref());
+            let ext_id = self.arena.intern_ext(entry.extension);
             let parent = self.parent_index_for(&entry.path);
             let name = if parent == NO_PARENT {
                 entry.path.to_string_lossy().into_owned()
@@ -686,7 +686,8 @@ impl MetadataStore {
 
     pub fn materialize(&self, idx: u32) -> FileEntry {
         let node = self.arena.node(idx);
-        let extension = self.arena.extension(idx);
+        let extension =
+            crate::indexer::walker::intern_extension(self.arena.extension(idx).as_deref());
         let path = self.arena.path(idx);
         let name = path
             .file_name()
@@ -902,8 +903,9 @@ mod tests {
             extension: if is_dir {
                 None
             } else {
-                path.extension()
-                    .map(|ext| ext.to_string_lossy().to_lowercase())
+                crate::indexer::walker::intern_extension(
+                    path.extension().and_then(|ext| ext.to_str()),
+                )
             },
             size: 1,
             modified: 1,

@@ -1,6 +1,6 @@
 # Benchmarks
 
-There are five in-tree harnesses:
+There are six in-tree harnesses:
 
 - `bench` measures the hot path of Kensaku: walking a directory tree, building
   the in-memory entry list, and running fuzzy filename queries. It deliberately
@@ -17,7 +17,11 @@ There are five in-tree harnesses:
   query p50/p95, and RSS). See
   [the K12 decision](decisions/index-format.md).
 - `mem_probe` builds 1M synthetic metadata entries with no database and reports
-  RSS before/after plus path-lookup latency.
+  RSS before/after plus path-lookup latency. With `KENSAKU_SEARCH_BENCH=1` it
+  also reports isolated fuzzy-tier latency and full `search_response_fast`
+  latency over the synthetic store.
+- `facet_bench` measures `compute_facets` over synthetic matched sets (100k or
+  1M) and reports p50/p95 plus the bucket cardinalities.
 
 ## Running
 
@@ -37,6 +41,17 @@ cargo run --manifest-path src-tauri/Cargo.toml --example index_format_bench --re
 
 # K2 metadata memory
 cargo run --manifest-path src-tauri/Cargo.toml --example mem_probe --release -- 1000000
+
+# K2 + query-path shape (fuzzy tier vs full search)
+KENSAKU_SEARCH_BENCH=1 cargo run --manifest-path src-tauri/Cargo.toml \
+  --example mem_probe --release -- 1000000
+
+# K4 facet counts at 100k / 1M matched results
+cargo run --manifest-path src-tauri/Cargo.toml --example facet_bench --release -- 1000000
+
+# K12 writer-thread comparison (default 1)
+KENSAKU_TANTIVY_THREADS=2 cargo run --manifest-path src-tauri/Cargo.toml \
+  --example index_format_bench --release -- folded 1000000 /tmp/kensaku-k12-folded-2t
 ```
 
 Always use `--release`. Debug builds are 10–50× slower and are not comparable
@@ -116,8 +131,13 @@ is dominated by the external tesseract process and is build-independent.
 | K10 external extractors | 19 tests: config round-trip/default-off, extension/MIME matching, relative-command rejection, odd filenames (no shell side effects), `{path}` as one argument, 150 ms timeout kills the process group, 1 KiB output cap, non-zero exit reporting, disabled-by-default enforcement, config validation, Doctor surfacing of commands and recent runtime failure reasons (recorded/cleared), a helper holding stdout after the parent exits is killed, and targeted pending marks. Integration test runs a configured plugin through `extract_document`; a manual daemon run indexed a configured `.k10ext` format on first scan and after a watcher-created file. Zero plugins by default. |
 | K12 index format | 1M synthetic docs (release, one writer thread): Tantivy baseline 4.8 s / 66.7 MB / 76 MB peak RSS; Tantivy + folded 17.0 s / 99.6 MB / 67 MB; SQLite FTS5 trigram 22.2 s / 918.4 MB / 147 MB. Broad BM25 p50 226 µs (baseline), 275 µs (folded), 258.1 ms (FTS5); folded lookalike 22 µs vs 58 µs; FTS5 query RSS 147 MB vs 61 MB. Recommendation: keep Tantivy and the folded field; no production change. See [docs/decisions/index-format.md](decisions/index-format.md). |
 | K11 search-result grouping | 10 tests (4 burst-signature/labeled-fixture, 3 SQLite burst assignment/chain merge/leader detach, 1 image/non-image collapse, 1 end-to-end burst collapse, 1 ignored release benchmark). Labeled fixture keeps identical/scrolled screenshots together and distinct pages with shared chrome apart. Release grouping over 50 results (including cloning the result list): p50 6,252 ns, p95 6,502 ns (< 0.1 ms acceptance). Backfill processes 50 images per idle batch; `/dupes` reads the same burst rows. |
+| E2 extension interning | `FileEntry.extension` is `Option<&'static str>` from a process-wide intern table. A `String` is 24 B inline plus a heap allocation; the interned form is 16 B and allocation-free per entry. Unique extensions are a tiny bounded set (the arena reported `ext_count=2` on the synthetic `txt` corpus). |
+| B4 ext/size pushdown | Content schema v3 adds indexed `ext` and fast `size`; positive filters become `Must` clauses before top-k. The v2→v3 migration rebuilds once and preserves `index.legacy-*`. 1M folded index size grows from 99.6 MB to 107.5 MB with the extra fields (2 writer threads, same synthetic corpus). |
+| K12 writer threads (1M folded) | 1 thread: 17.6 s / 69 MB build peak / 99.6 MB index. 2 threads: 9.3 s / 116 MB / 107.5 MB. 4 threads: 5.3 s / 201 MB / 110.0 MB. Named-query p50 unchanged (name 1.7–4.2 µs, BM25 282–291 µs). Keep 1 thread for the desktop memory budget; use 2–4 for bulk rebuilds. |
+| K4 facets | Release, 20 runs, synthetic matched set with 1,000 shared parent dirs: 100k p50 3.1 ms / p95 3.4 ms; 1M p50 17.3 ms / p95 18.4 ms. Fixed bucket arrays + borrowed FNV parent map + rayon fold; counts sum to the full set. |
+| K12 query path at 1M | Release, `mem_probe` synthetic store: metadata arena 91.7 MB. After parallel materialization, a path-index build only for trie queries, an all-candidates membership fast path, and skipping the semantic node map when disabled: isolated fuzzy p50 3.5–5.2 ms; full `search_response_fast` p50 207 ms at 1M (675 ms before) and 24 ms at 100k (73 ms before). Content-tier name/substring queries remain 3.9 µs / 20.8 µs. The remaining cost is per-query `FileEntry` materialization, tracked as the arena-backed query path in REMAINING section D. |
 | K14 i8 embedding table | Real Potion artifacts: 29,528 × 256, f32 30,236,672 B (~28.8 MiB) → i8 7,559,168 B + 118,112 B scales (~7.3 MiB). Labelled set: MRR 1.000 (f32) / 1.000 (i8). 512-token `embed` p50 (debug): 1.227 ms f32 / 1.230 ms i8. |
-| K15 CJK tokenization | 50 docs × ~100 CJK characters: 4,944 B (SimpleTokenizer baseline) → 48,128 B (kensaku CJK + folded tier) index size (9.73x growth, ~43 KB delta for 50 docs). Exact words (`最終報告書`), substrings (`報告`), single characters (`最`), and mixed scripts (`README最終.md`) verified; legacy index migration backed up and rebuilt once into schema v2. |
+| K15 CJK tokenization | 50 docs × ~100 CJK characters: 4,944 B (SimpleTokenizer baseline) → 48,128 B (kensaku CJK + folded tier) index size (9.73x growth, ~43 KB delta for 50 docs). Exact words (`最終報告書`), substrings (`報告`), single characters (`最`), and mixed scripts (`README最終.md`) verified; legacy index migration backed up and rebuilt once (now schema v3 after the ext/size pushdown). |
 | K17 smart embedding pack | Code path compiles with `--features smart-embeddings`; real-model recall, download, and peak RSS are **not measured** yet. The default static table remains the shipped path. |
 | K18–K21 visual/native | **Not measured and not shipped in the default search path.** Visual search is a Beta settings experiment for downloading the pinned CLIP pack only; it is not wired into search. Native OCR has no implementation. Mock visual and `osascript`/Windows stubs were removed. |
 | K22 golden query set | 43 non-visual queries (intent, lexical, content, CJK, accented Latin) on a 50-doc synthetic corpus, debug: Recall@1 0.9767, Recall@5 1.0000, MRR 0.9884, NDCG@10 0.9914, p50 5.881 ms, p95 6.676 ms. Seven `visual:` cases are excluded because no production visual encoder is wired. |
