@@ -75,7 +75,11 @@ pub fn hide(app: &AppHandle) {
     if let Some(window) = existing(app) {
         let _ = window.destroy();
     }
-    release_free_memory();
+    // WebKit/WebView helpers otherwise stay alive after the window is
+    // destroyed, keeping tens to hundreds of MB resident. Kill them and trim
+    // the allocator so the hidden app keeps only the Rust side.
+    crate::util::memory::kill_webview_processes();
+    crate::util::memory::release_memory();
 }
 
 /// Shows the window if it is hidden, hides it if it is shown.
