@@ -732,7 +732,7 @@ function SearchSection({
       <Card title="Results">
         <Field
           label="Show thumbnails"
-          description="Preview images and documents on result cards. Turn off to show only the file-type icon and skip thumbnail generation."
+          description="Previews for images, PDFs (first page) and videos (a frame). PDFs need poppler and videos need ffmpeg, e.g. brew install poppler ffmpeg. Missing tools fall back to the file icon. Turn off to skip previews entirely."
         >
           <Switch
             checked={config.show_thumbnails ?? true}

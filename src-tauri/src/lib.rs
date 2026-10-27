@@ -10,6 +10,7 @@ pub mod indexer;
 pub mod llm;
 pub mod models;
 pub mod ocr;
+pub mod preview;
 pub mod query;
 pub mod search;
 pub mod util;

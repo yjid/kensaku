@@ -30,6 +30,7 @@ import { CategoryChips } from "./components/CategoryChips";
 import { ResultControls } from "./components/ResultControls";
 import { VirtualGrid } from "./components/VirtualGrid";
 import { FileRow } from "./components/FileRow";
+import { PreviewDialog } from "./components/PreviewDialog";
 import { classify } from "./lib/categories";
 import {
   Settings as SettingsIcon,
@@ -104,6 +105,7 @@ function App() {
   const view: ResultView = config?.results_view === "list" ? "list" : "grid";
   const [menu, setMenu] = useState<{ x: number; y: number; result: SearchResult } | null>(null);
   const [details, setDetails] = useState<SearchResult | null>(null);
+  const [preview, setPreview] = useState<SearchResult | null>(null);
 
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -735,6 +737,9 @@ function App() {
             setSelectedIndex((prev) => (prev - 1 + navList.length) % navList.length);
           }
         }
+      } else if (e.key === " " && !preview && navList[selectedIndex] && document.activeElement !== inputRef.current) {
+        e.preventDefault();
+        setPreview(navList[selectedIndex]);
       } else if (e.key === "Enter" && navList[selectedIndex]) {
         e.preventDefault();
         const target = navList[selectedIndex];
@@ -760,7 +765,7 @@ function App() {
         }
       }
     },
-    [showSettings, showDuplicates, showAsk, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope],
+    [showSettings, showDuplicates, showAsk, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope, preview],
   );
 
   /* ---------------- render ---------------- */
@@ -814,6 +819,7 @@ function App() {
               onClose={() => setMenu(null)}
               items={[
                 { label: "Open", onSelect: () => handleOpenFile(menu.result.path) },
+                { label: "Preview", onSelect: () => setPreview(menu.result) },
                 { label: "Show in folder", onSelect: () => handleOpenFolder(menu.result.path) },
                 { label: "Copy path", onSelect: () => handleCopyPath(menu.result.path) },
                 { label: "Details", onSelect: () => setDetails(menu.result), separatorBefore: true },
@@ -821,6 +827,13 @@ function App() {
             />
           )}
           {details && <DetailsDialog result={details} onClose={() => setDetails(null)} />}
+          {preview && (
+            <PreviewDialog
+              result={preview}
+              onOpen={() => handleOpenFile(preview.path)}
+              onClose={() => setPreview(null)}
+            />
+          )}
           <AskPanel
             open={showAsk}
             onClose={() => setShowAsk(false)}
