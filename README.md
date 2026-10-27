@@ -5,12 +5,12 @@
 <h1 align="center">Kensaku <span title="kensaku = search, in Japanese">検索</span></h1>
 
 <p align="center">
-  <b>You remember the file. We'll find it.</b>
+  <b>Fast, light, and efficient. Find anything on your computer.</b>
 </p>
 
 <p align="center">
-  Type what you remember: a name, a line of text, or what it was about.<br/>
-  Fast, light, and private. Nothing leaves your machine.
+  Search 100,000 file names in about a millisecond, using roughly 12 MB of memory.<br/>
+  Search inside documents, images, and code too. Nothing leaves your machine.
 </p>
 
 <p align="center">
@@ -142,17 +142,26 @@ Responses are budgeted in size, and file content is returned as data, never as i
 
 ## Performance
 
-Measured on a release build, Linux, local SSD, warm cache, with a ~100,000-file synthetic corpus and default exclusions:
+Speed is the point of Kensaku. Every number below was measured on a release build on Linux (8 vCPU, SSD) against a 100,000-file folder, and the harnesses are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 | What | Result |
 |---|---|
-| Walk the tree | ~190 ms per 100k files |
-| Filename search, keystroke path | ~2.8 ms average (p50) |
-| Index memory per entry | ~128 bytes (~12.8 MB per 100k files) |
+| Name search, in memory (avg of 8 queries) | **1.3 ms** (best 0.5 ms, worst 2.4 ms) |
+| Index 101,101 files, first run | 184 s, peak 183 MB |
+| Re-index with nothing changed | **0.56 s** |
+| Memory for file names and metadata, 100k files | ~12 MB |
 
-Indexing is a single pass: each file is read once and feeds both the text and meaning indexes. Images are read once for OCR. Work is queued in bounded batches, so memory stays flat on large folders.
+Same folder, same machine, filename search, cold process each run:
 
-Results are reference values, not guarantees. Full methodology and the benchmark harnesses are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+| Tool | "invoice" | "deploy_error" |
+|---|---|---|
+| Kensaku (in memory, no start-up) | 1.3 ms avg | 1.3 ms avg |
+| plocate | 34 ms | 6 ms |
+| fd | 109 ms | 98 ms |
+
+The two rows aren't a perfect match: Kensaku's search is fuzzy and runs inside a running app, while plocate and fd start a new program for each search. Spotlight, Everything, and Dowse haven't been measured yet, and these numbers come from Linux, not macOS or Windows.
+
+Indexing is a single pass: each file is read once and feeds both the name and text indexes. Work is queued in bounded batches, so memory stays flat on large folders.
 
 ## Privacy and security
 
