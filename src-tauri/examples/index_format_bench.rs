@@ -163,8 +163,13 @@ fn build_tantivy(
         "trigram",
         NgramTokenizer::new(3, 3, false).map_err(|e| e.to_string())?,
     );
+    let writer_threads = std::env::var("KENSAKU_TANTIVY_THREADS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|threads| *threads > 0)
+        .unwrap_or(1);
     let mut writer = index
-        .writer_with_num_threads(1, 16_000_000)
+        .writer_with_num_threads(writer_threads, 16_000_000usize * writer_threads)
         .map_err(|e| e.to_string())?;
     let mut peak_rss = rss_kb();
 

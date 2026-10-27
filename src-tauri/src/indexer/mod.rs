@@ -109,6 +109,7 @@ struct ExtractedWork {
     path: PathBuf,
     name: String,
     modified: u64,
+    size: u64,
     content: Option<String>,
     units: Vec<(usize, usize, Vec<i8>)>,
     content_hash: Option<String>,
@@ -640,7 +641,7 @@ impl IndexerManager {
 
                 // Skip files whose extension is in the excluded list.
                 if !entry.is_dir
-                    && let Some(ref ext) = entry.extension
+                    && let Some(ext) = entry.extension
                     && excluded_exts.iter().any(|e| e.eq_ignore_ascii_case(ext))
                 {
                     continue;
@@ -672,7 +673,7 @@ impl IndexerManager {
                 // Cloud placeholders stay metadata-only so indexing does not
                 // hydrate (download) them.
                 if !entry.is_dir
-                    && (is_indexable_extension(entry.extension.as_deref())
+                    && (is_indexable_extension(entry.extension)
                         || is_indexable_file_name(&entry.name)
                         || crate::indexer::extract::external::handles(&entry.path))
                     && !is_cloud_placeholder_path(&entry.path)
@@ -683,7 +684,7 @@ impl IndexerManager {
                         name: entry.name.clone(),
                         modified: entry.modified,
                         size: entry.size,
-                        is_image: entry.extension.as_deref().is_some_and(
+                        is_image: entry.extension.is_some_and(
                             crate::indexer::extract::image::is_supported_image_extension,
                         ),
                         phash_needs_refresh,
@@ -842,6 +843,7 @@ impl IndexerManager {
                             path: job.path.clone(),
                             name: job.name.clone(),
                             modified: job.modified,
+                            size: job.size,
                             content,
                             units,
                             content_hash,
@@ -859,8 +861,14 @@ impl IndexerManager {
                     if let Some(ref content) = work.content
                         && let Some(c_index) = c_index
                     {
-                        let _ =
-                            c_index.add_or_update(&work.path, &work.name, content, work.modified);
+                        let _ = c_index.add_or_update(
+                            &work.path,
+                            &work.name,
+                            content,
+                            work.modified,
+                            work.size,
+                            work.path.extension().and_then(|ext| ext.to_str()),
+                        );
                         content_count += 1;
                         pending_commits += 1;
 
@@ -1486,7 +1494,7 @@ mod tests {
             id: 0,
             path: PathBuf::from("/tmp/kensaku/example.bin"),
             name: "example.bin".to_string(),
-            extension: Some("bin".to_string()),
+            extension: Some("bin"),
             size,
             modified,
             is_dir: false,
@@ -1558,7 +1566,7 @@ mod tests {
             id: 1,
             path: path1.clone(),
             name: "image_1.png".to_string(),
-            extension: Some("png".to_string()),
+            extension: Some("png"),
             size: 100,
             modified: 10,
             is_dir: false,
@@ -1571,7 +1579,7 @@ mod tests {
             id: 2,
             path: path2.clone(),
             name: "image_2.png".to_string(),
-            extension: Some("png".to_string()),
+            extension: Some("png"),
             size: 100,
             modified: 10,
             is_dir: false,
@@ -1584,7 +1592,7 @@ mod tests {
             id: 3,
             path: path3.clone(),
             name: "unrelated.jpg".to_string(),
-            extension: Some("jpg".to_string()),
+            extension: Some("jpg"),
             size: 100,
             modified: 10,
             is_dir: false,

@@ -39,9 +39,7 @@ fn main() {
     let jobs: Vec<_> = entries
         .into_iter()
         .filter(|e| {
-            !e.is_dir
-                && (is_indexable_extension(e.extension.as_deref())
-                    || is_indexable_file_name(&e.name))
+            !e.is_dir && (is_indexable_extension(e.extension) || is_indexable_file_name(&e.name))
         })
         .take(limit)
         .collect();

@@ -2,6 +2,7 @@ use crate::indexer::ignore::IgnoreSet;
 use crate::search::fuzzy::compute_char_mask;
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 use std::time::SystemTime;
 
 #[derive(Debug, Clone)]
@@ -9,7 +10,10 @@ pub struct FileEntry {
     pub id: u64,
     pub path: PathBuf,
     pub name: String,
-    pub extension: Option<String>,
+    /// Interned (lowercase) extension. Extensions repeat heavily, so a
+    /// process-wide `&'static str` avoids one heap allocation per entry during
+    /// a full crawl while keeping `Option<&str>` call sites unchanged.
+    pub extension: Option<&'static str>,
     pub size: u64,
     pub modified: u64,
     pub is_dir: bool,
@@ -22,6 +26,33 @@ pub struct FileEntry {
     /// True when the entry's content must be re-read even if its mtime/size did
     /// not change (used to re-run image OCR after the setting is toggled).
     pub content_pending: bool,
+}
+
+/// Interns an extension for the lifetime of the process.
+///
+/// Unique extensions are a tiny fixed set, so leaking each one once is a
+/// bounded cost and removes the per-entry `String` from a 1M-entry crawl.
+pub fn intern_extension(extension: Option<&str>) -> Option<&'static str> {
+    let extension = extension?.trim().trim_start_matches('.');
+    if extension.is_empty() {
+        return None;
+    }
+    static EXTENSIONS: OnceLock<Mutex<HashSet<&'static str>>> = OnceLock::new();
+    let mut table = EXTENSIONS
+        .get_or_init(|| Mutex::new(HashSet::new()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    if let Some(&interned) = table.get(extension) {
+        return Some(interned);
+    }
+    let lower = extension.to_ascii_lowercase();
+    if let Some(&interned) = table.get(lower.as_str()) {
+        return Some(interned);
+    }
+    let interned: &'static str = Box::leak(lower.into_boxed_str());
+    table.insert(interned);
+    Some(interned)
 }
 
 /// Returns `(device_id, inode)` for a filesystem metadata entry.
@@ -167,9 +198,7 @@ pub fn walk_directories(
             let extension = if is_dir {
                 None
             } else {
-                path.extension()
-                    .and_then(|ext| ext.to_str())
-                    .map(|s| s.to_lowercase())
+                intern_extension(path.extension().and_then(|ext| ext.to_str()))
             };
 
             let (size, modified, dev, ino) = match entry.metadata() {
@@ -220,4 +249,27 @@ pub fn walk_directories(
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extension_interning_is_stable_and_case_insensitive() {
+        let upper = intern_extension(Some("PNG")).expect("interned");
+        let dotted = intern_extension(Some(".png")).expect("interned");
+        assert_eq!(upper, dotted);
+        assert!(std::ptr::eq(upper, dotted));
+        assert_eq!(intern_extension(None), None);
+        assert_eq!(intern_extension(Some("")), None);
+        assert_eq!(intern_extension(Some(".")), None);
+    }
+
+    #[test]
+    fn interned_extension_storage_is_inline() {
+        assert!(
+            std::mem::size_of::<Option<&'static str>>() < std::mem::size_of::<Option<String>>()
+        );
+    }
 }

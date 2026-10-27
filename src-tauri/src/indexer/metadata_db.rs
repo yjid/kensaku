@@ -275,7 +275,7 @@ impl MetadataDb {
                     id: id as u64,
                     path: PathBuf::from(path),
                     name,
-                    extension,
+                    extension: crate::indexer::walker::intern_extension(extension.as_deref()),
                     size: u64::try_from(size).unwrap_or(0),
                     modified: u64::try_from(modified).unwrap_or(0),
                     is_dir: is_dir != 0,
@@ -1514,8 +1514,9 @@ mod tests {
             extension: if is_dir {
                 None
             } else {
-                path.extension()
-                    .map(|ext| ext.to_string_lossy().to_lowercase())
+                crate::indexer::walker::intern_extension(
+                    path.extension().and_then(|ext| ext.to_str()),
+                )
             },
             size: 1,
             modified: 1,
