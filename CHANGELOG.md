@@ -3,6 +3,27 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [1.0.1] — 2026-10-27
+
+### Changed
+- New UI: neutral light and dark themes with no accent color, the Mac system
+  font, and Apple-style motion curves.
+- Header is search and Settings only.
+- Results are a grid of square cards with infinite scroll. Only what is on
+  screen is rendered.
+- Hover shows a slim info bar with size, image dimensions, and age.
+- Sort is an icon row. Right-click a result for Open, Show in folder, Copy
+  path, and Details.
+- Onboarding starts with no folders selected.
+
+### Added
+- Show thumbnails setting (Settings → Search), on by default.
+- Thumbnails are sent to the UI as data URLs, so they render on every platform.
+
+### Fixed
+- Infinite scroll no longer repeats the same page request.
+- Thumbnails are generated for every visible image, not only the first 30.
+
 ## [1.0.0] — 2026-10-27
 
 Kensaku 1.0 is the first release with the full agent surface, optional local
