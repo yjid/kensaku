@@ -198,6 +198,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: true
 
       - name: Checkout (for release notes generation)
         uses: actions/checkout@v4
