@@ -29,6 +29,30 @@ const ALLOWED_KEYS: &[&str] = &[
 const MAX_FILTERS: usize = 6;
 const MAX_QUERY_CHARS: usize = 200;
 
+/// Categories the search engine actually routes in `matches_type_category`.
+/// Keep this in sync with `search::matches_type_category`.
+const TYPE_VALUES: &[&str] = &[
+    "image",
+    "pdf",
+    "doc",
+    "document",
+    "sheet",
+    "spreadsheet",
+    "table",
+    "presentation",
+    "slide",
+    "slides",
+    "ebook",
+    "book",
+    "code",
+    "video",
+    "audio",
+    "archive",
+    "dir",
+    "directory",
+    "folder",
+];
+
 #[derive(Debug, Clone, Serialize)]
 pub struct CompiledQuery {
     /// Final composed query (terms + validated filter tokens), ready for the
@@ -54,10 +78,7 @@ pub fn compile(target: &LlmTarget, raw: &str) -> Result<CompiledQuery, LlmError>
         return Ok(cached);
     }
 
-    let messages = [
-        ChatMessage::system(SYSTEM_PROMPT),
-        ChatMessage::user(raw),
-    ];
+    let messages = [ChatMessage::system(SYSTEM_PROMPT), ChatMessage::user(raw)];
     let response = super::chat(target, &messages, false)?;
     let compiled = parse_and_validate(raw, &response)
         .map_err(|reason| LlmError::Unavailable(format!("model output rejected: {}", reason)))?;
@@ -73,7 +94,7 @@ Reply with ONLY a JSON object (no prose, no code fences) shaped exactly like:
 Rules:
 - "query": the words to search for, filters and filler removed. Keep the user's language. No ":" tokens, no quotes-as-syntax, no regex.
 - "filters": zero or more tokens from EXACTLY this grammar:
-    type:<image|document|code|video|audio|archive|text|data|font>
+    type:<image|pdf|document|sheet|presentation|ebook|code|video|audio|archive|dir>
     ext:<extension without dot>          e.g. ext:pdf
     in:"<directory path>"                scope, e.g. in:"~/Projects"
     path:"<substring>"                   path contains
@@ -99,8 +120,8 @@ struct ModelOutput {
 /// Validates raw model output into a [`CompiledQuery`], or rejects it.
 pub fn parse_and_validate(_raw: &str, response: &str) -> Result<CompiledQuery, String> {
     let value = extract_json(response)?;
-    let output: ModelOutput = serde_json::from_value(value)
-        .map_err(|e| format!("unexpected JSON shape: {}", e))?;
+    let output: ModelOutput =
+        serde_json::from_value(value).map_err(|e| format!("unexpected JSON shape: {}", e))?;
 
     // Text terms: reject filter-like or regex-like content; the model must not
     // smuggle grammar into the text.
@@ -116,7 +137,10 @@ pub fn parse_and_validate(_raw: &str, response: &str) -> Result<CompiledQuery, S
         match token {
             Token::Word(word) | Token::NegatedWord(word) | Token::Quoted(word) => {
                 if word.contains(':') {
-                    return Err(format!("query text must not contain filter syntax: {:?}", word));
+                    return Err(format!(
+                        "query text must not contain filter syntax: {:?}",
+                        word
+                    ));
                 }
             }
             Token::KeyValue { .. } | Token::NegatedQuoted(_) => {
@@ -141,7 +165,12 @@ pub fn parse_and_validate(_raw: &str, response: &str) -> Result<CompiledQuery, S
     }
 
     // Sort: only the exact vocabulary the UI already supports.
-    let sort = match output.sort.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    let sort = match output
+        .sort
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         None | Some("null") => None,
         Some(word) => match word.to_ascii_lowercase().as_str() {
             "newest" | "oldest" | "largest" | "name" => Some(word.to_ascii_lowercase()),
@@ -189,7 +218,53 @@ fn validate_filter_token(filter: &str) -> Result<String, String> {
     if key_lower != "mode" && value.trim().is_empty() {
         return Err(format!("filter value is empty: {:?}", filter));
     }
+    validate_filter_value(&key_lower, value)?;
     Ok(filter.to_string())
+}
+
+/// Validates a filter value against the grammar the search pipeline accepts.
+/// Unknown values are rejected instead of being silently downgraded to a text
+/// term (the parser's fallback), so the model cannot show chips that do
+/// nothing.
+fn validate_filter_value(key: &str, value: &str) -> Result<(), String> {
+    let value = value.trim();
+    let valid = match key {
+        "type" => TYPE_VALUES.contains(&value.to_ascii_lowercase().as_str()),
+        "ext" => {
+            let ext = value.trim_start_matches('.').to_ascii_lowercase();
+            !ext.is_empty()
+                && ext.len() <= 16
+                && ext
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '_'))
+        }
+        // These three are validated by the real parser, so the model can never
+        // emit a range/kind the UI would silently drop.
+        "modified" | "size" | "is" => parser_accepts(key, value),
+        "mode" => matches!(value.to_ascii_lowercase().as_str(), "ranked" | "exhaustive"),
+        "lang" => {
+            !value.is_empty()
+                && value.len() <= 32
+                && value.chars().all(|ch| {
+                    ch.is_ascii_alphanumeric() || matches!(ch, '+' | '#' | '.' | '_' | '-')
+                })
+        }
+        "in" | "path" | "name" | "content" => !value.is_empty(),
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(format!("invalid value for {}: {:?}", key, value))
+    }
+}
+
+/// Runs one filter token through the query parser and reports whether it
+/// produced a filter with no "invalid" hint.
+fn parser_accepts(key: &str, value: &str) -> bool {
+    let token = format!("{}:{}", key, value);
+    let parsed = crate::query::parser::parse_query(&token, &[], &HashMap::new(), None, 0);
+    parsed.hints.is_empty()
 }
 
 /// Maps a validated token onto the chip vocabulary the UI already renders.
@@ -251,8 +326,7 @@ fn extract_json(response: &str) -> Result<Value, String> {
         .rfind('}')
         .filter(|end| *end > start)
         .ok_or_else(|| "unterminated JSON object".to_string())?;
-    serde_json::from_str(&response[start..=end])
-        .map_err(|e| format!("invalid JSON: {}", e))
+    serde_json::from_str(&response[start..=end]).map_err(|e| format!("invalid JSON: {}", e))
 }
 
 /// Tiny bounded LRU keyed by provider + model + normalized input. Hand-rolled
@@ -352,6 +426,51 @@ mod tests {
     }
 
     #[test]
+    fn rejects_invalid_filter_values() {
+        for filter in [
+            "type:garbage",
+            "modified:zzz",
+            "size:banana",
+            "is:planet",
+            "mode:fast",
+        ] {
+            let err = validate(
+                "x",
+                json!({"query": "x", "filters": [filter], "sort": null}),
+            )
+            .unwrap_err();
+            assert!(
+                err.contains("invalid value") || err.contains("empty"),
+                "{filter} should be rejected, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_valid_filter_values() {
+        let compiled = validate(
+            "x",
+            json!({
+                "query": "x",
+                "filters": ["type:document", "ext:pdf", "modified:<24h", "size:>=1mb", "is:file", "lang:rust", "mode:exhaustive"],
+                "sort": null
+            }),
+        );
+        // Seven filters exceeds the cap; drop one and verify all the rest.
+        assert!(compiled.unwrap_err().contains("more than 6"));
+        let compiled = validate(
+            "x",
+            json!({
+                "query": "x",
+                "filters": ["type:document", "ext:pdf", "modified:<24h", "size:>=1mb", "is:file", "lang:rust"],
+                "sort": null
+            }),
+        )
+        .expect("valid filters");
+        assert_eq!(compiled.filters.len(), 6);
+    }
+
+    #[test]
     fn accepts_sort_vocabulary_only() {
         let compiled = validate(
             "latest resume",
@@ -360,11 +479,8 @@ mod tests {
         .expect("valid");
         assert_eq!(compiled.sort.as_deref(), Some("newest"));
 
-        let err = validate(
-            "x",
-            json!({"query": "x", "filters": [], "sort": "random"}),
-        )
-        .unwrap_err();
+        let err =
+            validate("x", json!({"query": "x", "filters": [], "sort": "random"})).unwrap_err();
         assert!(err.contains("unknown sort"));
     }
 
@@ -405,8 +521,8 @@ mod tests {
     #[test]
     fn rejects_over_limit_filters_and_garbage() {
         let filters: Vec<String> = (0..8).map(|i| format!("ext:e{}", i)).collect();
-        let err = validate("x", json!({"query": "x", "filters": filters, "sort": null}))
-            .unwrap_err();
+        let err =
+            validate("x", json!({"query": "x", "filters": filters, "sort": null})).unwrap_err();
         assert!(err.contains("more than 6"));
 
         assert!(parse_and_validate("x", "no json here").is_err());
@@ -438,14 +554,8 @@ mod tests {
         )
         .expect("valid");
         assert!(compiled.chips.iter().any(|c| c.label == "Size: >10mb"));
-        assert!(compiled
-            .chips
-            .iter()
-            .any(|c| c.label.starts_with("In: ")));
-        assert!(compiled
-            .chips
-            .iter()
-            .all(|c| !c.source.is_empty()));
+        assert!(compiled.chips.iter().any(|c| c.label.starts_with("In: ")));
+        assert!(compiled.chips.iter().all(|c| !c.source.is_empty()));
     }
 
     #[test]
@@ -474,6 +584,9 @@ mod tests {
         for i in 0..130 {
             cache.put(&target, &format!("q{}", i), compiled.clone());
         }
-        assert!(cache.get(&target, "needle").is_none(), "oldest entry evicted");
+        assert!(
+            cache.get(&target, "needle").is_none(),
+            "oldest entry evicted"
+        );
     }
 }

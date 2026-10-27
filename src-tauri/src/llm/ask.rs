@@ -89,8 +89,12 @@ pub fn answer_from_results(
     // 2. Bounded, numbered context with line numbers.
     let mut sources: Vec<AskSource> = Vec::new();
     for result in results.iter().take(MAX_SOURCES) {
-        let text = crate::agent::mcp::extract_text(std::path::Path::new(&result.path))
-            .map(|text| text.chars().take(MAX_SOURCE_EXTRACT_CHARS).collect::<String>());
+        let text =
+            crate::agent::mcp::extract_text(std::path::Path::new(&result.path)).map(|text| {
+                text.chars()
+                    .take(MAX_SOURCE_EXTRACT_CHARS)
+                    .collect::<String>()
+            });
         let Some(text) = text else { continue };
         if text.trim().is_empty() {
             continue;
@@ -125,8 +129,8 @@ pub fn answer_from_results(
 
     if out.sources.is_empty() {
         // No retrieval, no answer.
-        out.answer = "No matching files in the local index, so there is nothing to answer from."
-            .to_string();
+        out.answer =
+            "No matching files in the local index, so there is nothing to answer from.".to_string();
         return Ok(out);
     }
 
@@ -146,7 +150,10 @@ Top matching files for \"{}\":\n\n{}",
                 question,
                 out.sources
                     .iter()
-                    .map(|s| format!("[{}] {} (lines {}–{})", s.index, s.path, s.line_start, s.line_end))
+                    .map(|s| format!(
+                        "[{}] {} (lines {}–{})",
+                        s.index, s.path, s.line_start, s.line_end
+                    ))
                     .collect::<Vec<_>>()
                     .join("\n")
             );
@@ -245,7 +252,10 @@ mod tests {
             "It is set here [1] and there [2], but not [5] or [999] or [0].".to_string(),
             &sources,
         );
-        assert_eq!(answer, "It is set here [1] and there [2], but not  or  or .");
+        assert_eq!(
+            answer,
+            "It is set here [1] and there [2], but not  or  or ."
+        );
         assert_eq!(cited, vec![1, 2]);
     }
 

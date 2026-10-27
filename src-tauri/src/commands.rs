@@ -1360,7 +1360,10 @@ pub async fn llm_compile_query(
         });
     }
     // Explicit grammar is authoritative too.
-    if query.split_whitespace().any(|token| token.contains(':') && !token.starts_with("http")) {
+    if query
+        .split_whitespace()
+        .any(|token| token.contains(':') && !token.starts_with("http"))
+    {
         return Ok(LlmCompileOutcome {
             status: "deterministic".to_string(),
             compiled: None,
@@ -1488,7 +1491,9 @@ pub async fn ask_question(
 ) -> Result<crate::llm::ask::AskResponse, String> {
     let config = current_config(&state);
     let Some(target) = crate::llm::LlmTarget::from_config(&config) else {
-        return Err("no local LLM provider is configured; set it up in Settings → Agents".to_string());
+        return Err(
+            "no local LLM provider is configured; set it up in Settings → Agents".to_string(),
+        );
     };
     let allow_cloud = allow_cloud.unwrap_or(false);
 
@@ -1535,21 +1540,20 @@ fn retrieve_for_ask(
     let unit_store = indexer.unit_store.read();
     let aliases = config.alias_pairs();
     let visual_store = indexer.visual_store.read();
-    let response =
-        SearchDispatcher::search_response_fast_sorted_with_snippets_and_visual(
-            question,
-            &metadata,
-            &content_index,
-            Some(&unit_store),
-            Some(&visual_store),
-            config.semantic_enabled,
-            12,
-            0,
-            crate::search::SortOrder::Best,
-            &aliases,
-            0,
-            false,
-        );
+    let response = SearchDispatcher::search_response_fast_sorted_with_snippets_and_visual(
+        question,
+        &metadata,
+        &content_index,
+        Some(&unit_store),
+        Some(&visual_store),
+        config.semantic_enabled,
+        12,
+        0,
+        crate::search::SortOrder::Best,
+        &aliases,
+        0,
+        false,
+    );
     Ok(response.results)
 }
 
@@ -1568,8 +1572,7 @@ fn current_config(state: &State<'_, AppState>) -> KensakuConfig {
 /* ---------------------------------------------------------------- */
 
 #[tauri::command]
-pub async fn agent_connect_status(
-) -> Result<Vec<crate::agent::connect::ClientStatus>, String> {
+pub async fn agent_connect_status() -> Result<Vec<crate::agent::connect::ClientStatus>, String> {
     Ok(crate::agent::connect::detect_clients())
 }
 

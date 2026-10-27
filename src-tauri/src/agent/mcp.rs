@@ -657,8 +657,7 @@ fn run_search(
     let next_cursor = if cursor_limit_reached {
         // Switch to keyset pagination: the next page starts after the last
         // path of this page instead of materialising another 10k offset.
-        page
-            .last()
+        page.last()
             .map(|result| Value::String(encode_path_cursor(&result.path)))
             .unwrap_or(Value::Null)
     } else if has_more {
@@ -722,7 +721,11 @@ fn run_search_keyset(
         .iter()
         .enumerate()
         .map(|(idx, result)| {
-            let (snippet, snippet_truncated) = match result.snippet.as_deref().or_else(|| snippets.get(idx).and_then(|s| s.as_deref())) {
+            let (snippet, snippet_truncated) = match result
+                .snippet
+                .as_deref()
+                .or_else(|| snippets.get(idx).and_then(|s| s.as_deref()))
+            {
                 None => (None, false),
                 Some(_) if snippet_budget_chars == 0 => (None, true),
                 Some(full) => {
@@ -950,8 +953,8 @@ fn decode_cursor(cursor: &str) -> Result<Cursor, ToolFailure> {
         }
         let mut bytes = Vec::with_capacity(hex.len() / 2);
         for pair in hex.as_bytes().chunks(2) {
-            let value = u8::from_str_radix(std::str::from_utf8(pair).unwrap_or(""), 16)
-                .map_err(|_| {
+            let value =
+                u8::from_str_radix(std::str::from_utf8(pair).unwrap_or(""), 16).map_err(|_| {
                     ToolFailure::Invalid("Invalid params: 'cursor' is malformed".to_string())
                 })?;
             bytes.push(value);
@@ -1515,7 +1518,12 @@ mod tests {
         assert!(!second_results.is_empty());
         for result in second_results {
             let path = result["path"].as_str().unwrap();
-            assert!(path > last_path.as_str(), "{} must follow {}", path, last_path);
+            assert!(
+                path > last_path.as_str(),
+                "{} must follow {}",
+                path,
+                last_path
+            );
         }
         assert_eq!(second["cursor_limit_reached"], false);
     }
@@ -1566,7 +1574,10 @@ mod tests {
 
     #[test]
     fn cursor_codec_rejects_malformed_and_caps_offsets() {
-        assert_eq!(decode_cursor(&encode_cursor(1_234)).unwrap(), Cursor::Offset(1_234));
+        assert_eq!(
+            decode_cursor(&encode_cursor(1_234)).unwrap(),
+            Cursor::Offset(1_234)
+        );
         assert!(decode_cursor("nope").is_err());
         assert!(decode_cursor("k1-").is_err());
         assert!(decode_cursor("k1-zz").is_err());

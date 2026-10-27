@@ -41,9 +41,54 @@ pub fn accurate_compiled() -> bool {
     cfg!(feature = "accurate-ocr")
 }
 
+/// True when the dynamic ONNX Runtime library can be loaded.
+///
+/// The `ort` crate is built with `load-dynamic`, so the runtime is a separate
+/// install. Probing with [`ort::init_from`] only loads the library (it does
+/// not create the process-wide environment), and the result is cached for the
+/// lifetime of the process: installing the library later requires a restart.
+fn runtime_loadable() -> bool {
+    #[cfg(feature = "accurate-ocr")]
+    {
+        use std::sync::OnceLock;
+
+        static LOADABLE: OnceLock<bool> = OnceLock::new();
+        *LOADABLE.get_or_init(|| {
+            let path = match std::env::var("ORT_DYLIB_PATH") {
+                Ok(path) if !path.trim().is_empty() => path,
+                _ => format!(
+                    "{}onnxruntime{}",
+                    std::env::consts::DLL_PREFIX,
+                    std::env::consts::DLL_SUFFIX
+                ),
+            };
+            // `init_from` returns an error for a missing/incompatible
+            // library, but guard against a panic from a broken loader anyway.
+            // `ort::api()` then confirms the loaded library exposes a usable
+            // API version; it does not create the process-wide environment.
+            let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                ort::init_from(&path).is_ok()
+            }))
+            .unwrap_or(false);
+            loaded
+                && std::panic::catch_unwind(|| {
+                    let _ = ort::api();
+                })
+                .is_ok()
+        })
+    }
+    #[cfg(not(feature = "accurate-ocr"))]
+    {
+        false
+    }
+}
+
 /// True when the accurate engine can actually run.
+///
+/// Requires the pack, a build with `accurate-ocr`, **and** a loadable
+/// `libonnxruntime`. When any of those is missing, callers use Tesseract.
 pub fn accurate_available() -> bool {
-    accurate_compiled() && pack_present()
+    accurate_compiled() && pack_present() && runtime_loadable()
 }
 
 /// Updates the process-wide OCR backend from config.
@@ -69,13 +114,15 @@ pub fn engine_name() -> &'static str {
 /// Extracts text from an image using the optional accurate pack.
 ///
 /// Returns `None` so the caller falls back to Tesseract when the pack is
-/// missing, disabled, or returns no text. Native macOS/Windows OCR is a
-/// separate, not-yet-implemented backlog item.
+/// missing, the dynamic runtime cannot be loaded, the engine is disabled, or
+/// it returns no text. Native macOS/Windows OCR is a separate,
+/// not-yet-implemented backlog item.
 pub fn extract_image_ocr(path: &Path) -> Option<String> {
     #[cfg(feature = "accurate-ocr")]
     {
         if engine_name() == ACCURATE
             && pack_present()
+            && runtime_loadable()
             && let Some(text) = extract_accurate_ocr(path)
         {
             return Some(text);
@@ -86,26 +133,48 @@ pub fn extract_image_ocr(path: &Path) -> Option<String> {
     None
 }
 
+/// Cached state of the accurate engine. `Unavailable` is sticky so a missing
+/// runtime or a corrupt pack is probed once, not once per image.
+#[cfg(feature = "accurate-ocr")]
+enum AccurateEngine {
+    Uninitialized,
+    Ready(Box<paddleocr_rs_onnx::OcrEngine>),
+    Unavailable,
+}
+
 #[cfg(feature = "accurate-ocr")]
 fn extract_accurate_ocr(path: &Path) -> Option<String> {
     use paddleocr_rs_onnx::{OcrEngine, OrderBy};
     use std::sync::{Mutex, OnceLock};
 
-    static ENGINE_CACHE: OnceLock<Mutex<Option<OcrEngine>>> = OnceLock::new();
+    static ENGINE_CACHE: OnceLock<Mutex<AccurateEngine>> = OnceLock::new();
 
-    let cache = ENGINE_CACHE.get_or_init(|| Mutex::new(None));
+    let cache = ENGINE_CACHE.get_or_init(|| Mutex::new(AccurateEngine::Uninitialized));
     let mut guard = cache.lock().ok()?;
-    if guard.is_none() {
+    if matches!(*guard, AccurateEngine::Uninitialized) {
         let det = std::fs::read(det_path()).ok()?;
         let rec = std::fs::read(rec_path()).ok()?;
         let dict = std::fs::read(dict_path()).ok()?;
-        let engine = OcrEngine::new(&det, &rec, &dict).ok()?;
-        *guard = Some(engine);
+        // `ort` panics (rather than returning an error) when the dynamic
+        // runtime cannot be loaded. Contain that here so the caller falls
+        // back to Tesseract instead of losing the file to a worker panic.
+        *guard = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            OcrEngine::new(&det, &rec, &dict)
+        })) {
+            Ok(Ok(engine)) => AccurateEngine::Ready(Box::new(engine)),
+            _ => AccurateEngine::Unavailable,
+        };
     }
-    let engine = guard.as_ref()?;
+    let AccurateEngine::Ready(engine) = &*guard else {
+        return None;
+    };
 
     let image = image::open(path).ok()?;
-    let blocks = engine.recognize_all(&image, OrderBy::Horizontal).ok()?;
+    let blocks = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        engine.recognize_all(&image, OrderBy::Horizontal)
+    }))
+    .ok()?
+    .ok()?;
     let text = blocks
         .iter()
         .map(|block| block.text.trim())
@@ -144,6 +213,15 @@ mod tests {
         assert!(rec_path().ends_with("rec.onnx"));
         assert!(dict_path().ends_with("dict.txt"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(feature = "accurate-ocr")]
+    #[test]
+    fn runtime_probe_is_panic_free() {
+        // Whether or not libonnxruntime is installed, probing must answer
+        // instead of panicking (the old path panicked inside `ort`).
+        let _ = runtime_loadable();
+        let _ = accurate_available();
     }
 
     #[cfg(feature = "accurate-ocr")]

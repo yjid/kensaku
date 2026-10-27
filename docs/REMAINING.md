@@ -22,7 +22,7 @@ EPUB/ODT/RTF extraction · tesseract OCR + optional PP-OCRv6 pack ·
 image thumbnails, dimensions, and perceptual duplicates · CLI + MCP · warm daemon
 with Unix socket / Windows named pipe · `/` command menu · two themes · Doctor ·
 Stats for Nerds · factory reset · extraction timeout · cloud-placeholder guard ·
-single-instance lock · 200 Rust tests, a golden-query integration test, and CI.
+single-instance lock · 250+ Rust tests, a golden-query integration test, and CI.
 
 Also shipped in the `v0.3.x` hardening cycle and K1–K14 pass: compact metadata
 arena (91.3 MB at 1M entries), folded/trigram content tier, visible-row snippets,

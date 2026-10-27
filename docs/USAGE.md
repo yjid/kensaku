@@ -211,15 +211,18 @@ kensaku-cli connect cursor                   # prints the JSON snippet instead
 kensaku-cli serve --port 8765
 ```
 
+`serve` exposes `/mcp`, `/health`, `/search`, and `/events` only. `/ask` is a
+CLI/GUI feature (below) and is not an HTTP route.
+
 ### Local AI (optional)
 
 Kensaku works fully without any model. If you run [Ollama](https://ollama.com)
 or LM Studio, Settings → Agents → Local AI can use it for two things:
 
 - **Query refinement** — after the deterministic results land, the model may
-  propose a compiled refinement of a natural-language query. Every token it
-  proposes is validated against the query grammar before it is shown, and the
-  chips are removable. The model never retrieves on its own.
+  propose a compiled refinement of a natural-language query. Every filter key
+  and value it proposes is validated against the query grammar before it is
+  shown, and the chips are removable. The model never retrieves on its own.
 - **`/ask`** — answers a question strictly from your indexed files, with path
   and line citations. No retrieval, no answer. Cloud endpoints stay off
   unless you enable them and confirm per use.

@@ -418,9 +418,10 @@ that fallback.
 
 ### 9.3 MCP / agent API
 
-Transport: **stdio** (default, spawned per client). The server pings the daemon
-and forwards searches/state to it; with no daemon it opens the index read-only.
-HTTP/SSE remains planned.
+Transport: **stdio** (default, spawned per client) plus **loopback HTTP/SSE**
+(`kensaku-cli serve`, bearer token, loopback-only, read-only). The server pings
+the daemon and forwards searches/state to it; with no daemon it opens the index
+read-only. `/ask` runs in the CLI/GUI, not on the HTTP transport.
 
 | Tool | Contract |
 |---|---|
@@ -430,7 +431,7 @@ HTTP/SSE remains planned.
 | `index_state` | counts, content docs, semantic units, model ids, phase/progress, roots, queue freshness |
 | `regex_search` | bounded `pattern≤512`, filters, `page_size`, `cursor` |
 | `find_related` | planned |
-| `find_symbol` | (v2.1, tree-sitter) planned |
+| `find_symbol` | tree-sitter definitions (Rust, Python, JavaScript, TypeScript); `query`, `language?`, `path?`, `page_size≤50` |
 | `reindex` | opt-in write; only listed when `mcp_allow_reindex=true` and the daemon is running |
 
 Design rules:
@@ -438,7 +439,8 @@ Design rules:
 - Responses are token-budgeted (search: ~1,500 tokens, 100-char snippets; `read_snippet`: 32–1,024 tokens) and delimited so file content reads as data, never instructions.
 - `.gitignore` / `.cursorignore` parity ships by default (`include_ignored` opts out) — agents assume parity and produce garbage context otherwise.
 - Read-only by default. No shell and no deletion; `reindex` is the only write tool and requires an explicit config opt-in plus the daemon.
-- Ship ready-to-paste config for Cursor, Claude Code, and VS Code in the README and in Settings.
+- `agent_scoped_roots` restricts results and single-path reads; comparisons resolve the path (including symlinks and `..`) before accepting it.
+- Ship ready-to-paste config for Cursor, Claude Code, and Claude Desktop in the docs and in Settings.
 
 ---
 
@@ -471,6 +473,7 @@ Gates: p50 < 15 ms, p95 < 40 ms, p99 < 60 ms. **Daemon idle RSS at 1M files:** �
 | Vector file corrupt | drop semantic tier, re-embed at idle, lexical unaffected |
 | Model missing | static tier absent; everything else works |
 | Optional OCR pack missing/checksum fail | fall back to Tesseract; setup shows the failed download and retry |
+| ONNX runtime library missing/unloadable | accurate OCR reports unavailable and extraction falls back to Tesseract; install the runtime and restart |
 | Folded tier absent (old index) | exact + semantic only; rebuild prompt, never an error |
 | Disk full | pause writers, banner, keep serving reads |
 | Extract worker panic/hang | per-file timeout, mark failed, continue |
@@ -527,7 +530,7 @@ Magic sniffing · encoding detection · DOCX/PPTX/XLSX/EPUB · PDF text layer + 
 **Gate:** 50-page PDF < 50 ms; malformed/encrypted/scanned handled without daemon crash; zero panics on a 500-file fuzz corpus.
 
 ### Phase 4 — Agent surface · ~1 week
-Daemon socket + protocol (shipped) · CLI commands (shipped) · MCP stdio (shipped) + loopback HTTP/SSE with token auth (shipped) · `search` / `read_snippet` / `index_state` / `find_symbol` (shipped) · keyset pagination past the 10k cap (shipped) · `.gitignore` / `.cursorignore` parity (shipped) · `agent_scoped_roots` read-only scoping (shipped) · token budgets (shipped) · one-click connect for Cursor/Claude (shipped) · `find_related` (planned).
+Daemon socket + protocol (shipped) · CLI commands (shipped) · MCP stdio (shipped) + loopback HTTP/SSE with token auth (shipped) · `search` / `read_snippet` / `index_state` / `find_symbol` (shipped) · keyset pagination past the 10k cap (shipped) · `.gitignore` / `.cursorignore` parity (shipped) · `agent_scoped_roots` read-only scoping with resolved-path containment (shipped) · token budgets (shipped) · one-click connect for Claude Desktop/Code and Cursor (shipped) · `find_related` (planned).
 **Gate:** `search` p95 < 50 ms; MCP client round-trip works from Cursor and Claude Code; exhaustive mode paginates 100k matches without OOM.
 
 ### Phase 5 — Vision & OCR · ~1.5 weeks
@@ -722,8 +725,9 @@ MCP ─┘        │
 - The daemon owns the single-instance lock and the writer; clients never open a
   second writer. `daemon.pid`, socket cleanup, SIGTERM/SIGINT, and graceful
   shutdown are implemented.
-- Loopback HTTP/SSE remains planned for web-capable MCP clients; it will reuse
-  the same token and read-only rules.
+- Loopback HTTP/SSE is shipped for web-capable MCP clients (`kensaku-cli
+  serve`); it reuses the same token and read-only rules. `/ask` is CLI/GUI
+  only and is not exposed on this transport.
 - Release packaging of the daemon sidecar (installer/bundle) is the remaining
   release task, tracked in [REMAINING.md](REMAINING.md) section F.
 
