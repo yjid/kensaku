@@ -3,6 +3,26 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [1.1.0] — 2026-10-27
+
+### Added
+- Grid or list results, chosen in the results bar and in Settings.
+- Sort dropdown: Best match, Newest, Oldest, Largest, Name.
+- Previews for PDFs (first page) and images, shown on cards and in Quick Look (Space).
+- Recent files shown as a list on the home screen.
+- Save-search and layout controls on the same row as the category filters.
+- Tesseract OCR is found inside the app first, before PATH and system installs.
+
+### Changed
+- Thumbnails and previews use one 240px size.
+- Filters, sort, and layout share one pill style.
+- Setup folder step: clearer selection, neutral checkboxes, centered layout.
+- Dark-mode borders use the theme color.
+- Settings labels: "Meaning search" and "Local model" replace the AI wording.
+
+### Fixed
+- Release workflow stages only installable files and checks that artifacts arrived.
+
 ## [1.0.1] — 2026-10-27
 
 ### Changed
