@@ -118,6 +118,13 @@ export function AskPanel({
           </label>
         </div>
 
+        {(cloudConfirm || answer?.cloud) && (
+          <div className="border-t border-warning/40 bg-warning/10 px-4 py-2 text-[10px] leading-relaxed text-warning">
+            Cloud endpoint{answer?.endpoint ? ` (${answer.endpoint})` : ""}: this question and
+            the retrieved snippets leave this device.
+          </div>
+        )}
+
         <div className="no-scrollbar min-h-[120px] flex-1 overflow-y-auto px-4 py-3">
           {error && (
             <p className="text-[12px] leading-relaxed text-warning">

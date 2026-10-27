@@ -69,4 +69,4 @@ should still be added to exclusions.
 
 Current release builds are **unsigned** (see `docs/INSTALL.md`). Verify downloads
 against the checksums attached to the GitHub release. Signing and notarization are
-tracked in `docs/REMAINING.md`.
+tracked in the project issue tracker.

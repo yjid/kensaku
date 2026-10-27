@@ -30,7 +30,7 @@ xattr -dr com.apple.quarantine /Applications/Kensaku.app
 **Linux.** No signing step; AppImage may need `--no-sandbox` on hardened distros.
 
 If your organization requires signed binaries, build from source or wait for
-notarized releases (tracked in `REMAINING.md`).
+notarized releases. Verify downloads with the published `SHA256SUMS`.
 
 ---
 

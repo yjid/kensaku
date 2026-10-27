@@ -37,29 +37,53 @@ gh run watch   # or: gh run list --workflow=release.yml
 
 Builds are **unsigned**. See `INSTALL.md` for the user-facing consequences.
 
-## 3. Download and publish
+## 3. Review and publish the draft
+
+The tag push builds every platform and assembles a **draft** GitHub release with
+all bundles, the CLI binaries, and `SHA256SUMS`.
+
+```bash
+# wait for the release build
+gh run list --workflow=release.yml --limit 1
+
+# review the draft
+gh release view vX.Y.Z
+gh release download vX.Y.Z -D /tmp/kensaku-release
+(cd /tmp/kensaku-release && sha256sum -c SHA256SUMS)
+```
+
+Check that the expected assets are present:
+
+| Asset | Platform |
+|---|---|
+| `kensaku_*_amd64.deb`, `kensaku-*.rpm`, `kensaku_*.AppImage` | Linux |
+| `kensaku_*_universal.dmg` | macOS |
+| `kensaku_*_x64-setup.exe`, `kensaku_*_x64_en-US.msi` | Windows |
+| `kensaku-cli-linux-*`, `kensaku-cli-macos-*`, `kensaku-cli-windows-*` | Agent CLI |
+| `SHA256SUMS` | All assets |
+
+Then publish the draft (or edit the notes first):
+
+```bash
+gh release edit vX.Y.Z --draft=false --latest
+```
+
+If the workflow could not create the draft, the manual fallback is:
 
 ```bash
 RUN=$(gh run list --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
 rm -rf /tmp/kensaku-release && mkdir -p /tmp/kensaku-release
 gh run download "$RUN" -D /tmp/kensaku-release
-
-# flatten the artifact directories
 find /tmp/kensaku-release -type f -exec sha256sum {} + > /tmp/kensaku-release/SHA256SUMS
-
-gh release create vX.Y.Z \
-  --title "Kensaku vX.Y.Z" \
-  --notes-file /tmp/release-notes.md \
-  $(find /tmp/kensaku-release -type f ! -name SHA256SUMS)
+gh release create vX.Y.Z --title "Kensaku vX.Y.Z" --notes-file /tmp/release-notes.md \
+  $(find /tmp/kensaku-release -type f)
 ```
-
-Attach `SHA256SUMS` too. Do not mark it a draft unless you plan to upload more.
 
 ## 4. Verify
 
-- The release page lists all bundles and the CLI binaries.
+- The release page lists all bundles, the CLI binaries, and `SHA256SUMS`.
 - `gh release view vX.Y.Z`
-- Download one bundle, install it, and launch.
+- Download one bundle, verify its checksum, install it, and launch.
 - Check `kensaku-cli state --json` on a machine with an index.
 
 ## Signing / notarization (not yet)

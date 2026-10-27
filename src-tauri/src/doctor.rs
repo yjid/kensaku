@@ -131,6 +131,51 @@ fn check_config_dir_writable() -> DoctorCheck {
     }
 }
 
+fn check_disk_space(config_dir: &Path) -> DoctorCheck {
+    const ID: &str = "disk_space";
+    const LABEL: &str = "Disk space";
+    const MIB: u64 = 1024 * 1024;
+
+    match fs4::available_space(config_dir) {
+        Ok(bytes) => {
+            let detail = format!(
+                "{} available for the index, thumbnails and model packs.",
+                format_bytes(bytes)
+            );
+            if bytes < 100 * MIB {
+                fail(
+                    ID,
+                    LABEL,
+                    detail,
+                    Some("Free disk space before indexing; writes will fail soon.".to_string()),
+                )
+            } else if bytes < 1024 * MIB {
+                warn(
+                    ID,
+                    LABEL,
+                    detail,
+                    Some(
+                        "Consider freeing space before a large reindex or model download."
+                            .to_string(),
+                    ),
+                )
+            } else {
+                ok(ID, LABEL, detail)
+            }
+        }
+        Err(e) => warn(
+            ID,
+            LABEL,
+            format!(
+                "Could not read free space for {}: {}",
+                config_dir.display(),
+                e
+            ),
+            None,
+        ),
+    }
+}
+
 fn check_crash_log() -> DoctorCheck {
     const ID: &str = "crash_log";
     const LABEL: &str = "Crash log";
@@ -676,6 +721,7 @@ pub fn run(state: &AppState) -> DoctorReport {
 
     let mut checks = vec![
         check_config_dir_writable(),
+        check_disk_space(&config_dir),
         check_crash_log(),
         check_metadata_db(&config_dir),
         check_full_text_index(nodes),
@@ -769,5 +815,17 @@ mod tests {
         assert_eq!(check.status, "warn");
         assert!(check.detail.contains("model.k10ext"));
         assert!(check.detail.contains("timed out"));
+    }
+
+    #[test]
+    fn disk_space_check_reports_a_status() {
+        let dir = std::env::temp_dir();
+        let check = check_disk_space(&dir);
+        assert!(
+            matches!(check.status.as_str(), "ok" | "warn" | "fail"),
+            "unexpected status: {}",
+            check.status
+        );
+        assert_eq!(check.id, "disk_space");
     }
 }

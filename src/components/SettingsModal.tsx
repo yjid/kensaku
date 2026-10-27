@@ -1264,6 +1264,7 @@ function LocalAiCard({
         base_url: config.llm_base_url ?? "",
         model: config.llm_model ?? "",
         models: [],
+        cloud: false,
         error: reasonFrom(err),
       });
     } finally {
@@ -1368,6 +1369,12 @@ function LocalAiCard({
               Detect
             </button>
           </div>
+          {status?.cloud && (
+            <p className="border-t border-warning/40 bg-warning/10 px-4 py-2 text-[10px] leading-relaxed text-warning">
+              Cloud endpoint ({status.base_url}): queries and retrieved snippets leave this
+              device. Keep this off for a fully local setup.
+            </p>
+          )}
           {status?.reachable && status.models.length > 0 && (
             <div className="flex flex-wrap gap-1.5 border-t border-line px-4 py-2.5">
               {status.models.slice(0, 8).map((model) => (
@@ -1709,7 +1716,7 @@ function AboutSection() {
             <p className="text-[15px] font-semibold text-fg">
               Kensaku <span className="font-normal text-muted">検索</span>
             </p>
-            <p className="font-mono text-[11px] text-subtle">0.3.3</p>
+            <p className="font-mono text-[11px] text-subtle">1.0.0</p>
           </div>
           <div className="flex items-center gap-1.5">
             {["Rust", "Tauri 2", "MIT"].map((b) => (

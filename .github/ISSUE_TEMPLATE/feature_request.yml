@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Please check [docs/REMAINING.md](https://github.com/yjid/kensaku/blob/master/docs/REMAINING.md)
+        Please check the existing issues and [docs/ARCHITECTURE.md](https://github.com/yjid/kensaku/blob/master/docs/ARCHITECTURE.md)
         first — many ideas are already planned or deliberately deferred.
 
         Kensaku is a local search index and a read-only backend for agents. It does

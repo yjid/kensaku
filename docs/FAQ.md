@@ -8,13 +8,13 @@ Settings).
 **Why is the first launch slow?**
 It builds the index. The guided first run completes the initial scan before
 opening the main window, showing live counts and ending with a Done summary;
-later launches stay search-first and instant. See [VISION.md](VISION.md).
+later launches stay search-first and instant.
 
 **What happens during setup?**
 The guided flow covers folders, exclusions, preferences (theme + shortcut),
 optional OCR/model downloads, and the first scan, ending with a Done summary
 before the main window opens. Downloads are acquired there; Settings shows
-installed status and **About → Run setup again**. See [VISION.md](VISION.md).
+installed status and **About → Run setup again**.
 
 **Why does search return nothing for a word I know is in a file?**
 Check: is the folder watched? Is the extension in the excluded list? Is the file
@@ -33,7 +33,7 @@ By filename, by OCR text when `tesseract` **and** language data are available,
 or with the optional PP-OCRv6 pack (slower, in-process; may read small UI text
 better). Also by perceptual near-duplicate. Natural-language visual search ("red cap",
 "system design diagram"), similar-image lookup, native Vision/Windows OCR, and an
-optional local "this is me" identity are planned — see [VISION.md](VISION.md).
+optional local "this is me" identity are not part of 1.0.
 Semantic image search (CLIP) is not implemented yet.
 
 **Can I just type "latest resume" or use `/` and `@`?**
@@ -91,7 +91,7 @@ the fast, trustworthy index by default. An **optional** local Ollama/LM Studio
 connection may compile plain-language intent and power `/ask` with path
 citations; agents bring their own model through MCP. No model is bundled, and
 nothing leaves the machine unless you explicitly configure a cloud provider.
-See [VISION.md](VISION.md).
+No. Kensaku is local-first by design.
 
 **How do I contribute?**
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). Tests and clippy must pass.
