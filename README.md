@@ -33,6 +33,10 @@
   <a href="https://github.com/yjid/kensaku/releases">Releases</a>
 </p>
 
+<p align="center">
+  <img src="assets/fastest-semantic-file-search.png" width="100%" alt="Fastest Semantic File Search" />
+</p>
+
 ---
 
 ## Search your files the way you remember them
