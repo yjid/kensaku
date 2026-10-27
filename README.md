@@ -5,17 +5,12 @@
 <h1 align="center">Kensaku <span title="kensaku = search, in Japanese">検索</span></h1>
 
 <p align="center">
-  <b>Find anything on your computer, by what it says and what it means.</b>
+  <b>Find any file on your computer in milliseconds.</b>
 </p>
 
 <p align="center">
-  Local-first search for files, documents, screenshots and code.<br/>
-  Your index never leaves your machine, and your AI agents can search it too.
-</p>
-
-<p align="center">
-  <b>Super fast · Super light · Private by default</b><br/>
-  Results in ~3 ms per keystroke · about 73 MB of memory while indexing · nothing leaves your computer.
+  Search filenames, file contents, and meaning in one fast, local index.<br/>
+  Nothing leaves your machine.
 </p>
 
 <p align="center">
@@ -26,83 +21,57 @@
 
 <p align="center">
   <a href="#install">Install</a> ·
-  <a href="#why-kensaku">Why Kensaku</a> ·
-  <a href="#for-ai-agents">For AI agents</a> ·
+  <a href="#features">Features</a> ·
   <a href="#performance">Performance</a> ·
+  <a href="#connect-ai-agents-mcp">MCP</a> ·
   <a href="docs/USAGE.md">Docs</a> ·
   <a href="https://github.com/yjid/kensaku/releases">Releases</a>
 </p>
 
 <p align="center">
-  <img src="assets/fastest-semantic-file-search.png" width="100%" alt="Fastest Semantic File Search" />
+  <img src="assets/fastest-semantic-file-search.png" width="100%" alt="Kensaku search results" />
 </p>
 
 ---
 
-## Search your files the way you remember them
+## Find it the way you remember it
 
-You remember the file. Not its name.
+You don't remember the filename. You remember what was in it.
 
-It was a PDF about a failed deploy. Or the screenshot of that database error. Or the invoice from March. Your operating system's search wants a filename, and gives up the moment the answer lives inside the file.
+- The PDF about database indexing, saved as `notes-final-2.pdf`.
+- The log line from the failed deploy, somewhere in a folder of logs.
+- The screenshot with a CUDA error, which has no useful name at all.
 
-Kensaku indexes what is *inside* your files. Type a few words, get the right file in milliseconds. Nothing is uploaded, and no account is needed.
+Type what you remember. Kensaku searches names, text inside files, and meaning, and shows the match with the words highlighted. Open it with Enter.
 
-- **Search by meaning.** "That docker build error" finds the log, even when those exact words aren't in it.
-- **Search inside.** PDFs, Office files, EPUB, RTF, code, logs, and text in images.
-- **Search from anywhere.** The desktop app, a terminal, and your AI agents all query one index.
-- **Stay private.** Everything runs on your computer.
+## Features
 
-## Why Kensaku
+**Fast**
+- Filename search across ~100,000 files in a few milliseconds on a warm cache. Method and numbers are in [Performance](#performance).
+- Results update as you type. There is no separate search page.
+- Incremental indexing: changed files are picked up without rescanning the whole disk.
 
-### It understands more than filenames
+**Finds more**
+- Names, full text, fuzzy matches that tolerate typos, and meaning, in one search.
+- Documents: PDF, DOCX, PPTX, XLSX, EPUB, ODT/ODS/ODP, RTF, plain text, code, and logs, including CJK text.
+- Images: text is read with Tesseract. An optional, more accurate PP-OCRv6 engine is available in Settings.
 
-Kensaku blends three signals: exact text matches, fuzzy matches that tolerate typos, and semantic similarity from a small local embedding model. Results are ranked by relevance and recency, so the file you touched last week tends to win. Power users get precise control with a query language (see below).
+**Precise**
+- Filters and sort: Best match, Newest, Oldest, Largest, Name.
+- A query language when you want it (below).
 
-### It reads what is in your files
+**Works with AI agents**
+- Compatible agents can search the same local index over MCP. Read-only by default. See [Connect AI agents](#connect-ai-agents-mcp).
 
-- **Documents:** PDF, DOCX, PPTX, XLSX, EPUB, ODT/ODS/ODP, RTF, and plain text.
-- **Code and logs:** full-text search across source and config files, including CJK text.
-- **Images:** text is read with Tesseract by default. An optional, more accurate PP-OCRv6 engine is available in Settings.
-- **Images, beyond text:** thumbnails, dimensions, near-duplicate detection, and screenshot bursts that collapse to one result.
+**Private**
+- No account, no telemetry, no cloud search. Your index stays in your OS config directory.
 
-### A calm interface
+**Pleasant to use**
+- Grid or list layout. Quick Look with Space for PDFs, images, and text.
+- Right-click for open, show in folder, copy path, and details.
+- Light and dark themes.
 
-The 1.0.1 interface is built for everyday use:
-
-- **One search field.** Type and results appear. Only search and Settings are on screen.
-- **A grid of square cards.** Thumbnails for images, type icons for everything else, and infinite scroll that renders only what you can see.
-- **A quiet hover.** Move across a card to see its size, dimensions, and age.
-- **Right-click for more.** Open, show in folder, copy path, or view details.
-- **Light and dark themes.** Neutral colors, the system font, and gentle motion.
-
-### It gives the same power to your AI agents
-
-Kensaku exposes its index to AI agents over MCP, so your assistant can find files instead of you pasting paths into chat. The agent surface is read-only by default.
-
-| Tool | What it does |
-|---|---|
-| `search` | Ranked or exhaustive search with cursor pagination and path, extension, and recency filters |
-| `read_snippet` | A bounded excerpt from a file, centered on a query |
-| `regex_search` | Bounded regular-expression search over content |
-| `find_symbol` | Definitions of functions, classes, and types (Rust, Python, JavaScript, TypeScript) |
-| `similar_images` | Visually similar images (when the visual pack is enabled) |
-| `index_state` | Freshness, phase, model and size |
-| `health_check` | Daemon, database, index and model health |
-| `reindex` | Off unless you enable it, and only with the daemon running |
-
-Agents see the same ignore rules you do: `.gitignore` and `.cursorignore` are respected by default. You can limit an agent to specific folders with `agent_scoped_roots`.
-
-One-click setup is in Settings → Agents for Claude Desktop, Claude Code, and Cursor. Other MCP clients can use the JSON snippet shown there.
-
-### It stays on your machine
-
-No telemetry. No account. No hosted search. Your index and settings live in your OS config directory. The only network traffic is a model or OCR download you start yourself.
-
-### It is fast
-
-On a ~100,000-file corpus, a keystroke-level search takes about **2.8 ms** on average. Results appear as you type. See [Performance](#performance) for details.
-
-### A query language, when you want one
+### The query language
 
 For scripts and precise searches:
 
@@ -154,7 +123,7 @@ bun run tauri build
 
 You need Rust (stable), Bun 1.1 or later, and your platform's webview libraries. See [docs/INSTALL.md](docs/INSTALL.md). A `Makefile` covers the common tasks: `make dev`, `make build`, `make test`, and `make reset`.
 
-## For AI agents
+## Connect AI agents (MCP)
 
 Point an MCP client at the CLI:
 
