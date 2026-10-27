@@ -77,7 +77,7 @@ export function SearchBar({
                 : PLACEHOLDERS[phIdx]
           }
           onFocus={onFocusInput}
-          className="min-w-0 flex-1 bg-transparent text-[20px] leading-none text-fg outline-none placeholder:text-fg-subtle caret-accent"
+          className="min-w-0 flex-1 bg-transparent text-[17px] leading-none text-fg outline-none placeholder:text-subtle caret-fg"
           style={{ letterSpacing: "-0.02em" }}
         />
 
