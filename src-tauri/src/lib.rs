@@ -7,7 +7,6 @@ pub mod daemon;
 pub mod doctor;
 pub mod embed;
 pub mod indexer;
-pub mod llm;
 pub mod models;
 pub mod ocr;
 pub mod preview;
@@ -265,9 +264,6 @@ pub fn run() {
             commands::get_reset_pending,
             commands::get_autostart,
             commands::set_autostart,
-            commands::llm_compile_query,
-            commands::llm_status,
-            commands::ask_question,
             commands::agent_connect_status,
             commands::agent_connect_install,
             commands::agent_connect_snippet,

@@ -172,16 +172,6 @@ export interface KensakuConfig {
   saved_searches?: SavedSearch[];
   pins?: string[];
   config_version?: number;
-  /** Local LLM provider: off (default), ollama, lmstudio, or openai. */
-  llm_provider?: string;
-  /** LLM base URL override; empty uses the provider default. */
-  llm_base_url?: string;
-  /** Model used by the query compiler and /ask. */
-  llm_model?: string;
-  /** Allow non-loopback (cloud) LLM endpoints; off by default. */
-  llm_allow_cloud?: boolean;
-  /** Refine natural-language queries with the local LLM. */
-  llm_compile_queries?: boolean;
   /** When non-empty, agent results and reads are scoped to these roots. */
   agent_scoped_roots?: string[];
   /** Include .gitignore/.cursorignore-matched files in the index. */
