@@ -1,27 +1,51 @@
 import React from "react";
+import type { IndexingStatus } from "../types";
+import { formatComma } from "../lib/format";
 
-/* Bottom key-hint strip shown on the main search surface. */
+/* Status line. Index health on the left, the few keys worth knowing on the
+   right. Quiet by default: it only takes the ink while indexing. */
 
 const HINTS: { keys: string; label: string }[] = [
-  { keys: "Enter", label: "open" },
-  { keys: "Space", label: "preview" },
-  { keys: "Shift+Enter", label: "show in folder" },
-  { keys: "⌘/Ctrl+C", label: "copy path" },
-  { keys: "⌘/Ctrl+I", label: "details" },
-  { keys: "Esc", label: "clear / hide" },
+  { keys: "↵", label: "Open" },
+  { keys: "Space", label: "Preview" },
+  { keys: "⇧↵", label: "Reveal" },
+  { keys: "⌘I", label: "Details" },
 ];
 
-export const KeyHintStrip: React.FC = () => {
+function statusText(s: IndexingStatus | null | undefined): { text: string; busy: boolean } {
+  if (!s) return { text: "", busy: false };
+  if (s.paused) return { text: "Indexing paused", busy: false };
+  if (s.is_indexing || (s.phase && s.phase !== "idle")) {
+    const done = s.extract_done ?? s.files_indexed;
+    const total = s.extract_total ?? s.total_files;
+    return {
+      text: total ? `Indexing ${formatComma(done)} of ${formatComma(total)}` : `Indexing ${formatComma(done)} files`,
+      busy: true,
+    };
+  }
+  return { text: `${formatComma(s.files_indexed)} files`, busy: false };
+}
+
+export const KeyHintStrip: React.FC<{ status?: IndexingStatus | null }> = ({ status }) => {
+  const { text, busy } = statusText(status);
   return (
-    <div className="flex h-7 shrink-0 items-center justify-center gap-4 border-t border-line px-4 text-[11px] text-subtle">
-      {HINTS.map((h) => (
-        <span key={h.label} className="flex items-center gap-1">
-          <kbd className="rounded-[4px] border border-line px-1.5 py-0.5 font-mono text-[10px] text-muted">
-            {h.keys}
-          </kbd>
-          <span>{h.label}</span>
-        </span>
-      ))}
+    <div className="relative z-10 flex h-9 shrink-0 items-center justify-between gap-4 px-8 text-[11px] text-subtle">
+      <span className="flex items-center gap-2">
+        {text && (
+          <>
+            <span className={`h-1.5 w-1.5 rounded-full ${busy ? "dot-pulse bg-ink" : "bg-success/70"}`} />
+            <span className="t-meta">{text}</span>
+          </>
+        )}
+      </span>
+      <span className="hidden items-center gap-4 sm:flex">
+        {HINTS.map((h) => (
+          <span key={h.label} className="flex items-center gap-1.5">
+            <span className="kbd">{h.keys}</span>
+            <span>{h.label}</span>
+          </span>
+        ))}
+      </span>
     </div>
   );
 };

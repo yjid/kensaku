@@ -1,15 +1,14 @@
 import React from "react";
 import { SearchResult } from "../types";
-import { FileTypeIcon } from "./FileTypeIcon";
 import { HighlightedName } from "./EmptyState";
 import { isThumbImage, useThumbnail } from "../lib/thumbnails";
 import { formatBytes, formatRelativeTime } from "../lib/format";
 import { HoverDetails } from "./HoverDetails";
+import { TypeTile } from "./TypeTile";
 
-/* Result card. The thumbnail is the hero: a rounded 4:3 tile on a quiet
-   surface. The name and a size · age line sit below it, outside the image,
-   so text never fights the picture. Hover lifts the tile and reveals the
-   detail strip; right-click opens the full menu. */
+/* Result card. A 4:3 tile, then name and one meta line below it. Images
+   fill the tile edge to edge; everything else is a typographic tile. The
+   selected card gets the ink ring, which is the only color on the grid. */
 
 export type ResultView = "grid" | "list";
 
@@ -28,13 +27,13 @@ interface ResultItemProps {
 }
 
 export const ResultItem = React.memo<ResultItemProps>(
-  ({ result, query, isSelected, onSelect, onOpen, onContextMenu, showThumbs }) => {
+  ({ result, query, index, isSelected, onSelect, onOpen, onContextMenu, showThumbs }) => {
     const imageEligible = Boolean(showThumbs) && !result.is_dir && isThumbImage(result.filename);
     const { src: thumbSrc, failed: thumbFailed } = useThumbnail(result.path, imageEligible);
     const hasThumb = Boolean(thumbSrc) && !thumbFailed;
 
     const meta = result.is_dir
-      ? "Folder"
+      ? `Folder · ${formatRelativeTime(result.modified)}`
       : `${formatBytes(result.file_size)} · ${formatRelativeTime(result.modified)}`;
 
     return (
@@ -56,35 +55,33 @@ export const ResultItem = React.memo<ResultItemProps>(
         }}
         aria-selected={isSelected}
         title={result.path}
+        style={{ ["--stagger-delay" as string]: `${Math.min(index, 11) * 28}ms` }}
         className="group card-in flex h-full w-full flex-col text-left outline-none"
       >
-        {/* Tile */}
         <span
-          className={`relative block aspect-[4/3] w-full overflow-hidden rounded-[14px] border bg-sunken transition-[transform,box-shadow,border-color] duration-300 [transition-timing-function:var(--ease-apple)] group-hover:-translate-y-0.5 group-hover:shadow-lg group-focus-visible:ring-2 group-focus-visible:ring-fg/40 ${
-            isSelected ? "border-fg shadow-md" : "border-line group-hover:border-line-strong"
+          className={`surface relative block aspect-[4/3] w-full overflow-hidden transition-[transform,box-shadow] duration-[280ms] [transition-timing-function:var(--ease)] group-hover:-translate-y-[3px] group-hover:[box-shadow:var(--panel-edge),var(--shadow-float)] ${
+            isSelected ? "outline-2 outline-offset-[3px] outline-ink" : ""
           }`}
+          style={isSelected ? { outlineStyle: "solid" } : undefined}
         >
           {hasThumb ? (
             <img
               src={thumbSrc!}
               alt=""
               draggable={false}
-              className="fade-in h-full w-full object-cover transition-transform duration-500 [transition-timing-function:var(--ease-apple)] group-hover:scale-[1.03]"
+              className="fade-in h-full w-full object-cover transition-transform duration-[520ms] [transition-timing-function:var(--ease)] group-hover:scale-[1.04]"
             />
           ) : (
-            <span className="absolute inset-0 flex items-center justify-center">
-              <FileTypeIcon result={result} size={60} bare />
-            </span>
+            <TypeTile filename={result.filename} isDir={result.is_dir} snippet={result.snippet} query={query} />
           )}
           <HoverDetails result={result} />
         </span>
 
-        {/* Labels sit below the tile */}
-        <span className="flex min-w-0 flex-col gap-0.5 px-1 pt-2.5">
-          <span className="line-clamp-1 text-[13px] font-medium leading-[18px] text-fg">
+        <span className="flex min-w-0 flex-col px-0.5 pt-3">
+          <span className="truncate text-[13px] font-medium leading-[18px] text-fg">
             <HighlightedName text={result.filename} query={query} />
           </span>
-          <span className="truncate font-mono text-[11px] leading-[15px] text-muted">{meta}</span>
+          <span className="t-meta truncate text-subtle">{meta}</span>
         </span>
       </button>
     );

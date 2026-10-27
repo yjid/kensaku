@@ -21,7 +21,7 @@ export function HoverDetails({ result }: { result: SearchResult }) {
     let cancelled = false;
     invoke<Details>("get_file_details", { path: result.path })
       .then((d) => {
-        if (!cancelled) setDetails(d);
+        if (!cancelled && d) setDetails(d);
       })
       .catch(() => undefined);
     return () => {
@@ -38,11 +38,9 @@ export function HoverDetails({ result }: { result: SearchResult }) {
   return (
     <span
       aria-hidden="true"
-      className="hover-reveal pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col gap-0.5 rounded-b-[16px] bg-elevated/95 px-3 pb-2.5 pt-2 backdrop-blur-md"
+      className="hover-reveal pointer-events-none absolute bottom-2 left-2 z-20 max-w-[calc(100%-16px)] rounded-[8px] bg-[var(--panel)] px-2 py-1 shadow-[var(--panel-edge)] backdrop-blur-xl"
     >
-      <span className="truncate font-mono text-[11px] leading-[14px] text-muted">
-        {parts.join("  ·  ")}
-      </span>
+      <span className="t-meta block truncate text-muted">{parts.join(" · ")}</span>
     </span>
   );
 }

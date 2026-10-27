@@ -795,8 +795,8 @@ function App() {
   );
   if (isSetupComplete === null) {
     return (
-      <div className="flex h-screen items-center justify-center bg-bg">
-        <span className="h-4 w-4 animate-pulse rounded-full bg-accent" />
+      <div className="grain flex h-screen items-center justify-center bg-bg">
+        <div className="ambient" data-state="searching" />
       </div>
     );
   }
@@ -811,8 +811,13 @@ function App() {
   return (
     <div
       onKeyDown={handleKeyDown}
-      className="flex h-screen w-screen select-none flex-col overflow-hidden bg-bg text-fg"
+      className="grain relative flex h-screen w-screen select-none flex-col overflow-hidden bg-bg text-fg"
     >
+      <div
+        className="ambient"
+        aria-hidden="true"
+        data-state={isSearching ? "searching" : hasQuery && displayResults.length > 0 ? "results" : "idle"}
+      />
       {isSetupComplete === false && (
         <SetupModal
           onSetupCompleted={() => {
@@ -871,14 +876,15 @@ function App() {
                 isSearching={isSearching}
                 onFocusInput={() => {}}
                 resultCount={results.length}
+                total={total}
                 trailing={
                   <button
                     type="button"
                     title="Settings"
                     onClick={() => openSettings()}
-                    className="flex h-8 w-8 items-center justify-center rounded-[8px] text-muted transition-colors duration-150 hover:bg-sunken hover:text-fg"
+                    className="btn btn-ghost btn-icon h-8 !rounded-full"
                   >
-                    <SettingsIcon className="h-4 w-4" />
+                    <SettingsIcon className="h-4 w-4" strokeWidth={1.75} />
                   </button>
                 }
               />
@@ -892,8 +898,8 @@ function App() {
 
 
               {!isCommandMode && interpretation.length > 0 && (
-                <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line px-4 py-1.5">
-                  <span className="text-[11px] text-muted">Interpreted</span>
+                <div className="relative z-10 flex shrink-0 flex-wrap items-center gap-1.5 px-8 pt-3">
+                  <span className="t-meta mr-1 text-subtle">Understood as</span>
                   {interpretation.map((c, i) => (
                     <button
                       key={`${c.raw}-${i}`}
@@ -904,7 +910,7 @@ function App() {
                           prev.replace(c.source, "").replace(/\s+/g, " ").trim(),
                         )
                       }
-                      className="group flex h-6 items-center gap-1.5 rounded-full bg-accent-soft px-2.5 text-[11px] text-fg transition-colors hover:text-danger"
+                      className="group flex h-6 items-center gap-1.5 rounded-[6px] bg-ink-soft px-2 text-[12px] text-ink transition-colors"
                     >
                       {c.label}
                       <X className="h-2.5 w-2.5 opacity-50 group-hover:opacity-100" />
@@ -914,8 +920,8 @@ function App() {
               )}
 
               {/* One control bar: category chips on the left, layout and save on the right. */}
-              {!isCommandMode && (
-                <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2">
+              {!isCommandMode && hasQuery && (
+                <div className="fade-in relative z-10 flex shrink-0 items-center gap-2 px-8 py-2.5">
                   <CategoryChips
                     results={results}
                     facets={facets}
@@ -940,7 +946,7 @@ function App() {
               )}
 
               {saveOpen && (
-                <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-1.5">
+                <div className="overlay-in relative z-10 flex shrink-0 items-center gap-2 px-8 pb-2">
                   <input
                     autoFocus
                     value={saveName}
@@ -964,7 +970,7 @@ function App() {
                         console.error(err);
                       }
                     }}
-                    className="h-7 min-w-0 flex-1 rounded-[8px] border border-line bg-elevated px-2 text-[11px] text-fg outline-none focus:border-accent"
+                    className="field h-8 min-w-0 flex-1"
                   />
                   <button
                     type="button"
@@ -985,7 +991,7 @@ function App() {
                         console.error(err);
                       }
                     }}
-                    className="h-7 rounded-[8px] bg-accent px-3 text-[11px] font-medium text-accent-fg"
+                    className="btn btn-primary h-8"
                   >
                     Save
                   </button>
@@ -1004,9 +1010,9 @@ function App() {
 
               {/* Command output banner */}
               {commandOutput && (
-                <div className="flex shrink-0 items-start justify-between gap-3 border-b border-line bg-elevated px-4 py-2">
+                <div className="surface overlay-in relative z-10 mx-8 mb-2 flex shrink-0 items-start justify-between gap-3 px-4 py-3">
                   <div className="flex min-w-0 items-start gap-2">
-                    <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+                    <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink" />
                     <pre className="select-text whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-muted">
                       {commandOutput}
                     </pre>
@@ -1022,7 +1028,7 @@ function App() {
               )}
 
               {/* Content: list/grid + preview */}
-              <div className="flex min-h-0 flex-1 overflow-hidden">
+              <div className="relative z-10 flex min-h-0 flex-1 overflow-hidden">
                 <div
                   ref={resultsContainerRef}
                   className={`flex min-h-0 min-w-0 flex-1 flex-col ${
@@ -1071,11 +1077,11 @@ function App() {
                       }
                     />
                   ) : noResults ? (
-                    <div className="flex h-full flex-col items-center justify-center gap-1 p-8 text-center select-none">
-                      <p className="font-serif text-[17px] italic text-muted">
-                        {`Nothing matches ${query.trim()}`}
+                    <div className="flex h-full flex-col items-start justify-end gap-5 px-8 pb-16 select-none">
+                      <p className="t-moment rise-in max-w-lg text-muted">
+                        Nothing called <span className="text-fg">{query.trim()}</span>, yet.
                       </p>
-                      <div className="flex flex-wrap items-center justify-center gap-1.5 mt-3">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         {hasActiveFilters(query) && (
                           <SuggestChip label="Remove filters" onClick={() => setQuery("")} />
                         )}
@@ -1110,7 +1116,7 @@ function App() {
                 </div>
               </div>
 
-              <KeyHintStrip />
+              <KeyHintStrip status={indexingStatus} />
             </>
           )}
         </>
@@ -1125,7 +1131,7 @@ function SuggestChip({ label, onClick }: { label: string; onClick: () => void })
     <button
       type="button"
       onClick={onClick}
-      className="flex h-6 items-center rounded-full border border-line px-2.5 font-mono text-[11px] text-muted transition-colors duration-150 hover:border-line-strong hover:text-fg"
+      className="btn btn-secondary rise-in h-8 !rounded-full"
     >
       {label}
     </button>

@@ -35,7 +35,7 @@ export const HighlightedName: React.FC<{ text: string; query: string }> = ({
     <span>
       {segs.map((s, i) =>
         s.match ? (
-          <mark key={i} className="rounded-sm bg-accent-soft text-fg px-0.5 -mx-0.5">
+          <mark key={i} className="bg-transparent text-ink">
             {s.text}
           </mark>
         ) : (

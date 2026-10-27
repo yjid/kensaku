@@ -6,13 +6,16 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
    fixed-height rows. Row heights are known up front, so nothing is measured
    per item. */
 
-const MIN_CELL = 156;
-const GAP = 16;
-const PAD = 16;
+const MIN_CELL = 188;
+const GAP = 20;
+const PAD = 32;
 const LIST_GAP = 2;
-const LIST_PAD = 8;
-const LIST_ROW = 56;
+const LIST_PAD = 20;
+const LIST_ROW = 52;
 const OVERSCAN_ROWS = 4;
+/** Top/bottom inset. Smaller than the side gutter: the tab row above already
+ *  separates the grid from the query. */
+const PAD_Y = 12;
 
 export interface VirtualGridProps<T> {
   items: T[];
@@ -69,6 +72,7 @@ export function VirtualGrid<T>({
   }, []);
 
   const pad = list ? LIST_PAD : PAD;
+  const padY = list ? 4 : PAD_Y;
   const gap = list ? LIST_GAP : GAP;
   const inner = Math.max(0, size.width - pad * 2);
   const cols = list ? 1 : Math.max(1, Math.floor((inner + gap) / (MIN_CELL + gap)));
@@ -76,14 +80,14 @@ export function VirtualGrid<T>({
   const cardH = list ? LIST_ROW : cardHeight(cell);
   const rowH = cardH + gap;
   const totalRows = Math.ceil(items.length / cols);
-  const contentHeight = totalRows > 0 ? totalRows * rowH - gap + pad * 2 : 0;
+  const contentHeight = totalRows > 0 ? totalRows * rowH - gap + padY * 2 + 24 : 0;
 
   useEffect(() => {
     onColumns?.(cols);
   }, [cols, onColumns]);
 
-  const firstVisible = Math.floor(Math.max(0, scrollTop - pad) / rowH);
-  const lastVisible = Math.ceil((scrollTop - pad + size.height) / rowH);
+  const firstVisible = Math.floor(Math.max(0, scrollTop - padY) / rowH);
+  const lastVisible = Math.ceil((scrollTop - padY + size.height) / rowH);
   const startRow = Math.max(0, firstVisible - OVERSCAN_ROWS);
   const endRow = Math.min(totalRows - 1, lastVisible + OVERSCAN_ROWS);
 
@@ -97,11 +101,11 @@ export function VirtualGrid<T>({
     const el = scrollRef.current;
     if (!el || selectedIndex < 0 || cols === 0) return;
     const row = Math.floor(selectedIndex / cols);
-    const top = pad + row * rowH;
+    const top = padY + row * rowH;
     const bottom = top + cardH;
-    if (top < el.scrollTop) el.scrollTop = top - pad;
-    else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight + pad;
-  }, [selectedIndex, cols, rowH, cardH, pad]);
+    if (top < el.scrollTop) el.scrollTop = top - padY;
+    else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight + padY + 8;
+  }, [selectedIndex, cols, rowH, cardH, padY]);
 
   const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const next = e.currentTarget.scrollTop;
@@ -132,7 +136,7 @@ export function VirtualGrid<T>({
           position: "absolute",
           left: pad,
           right: pad,
-          top: pad + row * rowH,
+          top: padY + row * rowH,
         }}
       >
         {cells}
@@ -145,9 +149,7 @@ export function VirtualGrid<T>({
       <div style={{ height: contentHeight, position: "relative" }}>{rows}</div>
       {loading && (
         <div className="pointer-events-none sticky bottom-3 flex justify-center">
-          <span className="fade-in rounded-full border border-line bg-elevated px-3 py-1 text-[11px] text-muted shadow-sm">
-            Loading more
-          </span>
+          <span className="elevated fade-in t-meta !rounded-full px-3 py-1 text-muted">Loading more</span>
         </div>
       )}
     </div>

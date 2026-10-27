@@ -89,3 +89,13 @@ export function latencyToken(ms: number): string {
 export function basename(p: string): string {
   return p.split("/").filter(Boolean).pop() || p;
 }
+
+/** Parent folder for display: home collapsed to ~, long paths keep the tail. */
+export function displayParent(path: string): string {
+  const parts = path.replace(/\\/g, "/").split("/");
+  parts.pop();
+  let p = parts.join("/");
+  p = p.replace(/^\/(Users|home)\/[^/]+/, "~").replace(/^[A-Z]:\/Users\/[^/]+/i, "~");
+  const segs = p.split("/");
+  return segs.length > 4 ? `${segs[0]}/…/${segs.slice(-2).join("/")}` : p || "/";
+}

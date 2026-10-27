@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, Plus, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download, ScanText, Keyboard, Sparkles, FileText, Filter, Eye, Copy, Bot, Shield, Pencil } from "lucide-react";
+import React from "react";
+import { Check, Plus, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download, Sparkles, X } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
 import type { IndexingStatus, OcrStatus, ModelsStatus } from "../types";
 
@@ -189,473 +190,398 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     }
   };
 
+  const themeButton = (
+    <button type="button" title="Theme" onClick={toggle} className="btn btn-ghost btn-icon h-8 !rounded-full">
+      {theme === "light" ? <Moon className="h-4 w-4" strokeWidth={1.75} /> : theme === "dark" ? <Sparkles className="h-4 w-4" strokeWidth={1.75} /> : <Sun className="h-4 w-4" strokeWidth={1.75} />}
+    </button>
+  );
+
   if (done) {
-    const st = scanStatus;
-    const files = st?.files_indexed ?? 0;
-    const content = st?.content_indexed ?? 0;
-    const units = st?.units_indexed ?? 0;
+    const files = scanStatus?.files_indexed ?? 0;
+    const content = scanStatus?.content_indexed ?? 0;
     return (
-      <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-bg px-8 text-center">
-        <div className="flex flex-col items-center gap-2">
-          <span className="text-[15px] font-semibold tracking-tight text-fg">Kensaku</span>
-          <span className="font-serif text-[13px] italic text-subtle">検索 — to search</span>
-        </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-accent-fg">
-          <Check className="h-5 w-5" />
-        </div>
-        <div className="space-y-1">
-          <h1 className="text-[17px] font-semibold tracking-tight text-fg">Done.</h1>
-          <p className="text-[12px] text-muted">Your index is ready. Start searching.</p>
-        </div>
-        <div className="grid grid-cols-3 gap-6 text-center">
-          <div>
-            <div className="font-mono text-[20px] font-semibold text-fg">{files.toLocaleString()}</div>
-            <div className="text-[11px] text-muted">files</div>
+      <Shell mark="Ready" trailing={themeButton} brand={<BrandMoment word="見つけた" gloss="found it." />}>
+        <div className="flex flex-1 flex-col justify-center gap-10">
+          <div className="space-y-3">
+            <h1 className="t-title rise-in text-fg">Your files are ready.</h1>
+            <p className="t-lead rise-in max-w-sm text-muted" style={{ ["--stagger-delay" as string]: "60ms" }}>
+              Press <span className="kbd align-middle">{shortcut}</span> from anywhere to search.
+            </p>
           </div>
-          <div>
-            <div className="font-mono text-[20px] font-semibold text-fg">{content.toLocaleString()}</div>
-            <div className="text-[11px] text-muted">documents</div>
-          </div>
-          <div>
-            <div className="font-mono text-[20px] font-semibold text-fg">{units.toLocaleString()}</div>
-            <div className="text-[11px] text-muted">embedded</div>
-          </div>
+          <dl className="rise-in grid grid-cols-2 gap-8" style={{ ["--stagger-delay" as string]: "120ms" }}>
+            <Stat value={files} label="Files" />
+            <Stat value={content} label="Read inside" />
+          </dl>
         </div>
-        <button
-          type="button"
-          onClick={onSetupCompleted}
-          className="flex h-9 items-center gap-1.5 rounded-[8px] bg-accent px-5 text-[12px] font-medium text-accent-fg transition-opacity hover:opacity-90"
-        >
-          Start searching <ArrowRight className="h-3.5 w-3.5" />
-        </button>
-      </div>
+        <Footer>
+          <span />
+          <button type="button" onClick={onSetupCompleted} className="btn btn-primary h-10 px-5">
+            Start searching <ArrowRight className="h-4 w-4" strokeWidth={1.75} />
+          </button>
+        </Footer>
+      </Shell>
     );
   }
 
   if (scanning) {
     const st = scanStatus;
     const files = st?.files_indexed ?? 0;
-    const content = st?.content_indexed ?? 0;
-    const units = st?.units_indexed ?? 0;
     const phase = st?.phase ?? "walking";
-
-    // ETA from the observed throughput of the current phase. Fall back to the
-    // metadata counters when an older backend reports `extracting` before the
-    // extraction queue is populated (extract_total == 0).
     const extractTotal = st?.extract_total ?? 0;
     const extracting = phase === "extracting" && extractTotal > 0;
-    const done = extracting ? (st?.extract_done ?? 0) : files;
+    const doneCount = extracting ? (st?.extract_done ?? 0) : files;
     const total = extracting ? extractTotal : (st?.total_files ?? 0);
     let eta = "";
     let pct = 0;
     if (total > 0) {
-      pct = Math.min(100, Math.round((done / total) * 100));
+      pct = Math.min(100, Math.round((doneCount / total) * 100));
       if (etaRef.current.phase !== phase || etaRef.current.total !== total) {
         etaRef.current = { phase, done: 0, at: Date.now(), total };
       }
       const elapsed = Math.max(0, (Date.now() - etaRef.current.at) / 1000);
-      if (done > 0 && total > done && elapsed >= 1) {
-        // Average throughput for the phase: stable, no per-tick flicker.
-        eta = formatEta((elapsed * (total - done)) / done);
+      if (doneCount > 0 && total > doneCount && elapsed >= 1) {
+        eta = formatEta((elapsed * (total - doneCount)) / doneCount);
       }
     }
+    const phaseLabel: Record<string, string> = {
+      walking: "Finding files",
+      extracting: "Reading inside documents",
+      embedding: "Learning what things mean",
+      committing: "Saving the index",
+      paused: "Paused",
+      idle: "Finishing",
+    };
 
     return (
-      <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-bg px-8 text-center">
-        <div className="flex flex-col items-center gap-2">
-          <span className="text-[15px] font-semibold tracking-tight text-fg">Kensaku</span>
-          <span className="font-serif text-[13px] italic text-subtle">検索 — to search</span>
-        </div>
-        <LoaderCircle className="h-8 w-8 animate-spin text-accent" />
-        <div className="space-y-1">
-          <h1 className="text-[17px] font-semibold tracking-tight text-fg">
-            Indexing your files…
-          </h1>
-          <p className="text-[12px] text-muted">
-            {st?.current_status ?? "Starting scan…"}
-          </p>
-        </div>
-
-        {total > 0 && (
-          <div className="w-full max-w-sm space-y-1.5">
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-sunken">
-              <div
-                className="h-full rounded-full bg-accent transition-[width] duration-300"
-                style={{ width: `${Math.max(3, pct)}%` }}
-              />
+      <Shell mark="Indexing" trailing={themeButton} brand={<BrandMoment word="検索" gloss="to search." busy />}>
+        <div className="flex flex-1 flex-col justify-center gap-8">
+          <div className="space-y-2">
+            <p className="t-meta text-subtle">{phaseLabel[phase] ?? st?.current_status ?? "Starting"}</p>
+            <p className="font-medium tabular-nums text-fg" style={{ fontSize: 64, lineHeight: 1, letterSpacing: "-0.05em" }}>
+              {doneCount.toLocaleString("en-US")}
+            </p>
+            <p className="t-lead text-muted">
+              {total > 0 ? `of ${total.toLocaleString("en-US")} files` : "files so far"}
+            </p>
+          </div>
+          <div className="max-w-sm space-y-2">
+            <div className="h-px w-full overflow-hidden bg-line">
+              <div className="h-full bg-ink transition-[width] duration-500 [transition-timing-function:var(--ease)]" style={{ width: `${Math.max(2, pct)}%` }} />
             </div>
-            <div className="flex items-center justify-between text-[11px] text-subtle">
-              <span className="font-mono">
-                {done.toLocaleString()} / {total.toLocaleString()}
-              </span>
-              <span className="font-mono">{eta || (pct >= 100 ? "finishing…" : "estimating…")}</span>
+            <div className="t-meta flex justify-between text-subtle">
+              <span>{pct}%</span>
+              <span>{eta || (pct >= 100 ? "Finishing" : "Estimating")}</span>
             </div>
           </div>
-        )}
-
-        <div className="grid grid-cols-3 gap-6 text-center">
-          <div>
-            <div className="font-mono text-[20px] font-semibold text-fg">{files.toLocaleString()}</div>
-            <div className="text-[11px] text-muted">files</div>
-          </div>
-          <div>
-            <div className="font-mono text-[20px] font-semibold text-fg">{content.toLocaleString()}</div>
-            <div className="text-[11px] text-muted">documents</div>
-          </div>
-          <div>
-            <div className="font-mono text-[20px] font-semibold text-fg">{units.toLocaleString()}</div>
-            <div className="text-[11px] text-muted">embedded</div>
-          </div>
         </div>
-        <p className="max-w-sm text-[11px] text-subtle">
-          Phase: {phase}. This only happens on the first run. Later launches are instant.
-        </p>
-      </div>
+        <Footer>
+          <p className="text-[12px] text-subtle">Only the first time. After this, every launch is instant.</p>
+          <span />
+        </Footer>
+      </Shell>
     );
   }
 
-  return (
-    <div className="absolute inset-0 z-50 flex flex-col bg-bg">
-      {/* Header: wordmark + step indicator + theme toggle */}
-      <header className="flex h-14 shrink-0 items-center justify-between px-5">
-        <div className="flex items-baseline gap-2">
-          <span className="text-[15px] font-semibold tracking-tight text-fg">Kensaku</span>
-          <span className="font-serif text-[13px] italic text-subtle">検索 — to search</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            {[0, 1].map((s) => (
-              <span
-                key={s}
-                className={`h-1 w-6 rounded-full transition-colors duration-300 ${
-                  s <= step ? "bg-accent" : "bg-line"
-                }`}
-              />
-            ))}
-          </div>
-          <button
-            type="button"
-            title="Toggle theme"
-            onClick={toggle}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-sunken hover:text-fg"
-          >
-            {theme === "light" ? <Moon className="h-3.5 w-3.5" /> : theme === "dark" ? <Sparkles className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
-          </button>
-        </div>
-      </header>
+  const ocrReady = Boolean(ocrStatus?.available || ocrPackStatus?.ready);
 
-      {/* Body — one decision per screen */}
-      <main className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-8 pb-6 pt-2">
-        {step === 0 && (
-          <div className="w-full max-w-lg space-y-4">
-            <div className="pb-1">
-              <h2 className="text-[17px] font-semibold tracking-tight text-fg">
-                What should we index?
-              </h2>
-              <p className="text-[12px] text-muted">
-                Start with these, or add your own folder.
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {suggestedDirs.map((dir) => {
-                const selected = selectedDirs.includes(dir);
-                const name = dir.split("/").filter(Boolean).pop() || dir;
-                return (
-                  <button
-                    key={dir}
-                    type="button"
-                    onClick={() => toggleDir(dir)}
-                    className={`flex h-14 items-center gap-2.5 rounded-[12px] border px-3 text-left transition-colors duration-150 ${
-                      selected
-                        ? "border-fg bg-sunken"
-                        : "bg-elevated hover:border-line-strong"
+  return (
+    <Shell
+      mark={`0${step + 1} / 02`}
+      trailing={themeButton}
+      brand={<BrandMoment word="検索" gloss="to search." />}
+    >
+      {step === 0 && (
+        <div key="s0" className="section-enter flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto pt-2">
+          <div className="space-y-2">
+            <h1 className="t-title text-fg">Where do your files live?</h1>
+            <p className="t-lead text-muted">Pick the folders to search. You can change this later.</p>
+          </div>
+          <div className="flex flex-col gap-2">
+            {[...suggestedDirs, ...selectedDirs.filter((d) => !suggestedDirs.includes(d))].map((dir, i) => {
+              const selected = selectedDirs.includes(dir);
+              const name = dir.split("/").filter(Boolean).pop() || dir;
+              return (
+                <button
+                  key={dir}
+                  type="button"
+                  onClick={() => toggleDir(dir)}
+                  aria-pressed={selected}
+                  style={{ ["--stagger-delay" as string]: `${i * 40}ms` }}
+                  className={`surface rise-in group flex h-14 items-center gap-4 px-4 text-left transition-[box-shadow,transform] duration-200 active:scale-[0.99] ${
+                    selected ? "![box-shadow:inset_0_0_0_1.5px_var(--ink)]" : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
+                  }`}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14px] font-medium text-fg">{name}</span>
+                    <span className="block truncate text-[12px] text-subtle">{dir.replace(/^\/(Users|home)\/[^/]+/, "~")}</span>
+                  </span>
+                  <span
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors duration-200 ${
+                      selected ? "bg-ink text-white" : "shadow-[inset_0_0_0_1.5px_var(--border-strong)]"
                     }`}
                   >
-                    <span
-                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
-                        selected ? "border-accent bg-accent text-accent-fg" : "border-line-strong"
-                      }`}
-                    >
-                      {selected && <Check className="h-2.5 w-2.5" />}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-[12px] font-medium text-fg">{name}</span>
-                      <span className="block truncate font-mono text-[11px] text-subtle">{dir}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex gap-1.5">
+                    {selected && <Check className="h-3 w-3" strokeWidth={2.5} />}
+                  </span>
+                </button>
+              );
+            })}
+            <div className="flex gap-2 pt-1">
               <input
                 type="text"
                 value={customDirInput}
-                placeholder="Or a custom path, e.g. /workspace"
+                placeholder="Add another folder, e.g. ~/Work"
                 onChange={(e) => setCustomDirInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addCustomDir()}
                 spellCheck={false}
-                className="h-9 min-w-0 flex-1 rounded-[8px] border border-line bg-elevated px-3 font-mono text-[11px] text-fg outline-none transition-colors focus:border-accent placeholder:text-subtle"
+                className="field h-10 min-w-0 flex-1"
               />
-              <button
-                type="button"
-                onClick={addCustomDir}
-                className="flex h-9 items-center gap-1 rounded-[8px] border border-line bg-elevated px-3 text-[11px] text-fg transition-colors hover:border-line-strong"
-              >
-                <Plus className="h-3.5 w-3.5" /> Add
+              <button type="button" onClick={addCustomDir} disabled={!customDirInput.trim()} className="btn btn-secondary btn-icon h-10 w-10" aria-label="Add folder">
+                <Plus className="h-4 w-4" strokeWidth={1.75} />
               </button>
             </div>
           </div>
-        )}
-
-        {step === 1 && (
-          <div className="w-full max-w-2xl space-y-6">
-            {/* Read Images (OCR) */}
-            <section className="space-y-3">
-              <div className="flex items-center gap-2">
-                <ScanText className="h-4 w-4 text-muted" />
-                <div>
-                  <h2 className="text-[15px] font-semibold tracking-tight text-fg">Read images (OCR)</h2>
-                  <p className="text-[11px] text-muted">Optional, but recommended. Start stays disabled until one engine is ready.</p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {/* Tesseract */}
-                <button
-                  type="button"
-                  onClick={() => setSelectedOcrEngine("tesseract")}
-                  className={`flex w-full items-center justify-between rounded-[12px] border px-4 py-3 text-left transition-colors ${
-                    selectedOcrEngine === "tesseract" ? "border-accent bg-accent/5" : "border-line bg-elevated hover:border-line-strong"
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className={`flex h-4 w-4 items-center justify-center rounded-full border ${selectedOcrEngine === "tesseract" ? "border-accent bg-accent text-accent-fg" : "border-line-strong"}`}>
-                      {selectedOcrEngine === "tesseract" && <span className="h-1.5 w-1.5 rounded-full bg-accent-fg" />}
-                    </span>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[13px] font-medium text-fg">Tesseract</span>
-                      </div>
-                      <span className="text-[11px] text-muted">Fast · smaller · default</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {ocrStatus?.available ? (
-                      <>
-                        <span className="h-2 w-2 rounded-full bg-success" />
-                        <span className="text-[11px] text-success">Ready</span>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={ocrBusy || !ocrStatus?.engine_present}
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          setPackError(null);
-                          setOcrBusy(true);
-                          try {
-                            const status = await invoke<OcrStatus>("download_ocr_language");
-                            setOcrStatus(status);
-                          } catch (err) {
-                            setPackError(`OCR download failed: ${String(err)}`);
-                          } finally {
-                            setOcrBusy(false);
-                          }
-                        }}
-                        className="flex h-7 items-center gap-1.5 rounded-[8px] border border-line px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
-                      >
-                        {ocrBusy ? <LoaderCircle className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-                        {ocrBusy ? "Downloading…" : "Download"}
-                      </button>
-                    )}
-                  </div>
-                </button>
-
-                {/* PP-OCRv6 */}
-                <button
-                  type="button"
-                  onClick={() => setSelectedOcrEngine("accurate")}
-                  className={`flex w-full items-center justify-between rounded-[12px] border px-4 py-3 text-left transition-colors ${
-                    selectedOcrEngine === "accurate" ? "border-accent bg-accent/5" : "border-line bg-elevated hover:border-line-strong"
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className={`flex h-4 w-4 items-center justify-center rounded-full border ${selectedOcrEngine === "accurate" ? "border-accent bg-accent text-accent-fg" : "border-line-strong"}`}>
-                      {selectedOcrEngine === "accurate" && <span className="h-1.5 w-1.5 rounded-full bg-accent-fg" />}
-                    </span>
-                    <div>
-                      <span className="text-[13px] font-medium text-fg">PP-OCRv6</span>
-                      <div className="text-[11px] text-muted">Slower · may read small UI text better</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {ocrPackStatus?.ready ? (
-                      <>
-                        <span className="h-2 w-2 rounded-full bg-success" />
-                        <span className="text-[11px] text-success">Ready</span>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={ocrPackStatus?.downloading || !ocrStatus?.accurate_compiled}
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          setPackError(null);
-                          setOcrPackBusy(true);
-                          try {
-                            const status = await invoke<ModelsStatus>("download_ocr_pack");
-                            setOcrPackStatus(status);
-                          } catch (err) {
-                            setPackError(`PP-OCRv6 download failed: ${String(err)}`);
-                          } finally {
-                            setOcrPackBusy(false);
-                          }
-                        }}
-                        className="flex h-7 items-center gap-1.5 rounded-[8px] border border-line px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
-                      >
-                        {ocrPackStatus?.downloading || ocrPackBusy ? <LoaderCircle className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-                        {ocrPackStatus?.downloading || ocrPackBusy ? "Downloading…" : "Download"}
-                      </button>
-                    )}
-                  </div>
-                </button>
-
-                {packError && (
-                  <p className="break-words rounded-[8px] border border-danger/30 bg-danger/5 px-3 py-2 font-mono text-[11px] text-danger">
-                    {packError}
-                  </p>
-                )}
-                {!ocrStatus?.engine_present && !ocrStatus?.accurate_compiled && (
-                  <p className="text-[11px] text-subtle">
-                    Tesseract is not installed and PP-OCRv6 is not compiled into this build.
-                  </p>
-                )}
-              </div>
-            </section>
-
-            {/* Global Shortcut */}
-            <section className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Keyboard className="h-4 w-4 text-muted" />
-                <div>
-                  <h2 className="text-[15px] font-semibold tracking-tight text-fg">Global shortcut</h2>
-                  <p className="text-[11px] text-muted">Open Kensaku from anywhere. Esc hides it; the app keeps running in the background.</p>
-                  <p className="text-[11px] text-subtle">On Linux/Wayland, if the key does not register, bind a system shortcut to <code className="font-mono">kensaku --toggle</code>.</p>
-                </div>
-              </div>
-              <div className="flex items-center justify-between rounded-[12px] border border-line bg-elevated px-4 py-3">
-                <div className="flex items-center gap-1.5">
-                  {shortcut.split("+").map((k, i) => (
-                    <kbd key={i} className="rounded-[6px] border border-line px-2 py-1 font-mono text-[11px] text-fg">{k}</kbd>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCapturing(true)}
-                  className="flex h-7 w-7 items-center justify-center rounded-[8px] text-muted transition-colors hover:bg-sunken hover:text-fg"
-                  aria-label="Edit shortcut"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <p className="pt-1 text-[13px] font-semibold text-accent">
-                Open: {shortcut} · Close: Esc
-              </p>
-              {capturing && (
-                <p className="text-[11px] text-muted">Press your new shortcut… (Esc to cancel)</p>
-              )}
-            </section>
-
-            {/* What Kensaku does */}
-            <section className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-muted" />
-                <div>
-                  <h2 className="text-[15px] font-semibold tracking-tight text-fg">What Kensaku does</h2>
-                  <p className="text-[11px] text-muted">Search your files, contents and images — all locally.</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="rounded-[10px] border border-line bg-elevated p-3">
-                  <FileText className="h-4 w-4 text-muted" />
-                  <p className="pt-1.5 text-[12px] font-medium text-fg">Search everything</p>
-                  <p className="text-[11px] text-muted">Find files by name, content, image text (OCR) and meaning.</p>
-                </div>
-                <div className="rounded-[10px] border border-line bg-elevated p-3">
-                  <Filter className="h-4 w-4 text-muted" />
-                  <p className="pt-1.5 text-[12px] font-medium text-fg">Powerful filters</p>
-                  <p className="text-[11px] text-muted">Type, extension, folder, date, size, regex. Use / for commands.</p>
-                </div>
-                <div className="rounded-[10px] border border-line bg-elevated p-3">
-                  <Eye className="h-4 w-4 text-muted" />
-                  <p className="pt-1.5 text-[12px] font-medium text-fg">Quick preview</p>
-                  <p className="text-[11px] text-muted">Press Space to preview. Enter to open. Shift+Enter to show in folder. Esc clears, then hides.</p>
-                </div>
-                <div className="rounded-[10px] border border-line bg-elevated p-3">
-                  <Copy className="h-4 w-4 text-muted" />
-                  <p className="pt-1.5 text-[12px] font-medium text-fg">Drag and drop</p>
-                  <p className="text-[11px] text-muted">Drag a result to copy or move the file to another app.</p>
-                </div>
-                <div className="rounded-[10px] border border-line bg-elevated p-3">
-                  <Bot className="h-4 w-4 text-muted" />
-                  <p className="pt-1.5 text-[12px] font-medium text-fg">AI agent ready</p>
-                  <p className="text-[11px] text-muted">Works with AI agents over MCP (read-only by default).</p>
-                </div>
-                <div className="rounded-[10px] border border-line bg-elevated p-3">
-                  <Shield className="h-4 w-4 text-muted" />
-                  <p className="pt-1.5 text-[12px] font-medium text-fg">Local and private</p>
-                  <p className="text-[11px] text-muted">Nothing leaves your machine. Index stays local.</p>
-                </div>
-              </div>
-            </section>
-          </div>
-        )}
-      </main>
-
-      {/* Footer: step nav */}
-      <footer className="flex h-16 shrink-0 items-center justify-between border-t border-line px-5">
-        <div className="min-w-0 text-[11px] text-subtle">
-          {step === 1 && `${selectedDirs.length} folder${selectedDirs.length === 1 ? "" : "s"} selected`}
-          {step === 1 && !(ocrStatus?.available || ocrPackStatus?.ready) && (
-            <span className="ml-2 text-warning">· download an OCR engine to enable Start</span>
-          )}
         </div>
+      )}
+
+      {step === 1 && (
+        <div key="s1" className="section-enter flex min-h-0 flex-1 flex-col gap-10 overflow-y-auto pt-2">
+          <div className="space-y-2">
+            <h1 className="t-title text-fg">Read the text in your images</h1>
+            <p className="t-lead text-muted">Screenshots, scans and photos become searchable. Pick an engine.</p>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <EngineOption
+              selected={selectedOcrEngine === "tesseract"}
+              onSelect={() => setSelectedOcrEngine("tesseract")}
+              name="Tesseract"
+              note="Fast and small. Good for most people."
+              ready={Boolean(ocrStatus?.available)}
+              busy={ocrBusy}
+              disabled={ocrBusy || !ocrStatus?.engine_present}
+              onDownload={async () => {
+                setPackError(null);
+                setOcrBusy(true);
+                try {
+                  setOcrStatus(await invoke<OcrStatus>("download_ocr_language"));
+                } catch (err) {
+                  setPackError(`Download failed: ${String(err)}`);
+                } finally {
+                  setOcrBusy(false);
+                }
+              }}
+            />
+            <EngineOption
+              selected={selectedOcrEngine === "accurate"}
+              onSelect={() => setSelectedOcrEngine("accurate")}
+              name="PP-OCRv6"
+              note="Slower. Reads small interface text better."
+              ready={Boolean(ocrPackStatus?.ready)}
+              busy={Boolean(ocrPackStatus?.downloading || ocrPackBusy)}
+              disabled={Boolean(ocrPackStatus?.downloading) || !ocrStatus?.accurate_compiled}
+              onDownload={async () => {
+                setPackError(null);
+                setOcrPackBusy(true);
+                try {
+                  setOcrPackStatus(await invoke<ModelsStatus>("download_ocr_pack"));
+                } catch (err) {
+                  setPackError(`Download failed: ${String(err)}`);
+                } finally {
+                  setOcrPackBusy(false);
+                }
+              }}
+            />
+            {packError && (
+              <p className="flex items-start gap-2 break-words rounded-[10px] bg-danger/10 px-3 py-2 text-[12px] text-danger">
+                <X className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {packError}
+              </p>
+            )}
+            {ocrStatus && !ocrStatus.engine_present && !ocrStatus.accurate_compiled && (
+              <p className="text-[12px] text-subtle">Tesseract isn't installed and PP-OCRv6 isn't in this build.</p>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <h2 className="text-[15px] font-semibold tracking-[-0.015em] text-fg">Summon it from anywhere</h2>
+              <p className="text-[13px] text-muted">Esc hides it again. Kensaku keeps running quietly.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCapturing(true)}
+              className={`surface flex h-14 w-full items-center justify-between px-4 text-left transition-shadow ${capturing ? "![box-shadow:inset_0_0_0_1.5px_var(--ink)]" : ""}`}
+            >
+              <span className="flex items-center gap-1.5">
+                {capturing ? (
+                  <span className="text-[13px] text-ink">Press a new shortcut…</span>
+                ) : (
+                  shortcut.split("+").map((k, i) => (
+                    <span key={i} className="kbd !h-7 !min-w-7 !rounded-[7px] !px-2 !text-[12px] text-fg">{k}</span>
+                  ))
+                )}
+              </span>
+              <span className="text-[12px] text-subtle">{capturing ? "Esc to cancel" : "Change"}</span>
+            </button>
+            <p className="text-[12px] text-subtle">
+              On Linux with Wayland, bind a system shortcut to <code className="font-mono text-[11px]">kensaku --toggle</code> if the key doesn't register.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <Footer>
+        <p className="text-[12px] text-subtle">
+          {step === 0
+            ? `${selectedDirs.length} ${selectedDirs.length === 1 ? "folder" : "folders"}`
+            : ocrReady
+              ? "Everything stays on this computer."
+              : "Download an engine to continue."}
+        </p>
         <div className="flex items-center gap-2">
           {step > 0 && (
-            <button
-              type="button"
-              onClick={() => setStep((s) => (s - 1) as 0 | 1)}
-              className="flex h-9 items-center gap-1.5 rounded-[8px] px-3 text-[13px] text-muted transition-colors hover:text-fg"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" /> Back
+            <button type="button" onClick={() => setStep(0)} className="btn btn-ghost h-10">
+              <ArrowLeft className="h-4 w-4" strokeWidth={1.75} /> Back
             </button>
           )}
-          {step < 1 ? (
-            <button
-              type="button"
-              onClick={() => setStep((s) => (s + 1) as 0 | 1)}
-              disabled={step === 1 && selectedDirs.length === 0}
-              className="flex h-9 items-center gap-1.5 rounded-[8px] bg-fg px-5 text-[13px] font-medium text-bg transition-opacity hover:opacity-85 disabled:opacity-40"
-            >
-              Continue <ArrowRight className="h-3.5 w-3.5" />
+          {step === 0 ? (
+            <button type="button" onClick={() => setStep(1)} disabled={selectedDirs.length === 0} className="btn btn-primary h-10 px-5">
+              Continue <ArrowRight className="h-4 w-4" strokeWidth={1.75} />
             </button>
           ) : (
             <button
               type="button"
               onClick={handleFinish}
-              disabled={
-                isSubmitting ||
-                selectedDirs.length === 0 ||
-                !(ocrStatus?.available || ocrPackStatus?.ready)
-              }
-              className="flex h-9 items-center gap-2 rounded-[8px] bg-fg px-5 text-[13px] font-medium text-bg transition-opacity hover:opacity-85 disabled:opacity-40"
+              disabled={isSubmitting || selectedDirs.length === 0 || !ocrReady}
+              className="btn btn-primary h-10 px-5"
             >
-              {isSubmitting && <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}
+              {isSubmitting && <LoaderCircle className="h-4 w-4 animate-spin" />}
               Start indexing
-              {!isSubmitting && <ArrowRight className="h-3.5 w-3.5" />}
+              {!isSubmitting && <ArrowRight className="h-4 w-4" strokeWidth={1.75} />}
             </button>
           )}
         </div>
-      </footer>
+      </Footer>
+    </Shell>
+  );
+}
+
+/* ---------------- layout pieces ---------------- */
+
+function Shell({
+  brand,
+  mark,
+  trailing,
+  children,
+}: {
+  brand: React.ReactNode;
+  mark: string;
+  trailing?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grain absolute inset-0 z-50 flex bg-bg">
+      <div className="ambient" aria-hidden="true" />
+      <aside data-tauri-drag-region className="relative z-10 hidden w-[42%] min-w-[320px] flex-col justify-between p-10 md:flex">
+        <span className="text-[14px] font-semibold tracking-[-0.02em] text-fg">Kensaku</span>
+        {brand}
+        <span className="t-meta text-subtle">{mark}</span>
+      </aside>
+      <section className="relative z-10 flex min-w-0 flex-1 flex-col">
+        <div className="m-3 flex min-h-0 flex-1 flex-col rounded-[24px] bg-[var(--panel)] px-10 pt-6 shadow-[var(--panel-edge)] backdrop-blur-[var(--panel-blur)] md:ml-0">
+          <div data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-end">{trailing}</div>
+          <div className="mx-auto flex min-h-0 w-full max-w-[460px] flex-1 flex-col">{children}</div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function BrandMoment({ word, gloss, busy = false }: { word: string; gloss: string; busy?: boolean }) {
+  return (
+    <div className="space-y-4">
+      <p
+        className={`rise-in font-medium text-fg ${busy ? "dot-pulse" : ""}`}
+        style={{ fontSize: "clamp(72px, 11vw, 132px)", lineHeight: 0.9, letterSpacing: "-0.04em", fontFamily: '"Hiragino Mincho ProN", "Yu Mincho", "Noto Serif CJK JP", serif' }}
+      >
+        {word}
+      </p>
+      <p className="t-moment rise-in text-muted" style={{ ["--stagger-delay" as string]: "90ms" }}>
+        {gloss}
+      </p>
+    </div>
+  );
+}
+
+function Footer({ children }: { children: React.ReactNode }) {
+  return <div className="mx-auto flex h-20 w-full max-w-[460px] shrink-0 items-center justify-between gap-4">{children}</div>;
+}
+
+function Stat({ value, label }: { value: number; label: string }) {
+  return (
+    <div className="space-y-1">
+      <dd className="font-medium tabular-nums text-fg" style={{ fontSize: 34, lineHeight: 1, letterSpacing: "-0.04em" }}>
+        {value.toLocaleString("en-US")}
+      </dd>
+      <dt className="t-meta text-subtle">{label}</dt>
+    </div>
+  );
+}
+
+function EngineOption({
+  selected,
+  onSelect,
+  name,
+  note,
+  ready,
+  busy,
+  disabled,
+  onDownload,
+}: {
+  selected: boolean;
+  onSelect: () => void;
+  name: string;
+  note: string;
+  ready: boolean;
+  busy: boolean;
+  disabled: boolean;
+  onDownload: () => void;
+}) {
+  return (
+    <div
+      role="radio"
+      aria-checked={selected}
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect()}
+      className={`surface flex min-h-16 cursor-default items-center gap-4 px-4 py-3 transition-shadow duration-200 ${
+        selected ? "![box-shadow:inset_0_0_0_1.5px_var(--ink)]" : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
+      }`}
+    >
+      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors ${selected ? "bg-ink" : "shadow-[inset_0_0_0_1.5px_var(--border-strong)]"}`}>
+        {selected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[14px] font-medium text-fg">{name}</span>
+        <span className="block text-[12px] text-muted">{note}</span>
+      </span>
+      {ready ? (
+        <span className="t-meta flex items-center gap-1.5 text-success">
+          <span className="h-1.5 w-1.5 rounded-full bg-success" /> Ready
+        </span>
+      ) : (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDownload();
+          }}
+          className="btn btn-secondary h-8 px-3 text-[12px]"
+        >
+          {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" strokeWidth={1.75} />}
+          {busy ? "Downloading" : "Download"}
+        </button>
+      )}
     </div>
   );
 }
