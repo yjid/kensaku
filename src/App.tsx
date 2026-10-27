@@ -229,7 +229,7 @@ function App() {
       return;
     }
 
-    if (query.startsWith("/")) {
+    if (query.trim().startsWith("/")) {
       setResults([]);
       setActiveFilters([]);
       setHints([]);
@@ -244,7 +244,7 @@ function App() {
       const seq = ++currentSeqRef.current;
       queryRef.current = query;
       try {
-        const res = await invoke<SearchResponse>("search", { query, sort });
+        const res = await invoke<SearchResponse>("search", { query: query.trim(), sort });
         if (seq >= currentSeqRef.current) {
           // Seed rows with snippets already fetched for these paths so a
           // repeated path never flashes snippet-less. Existing snippets are
@@ -408,7 +408,7 @@ function App() {
     const requestKey = pageKey;
     try {
       const offset = resultsLenRef.current;
-      const res = await invoke<SearchResponse>("search", { query, sort, offset });
+      const res = await invoke<SearchResponse>("search", { query: query.trim(), sort, offset });
       // Discard a page for a query the user has already left.
       if (queryRef.current !== query) return;
       let added = 0;
@@ -563,7 +563,8 @@ function App() {
     ];
   }, [handleRunCommand, openSettings]);
 
-  const slashFilter = query.startsWith("/") ? query.slice(1).trim().toLowerCase() : null;
+  const trimmedQuery = query.trim();
+  const slashFilter = trimmedQuery.startsWith("/") ? trimmedQuery.slice(1).trim().toLowerCase() : null;
   const slashItems = useMemo(() => {
     if (slashFilter === null) return [];
     return slashCommands.filter(
@@ -638,7 +639,7 @@ function App() {
       }
 
       // `/` command menu
-      if (query.startsWith("/")) {
+      if (query.trim().startsWith("/")) {
         if (e.key === "ArrowDown") {
           e.preventDefault();
           setSlashIndex((i) => (slashItems.length ? (i + 1) % slashItems.length : 0));
@@ -763,7 +764,7 @@ function App() {
     );
   }
 
-  const isCommandMode = query.startsWith("/");
+  const isCommandMode = query.trim().startsWith("/");
 
   const hasQuery = query.trim() !== "";
   const noResults = hasQuery && !isCommandMode && displayResults.length === 0;
