@@ -66,6 +66,20 @@ function putSnippet(
 function App() {
   const [isSetupComplete, setIsSetupComplete] = useState<boolean | null>(null);
   const [query, setQuery] = useState("");
+
+  // The window is recreated on every show, so restore the last query from Rust
+  // and keep it there as the user types.
+  useEffect(() => {
+    invoke<string>("last_query")
+      .then((q) => {
+        if (q) setQuery(q);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    invoke("remember_query", { query }).catch(() => {});
+  }, [query]);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
