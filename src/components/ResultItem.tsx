@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronRight, Copy, Check, ExternalLink, FolderOpen } from "lucide-react";
+
 import { SearchResult } from "../types";
 import { FileTypeIcon } from "./FileTypeIcon";
 import { HighlightedName } from "./EmptyState";
@@ -29,6 +29,7 @@ interface ResultItemProps {
   onOpen: () => void;
   onReveal: () => void;
   onCopyPath: () => void;
+  onContextMenu?: (x: number, y: number) => void;
 }
 
 function MatchBadge({ matchType }: { matchType: SearchResult["match_type"] }) {
@@ -68,8 +69,7 @@ function MatchBadge({ matchType }: { matchType: SearchResult["match_type"] }) {
 const RESERVED_SUBLINE = "mt-0.5 h-[15px] truncate font-mono text-[11px] leading-[15px] text-subtle";
 
 export const ResultItem = React.memo<ResultItemProps>(
-  ({ result, query, index, isSelected, view, onSelect, onOpen, onReveal, onCopyPath }) => {
-    const [copied, setCopied] = React.useState(false);
+  ({ result, query, index, isSelected, view, onSelect, onOpen, onContextMenu }) => {
 
     /* Thumbnails only for image files inside the initial visible window;
        the row is a fixed 56px square either way, so load/failure can't shift
@@ -78,12 +78,6 @@ export const ResultItem = React.memo<ResultItemProps>(
       !result.is_dir && isThumbImage(result.filename) && index < THUMBNAIL_LAZY_LIMIT;
     const { src: thumbSrc, failed: thumbFailed } = useThumbnail(result.path, imageEligible);
 
-    const handleCopy = (e: React.MouseEvent) => {
-      e.stopPropagation();
-      onCopyPath();
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-    };
 
     // 20ms stagger on the first 8 rows only.
     const stagger =
@@ -195,6 +189,12 @@ export const ResultItem = React.memo<ResultItemProps>(
         style={stagger}
         onClick={onSelect}
         onDoubleClick={onOpen}
+        onContextMenu={(e) => {
+          if (!onContextMenu) return;
+          e.preventDefault();
+          onSelect();
+          onContextMenu(e.clientX, e.clientY);
+        }}
         role="button"
         tabIndex={-1}
         className={`
@@ -262,46 +262,17 @@ export const ResultItem = React.memo<ResultItemProps>(
           )}
         </div>
 
-        {/* Hover-only actions. Space is reserved via opacity, never width. */}
-        <div className="flex shrink-0 items-center gap-0.5">
-          <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-            <button
-              type="button"
-              title="Reveal in file manager (Shift+Enter)"
-              onClick={(e) => {
-                e.stopPropagation();
-                onReveal();
-              }}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors duration-150 hover:bg-elevated hover:text-fg"
-            >
-              <FolderOpen className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              title="Copy path"
-              onClick={handleCopy}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors duration-150 hover:bg-elevated hover:text-fg"
-            >
-              {copied ? <Check className="h-3.5 w-3.5 text-accent" /> : <Copy className="h-3.5 w-3.5" />}
-            </button>
-            <button
-              type="button"
-              title="Open (Enter)"
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpen();
-              }}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors duration-150 hover:bg-elevated hover:text-fg"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <ChevronRight
-            className={`h-4 w-4 shrink-0 text-subtle transition-opacity duration-150 ${
-              isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-60"
-            }`}
-          />
-        </div>
+        {/* Hover card: the facts at a glance. Actions and full details are on right-click. */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute right-3 top-full z-20 mt-1 hidden w-[280px] rounded-[12px] border border-line bg-elevated p-3 text-left shadow-lg group-hover:block"
+        >
+          <span className="block truncate font-mono text-[11px] text-fg">{result.path}</span>
+          <span className="mt-1.5 flex gap-3 text-[11px] text-muted">
+            <span>{result.is_dir ? "Folder" : formatBytes(result.file_size)}</span>
+            <span>{formatRelativeTime(result.modified)}</span>
+          </span>
+        </span>
       </div>
     );
   },

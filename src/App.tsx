@@ -23,7 +23,8 @@ import { HomeView } from "./components/HomeView";
 import { ResultItem, ResultView } from "./components/ResultItem";
 import { Settings } from "./components/SettingsModal";
 import { FilterChips } from "./components/FilterChips";
-import { PreviewPane } from "./components/PreviewPane";
+import { ContextMenu, ContextMenuItem } from "./components/ContextMenu";
+import { DetailsDialog } from "./components/DetailsDialog";
 import { SearchBar } from "./components/SearchBar";
 import { CategoryChips } from "./components/CategoryChips";
 import { useTheme } from "./hooks/useTheme";
@@ -49,7 +50,6 @@ import {
 import "./App.css";
 
 const VIEW_KEY = "kensaku.view";
-const PREVIEW_KEY = "kensaku.preview";
 const SNIPPET_LRU_LIMIT = 200;
 
 /** Small insertion-order LRU for snippets: recent hits move to the end. */
@@ -97,9 +97,9 @@ function App() {
   const [view] = useState<ResultView>(
     () => (localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "list") as ResultView,
   );
-  const [previewOpen, setPreviewOpen] = useState<boolean>(
-    () => localStorage.getItem(PREVIEW_KEY) === "on",
-  );
+  /* Right-click menu and the details dialog replace the old preview pane. */
+  const [menu, setMenu] = useState<{ x: number; y: number; result: SearchResult } | null>(null);
+  const [details, setDetails] = useState<SearchResult | null>(null);
 
   const { theme, toggle: toggleTheme } = useTheme();
 
@@ -451,9 +451,6 @@ function App() {
   useEffect(() => {
     localStorage.setItem(VIEW_KEY, view);
   }, [view]);
-  useEffect(() => {
-    localStorage.setItem(PREVIEW_KEY, previewOpen ? "on" : "off");
-  }, [previewOpen]);
 
   useEffect(() => {
     if (!resultsContainerRef.current) return;
@@ -555,7 +552,6 @@ function App() {
     navigator.clipboard.writeText(path);
   }, []);
 
-  const selected: SearchResult | null = results[selectedIndex] ?? null;
 
   /* ---------------- `/` commands ---------------- */
 
@@ -635,23 +631,6 @@ function App() {
       // Overlays capture their own Esc; everything else pauses the main list.
       if (showSettings) return;
       if (showDuplicates) return;
-
-      if (e.key === "Tab") {
-        // Tab toggles the preview pane, except when focus is on a real
-        // control (theme/settings buttons) — then native focus cycling runs
-        // so chrome stays reachable by keyboard. The / menu covers commands and filters.
-        const t = e.target;
-        // Result cards (and their inner action buttons) live inside the
-        // results container: Tab should still toggle the details pane there.
-        // Only real chrome controls (theme/settings/etc.) keep native focus
-        // cycling so they stay keyboard-reachable.
-        const inResults =
-          t instanceof HTMLElement && !!resultsContainerRef.current?.contains(t);
-        if (t instanceof HTMLElement && t.closest("button") && !inResults) return;
-        e.preventDefault();
-        setPreviewOpen((p) => !p);
-        return;
-      }
 
       // "/" focuses search when the focus is elsewhere.
       if (e.key === "/" && document.activeElement !== inputRef.current) {
@@ -791,8 +770,6 @@ function App() {
   const hasQuery = query.trim() !== "";
   const noResults = hasQuery && !isCommandMode && displayResults.length === 0;
   const isIndexing = indexingStatus?.is_indexing ?? false;
-  // The main page shows files only: preview pane appears when a query has results.
-  const showPreview = !isCommandMode && previewOpen && hasQuery;
   // The list keyboard navigation operates over — search results or recent files.
   const navList = displayResults;
 
@@ -813,6 +790,20 @@ function App() {
       {isSetupComplete === true && (
         <>
           {showDuplicates && <DuplicatesModal onClose={() => setShowDuplicates(false)} />}
+          {menu && (
+            <ContextMenu
+              x={menu.x}
+              y={menu.y}
+              onClose={() => setMenu(null)}
+              items={[
+                { label: "Open", onSelect: () => handleOpenFile(menu.result.path) },
+                { label: "Show in folder", onSelect: () => handleOpenFolder(menu.result.path) },
+                { label: "Copy path", onSelect: () => handleCopyPath(menu.result.path) },
+                { label: "Details", onSelect: () => setDetails(menu.result), separatorBefore: true },
+              ] as ContextMenuItem[]}
+            />
+          )}
+          {details && <DetailsDialog result={details} onClose={() => setDetails(null)} />}
           <AskPanel
             open={showAsk}
             onClose={() => setShowAsk(false)}
@@ -1058,6 +1049,7 @@ function App() {
                             onOpen={() => handleOpenFile(res.path)}
                             onReveal={() => handleOpenFolder(res.path)}
                             onCopyPath={() => handleCopyPath(res.path)}
+                            onContextMenu={(x, y) => setMenu({ x, y, result: res })}
                           />
                         </div>
                       ))
@@ -1074,6 +1066,7 @@ function App() {
                             onOpen={() => handleOpenFile(res.path)}
                             onReveal={() => handleOpenFolder(res.path)}
                             onCopyPath={() => handleCopyPath(res.path)}
+                            onContextMenu={(x, y) => setMenu({ x, y, result: res })}
                           />
                         </div>
                       ))
@@ -1136,16 +1129,6 @@ function App() {
                     </div>
                   )}
                 </div>
-
-                {/* Preview pane, hidden < 900px */}
-                {showPreview && (
-                  <PreviewPane
-                    result={selected}
-                    searchQuery={query}
-                    onOpen={() => selected && handleOpenFile(selected.path)}
-                    onOpenFolder={() => selected && handleOpenFolder(selected.path)}
-                  />
-                )}
               </div>
 
             </>
