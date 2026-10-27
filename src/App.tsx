@@ -1009,6 +1009,7 @@ function App() {
                     <VirtualGrid
                       items={displayResults}
                       getKey={(res) => res.path}
+                      cardHeight={(w) => w * 0.75 + 56}
                       selectedIndex={selectedIndex}
                       hasMore={results.length < total && exhaustedKey !== pageKey}
                       loading={loadingMore}

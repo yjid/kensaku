@@ -6,10 +6,10 @@ import { isThumbImage, useThumbnail } from "../lib/thumbnails";
 import { formatBytes, formatRelativeTime } from "../lib/format";
 import { HoverDetails } from "./HoverDetails";
 
-/* Result card. Grid only. Every card is a true square. Files with a
-   thumbnail show it full-bleed; everything else shows its type glyph.
-   Hovering reveals a small detail panel after a short pause, so moving
-   across the grid stays quiet. Right-click opens the full menu. */
+/* Result card. The thumbnail is the hero: a rounded 4:3 tile on a quiet
+   surface. The name and a size · age line sit below it, outside the image,
+   so text never fights the picture. Hover lifts the tile and reveals the
+   detail strip; right-click opens the full menu. */
 
 export type ResultView = "grid";
 
@@ -29,8 +29,6 @@ interface ResultItemProps {
 
 export const ResultItem = React.memo<ResultItemProps>(
   ({ result, query, isSelected, onSelect, onOpen, onContextMenu, showThumbs }) => {
-    /* Thumbnails only for image files in the initial window. */
-    // The virtual grid mounts only visible cards, so every image card may ask.
     const imageEligible = Boolean(showThumbs) && !result.is_dir && isThumbImage(result.filename);
     const { src: thumbSrc, failed: thumbFailed } = useThumbnail(result.path, imageEligible);
     const hasThumb = Boolean(thumbSrc) && !thumbFailed;
@@ -51,51 +49,37 @@ export const ResultItem = React.memo<ResultItemProps>(
           onContextMenu(e.clientX, e.clientY);
         }}
         aria-selected={isSelected}
-        className={`group relative row-enter aspect-square w-full overflow-hidden rounded-[16px] border text-left transition-[transform,box-shadow,border-color] duration-200 [transition-timing-function:var(--ease-apple)] hover:-translate-y-0.5 hover:shadow-md ${
-          isSelected
-            ? "border-fg bg-elevated shadow-sm"
-            : "border-line bg-elevated hover:border-line-strong"
-        }`}
+        title={result.path}
+        className="group card-in flex h-full w-full flex-col text-left outline-none"
       >
-        {/* Media: thumbnail full-bleed, or the type glyph on a quiet tile. */}
-        {hasThumb ? (
-          <span className="absolute inset-0 block bg-sunken">
+        {/* Tile */}
+        <span
+          className={`relative block aspect-[4/3] w-full overflow-hidden rounded-[14px] border bg-sunken transition-[transform,box-shadow,border-color] duration-300 [transition-timing-function:var(--ease-apple)] group-hover:-translate-y-0.5 group-hover:shadow-lg group-focus-visible:ring-2 group-focus-visible:ring-fg/40 ${
+            isSelected ? "border-fg shadow-md" : "border-line group-hover:border-line-strong"
+          }`}
+        >
+          {hasThumb ? (
             <img
               src={thumbSrc!}
               alt=""
               draggable={false}
-              className="fade-in h-full w-full object-cover transition-transform duration-300 [transition-timing-function:var(--ease-apple)] group-hover:scale-[1.03]"
+              className="fade-in h-full w-full object-cover transition-transform duration-500 [transition-timing-function:var(--ease-apple)] group-hover:scale-[1.03]"
             />
-          </span>
-        ) : (
-          <span className="absolute inset-x-3 top-3 flex">
-            <FileTypeIcon result={result} size={40} />
-          </span>
-        )}
-
-        {/* Name and meta. Over a thumbnail they sit on a scrim. */}
-        <span
-          className={`absolute inset-x-0 bottom-0 flex flex-col gap-0.5 p-3 ${
-            hasThumb ? "bg-gradient-to-t from-black/70 via-black/30 to-transparent pt-10" : ""
-          }`}
-        >
-          <span
-            className={`line-clamp-2 text-[13px] font-medium leading-[17px] ${
-              hasThumb ? "text-white" : "text-fg"
-            }`}
-          >
-            <HighlightedName text={result.filename} query={query} />
-          </span>
-          <span
-            className={`truncate font-mono text-[11px] leading-[15px] ${
-              hasThumb ? "text-white/75" : "text-muted"
-            }`}
-          >
-            {meta}
-          </span>
+          ) : (
+            <span className="absolute inset-0 flex items-center justify-center">
+              <FileTypeIcon result={result} size={56} />
+            </span>
+          )}
+          <HoverDetails result={result} />
         </span>
 
-        <HoverDetails result={result} />
+        {/* Labels sit below the tile */}
+        <span className="flex min-w-0 flex-col gap-0.5 px-1 pt-2.5">
+          <span className="line-clamp-1 text-[13px] font-medium leading-[18px] text-fg">
+            <HighlightedName text={result.filename} query={query} />
+          </span>
+          <span className="truncate font-mono text-[11px] leading-[15px] text-muted">{meta}</span>
+        </span>
       </button>
     );
   },

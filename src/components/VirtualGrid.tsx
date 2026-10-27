@@ -12,7 +12,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
    next page is requested once, guarded by `loading`. */
 
 const MIN_CELL = 156;
-const GAP = 12;
+const GAP = 16;
 const PAD = 16;
 const OVERSCAN_ROWS = 3;
 
@@ -28,6 +28,8 @@ export interface VirtualGridProps<T> {
   /** Reports the current column count so keyboard navigation can use it. */
   onColumns?: (cols: number) => void;
   prefetchRows?: number;
+  /** Card height for a given cell width. Defaults to square. */
+  cardHeight?: (cellWidth: number) => number;
   containerRef?: React.RefObject<HTMLDivElement | null>;
 }
 
@@ -41,6 +43,7 @@ export function VirtualGrid<T>({
   onNearEnd,
   onColumns,
   prefetchRows = 4,
+  cardHeight = (w) => w,
   containerRef,
 }: VirtualGridProps<T>) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -68,7 +71,8 @@ export function VirtualGrid<T>({
   const inner = Math.max(0, size.width - PAD * 2);
   const cols = Math.max(1, Math.floor((inner + GAP) / (MIN_CELL + GAP)));
   const cell = cols > 0 ? (inner - GAP * (cols - 1)) / cols : MIN_CELL;
-  const rowH = cell + GAP;
+  const cardH = cardHeight(cell);
+  const rowH = cardH + GAP;
   const totalRows = Math.ceil(items.length / cols);
   const contentHeight = totalRows > 0 ? totalRows * rowH - GAP + PAD * 2 : 0;
 
@@ -94,10 +98,10 @@ export function VirtualGrid<T>({
     if (!el || selectedIndex < 0 || cols === 0) return;
     const row = Math.floor(selectedIndex / cols);
     const top = PAD + row * rowH;
-    const bottom = top + cell;
+    const bottom = top + cardH;
     if (top < el.scrollTop) el.scrollTop = top - PAD;
     else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight + PAD;
-  }, [selectedIndex, cols, rowH, cell]);
+  }, [selectedIndex, cols, rowH, cardH]);
 
   // Scroll updates are cheap: state only changes when the window moves.
   const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -125,7 +129,7 @@ export function VirtualGrid<T>({
         style={{
           gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
           gap: GAP,
-          height: cell,
+          height: cardH,
           position: "absolute",
           left: PAD,
           right: PAD,
