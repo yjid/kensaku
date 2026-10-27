@@ -28,8 +28,10 @@ eframe = { version = "0.37.0", default-features = false, features = ["glow", "x1
 interprocess = "2.4.7"
 
 [profile.release]
-codegen-units = 1
-lto = true
+# Thin LTO + parallel codegen units keeps release builds ~2-3x faster than
+# fat LTO with codegen-units = 1, with near-identical runtime performance.
+codegen-units = 16
+lto = "thin"
 opt-level = 3
 strip = true
 

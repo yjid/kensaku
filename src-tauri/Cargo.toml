@@ -58,8 +58,11 @@ tree-sitter-javascript = "0.25"
 tree-sitter-typescript = "0.23"
 
 [profile.release]
-codegen-units = 1
-lto = true
+# Thin LTO + parallel codegen units keeps release builds ~2-3x faster than
+# fat LTO with codegen-units = 1, with near-identical runtime performance.
+# Release builds run on every platform for every tag, so build time matters.
+codegen-units = 16
+lto = "thin"
 opt-level = 3
 strip = true
 
