@@ -173,17 +173,32 @@ These are the highest-leverage gaps. None require a new model.
 
 ## D. Search quality & performance
 
-- [ ] **E2 extension interning** — `FileEntry.extension: Option<String>` is
-      still a per-entry allocation. A `u16` intern table can save ~6–12 MB per
-      1M files. This is a follow-up to K2, not part of the shipped arena.
-- [~] **B4 full pushdown** — scope paths are now pushed into the Tantivy query
-      as a path-prefix clause. `ext` / `size` fast fields still need schema work
-      and a rebuild before those filters can be pushed too. (ROADMAP K12)
-- [ ] **1M-file prefilter** — K12 measured the content-tier alternatives at
-      1M synthetic documents. FTS5 trigram used 918 MB and was ~900× slower on
-      broad BM25, so keep Tantivy + folded; a separate bounded prefilter is
-      still the next option if filename search exceeds the <15 ms budget. See
+- [x] **E2 extension interning** — shipped: `FileEntry.extension` is now
+      `Option<&'static str>` from a process-wide intern table, removing the
+      per-entry `String` (24 B inline plus a heap allocation) from the crawl's
+      transient entry list. The metadata arena already stored `ext_id: u16`.
+- [x] **B4 full pushdown** — shipped in content schema v3: `ext` (indexed
+      `STRING`) and `size` (fast `u64`) are stored per document, and positive
+      `ext:` / `size:` filters are added as `Must` clauses before top-k in both
+      the BM25 and folded tiers. Metadata filtering remains authoritative;
+      negated/type/lang/name/path filters stay post-filters. A v2 index
+      rebuilds once into v3 and keeps the old index as `index.legacy-*`.
+      (ROADMAP K12)
+- [x] **1M-file prefilter** — measured (release, folded, 1M synthetic docs):
+      the content-tier filename query is 3.9 µs p50 and the substring query
+      20.8 µs; the fuzzy filename tier is 3.6–5.2 ms after parallel scoring.
+      Both are under the 15 ms filename budget, so no separate content
+      prefilter is justified and the K12 decision stands. See
       [the decision memo](decisions/index-format.md). (ROADMAP K12)
+- [ ] **Arena-backed query path** — the 1M run still pays to materialize every
+      metadata entry per query. After parallel materialization, a skipped
+      path-index build for non-trie queries, an all-candidates membership fast
+      path, and skipping the semantic node map when that tier is off, full
+      `search_response_fast` p50 is now 207 ms at 1M (was 675 ms) and 24 ms at
+      100k (was 73 ms). Next: fuzzy over the arena and materialize only
+      candidates, resolving BM25/semantic hits through
+      `get_index`/`get_by_node_id`, then remeasure against the <15 ms
+      first-paint budget. (`mem_probe` with `KENSAKU_SEARCH_BENCH=1`)
 - [x] **Metadata arena** — shipped: compact open-addressed path index, lazy id
       map, and names/attrs arena. Measured 91.3 MB RSS at 1M synthetic entries
       (target ≤ 100 MB). [ROADMAP K2](ROADMAP.md#k2-compact-metadata-arena).
@@ -215,16 +230,23 @@ These are the highest-leverage gaps. None require a new model.
 - [x] **Search-result grouping** — collapse near-identical screenshots/versions
       at write time (text overlap + thumbnail dHash), like screenshot bursts.
       [ROADMAP K11](ROADMAP.md#k11-search-result-grouping).
-- [ ] **Tantivy writer pipeline** — extraction is parallel; `add_document` and
-      commits are still single-threaded. Benchmark before changing; see K12.
-      (ROADMAP K12)
+- [x] **Tantivy writer pipeline** — benchmarked at 1M folded documents
+      (release): 1 writer thread 17.6 s / 69 MB build peak; 2 threads 9.3 s /
+      116 MB; 4 threads 5.3 s / 201 MB. Extraction dominates a real crawl and
+      the desktop memory budget is tight, so the shipped single-threaded
+      16 MB writer stays; multi-thread is a documented option for bulk
+      rebuilds. (ROADMAP K12)
 - [x] **Golden query set in CI** — a frozen 43-query non-visual set with
       recall@5, MRR, NDCG, and latency metrics, including intent, CJK, and
       accented-Latin queries. Debug: Recall@5 1.000, MRR 0.988, p50 5.9 ms.
       [ROADMAP K22](ROADMAP.md#p3--intelligence--vision). Visual cases are
       deferred until the beta visual tier is wired.
-- [ ] **Facet latency tests** — counts and toggles must hold their budgets at
-      100k and 1M files. (ROADMAP K4)
+- [x] **Facet latency tests** — `compute_facets` now uses fixed bucket arrays
+      and a borrowed FNV parent-name map, folded across the rayon pool above
+      20k results. Release p50: 3.1 ms at 100k matched results, 17.3 ms at 1M
+      (`examples/facet_bench.rs`, 20 runs). A 100k unit test asserts counts and
+      a debug ceiling; an ignored 1M test guards the same invariants.
+      (ROADMAP K4)
 
 ## E. Correctness, privacy & robustness
 

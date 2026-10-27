@@ -19,7 +19,7 @@ use kensaku_lib::embed::{DEFAULT_MODEL_ID, EMBEDDING_DIM, Unit, UnitStore};
 use kensaku_lib::indexer::content::ContentIndex;
 use kensaku_lib::indexer::metadata::MetadataStore;
 use kensaku_lib::indexer::metadata_db::MetadataDb;
-use kensaku_lib::indexer::walker::FileEntry;
+use kensaku_lib::indexer::walker::{FileEntry, intern_extension};
 use kensaku_lib::search::fuzzy::compute_char_mask;
 use kensaku_lib::search::{SearchDispatcher, SortOrder};
 use std::fs;
@@ -638,10 +638,7 @@ fn setup_golden_corpus() -> GoldenCorpus {
             .and_then(|n| n.to_str())
             .unwrap_or_default()
             .to_string();
-        let extension = abs_path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|s| s.to_string());
+        let extension = intern_extension(abs_path.extension().and_then(|e| e.to_str()));
         let size = doc.size_override.unwrap_or(doc.content.len() as u64);
         let char_bloom = compute_char_mask(&name);
 
@@ -662,7 +659,14 @@ fn setup_golden_corpus() -> GoldenCorpus {
 
         // Content indexing (Tantivy + kensaku tokenizer + folded tier)
         content_index
-            .add_or_update(&abs_path, &name, doc.content, doc.modified_secs)
+            .add_or_update(
+                &abs_path,
+                &name,
+                doc.content,
+                doc.modified_secs,
+                size,
+                abs_path.extension().and_then(|e| e.to_str()),
+            )
             .expect("index content");
 
         // Visual metadata is kept in the fixture for future real-model runs,

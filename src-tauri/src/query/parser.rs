@@ -530,9 +530,7 @@ mod tests {
         let extension = if is_dir {
             None
         } else {
-            path.extension()
-                .and_then(|e| e.to_str())
-                .map(str::to_lowercase)
+            crate::indexer::walker::intern_extension(path.extension().and_then(|e| e.to_str()))
         };
         FileEntry {
             id: 0,

@@ -1,12 +1,13 @@
 pub mod fuzzy;
 
 use crate::embed::{ExactScanner, ModelRegistry, UnitStore};
-use crate::indexer::content::{ContentIndex, FieldKind};
+use crate::indexer::content::{ContentFilters, ContentIndex, FieldKind};
 use crate::indexer::metadata::MetadataStore;
 use crate::indexer::walker::FileEntry;
 use crate::query::ast::{ActiveFilterDto, Filter, Mode, TermField};
 use crate::query::parse_query;
 use crate::search::fuzzy::FuzzySearcher;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -66,113 +67,237 @@ pub struct Facets {
     pub recent: usize,
 }
 
-fn classify_extension(ext: &str) -> &'static str {
-    const IMAGE: &[&str] = &[
-        "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "tiff", "tif", "heic", "avif",
-    ];
-    const DOC: &[&str] = &[
-        "pdf", "md", "txt", "doc", "docx", "ppt", "pptx", "odp", "key", "xls", "xlsx", "csv",
-        "tsv", "ods", "rtf", "odt", "pages", "epub", "log",
-    ];
-    const CODE: &[&str] = &[
-        "rs", "ts", "tsx", "js", "jsx", "py", "go", "c", "cpp", "h", "hpp", "java", "kt", "swift",
-        "rb", "php", "lua", "zig", "nim", "html", "css", "scss", "json", "toml", "yaml", "yml",
-        "xml", "sql", "sh", "bash", "fish", "conf",
-    ];
-    const MEDIA: &[&str] = &[
-        "mp4", "mov", "avi", "mkv", "webm", "m4v", "mp3", "flac", "wav", "ogg", "m4a", "aac",
-        "opus",
-    ];
-    const ARCHIVE: &[&str] = &["zip", "tar", "gz", "rar", "7z", "bz2", "xz", "dmg", "iso"];
-    if IMAGE.contains(&ext) {
-        "image"
-    } else if DOC.contains(&ext) {
-        "doc"
-    } else if CODE.contains(&ext) {
-        "code"
-    } else if MEDIA.contains(&ext) {
-        "media"
-    } else if ARCHIVE.contains(&ext) {
-        "archive"
-    } else {
-        "file"
+const TYPE_BUCKETS: [&str; 7] = ["folder", "image", "doc", "code", "media", "archive", "file"];
+const LANGUAGE_BUCKETS: [&str; 15] = [
+    "rust",
+    "typescript",
+    "javascript",
+    "python",
+    "go",
+    "java",
+    "c",
+    "cpp",
+    "ruby",
+    "php",
+    "swift",
+    "kotlin",
+    "shell",
+    "markdown",
+    "config",
+];
+const TIME_BUCKETS: [&str; 5] = ["today", "week", "month", "year", "older"];
+const SIZE_BUCKETS: [&str; 4] = ["tiny", "small", "medium", "large"];
+
+/// Category and language index for one extension. Categories index
+/// [`TYPE_BUCKETS`] (folders are 0 and handled by the caller); languages index
+/// [`LANGUAGE_BUCKETS`]. Combining both lookups avoids a second string match on
+/// the large-result-set facet path.
+fn classify_extension(ext: &str) -> (usize, Option<usize>) {
+    match ext {
+        "rs" => (3, Some(0)),
+        "ts" | "tsx" => (3, Some(1)),
+        "js" | "jsx" => (3, Some(2)),
+        "py" => (3, Some(3)),
+        "go" => (3, Some(4)),
+        "java" => (3, Some(5)),
+        "c" => (3, Some(6)),
+        "cpp" | "h" | "hpp" => (3, Some(7)),
+        "rb" => (3, Some(8)),
+        "php" => (3, Some(9)),
+        "swift" => (3, Some(10)),
+        "kt" => (3, Some(11)),
+        "sh" | "bash" | "fish" => (3, Some(12)),
+        "md" => (2, Some(13)),
+        "json" | "yaml" | "yml" | "toml" => (3, Some(14)),
+
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" | "ico" | "tiff" | "tif"
+        | "heic" | "avif" => (1, None),
+        "pdf" | "txt" | "doc" | "docx" | "ppt" | "pptx" | "odp" | "key" | "xls" | "xlsx"
+        | "csv" | "tsv" | "ods" | "rtf" | "odt" | "pages" | "epub" | "log" => (2, None),
+        "lua" | "zig" | "nim" | "html" | "css" | "scss" | "xml" | "sql" | "conf" => (3, None),
+        "mp4" | "mov" | "avi" | "mkv" | "webm" | "m4v" | "mp3" | "flac" | "wav" | "ogg" | "m4a"
+        | "aac" | "opus" => (4, None),
+        "zip" | "tar" | "gz" | "rar" | "7z" | "bz2" | "xz" | "dmg" | "iso" => (5, None),
+        _ => (6, None),
     }
 }
 
-fn language_of(ext: &str) -> Option<&'static str> {
-    Some(match ext {
-        "rs" => "rust",
-        "ts" | "tsx" => "typescript",
-        "js" | "jsx" => "javascript",
-        "py" => "python",
-        "go" => "go",
-        "java" => "java",
-        "c" => "c",
-        "cpp" | "h" | "hpp" => "cpp",
-        "rb" => "ruby",
-        "php" => "php",
-        "swift" => "swift",
-        "kt" => "kotlin",
-        "sh" | "bash" | "fish" => "shell",
-        "md" => "markdown",
-        "json" | "yaml" | "yml" | "toml" => "config",
-        _ => return None,
-    })
+/// FNV-1a, used only for the short-lived parent-name map. Place keys are
+/// borrowed from the result set, so the map never allocates just to count.
+#[derive(Default)]
+struct FnvHasher(u64);
+
+impl std::hash::Hasher for FnvHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        let mut hash = if self.0 == 0 {
+            0xcbf2_9ce4_8422_2325
+        } else {
+            self.0
+        };
+        for byte in bytes {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        self.0 = hash;
+    }
 }
 
-fn compute_facets(results: &[SearchResult], now_sec: u64) -> Facets {
-    let mut facets = Facets {
-        all: results.len(),
-        ..Default::default()
-    };
-    for r in results {
-        let ext = r
-            .filename
-            .rsplit_once('.')
-            .map(|(_, e)| e.to_lowercase())
-            .unwrap_or_default();
-        let category = if r.is_dir {
-            "folder"
-        } else {
-            classify_extension(&ext)
+/// Accumulator for facet counts. The parent-name keys borrow from the result
+/// set, so counting never allocates per row.
+#[derive(Default)]
+struct FacetAcc<'a> {
+    types: [usize; TYPE_BUCKETS.len()],
+    languages: [usize; LANGUAGE_BUCKETS.len()],
+    time: [usize; TIME_BUCKETS.len()],
+    size: [usize; SIZE_BUCKETS.len()],
+    recent: usize,
+    places: HashMap<&'a str, usize, std::hash::BuildHasherDefault<FnvHasher>>,
+}
+
+impl<'a> FacetAcc<'a> {
+    fn add(&mut self, result: &'a SearchResult, now_sec: u64) {
+        let ext_owned;
+        let ext = match result.filename.rsplit_once('.') {
+            Some((_, ext)) if ext.bytes().any(|byte| byte.is_ascii_uppercase()) => {
+                ext_owned = ext.to_ascii_lowercase();
+                ext_owned.as_str()
+            }
+            Some((_, ext)) => ext,
+            None => "",
         };
-        *facets.types.entry(category.to_string()).or_insert(0) += 1;
-        if let Some(lang) = language_of(&ext) {
-            *facets.languages.entry(lang.to_string()).or_insert(0) += 1;
+        let (type_index, language) = if result.is_dir {
+            (0, None)
+        } else {
+            classify_extension(ext)
+        };
+        self.types[type_index] += 1;
+        if let Some(language) = language {
+            self.languages[language] += 1;
         }
-        if let Some(parent) = std::path::Path::new(&r.path).parent()
-            && let Some(name) = parent.file_name().and_then(|n| n.to_str())
+        // Two splits are much cheaper than Path::parent/file_name for the
+        // millions of rows a broad query can return.
+        let mut components = result.path.rsplit(['/', '\\']);
+        let _file = components.next();
+        if let Some(parent_name) = components.next()
+            && !parent_name.is_empty()
         {
-            *facets.places.entry(name.to_string()).or_insert(0) += 1;
+            *self.places.entry(parent_name).or_insert(0) += 1;
         }
-        let age = now_sec.saturating_sub(r.modified);
+        let age = now_sec.saturating_sub(result.modified);
         let bucket = if age < 86_400 {
-            "today"
+            0
         } else if age < 7 * 86_400 {
-            "week"
+            1
         } else if age < 30 * 86_400 {
-            "month"
+            2
         } else if age < 365 * 86_400 {
-            "year"
+            3
         } else {
-            "older"
+            4
         };
-        *facets.time.entry(bucket.to_string()).or_insert(0) += 1;
+        self.time[bucket] += 1;
         if age < 7 * 86_400 {
-            facets.recent += 1;
+            self.recent += 1;
         }
-        let size_bucket = if r.file_size < 1_048_576 {
-            "tiny"
-        } else if r.file_size < 10 * 1_048_576 {
-            "small"
-        } else if r.file_size < 100 * 1_048_576 {
-            "medium"
+        let size_bucket = if result.file_size < 1_048_576 {
+            0
+        } else if result.file_size < 10 * 1_048_576 {
+            1
+        } else if result.file_size < 100 * 1_048_576 {
+            2
         } else {
-            "large"
+            3
         };
-        *facets.size.entry(size_bucket.to_string()).or_insert(0) += 1;
+        self.size[size_bucket] += 1;
     }
-    facets
+
+    fn merge(mut self, other: Self) -> Self {
+        for (left, right) in self.types.iter_mut().zip(other.types) {
+            *left += right;
+        }
+        for (left, right) in self.languages.iter_mut().zip(other.languages) {
+            *left += right;
+        }
+        for (left, right) in self.time.iter_mut().zip(other.time) {
+            *left += right;
+        }
+        for (left, right) in self.size.iter_mut().zip(other.size) {
+            *left += right;
+        }
+        self.recent += other.recent;
+        for (name, count) in other.places {
+            *self.places.entry(name).or_insert(0) += count;
+        }
+        self
+    }
+
+    fn into_facets(self, all: usize) -> Facets {
+        let mut facets = Facets {
+            all,
+            recent: self.recent,
+            ..Default::default()
+        };
+        for (index, count) in self.types.iter().enumerate() {
+            if *count > 0 {
+                facets.types.insert(TYPE_BUCKETS[index].to_string(), *count);
+            }
+        }
+        for (index, count) in self.languages.iter().enumerate() {
+            if *count > 0 {
+                facets
+                    .languages
+                    .insert(LANGUAGE_BUCKETS[index].to_string(), *count);
+            }
+        }
+        for (index, count) in self.time.iter().enumerate() {
+            if *count > 0 {
+                facets.time.insert(TIME_BUCKETS[index].to_string(), *count);
+            }
+        }
+        for (index, count) in self.size.iter().enumerate() {
+            if *count > 0 {
+                facets.size.insert(SIZE_BUCKETS[index].to_string(), *count);
+            }
+        }
+        facets.places = self
+            .places
+            .into_iter()
+            .map(|(name, count)| (name.to_string(), count))
+            .collect();
+        facets
+    }
+}
+
+/// Computes facet counts over the full matched set.
+///
+/// Public so the performance harness can measure it directly; the UI receives
+/// it through [`SearchResponse::facets`]. Large matched sets are folded across
+/// the existing rayon pool; small ones stay sequential to avoid scheduling
+/// overhead on the keystroke path.
+pub fn compute_facets(results: &[SearchResult], now_sec: u64) -> Facets {
+    const PARALLEL_THRESHOLD: usize = 20_000;
+
+    let accumulator = if results.len() >= PARALLEL_THRESHOLD {
+        use rayon::prelude::*;
+        results
+            .par_iter()
+            .fold(FacetAcc::default, |mut acc, result| {
+                acc.add(result, now_sec);
+                acc
+            })
+            .reduce(FacetAcc::default, FacetAcc::merge)
+    } else {
+        let mut acc = FacetAcc::default();
+        for result in results {
+            acc.add(result, now_sec);
+        }
+        acc
+    };
+    accumulator.into_facets(results.len())
 }
 
 /// Version grouping: collapse `resume`, `resume_v2`, `resume_final` into one
@@ -712,22 +837,56 @@ impl SearchDispatcher {
             .unwrap_or(0);
 
         let trie = metadata.get_directory_trie();
+        // Materialization is allocation-heavy; parallelize it. Metadata order
+        // is the entry order, so `get_index` can resolve a path to its slot
+        // without cloning every path into a hash map.
         let entries: Vec<FileEntry> = (0..metadata.len())
+            .into_par_iter()
             .map(|i| metadata.materialize(i as u32))
             .collect();
-        let path_index: HashMap<PathBuf, usize> = entries
-            .iter()
-            .enumerate()
-            .map(|(i, e)| (e.path.clone(), i))
-            .collect();
+        let needs_trie = query_needs_trie(effective_query);
+        let path_index: HashMap<PathBuf, usize> = if needs_trie {
+            entries
+                .iter()
+                .enumerate()
+                .map(|(i, e)| (e.path.clone(), i))
+                .collect()
+        } else {
+            HashMap::new()
+        };
         let generation = metadata.generation();
+        // Prefer the store's path index. Some synthetic/partial stores (for
+        // example a fixture that inserts files without their parent
+        // directories) cannot resolve every path, so build a fallback map from
+        // the materialized entries on first miss.
+        let fallback_path_index: std::cell::RefCell<Option<HashMap<PathBuf, usize>>> =
+            std::cell::RefCell::new(None);
+        let resolve_index = |path: &Path| -> Option<usize> {
+            if let Some(index) = path_index.get(path) {
+                return Some(*index);
+            }
+            if let Some(index) = metadata.get_index(path) {
+                return Some(index as usize);
+            }
+            let mut fallback = fallback_path_index.borrow_mut();
+            if fallback.is_none() {
+                *fallback = Some(
+                    entries
+                        .iter()
+                        .enumerate()
+                        .map(|(index, entry)| (entry.path.clone(), index))
+                        .collect(),
+                );
+            }
+            fallback.as_ref().and_then(|index| index.get(path).copied())
+        };
 
         // 1. Parse AST from query
         let mut parsed = parse_query(
             effective_query,
             &entries,
             &path_index,
-            Some(&trie),
+            needs_trie.then_some(&trie),
             generation,
         );
         let route = crate::query::router::route_query(&parsed);
@@ -735,6 +894,9 @@ impl SearchDispatcher {
         // Pre-compile filters once per query (lowercase strings, intern extensions)
         let compiled_filters: Vec<CompiledFilter> =
             parsed.filters.iter().map(CompiledFilter::from).collect();
+        // Positive ext/size clauses can safely narrow the Tantivy query; the
+        // normal metadata filter still runs afterwards.
+        let pushdown_filters = content_pushdown(&parsed.filters);
 
         // 2. Resolve scopes and filter candidates
         let candidate_indices: Vec<usize> = if !parsed.scopes.is_empty() {
@@ -830,25 +992,36 @@ impl SearchDispatcher {
         };
         let search_text_lower = search_text.to_lowercase();
 
-        // Build a membership bitmap for O(1) candidate checks (replaces O(n) Vec::contains)
-        let candidate_set: std::collections::HashSet<usize> =
-            candidate_indices.iter().copied().collect();
+        // Membership checks are free when the candidate list is the whole
+        // corpus (the common unfiltered query).
+        let candidate_set = CandidateSet::new(&candidate_indices, entries.len());
 
-        // Node-id map for the semantic tier: built once for the candidate set so
-        // the scanner can prefilter units and hits need no per-hit metadata lookup.
-        let mut node_to_idx: HashMap<u64, usize> = HashMap::new();
-        for &idx in &candidate_indices {
-            if let Some(entry) = entries.get(idx)
-                && entry.id > 0
-            {
-                node_to_idx.insert(entry.id, idx);
-            }
-        }
-        let allowed_node_ids: Option<HashSet<u64>> = if node_to_idx.is_empty() {
-            None
-        } else {
-            Some(node_to_idx.keys().copied().collect())
-        };
+        // The node-id map only serves the semantic/visual tiers. Building a
+        // million-entry map for a plain filename query is pure overhead.
+        let wants_semantic = semantic_enabled
+            && unit_store.is_some()
+            && !search_text.is_empty()
+            && ModelRegistry::global().is_enabled();
+        let wants_visual = visual_store.is_some() && !search_text.is_empty();
+        let (node_to_idx, allowed_node_ids): (HashMap<u64, usize>, Option<HashSet<u64>>) =
+            if wants_semantic || wants_visual {
+                let mut map = HashMap::new();
+                for &idx in &candidate_indices {
+                    if let Some(entry) = entries.get(idx)
+                        && entry.id > 0
+                    {
+                        map.insert(entry.id, idx);
+                    }
+                }
+                let allowed = if map.is_empty() {
+                    None
+                } else {
+                    Some(map.keys().copied().collect())
+                };
+                (map, allowed)
+            } else {
+                (HashMap::new(), None)
+            };
 
         // 2b. Exhaustive mode: no fuzzy/semantic tiers, enumerate by path.
         if parsed.mode == Mode::Exhaustive {
@@ -857,6 +1030,7 @@ impl SearchDispatcher {
                 content_index,
                 &entries,
                 &path_index,
+                metadata,
                 &candidate_set,
                 &candidate_indices,
                 &bm25_groups,
@@ -921,11 +1095,12 @@ impl SearchDispatcher {
         if (!bm25_groups.is_empty() || !regex_patterns.is_empty())
             && let Some(c_index) = content_index
         {
-            let outcome = c_index.search_groups_with_regex(
+            let outcome = c_index.search_groups_filtered(
                 &bm25_groups,
                 &regex_patterns,
                 limit * 3,
                 scope_prefix.as_deref(),
+                &pushdown_filters,
             );
             parsed.hints.extend(outcome.hints);
             for (rank, cm) in outcome.matches.into_iter().enumerate() {
@@ -960,12 +1135,12 @@ impl SearchDispatcher {
                     // Fallback for stores whose entries carry no node ids.
                     None if node_to_idx.is_empty() => metadata
                         .get_by_node_id(hit.node_id)
-                        .and_then(|entry| path_index.get(&entry.path).copied())
+                        .and_then(|entry| resolve_index(&entry.path))
                         .unwrap_or(usize::MAX),
                     None => continue,
                 };
                 if orig_idx != usize::MAX
-                    && candidate_set.contains(&orig_idx)
+                    && candidate_set.contains(orig_idx)
                     && let Some(entry) = entries.get(orig_idx)
                 {
                     semantic_ranks.insert(
@@ -1000,12 +1175,12 @@ impl SearchDispatcher {
                     Some(idx) => idx,
                     None if node_to_idx.is_empty() => metadata
                         .get_by_node_id(node_id)
-                        .and_then(|entry| path_index.get(&entry.path).copied())
+                        .and_then(|entry| resolve_index(&entry.path))
                         .unwrap_or(usize::MAX),
                     None => continue,
                 };
                 if orig_idx != usize::MAX
-                    && candidate_set.contains(&orig_idx)
+                    && candidate_set.contains(orig_idx)
                     && let Some(entry) = entries.get(orig_idx)
                 {
                     let is_image = entry
@@ -1084,8 +1259,8 @@ impl SearchDispatcher {
 
             // Merge BM25 matches
             for (path, &rank) in &bm25_ranks {
-                if let Some(&orig_idx) = path_index.get(path) {
-                    if !candidate_set.contains(&orig_idx) {
+                if let Some(orig_idx) = resolve_index(path) {
+                    if !candidate_set.contains(orig_idx) {
                         continue;
                     }
                     let rrf = w_bm25 * (1.0 / (60.0 + (rank as f64)));
@@ -1112,10 +1287,10 @@ impl SearchDispatcher {
 
             // Merge Semantic matches
             for (path, &(rank, cosine, range)) in &semantic_ranks {
-                let Some(&orig_idx) = path_index.get(path) else {
+                let Some(orig_idx) = resolve_index(path) else {
                     continue;
                 };
-                if !candidate_set.contains(&orig_idx) {
+                if !candidate_set.contains(orig_idx) {
                     continue;
                 }
                 let rrf = w_semantic * (1.0 / (60.0 + (rank as f64)));
@@ -1147,10 +1322,10 @@ impl SearchDispatcher {
 
             // Merge Visual matches
             for (path, &(rank, cosine)) in &visual_ranks {
-                let Some(&orig_idx) = path_index.get(path) else {
+                let Some(orig_idx) = resolve_index(path) else {
                     continue;
                 };
-                if !candidate_set.contains(&orig_idx) {
+                if !candidate_set.contains(orig_idx) {
                     continue;
                 }
                 let rrf = w_visual * (1.0 / (60.0 + (rank as f64)));
@@ -1187,14 +1362,19 @@ impl SearchDispatcher {
             {
                 let w_folded = w_bm25 * 0.55;
                 for (rank, cm) in c_index
-                    .search_folded(search_text, limit * 3, scope_prefix.as_deref())
+                    .search_folded_filtered(
+                        search_text,
+                        limit * 3,
+                        scope_prefix.as_deref(),
+                        &pushdown_filters,
+                    )
                     .into_iter()
                     .enumerate()
                 {
-                    let Some(&orig_idx) = path_index.get(&cm.path) else {
+                    let Some(orig_idx) = resolve_index(&cm.path) else {
                         continue;
                     };
-                    if !candidate_set.contains(&orig_idx) {
+                    if !candidate_set.contains(orig_idx) {
                         continue;
                     }
                     let rrf = w_folded * (1.0 / (60.0 + rank as f64));
@@ -1399,6 +1579,45 @@ fn finalize_score(
     score.max(0.0)
 }
 
+/// Candidate membership for fusion. When the candidate list already covers
+/// every entry, skip the million-key hash set entirely.
+struct CandidateSet {
+    all: bool,
+    indices: HashSet<usize>,
+}
+
+impl CandidateSet {
+    fn new(candidate_indices: &[usize], total: usize) -> Self {
+        let all = candidate_indices.len() == total;
+        Self {
+            all,
+            indices: if all {
+                HashSet::new()
+            } else {
+                candidate_indices.iter().copied().collect()
+            },
+        }
+    }
+
+    fn contains(&self, index: usize) -> bool {
+        self.all || self.indices.contains(&index)
+    }
+}
+
+/// True when the query can use the directory trie (`in:` or a leading
+/// directory-like token). Other queries skip the path-index build entirely.
+fn query_needs_trie(query: &str) -> bool {
+    let lowered = query.to_ascii_lowercase();
+    if lowered.contains("in:") {
+        return true;
+    }
+    let first = query.split_whitespace().next().unwrap_or("");
+    first.ends_with('/')
+        || first.ends_with('\\')
+        || first.starts_with("~/")
+        || first.starts_with("./")
+}
+
 /// Enumerates matches for `mode:exhaustive`, ordered by path.
 ///
 /// Fuzzy and semantic tiers are deliberately skipped: they rank, they do not
@@ -1408,7 +1627,8 @@ fn exhaustive_results(
     content_index: &Option<ContentIndex>,
     entries: &[FileEntry],
     path_index: &HashMap<PathBuf, usize>,
-    candidate_set: &HashSet<usize>,
+    metadata: &MetadataStore,
+    candidate_set: &CandidateSet,
     candidate_indices: &[usize],
     groups: &[(FieldKind, &str)],
     regex_patterns: &[&str],
@@ -1453,10 +1673,14 @@ fn exhaustive_results(
             if !after_keyset(&cm.path) {
                 continue;
             }
-            let Some(&idx) = path_index.get(&cm.path) else {
+            let Some(idx) = path_index
+                .get(&cm.path)
+                .copied()
+                .or_else(|| metadata.get_index(&cm.path).map(|idx| idx as usize))
+            else {
                 continue;
             };
-            if !candidate_set.contains(&idx) {
+            if !candidate_set.contains(idx) {
                 continue;
             }
             let Some(entry) = entries.get(idx) else {
@@ -1488,6 +1712,26 @@ fn exhaustive_results(
     }
 
     results
+}
+
+/// Positive ext/size filters that can be pushed into the content index.
+///
+/// Only the first positive clause of each kind is pushed: it is a necessary
+/// condition for every result, so the pushdown can never drop a true match.
+fn content_pushdown(filters: &[Filter]) -> ContentFilters {
+    let mut pushdown = ContentFilters::default();
+    for filter in filters {
+        match filter {
+            Filter::Ext(ext) if pushdown.ext.is_none() => {
+                pushdown.ext = Some(ext.to_lowercase());
+            }
+            Filter::Size(range) if pushdown.size.is_none() => {
+                pushdown.size = Some(*range);
+            }
+            _ => {}
+        }
+    }
+    pushdown
 }
 
 fn matches_all_compiled_filters(filters: &[CompiledFilter], entry: &FileEntry) -> bool {
@@ -1532,17 +1776,14 @@ impl CompiledFilter {
         match self {
             CompiledFilter::Ext(ext) => entry
                 .extension
-                .as_deref()
                 .map(|e| e.eq_ignore_ascii_case(ext))
                 .unwrap_or(false),
-            CompiledFilter::Type(typ) => {
-                matches_type_category(typ, entry.extension.as_deref(), entry.is_dir)
-            }
+            CompiledFilter::Type(typ) => matches_type_category(typ, entry.extension, entry.is_dir),
             CompiledFilter::Modified(range) => range.matches(entry.modified),
             CompiledFilter::Size(range) => range.matches(entry.size),
             CompiledFilter::Kind(crate::query::ast::FileKind::Dir) => entry.is_dir,
             CompiledFilter::Kind(crate::query::ast::FileKind::File) => !entry.is_dir,
-            CompiledFilter::Lang(lang) => matches_language(lang, entry.extension.as_deref()),
+            CompiledFilter::Lang(lang) => matches_language(lang, entry.extension),
             CompiledFilter::Name(name) => {
                 // Avoid allocation: compare lowercase name directly
                 // (name is already lowercase in CompiledFilter)
@@ -1659,6 +1900,7 @@ fn matches_language(lang: &str, ext_opt: Option<&str>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::query::ast::RangeOp;
 
     fn fake_result(path: &str) -> SearchResult {
         SearchResult {
@@ -1790,7 +2032,7 @@ mod tests {
             id,
             path: PathBuf::from(path),
             name: name.to_string(),
-            extension: Some("rs".to_string()),
+            extension: Some("rs"),
             size: 10,
             modified: 0,
             is_dir: false,
@@ -1808,7 +2050,14 @@ mod tests {
         let path = "/tmp/kensaku/fast/notes.txt";
         let name = "notes.txt";
         index
-            .add_or_update(Path::new(path), name, "needle in a haystack", 0)
+            .add_or_update(
+                Path::new(path),
+                name,
+                "needle in a haystack",
+                0,
+                0,
+                Some("txt"),
+            )
             .expect("add document");
         index.commit().unwrap();
 
@@ -1845,7 +2094,7 @@ mod tests {
         for (id, name) in [(1, "shot-a.png"), (2, "shot-b.png")] {
             let path = temp.dir.join(name);
             let mut item = entry(id, &path.to_string_lossy(), name);
-            item.extension = Some("png".to_string());
+            item.extension = Some("png");
             item.char_bloom = crate::search::fuzzy::compute_char_mask(name);
             db.upsert(&item).expect("insert image");
             db.set_image_meta(&path, 800, 600, 0)
@@ -1879,7 +2128,14 @@ mod tests {
         let path = "/tmp/kensaku/folded/donuts.txt";
         let name = "donuts.txt";
         index
-            .add_or_update(Path::new(path), name, "Visit donutsmp.net for details", 0)
+            .add_or_update(
+                Path::new(path),
+                name,
+                "Visit donutsmp.net for details",
+                0,
+                0,
+                Some("txt"),
+            )
             .expect("add document");
         index.commit().unwrap();
 
@@ -1926,7 +2182,7 @@ mod tests {
             let path = format!("/tmp/kensaku/e/file-{:02}.rs", i);
             let name = format!("file-{:02}.rs", i);
             index
-                .add_or_update(Path::new(&path), &name, "shared needle", 0)
+                .add_or_update(Path::new(&path), &name, "shared needle", 0, 0, Some("rs"))
                 .expect("add document");
             let idx = entries.len();
             entries.push(entry(i as u64 + 1, &path, &name));
@@ -1935,12 +2191,14 @@ mod tests {
         }
         index.commit().unwrap();
 
-        let candidate_set: HashSet<usize> = candidate_indices.iter().copied().collect();
+        let candidate_set = CandidateSet::new(&candidate_indices, entries.len());
+        let metadata = MetadataStore::without_db();
         let mut hints = Vec::new();
         let results = exhaustive_results(
             &temp.index,
             &entries,
             &path_index,
+            &metadata,
             &candidate_set,
             &candidate_indices,
             &[(FieldKind::Content, "needle")],
@@ -2282,5 +2540,93 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(&dir);
+    }
+    fn facet_fixture(size: usize) -> Vec<SearchResult> {
+        let now = 1_700_000_000u64;
+        (0..size)
+            .map(|index| {
+                let extension = ["pdf", "png", "rs", "md", "mp4", "zip"][index % 6];
+                SearchResult {
+                    path: format!(
+                        "/corpus/d{:04}/file{:07}.{}",
+                        index % 1000,
+                        index,
+                        extension
+                    ),
+                    filename: format!("file{:07}.{}", index, extension),
+                    snippet: None,
+                    score: 1.0,
+                    file_size: (index as u64 % 200) * 1_048_576,
+                    modified: now.saturating_sub((index as u64 % 400) * 86_400),
+                    is_dir: false,
+                    match_type: MatchType::FileName,
+                    best_range: None,
+                    group_count: 1,
+                    group_paths: Vec::new(),
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn facet_counts_cover_the_full_set_and_stay_bounded() {
+        let results = facet_fixture(100_000);
+        let started = std::time::Instant::now();
+        let facets = compute_facets(&results, 1_700_000_000);
+        let elapsed = started.elapsed();
+        assert_eq!(facets.all, 100_000);
+        assert_eq!(facets.types.values().sum::<usize>(), 100_000);
+        assert_eq!(facets.time.values().sum::<usize>(), 100_000);
+        assert_eq!(facets.size.values().sum::<usize>(), 100_000);
+        // Generous debug-mode guard; the release budget is measured by
+        // `examples/facet_bench.rs` and recorded in BENCHMARKS.md.
+        assert!(
+            elapsed < std::time::Duration::from_secs(2),
+            "facets at 100k took {elapsed:?}"
+        );
+    }
+
+    #[test]
+    #[ignore = "manual 1M-result facet latency check"]
+    fn facet_counts_1m_stay_bounded() {
+        let results = facet_fixture(1_000_000);
+        let started = std::time::Instant::now();
+        let facets = compute_facets(&results, 1_700_000_000);
+        let elapsed = started.elapsed();
+        assert_eq!(facets.all, 1_000_000);
+        assert!(
+            elapsed < std::time::Duration::from_secs(10),
+            "facets at 1M took {elapsed:?}"
+        );
+    }
+    #[test]
+    fn pushdown_uses_only_positive_ext_and_size() {
+        let filters = vec![
+            Filter::Not(Box::new(Filter::Ext("pdf".to_string()))),
+            Filter::Size(RangeOp::Gt(10)),
+            Filter::Ext("rs".to_string()),
+            Filter::Ext("ts".to_string()),
+            Filter::Size(RangeOp::Lt(99)),
+        ];
+        let pushdown = content_pushdown(&filters);
+        assert_eq!(pushdown.ext.as_deref(), Some("rs"));
+        assert_eq!(pushdown.size, Some(RangeOp::Gt(10)));
+
+        let only_negated = vec![Filter::Not(Box::new(Filter::Ext("pdf".to_string())))];
+        assert!(content_pushdown(&only_negated).is_empty());
+    }
+
+    #[test]
+    fn facet_classification_matches_bucket_tables() {
+        assert_eq!(classify_extension("rs"), (3, Some(0)));
+        assert_eq!(LANGUAGE_BUCKETS[0], "rust");
+        assert_eq!(classify_extension("md"), (2, Some(13)));
+        assert_eq!(LANGUAGE_BUCKETS[13], "markdown");
+        assert_eq!(classify_extension("json"), (3, Some(14)));
+        assert_eq!(classify_extension("png"), (1, None));
+        assert_eq!(TYPE_BUCKETS[1], "image");
+        assert_eq!(classify_extension("zip"), (5, None));
+        assert_eq!(classify_extension("unknown"), (6, None));
+        assert_eq!(classify_extension("pdf"), (2, None));
     }
 }

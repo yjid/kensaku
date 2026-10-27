@@ -24,6 +24,18 @@ versioning: [SemVer](https://semver.org/).
   with path+line citations. No retrieval, no answer; no cloud by default and
   per-use consent for non-loopback endpoints. CLI: `kensaku-cli ask`.
 
+- Search quality/performance (section D): interned `FileEntry.extension`
+  (`Option<&'static str>`, no per-entry allocation), content schema v3 with
+  indexed `ext` and fast `size` fields plus positive filter pushdown into BM25
+  and folded queries, and an allocation-light, rayon-folded facet pass
+  (release p50 3.1 ms at 100k matched results, 17.3 ms at 1M). The 1M query
+  path also parallelizes metadata materialization, skips the path index for
+  non-trie queries, uses an all-candidates membership fast path, and skips the
+  semantic node map when that tier is off (full search p50 207 ms at 1M, down
+  from 675 ms; fuzzy 3.6–5.2 ms). Adds `examples/facet_bench.rs` and a
+  `KENSAKU_SEARCH_BENCH=1` mode for `mem_probe`; the Tantivy writer-thread
+  trade-off is measured and documented (single thread kept for memory).
+  Contents indexes rebuild once to v3 and preserve `index.legacy-*`.
 ### Fixed
 - Rust CI links again on older glibc: the ONNX runtime is now loaded
   dynamically instead of statically linked. The prebuilt static archive

@@ -1,15 +1,46 @@
+use crate::query::ast::RangeOp;
 use parking_lot::{Mutex, RwLock};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::io::Read;
+use std::ops::Bound;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 use tantivy::collector::{DocSetCollector, TopDocs};
-use tantivy::query::{AllQuery, BooleanQuery, Occur, Query, QueryParser, RegexQuery, TermQuery};
+use tantivy::query::{
+    AllQuery, BooleanQuery, Occur, Query, QueryParser, RangeQuery, RegexQuery, TermQuery,
+};
 use tantivy::schema::*;
 use tantivy::tokenizer::NgramTokenizer;
 use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term, doc};
+
+/// Converts a size predicate into Tantivy term bounds over the `size` fast
+/// field.
+fn size_range_terms(field: Field, range: RangeOp) -> (Bound<Term>, Bound<Term>) {
+    match range {
+        RangeOp::Lt(value) => (
+            Bound::Unbounded,
+            Bound::Excluded(Term::from_field_u64(field, value)),
+        ),
+        RangeOp::Lte(value) => (
+            Bound::Unbounded,
+            Bound::Included(Term::from_field_u64(field, value)),
+        ),
+        RangeOp::Gt(value) => (
+            Bound::Excluded(Term::from_field_u64(field, value)),
+            Bound::Unbounded,
+        ),
+        RangeOp::Gte(value) => (
+            Bound::Included(Term::from_field_u64(field, value)),
+            Bound::Unbounded,
+        ),
+        RangeOp::Between(low, high) => (
+            Bound::Included(Term::from_field_u64(field, low)),
+            Bound::Included(Term::from_field_u64(field, high)),
+        ),
+    }
+}
 
 /// Canonicalizes OCR/lookalike characters for the folded trigram tier.
 ///
@@ -179,6 +210,11 @@ pub struct ContentIndex {
     /// Original text used to verify folded candidates. Stored but not indexed.
     pub content_raw_field: Option<Field>,
     pub modified_field: Field,
+    /// Exact extension (lowercase) for filter pushdown. `None` on a legacy
+    /// read-only handle.
+    pub ext_field: Option<Field>,
+    /// File size in bytes for range pushdown. `None` on a legacy handle.
+    pub size_field: Option<Field>,
     /// True when this construction migrated an older schema and the caller
     /// must force a full content re-extraction.
     pub rebuilt: bool,
@@ -207,6 +243,23 @@ pub enum FieldKind {
     Content,
 }
 
+/// Filters pushed into the Tantivy query before top-k collection.
+///
+/// Only positive clauses are represented. Type/lang/name/path and negations
+/// remain metadata post-filters; pushing a positive ext/size is always safe
+/// because every surviving result must satisfy it too.
+#[derive(Debug, Clone, Default)]
+pub struct ContentFilters {
+    pub ext: Option<String>,
+    pub size: Option<crate::query::ast::RangeOp>,
+}
+
+impl ContentFilters {
+    pub fn is_empty(&self) -> bool {
+        self.ext.is_none() && self.size.is_none()
+    }
+}
+
 /// Result of a grouped BM25 search that may also include regex clauses.
 #[derive(Debug, Clone, Default)]
 pub struct ContentSearchOutcome {
@@ -221,7 +274,8 @@ pub const MAX_REGEX_PATTERN_LEN: usize = 1024;
 /// Version marker for the content index schema.
 /// v1: K5 schema (content_folded + content_raw)
 /// v2: K15 schema (CJK-aware "kensaku" tokenizer on filename and content)
-pub const CONTENT_SCHEMA_VERSION: u32 = 2;
+/// v3: ext/size fields for filter pushdown (K12/B4)
+pub const CONTENT_SCHEMA_VERSION: u32 = 3;
 pub const SCHEMA_MARKER_FILE: &str = "content.schema";
 
 impl ContentIndex {
@@ -248,6 +302,10 @@ impl ContentIndex {
         );
         let raw_field = schema_builder.add_text_field("content_raw", STORED);
         let modified_field = schema_builder.add_u64_field("modified", STORED | FAST);
+        // K12/B4: exact extension and byte size, indexed/fast so ext/size
+        // filters can narrow the Tantivy query before top-k collection.
+        let ext_field = schema_builder.add_text_field("ext", STRING);
+        let size_field = schema_builder.add_u64_field("size", FAST);
         let schema = schema_builder.build();
 
         let mut rebuilt = false;
@@ -258,18 +316,24 @@ impl ContentIndex {
             let existing_schema = existing.schema();
             let has_fields = existing_schema.get_field("content_folded").is_ok()
                 && existing_schema.get_field("content_raw").is_ok();
+            let has_pushdown = existing_schema.get_field("ext").is_ok()
+                && existing_schema.get_field("size").is_ok();
             let marker_version: u32 = fs::read_to_string(&marker_path)
                 .ok()
                 .and_then(|s| s.trim().parse().ok())
                 .unwrap_or(0);
-            let compatible = has_fields && marker_version >= CONTENT_SCHEMA_VERSION;
+            let compatible = has_fields && has_pushdown && marker_version >= CONTENT_SCHEMA_VERSION;
             if compatible {
                 existing
             } else {
                 let reason = if !has_fields {
                     "Pre-K5 schema missing content_folded/content_raw fields"
-                } else {
+                } else if marker_version < 2 {
                     "K15 CJK tokenizer migration (schema v1 -> v2)"
+                } else if !has_pushdown {
+                    "K12 filter pushdown migration (schema v2 -> v3)"
+                } else {
+                    "Content schema marker is stale"
                 };
                 rebuild_reason = Some(reason.to_string());
                 log::info!("[Kensaku] Content index rebuild required: {}", reason);
@@ -334,6 +398,8 @@ impl ContentIndex {
             content_folded_field: Some(folded_field),
             content_raw_field: Some(raw_field),
             modified_field,
+            ext_field: Some(ext_field),
+            size_field: Some(size_field),
             rebuilt,
             rebuild_reason,
             snippet_cache: Mutex::new(SnippetCache::new(32)),
@@ -363,6 +429,8 @@ impl ContentIndex {
             .map_err(|e| format!("Content index is missing the 'content' field: {}", e))?;
         let content_folded_field = schema.get_field("content_folded").ok();
         let content_raw_field = schema.get_field("content_raw").ok();
+        let ext_field = schema.get_field("ext").ok();
+        let size_field = schema.get_field("size").ok();
         let modified_field = schema
             .get_field("modified")
             .map_err(|e| format!("Content index is missing the 'modified' field: {}", e))?;
@@ -392,6 +460,8 @@ impl ContentIndex {
             content_folded_field,
             content_raw_field,
             modified_field,
+            ext_field,
+            size_field,
             rebuilt: false,
             rebuild_reason: None,
             snippet_cache: Mutex::new(SnippetCache::new(32)),
@@ -421,6 +491,8 @@ impl ContentIndex {
         filename: &str,
         content: &str,
         modified: u64,
+        size: u64,
+        extension: Option<&str>,
     ) -> Result<(), String> {
         let path_str = path.to_string_lossy().to_string();
         let term = Term::from_field_text(self.path_field, &path_str);
@@ -439,6 +511,14 @@ impl ContentIndex {
         }
         if let Some(field) = self.content_raw_field {
             doc.add_text(field, content);
+        }
+        if let Some(field) = self.ext_field
+            && let Some(extension) = extension
+        {
+            doc.add_text(field, extension.to_ascii_lowercase());
+        }
+        if let Some(field) = self.size_field {
+            doc.add_u64(field, size);
         }
         writer.add_document(doc).map_err(|e| e.to_string())?;
         Ok(())
@@ -573,6 +653,25 @@ impl ContentIndex {
         limit: usize,
         path_prefix: Option<&str>,
     ) -> ContentSearchOutcome {
+        self.search_groups_filtered(
+            groups,
+            regex_patterns,
+            limit,
+            path_prefix,
+            &ContentFilters::default(),
+        )
+    }
+
+    /// Like [`Self::search_groups_with_regex`], with positive ext/size filters
+    /// pushed into the Tantivy query before top-k collection.
+    pub fn search_groups_filtered(
+        &self,
+        groups: &[(FieldKind, &str)],
+        regex_patterns: &[&str],
+        limit: usize,
+        path_prefix: Option<&str>,
+        filters: &ContentFilters,
+    ) -> ContentSearchOutcome {
         let mut hints = Vec::new();
 
         let mut plain_clauses: Vec<(Occur, Box<dyn Query>)> = Vec::new();
@@ -649,7 +748,7 @@ impl ContentIndex {
         };
 
         let matches = match query {
-            Some(q) => self.run_query(q.as_ref(), limit, path_prefix),
+            Some(q) => self.run_query(q.as_ref(), limit, path_prefix, filters),
             None => Vec::new(),
         };
 
@@ -666,6 +765,17 @@ impl ContentIndex {
         query: &str,
         limit: usize,
         path_prefix: Option<&str>,
+    ) -> Vec<ContentMatch> {
+        self.search_folded_filtered(query, limit, path_prefix, &ContentFilters::default())
+    }
+
+    /// Folded search with positive ext/size filters pushed down.
+    pub fn search_folded_filtered(
+        &self,
+        query: &str,
+        limit: usize,
+        path_prefix: Option<&str>,
+        filters: &ContentFilters,
     ) -> Vec<ContentMatch> {
         let (Some(folded_field), Some(raw_field)) =
             (self.content_folded_field, self.content_raw_field)
@@ -707,19 +817,7 @@ impl ContentIndex {
         }
 
         let boolean_query: Box<dyn Query> = Box::new(BooleanQuery::new(term_groups));
-        let effective_query: Box<dyn Query> = match path_prefix {
-            Some(prefix) if !prefix.is_empty() => {
-                let pattern = format!("(?s)^{}.*", regex::escape(prefix));
-                match RegexQuery::from_pattern(&pattern, self.path_field) {
-                    Ok(path_query) => Box::new(BooleanQuery::new(vec![
-                        (Occur::Must, boolean_query.box_clone()),
-                        (Occur::Must, Box::new(path_query)),
-                    ])),
-                    Err(_) => boolean_query.box_clone(),
-                }
-            }
-            _ => boolean_query.box_clone(),
-        };
+        let effective_query = self.effective_query(boolean_query, path_prefix, filters);
 
         let searcher = self.reader.searcher();
         let collector = TopDocs::with_limit(limit.saturating_mul(2).max(1)).order_by_score();
@@ -775,11 +873,59 @@ impl ContentIndex {
         results
     }
 
+    /// Combines a base query with the pushed-down scope and ext/size filters.
+    fn effective_query(
+        &self,
+        base: Box<dyn Query>,
+        path_prefix: Option<&str>,
+        filters: &ContentFilters,
+    ) -> Box<dyn Query> {
+        let mut clauses: Vec<(Occur, Box<dyn Query>)> = vec![(Occur::Must, base)];
+        if let Some(prefix) = path_prefix.filter(|prefix| !prefix.is_empty()) {
+            let pattern = format!("(?s)^{}.*", regex::escape(prefix));
+            if let Ok(path_query) = RegexQuery::from_pattern(&pattern, self.path_field) {
+                clauses.push((Occur::Must, Box::new(path_query)));
+            }
+        }
+        clauses.extend(self.pushdown_clauses(filters));
+        if clauses.len() == 1 {
+            clauses.pop().expect("one clause").1
+        } else {
+            Box::new(BooleanQuery::new(clauses))
+        }
+    }
+
+    /// Builds `Must` clauses for the filters that have a stored field.
+    fn pushdown_clauses(&self, filters: &ContentFilters) -> Vec<(Occur, Box<dyn Query>)> {
+        let mut clauses = Vec::new();
+        if let (Some(field), Some(ext)) = (self.ext_field, filters.ext.as_deref()) {
+            let ext = ext.trim().trim_start_matches('.').to_ascii_lowercase();
+            if !ext.is_empty() {
+                clauses.push((
+                    Occur::Must,
+                    Box::new(TermQuery::new(
+                        Term::from_field_text(field, &ext),
+                        IndexRecordOption::Basic,
+                    )) as Box<dyn Query>,
+                ));
+            }
+        }
+        if let (Some(field), Some(range)) = (self.size_field, filters.size) {
+            let (lower, upper) = size_range_terms(field, range);
+            clauses.push((
+                Occur::Must,
+                Box::new(RangeQuery::new(lower, upper)) as Box<dyn Query>,
+            ));
+        }
+        clauses
+    }
+
     fn run_query(
         &self,
         query: &dyn Query,
         limit: usize,
         path_prefix: Option<&str>,
+        filters: &ContentFilters,
     ) -> Vec<ContentMatch> {
         if limit == 0 {
             return Vec::new();
@@ -788,21 +934,9 @@ impl ContentIndex {
         let searcher = self.reader.searcher();
         let collector = TopDocs::with_limit(limit).order_by_score();
 
-        // Push the scope down into the Tantivy query: only documents whose
-        // stored path starts with the prefix are scored at all.
-        let effective_query: Box<dyn Query> = match path_prefix {
-            Some(prefix) if !prefix.is_empty() => {
-                let pattern = format!("(?s)^{}.*", regex::escape(prefix));
-                match RegexQuery::from_pattern(&pattern, self.path_field) {
-                    Ok(path_query) => Box::new(BooleanQuery::new(vec![
-                        (Occur::Must, query.box_clone()),
-                        (Occur::Must, Box::new(path_query)),
-                    ])),
-                    Err(_) => query.box_clone(),
-                }
-            }
-            _ => query.box_clone(),
-        };
+        // Push the scope and ext/size filters down into the Tantivy query:
+        // only documents that can survive are scored at all.
+        let effective_query = self.effective_query(query.box_clone(), path_prefix, filters);
 
         let top_docs = match searcher.search(effective_query.as_ref(), &collector) {
             Ok(docs) => docs,
@@ -1321,7 +1455,14 @@ mod tests {
 
     fn add(index: &ContentIndex, path: &str, filename: &str, content: &str) {
         index
-            .add_or_update(Path::new(path), filename, content, 0)
+            .add_or_update(
+                Path::new(path),
+                filename,
+                content,
+                0,
+                0,
+                Path::new(path).extension().and_then(|ext| ext.to_str()),
+            )
             .expect("add document");
     }
 
@@ -1430,6 +1571,8 @@ mod tests {
                 "note.txt",
                 "Visit donutsmp.net",
                 0,
+                0,
+                Some("txt"),
             )
             .unwrap();
         index.commit().unwrap();
@@ -1592,7 +1735,14 @@ mod tests {
 
         // Mutations are rejected instead of touching the shared index.
         let err = reader
-            .add_or_update(Path::new("/tmp/kensaku/ro/other.txt"), "other.txt", "x", 0)
+            .add_or_update(
+                Path::new("/tmp/kensaku/ro/other.txt"),
+                "other.txt",
+                "x",
+                0,
+                0,
+                Some("txt"),
+            )
             .unwrap_err();
         assert_eq!(err, "index is read-only");
         assert_eq!(reader.commit().unwrap_err(), "index is read-only");
@@ -1759,6 +1909,51 @@ mod tests {
     }
 
     #[test]
+    fn schema_v2_without_pushdown_fields_triggers_rebuild() {
+        let nanos = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "kensaku-pushdown-migrate-{}-{}",
+            std::process::id(),
+            nanos
+        ));
+        let index_dir = root.join("index");
+        fs::create_dir_all(&index_dir).unwrap();
+
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_text_field("path", STRING | STORED);
+        schema_builder.add_text_field("filename", TEXT | STORED);
+        schema_builder.add_text_field("content", TEXT);
+        let folded_indexing = TextFieldIndexing::default()
+            .set_tokenizer("trigram")
+            .set_index_option(IndexRecordOption::WithFreqsAndPositions);
+        schema_builder.add_text_field(
+            "content_folded",
+            TextOptions::default().set_indexing_options(folded_indexing),
+        );
+        schema_builder.add_text_field("content_raw", STORED);
+        schema_builder.add_u64_field("modified", STORED | FAST);
+        let v2_index = Index::create_in_dir(&index_dir, schema_builder.build()).unwrap();
+        drop(v2_index);
+        fs::write(index_dir.join(SCHEMA_MARKER_FILE), "2").unwrap();
+
+        let migrated = ContentIndex::new(&index_dir).expect("migrate to v3");
+        assert!(migrated.rebuilt);
+        assert_eq!(
+            migrated.rebuild_reason.as_deref(),
+            Some("K12 filter pushdown migration (schema v2 -> v3)")
+        );
+        let marker = fs::read_to_string(index_dir.join(SCHEMA_MARKER_FILE)).unwrap();
+        assert_eq!(marker.trim(), "3");
+        assert!(migrated.ext_field.is_some());
+        assert!(migrated.size_field.is_some());
+        drop(migrated);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn schema_v1_without_marker_triggers_rebuild() {
         let nanos = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -1801,7 +1996,7 @@ mod tests {
         );
         assert!(index_dir.join(SCHEMA_MARKER_FILE).exists());
         let marker = fs::read_to_string(index_dir.join(SCHEMA_MARKER_FILE)).unwrap();
-        assert_eq!(marker.trim(), "2");
+        assert_eq!(marker.trim(), "3");
         drop(migrated);
         std::thread::sleep(std::time::Duration::from_millis(20));
 
@@ -1862,7 +2057,7 @@ mod tests {
                 .unwrap();
 
             new_index
-                .add_or_update(&path, title, cjk_sample_body, i as u64)
+                .add_or_update(&path, title, cjk_sample_body, i as u64, 0, Some("txt"))
                 .unwrap();
         }
         old_writer.commit().unwrap();
@@ -1881,5 +2076,74 @@ mod tests {
         );
         assert!(new_bytes > 0);
         let _ = fs::remove_dir_all(&root);
+    }
+    #[test]
+    fn ext_and_size_filters_are_pushed_into_the_query() {
+        let temp = temp_index("pushdown");
+        let index = temp.index.as_ref().unwrap();
+        for (name, size) in [
+            ("small.pdf", 10u64),
+            ("big.pdf", 5_000_000),
+            ("note.md", 10),
+        ] {
+            let path = format!("/tmp/kensaku/pushdown/{}", name);
+            index
+                .add_or_update(
+                    Path::new(&path),
+                    name,
+                    "needle invoice",
+                    0,
+                    size,
+                    Path::new(&path).extension().and_then(|ext| ext.to_str()),
+                )
+                .unwrap();
+        }
+        index.commit().unwrap();
+
+        let all = index.search_groups_filtered(
+            &[(FieldKind::Content, "needle")],
+            &[],
+            10,
+            None,
+            &ContentFilters::default(),
+        );
+        assert_eq!(all.matches.len(), 3);
+
+        let pdf = ContentFilters {
+            ext: Some("pdf".to_string()),
+            size: None,
+        };
+        assert_eq!(
+            index
+                .search_groups_filtered(&[(FieldKind::Content, "needle")], &[], 10, None, &pdf,)
+                .matches
+                .len(),
+            2
+        );
+
+        let small_pdf = ContentFilters {
+            ext: Some("PDF".to_string()),
+            size: Some(RangeOp::Lt(100)),
+        };
+        let hits = index.search_groups_filtered(
+            &[(FieldKind::Content, "needle")],
+            &[],
+            10,
+            None,
+            &small_pdf,
+        );
+        assert_eq!(hits.matches.len(), 1);
+        assert!(hits.matches[0].path.ends_with("small.pdf"));
+
+        let folded = index.search_folded_filtered(
+            "needle",
+            10,
+            None,
+            &ContentFilters {
+                ext: Some("pdf".to_string()),
+                size: None,
+            },
+        );
+        assert_eq!(folded.len(), 2, "folded tier must honor pushdown too");
     }
 }

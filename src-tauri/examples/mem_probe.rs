@@ -36,14 +36,16 @@ fn make_entry(path: PathBuf, is_dir: bool, id: u64) -> FileEntry {
         extension: if is_dir {
             None
         } else {
-            Some("txt".to_string())
+            kensaku_lib::indexer::walker::intern_extension(Some("txt"))
         },
         size: 1,
         modified: 1,
         is_dir,
         dev: 0,
         ino: 0,
-        char_bloom: 0,
+        char_bloom: kensaku_lib::search::fuzzy::compute_char_mask(
+            &path.file_name().unwrap_or_default().to_string_lossy(),
+        ),
         content_pending: false,
     }
 }
@@ -117,4 +119,72 @@ fn main() {
     println!("rss_hwm_after_kb={}", hwm_after.max(hwm_before));
     println!("lookup_p50_us={:.3}", p50);
     println!("lookup_p95_us={:.3}", p95);
+
+    if std::env::var_os("KENSAKU_SEARCH_BENCH").is_some() {
+        use kensaku_lib::search::SearchDispatcher;
+        use kensaku_lib::search::fuzzy::FuzzySearcher;
+
+        // Isolate the fuzzy filename tier from the per-query metadata
+        // materialization that currently precedes it.
+        let started = Instant::now();
+        let entries: Vec<FileEntry> = (0..store.len())
+            .map(|idx| store.materialize(idx as u32))
+            .collect();
+        let indices: Vec<usize> = (0..entries.len()).collect();
+        println!(
+            "materialized_entries_in_ms={}",
+            started.elapsed().as_millis()
+        );
+        let mut searcher = FuzzySearcher::new();
+        for query in ["f0000001", "file0000001", "zzzz"] {
+            let _ = searcher.search(query, &entries, &indices, 50);
+            let mut samples = Vec::with_capacity(5);
+            for _ in 0..5 {
+                let started = Instant::now();
+                let hits = searcher.search(query, &entries, &indices, 50);
+                samples.push(started.elapsed().as_micros());
+                std::hint::black_box(hits);
+            }
+            samples.sort_unstable();
+            println!(
+                "fuzzy_query={query} p50_us={} max_us={}",
+                samples[2], samples[4]
+            );
+        }
+
+        let no_content: Option<kensaku_lib::indexer::content::ContentIndex> = None;
+        for query in ["f0000001", "file0000001", "zzzz"] {
+            // Warm up, then take five samples (this is a shape check, not a
+            // tight microbenchmark).
+            let _ = SearchDispatcher::search_response_fast(
+                query,
+                &store,
+                &no_content,
+                None,
+                false,
+                50,
+                1,
+            );
+            let mut samples = Vec::with_capacity(5);
+            for _ in 0..5 {
+                let start = Instant::now();
+                let response = SearchDispatcher::search_response_fast(
+                    query,
+                    &store,
+                    &no_content,
+                    None,
+                    false,
+                    50,
+                    1,
+                );
+                samples.push(start.elapsed().as_millis());
+                std::hint::black_box(response);
+            }
+            samples.sort_unstable();
+            println!(
+                "search_query={query} p50_ms={} max_ms={}",
+                samples[2], samples[4]
+            );
+        }
+    }
 }
