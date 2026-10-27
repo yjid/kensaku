@@ -323,7 +323,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
-            {[0, 1, 2, 3, 4].map((s) => (
+            {[0, 1].map((s) => (
               <span
                 key={s}
                 className={`h-1 w-6 rounded-full transition-colors duration-300 ${
@@ -531,9 +531,9 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               <kbd className="rounded-[6px] border border-line px-2 py-1 font-mono text-[12px] text-fg">{shortcut}</kbd>
             </div>
             <ul className="space-y-2 text-[12px] text-muted">
-              <li>Type what you remember: a name, a line of text, or what it was about.</li>
+              <li>Just type what you remember — a name, a line of text, or what it was about.</li>
               <li>Enter opens the file. Space previews it. Shift+Enter shows it in its folder.</li>
-              <li>Type <span className="font-mono text-fg">type:pdf</span> or <span className="font-mono text-fg">modified:7d</span> to narrow results.</li>
+              <li>Use <span className="font-mono text-fg">/</span> for commands and <span className="font-mono text-fg">@</span> to scope to a folder.</li>
             </ul>
           </div>
         )}
