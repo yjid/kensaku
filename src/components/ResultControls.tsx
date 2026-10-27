@@ -28,13 +28,13 @@ export function ResultControls({
 }) {
   return (
     <div className="flex shrink-0 items-center gap-2">
-      <label className="control relative flex h-[38px] items-center rounded-full" title="Sort results">
+      <label className="control relative flex h-[38px] items-center rounded-[12px]" title="Sort results">
         <span className="sr-only">Sort</span>
         <select
           value={sort}
           onChange={(e) => onSort(e.target.value)}
           aria-label="Sort results"
-          className="h-full cursor-pointer appearance-none rounded-full bg-transparent pl-4 pr-8 text-[13px] font-medium text-fg outline-none"
+          className="h-full cursor-pointer appearance-none rounded-[12px] bg-transparent pl-3.5 pr-8 text-[13px] font-medium text-fg outline-none"
         >
           {SORT_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
@@ -45,7 +45,7 @@ export function ResultControls({
         <ChevronDown className="pointer-events-none absolute right-3 h-3.5 w-3.5 text-subtle" strokeWidth={2} />
       </label>
 
-      <div role="radiogroup" aria-label="Layout" className="control flex items-center gap-0.5 rounded-full p-1">
+      <div role="radiogroup" aria-label="Layout" className="control flex items-center gap-0.5 rounded-[12px] p-1">
         <button type="button" role="radio" aria-checked={view === "grid"} aria-label="Grid" title="Grid" onClick={() => onView("grid")} className="seg !px-2.5">
           <LayoutGrid className="h-4 w-4" strokeWidth={1.75} />
         </button>
@@ -55,7 +55,7 @@ export function ResultControls({
       </div>
 
       {canSave && (
-        <button type="button" title="Save this search" aria-label="Save this search" onClick={onSave} className="control flex h-[38px] w-[38px] items-center justify-center rounded-full text-muted transition-colors hover:text-fg">
+        <button type="button" title="Save this search" aria-label="Save this search" onClick={onSave} className="control flex h-[38px] w-[38px] items-center justify-center rounded-[12px] text-muted transition-colors hover:text-fg">
           <Bookmark className="h-4 w-4" strokeWidth={1.75} />
         </button>
       )}

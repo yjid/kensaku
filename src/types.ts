@@ -167,7 +167,7 @@ export interface KensakuConfig {
   skip_hidden?: boolean;
   ocr_enabled?: boolean;
   ocr_engine?: "tesseract" | "accurate";
-  theme?: "light" | "dark" | "glass";
+  theme?: "light" | "dark";
   aliases?: Alias[];
   saved_searches?: SavedSearch[];
   pins?: string[];

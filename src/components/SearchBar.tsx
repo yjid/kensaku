@@ -2,8 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { X, Terminal, Search } from "lucide-react";
 
 /* Search capsule. One floating control, Spotlight-style: glyph, 22px query,
-   result count, clear, settings. Solid in light and dark, Liquid Glass in
-   the glass theme. A hairline runs along its base while a search is live. */
+   result count, clear, settings. Solid surface,
+   14px corners. A hairline runs along its base while a search is live. */
 
 interface SearchBarProps {
   query: string;
@@ -48,8 +48,8 @@ export function SearchBar({
   const Glyph = isCommandMode ? Terminal : Search;
 
   return (
-    <div data-tauri-drag-region className="px-6 pb-3 pt-5">
-      <div className="control flex h-14 items-center gap-3 overflow-hidden rounded-full pl-5 pr-2">
+    <div data-tauri-drag-region className="px-4 pb-2 pt-3">
+      <div className="control flex h-12 items-center gap-3 overflow-hidden rounded-[14px] pl-4 pr-1.5 transition-shadow duration-200 focus-within:[box-shadow:var(--control-edge),var(--control-shadow),0_0_0_3px_var(--ink-soft)]">
         <Glyph className="h-5 w-5 shrink-0 text-muted" strokeWidth={1.75} />
         <input
           ref={inputRef}
@@ -62,7 +62,7 @@ export function SearchBar({
           placeholder={isCommandMode ? "Command" : PLACEHOLDERS[phIdx]}
           onFocus={onFocusInput}
           aria-label="Search"
-          className="min-w-0 flex-1 bg-transparent text-[22px] font-medium leading-none tracking-[-0.022em] text-fg outline-none placeholder:font-normal placeholder:text-subtle"
+          className="min-w-0 flex-1 bg-transparent text-[19px] font-medium leading-none tracking-[-0.022em] text-fg outline-none placeholder:font-normal placeholder:text-subtle"
           style={{ caretColor: "var(--blue)" }}
         />
 
@@ -80,7 +80,7 @@ export function SearchBar({
               setQuery("");
               inputRef.current?.focus();
             }}
-            className="btn btn-ghost btn-icon h-9 w-9 shrink-0 !rounded-full"
+            className="btn btn-ghost btn-icon h-9 w-9 shrink-0 !rounded-[10px]"
           >
             <X className="h-4 w-4" strokeWidth={1.75} />
           </button>

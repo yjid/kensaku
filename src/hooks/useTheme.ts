@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-export type Theme = "light" | "dark" | "glass";
+export type Theme = "light" | "dark";
 
 const STORAGE_KEY = "kensaku.theme";
 
@@ -9,7 +9,6 @@ const STORAGE_KEY = "kensaku.theme";
 export function normalizeTheme(raw: string | null | undefined): Theme {
   if (raw === "light" || raw === "paper") return "light";
   if (raw === "dark" || raw === "void") return "dark";
-  if (raw === "glass") return "glass";
   return "dark";
 }
 
@@ -27,7 +26,7 @@ function apply(t: Theme) {
 }
 
 /**
- * Theme control. Three finishes: light, dark, glass. Persists via localStorage
+ * Theme control. Two finishes: light and dark. Persists via localStorage
  * and best-effort mirrors the choice to the backend (`set_theme` may not exist
  * yet, never blocks on failure). `data-theme` is also set pre-paint in index.html.
  */
@@ -50,10 +49,8 @@ export function useTheme() {
     );
   }, []);
 
-  /** Cycles light, dark, glass. */
   const toggle = useCallback(() => {
-    const order: Theme[] = ["light", "dark", "glass"];
-    setTheme(order[(order.indexOf(theme) + 1) % order.length]);
+    setTheme(theme === "light" ? "dark" : "light");
   }, [theme, setTheme]);
 
   return { theme, setTheme, toggle };

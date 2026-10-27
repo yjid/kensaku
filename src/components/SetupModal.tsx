@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import React from "react";
-import { Check, Plus, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download, Sparkles, X } from "lucide-react";
+import { Check, Plus, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download, X } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
 import type { IndexingStatus, OcrStatus, ModelsStatus } from "../types";
 
@@ -192,7 +192,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
 
   const themeButton = (
     <button type="button" title="Theme" onClick={toggle} className="btn btn-ghost btn-icon h-8 !rounded-full">
-      {theme === "light" ? <Moon className="h-4 w-4" strokeWidth={1.75} /> : theme === "dark" ? <Sparkles className="h-4 w-4" strokeWidth={1.75} /> : <Sun className="h-4 w-4" strokeWidth={1.75} />}
+      {theme === "light" ? <Moon className="h-4 w-4" strokeWidth={1.75} /> : <Sun className="h-4 w-4" strokeWidth={1.75} />}
     </button>
   );
 
@@ -480,13 +480,13 @@ function Shell({
 }) {
   return (
     <div className="absolute inset-0 z-50 flex bg-bg">
-      <aside data-tauri-drag-region className="relative z-10 hidden w-[42%] min-w-[320px] flex-col justify-between p-10 md:flex">
+      <aside data-tauri-drag-region className="relative z-10 hidden w-[40%] min-w-[300px] flex-col justify-between p-8 md:flex">
         <span className="text-[14px] font-semibold tracking-[-0.02em] text-fg">Kensaku</span>
         {brand}
         <span className="t-meta text-subtle">{mark}</span>
       </aside>
       <section className="relative z-10 flex min-w-0 flex-1 flex-col">
-        <div className="surface m-3 flex min-h-0 flex-1 flex-col !rounded-[28px] px-10 pt-6 md:ml-0">
+        <div className="surface m-2 flex min-h-0 flex-1 flex-col !rounded-[20px] px-8 pt-4 md:ml-0">
           <div data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-end">{trailing}</div>
           <div className="mx-auto flex min-h-0 w-full max-w-[460px] flex-1 flex-col">{children}</div>
         </div>

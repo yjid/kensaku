@@ -6,16 +6,16 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
    fixed-height rows. Row heights are known up front, so nothing is measured
    per item. */
 
-const MIN_CELL = 188;
-const GAP = 20;
-const PAD = 24;
+const MIN_CELL = 168;
+const GAP = 12;
+const PAD = 16;
 const LIST_GAP = 2;
-const LIST_PAD = 16;
+const LIST_PAD = 8;
 const LIST_ROW = 52;
 const OVERSCAN_ROWS = 4;
 /** Top/bottom inset. Smaller than the side gutter: the tab row above already
  *  separates the grid from the query. */
-const PAD_Y = 12;
+const PAD_Y = 6;
 
 export interface VirtualGridProps<T> {
   items: T[];

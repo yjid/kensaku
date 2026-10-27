@@ -77,7 +77,7 @@ export const ResultItem = React.memo<ResultItemProps>(
           <HoverDetails result={result} />
         </span>
 
-        <span className="flex min-w-0 flex-col px-0.5 pt-3">
+        <span className="flex min-w-0 flex-col px-0.5 pt-2">
           <span className="truncate text-[13px] font-medium leading-[18px] text-fg">
             <HighlightedName text={result.filename} query={query} />
           </span>
