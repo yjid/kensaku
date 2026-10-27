@@ -199,6 +199,9 @@ jobs:
         with:
           path: artifacts
 
+      - name: Checkout (for release notes generation)
+        uses: actions/checkout@v4
+
       - name: Checksums
         run: |
           cd artifacts
