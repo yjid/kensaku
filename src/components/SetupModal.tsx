@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, Plus, X, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download } from "lucide-react";
+import { Check, Plus, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download, ScanText, Keyboard, Sparkles, FileText, Filter, Eye, Copy, Bot, Shield, Pencil } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
-import { Switch } from "./settings/kit";
-import type { IndexingStatus, ModelsStatus, OcrStatus } from "../types";
+import type { IndexingStatus, OcrStatus, ModelsStatus } from "../types";
 
 /* First run: three screens, one decision each.
    1 Welcome → 2 Pick folders → 3 Exclusions + start. */
@@ -15,11 +14,6 @@ const DEFAULT_EXCLUSIONS = [
   ".Trash", "lost+found",
 ];
 
-const PRESETS: Record<string, string[]> = {
-  Developer: DEFAULT_EXCLUSIONS.slice(0, 17),
-  Creative: ["node_modules", ".git", ".Trash", ".cache", "Backups", "Library", "lost+found"],
-  Minimal: [".Trash", "lost+found"],
-};
 
 function formatEta(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return "";
@@ -32,25 +26,25 @@ function formatEta(seconds: number): string {
 }
 
 export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void }) {
-  const [step, setStep] = useState<0 | 1 | 2 | 3 | 4>(0);
-  const [startAtLogin, setStartAtLogin] = useState(false);
+  const [step, setStep] = useState<0 | 1>(0);
+  // Start at sign-in is on by default, so the app is one shortcut away after a restart.
+  const startAtLogin = true;
   const [suggestedDirs, setSuggestedDirs] = useState<string[]>([]);
   const [selectedDirs, setSelectedDirs] = useState<string[]>([]);
   const [customDirInput, setCustomDirInput] = useState("");
-  const [excludedDirs, setExcludedDirs] = useState<string[]>(DEFAULT_EXCLUSIONS);
-  const [customExcludeInput, setCustomExcludeInput] = useState("");
+  const excludedDirs = DEFAULT_EXCLUSIONS;
+  const [ocrStatus, setOcrStatus] = useState<OcrStatus | null>(null);
+  const [ocrPackStatus, setOcrPackStatus] = useState<ModelsStatus | null>(null);
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrPackBusy, setOcrPackBusy] = useState(false);
+  const [selectedOcrEngine, setSelectedOcrEngine] = useState<"tesseract" | "accurate">("tesseract");
+  const [packError, setPackError] = useState<string | null>(null);
   const [shortcut, setShortcut] = useState("Alt+Space");
   const [capturing, setCapturing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanStatus, setScanStatus] = useState<IndexingStatus | null>(null);
   const [done, setDone] = useState(false);
-  const [modelsStatus, setModelsStatus] = useState<ModelsStatus | null>(null);
-  const [ocrPackStatus, setOcrPackStatus] = useState<ModelsStatus | null>(null);
-  const [ocrStatus, setOcrStatus] = useState<OcrStatus | null>(null);
-  const [ocrBusy, setOcrBusy] = useState(false);
-  const [ocrEngine, setOcrEngine] = useState<"tesseract" | "accurate">("tesseract");
-  const [packError, setPackError] = useState<string | null>(null);
   const etaRef = useRef<{ phase: string; done: number; at: number; total: number }>({
     phase: "",
     done: 0,
@@ -110,24 +104,16 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     return () => window.removeEventListener("keydown", onKey);
   }, [capturing]);
 
-  // Optional packs: load state when the step opens and poll while downloading.
+  // Load OCR state when the final screen opens.
   useEffect(() => {
-    if (step !== 4) return;
-    invoke<ModelsStatus>("get_models_status").then(setModelsStatus).catch(() => {});
-    invoke<ModelsStatus>("get_ocr_pack_status").then(setOcrPackStatus).catch(() => {});
+    if (step !== 1) return;
     invoke<OcrStatus>("get_ocr_status").then(setOcrStatus).catch(() => {});
+    invoke<ModelsStatus>("get_ocr_pack_status").then(setOcrPackStatus).catch(() => {});
   }, [step]);
 
+  // Poll while an OCR pack download is running.
   useEffect(() => {
-    if (step !== 4 || !modelsStatus?.downloading) return;
-    const id = window.setInterval(() => {
-      invoke<ModelsStatus>("get_models_status").then(setModelsStatus).catch(() => {});
-    }, 600);
-    return () => window.clearInterval(id);
-  }, [step, modelsStatus?.downloading]);
-
-  useEffect(() => {
-    if (step !== 4 || !ocrPackStatus?.downloading) return;
+    if (step !== 1 || !ocrPackStatus?.downloading) return;
     const id = window.setInterval(() => {
       invoke<ModelsStatus>("get_ocr_pack_status").then(setOcrPackStatus).catch(() => {});
     }, 600);
@@ -183,8 +169,11 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         watchedDirs: selectedDirs,
         excludedDirs: excludedDirs,
         shortcut: shortcut,
-        ocrEngine,
+        ocrEngine: selectedOcrEngine,
       });
+      // The default text model downloads without asking. Failure is not fatal:
+      // keyword search works without it, and Settings can retry.
+      invoke("download_models").catch((err) => console.warn("Model download did not start:", err));
       // Only touch autostart when the user asked for it; off is the default.
       if (startAtLogin) {
         await invoke("set_autostart", { enabled: true }).catch((err) =>
@@ -335,7 +324,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
-            {[0, 1, 2, 3, 4].map((s) => (
+            {[0, 1].map((s) => (
               <span
                 key={s}
                 className={`h-1 w-6 rounded-full transition-colors duration-300 ${
@@ -358,23 +347,6 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
       {/* Body — one decision per screen */}
       <main className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-8 pb-6 pt-2">
         {step === 0 && (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <img
-              src={theme === "paper" ? "/setup-icon-paper.png" : "/setup-icon-void.png"}
-              alt="Kensaku"
-              className="h-28 w-28 object-contain"
-            />
-            <h1 className="pt-4 text-[20px] font-semibold tracking-tight text-fg">
-              Find anything on this computer.
-            </h1>
-            <p className="max-w-sm text-[13px] leading-relaxed text-muted">
-              Choose a few folders. Kensaku reads them once, then search is instant.
-              Nothing leaves this device.
-            </p>
-          </div>
-        )}
-
-        {step === 1 && (
           <div className="w-full max-w-lg space-y-4">
             <div className="pb-1">
               <h2 className="text-[17px] font-semibold tracking-tight text-fg">
@@ -435,372 +407,232 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
           </div>
         )}
 
-        {step === 2 && (
-          <div className="w-full max-w-lg space-y-4">
-            <div className="pb-1">
-              <h2 className="text-[17px] font-semibold tracking-tight text-fg">
-                What should we skip?
-              </h2>
-              <p className="text-[12px] text-muted">
-                Ignored names keep the index lean and every query instant. A preset is a good default.
-              </p>
-            </div>
-            <div className="flex gap-1.5">
-              {Object.keys(PRESETS).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setExcludedDirs(PRESETS[p])}
-                  className="flex h-7 items-center rounded-full border border-line px-3 text-[11px] text-muted transition-colors hover:border-line-strong hover:text-fg"
-                >
-                  {p} preset
-                </button>
-              ))}
-            </div>
-            <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto rounded-[12px] border border-line bg-elevated p-3">
-              {excludedDirs.map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  title={`Remove ${d}`}
-                  onClick={() => setExcludedDirs((prev) => prev.filter((x) => x !== d))}
-                  className="group flex h-6 items-center gap-1.5 rounded-full bg-sunken px-2.5 font-mono text-[11px] text-muted transition-colors hover:text-danger"
-                >
-                  {d}
-                  <X className="h-3 w-3 opacity-50 group-hover:opacity-100" />
-                </button>
-              ))}
-            </div>
-            <input
-              type="text"
-              value={customExcludeInput}
-              placeholder="Add an ignored name — Enter"
-              onChange={(e) => setCustomExcludeInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && customExcludeInput.trim()) {
-                  const t = customExcludeInput.trim();
-                  setExcludedDirs((prev) => (prev.includes(t) ? prev : [...prev, t]));
-                  setCustomExcludeInput("");
-                }
-              }}
-              spellCheck={false}
-              className="h-9 w-full rounded-[8px] border border-line bg-elevated px-3 font-mono text-[11px] text-fg outline-none transition-colors focus:border-accent placeholder:text-subtle"
-            />
-          </div>
-        )}
-        {step === 3 && (
-          <div className="w-full max-w-lg space-y-4">
-            <div className="pb-1">
-              <h2 className="text-[17px] font-semibold tracking-tight text-fg">
-                Preferences
-              </h2>
-              <p className="text-[12px] text-muted">
-                Appearance and one keyboard shortcut. You can change both later.
-              </p>
-            </div>
-            <div className="surface flex items-center justify-between px-4 py-3">
-              <div>
-                <span className="block text-[12px] font-medium text-fg">Theme</span>
-                <span className="block text-[11px] text-muted">paper or void</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setTheme(theme === "paper" ? "void" : "paper")}
-                className="flex h-8 items-center gap-1.5 rounded-[8px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong"
-              >
-                {theme === "paper" ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
-                {theme}
-              </button>
-            </div>
-            <div className="surface px-4 py-3">
-              <span className="block text-[12px] font-medium text-fg">Global shortcut</span>
-              <span className="block text-[11px] text-muted">Toggles the window anywhere.</span>
-              <button
-                type="button"
-                onClick={() => setCapturing(true)}
-                className={`mt-2 flex h-9 min-w-40 items-center justify-center rounded-[8px] border px-3 font-mono text-[11px] transition-colors ${
-                  capturing
-                    ? "border-fg text-fg"
-                    : "border-line bg-bg text-fg hover:border-line-strong"
-                }`}
-              >
-                {capturing ? "press keys… (Esc to cancel)" : shortcut}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 4 && (
-          <div className="w-full max-w-lg space-y-4">
-            <div className="pb-1">
-              <h2 className="text-[17px] font-semibold tracking-tight text-fg">
-                Optional packs
-              </h2>
-              <p className="text-[12px] text-muted">
-                Optional. Keyword search works without any of these.
-              </p>
-            </div>
-            <div className="surface flex items-center justify-between px-4 py-3">
-              <div className="min-w-0 pr-4">
-                <span className="block text-[12px] font-medium text-fg">Start at sign-in</span>
-                <span className="block text-[11px] text-muted">
-                  Open Kensaku when you sign in, so search is ready at once.
-                </span>
-              </div>
-              <Switch checked={startAtLogin} onChange={setStartAtLogin} />
-            </div>
-            <div className="space-y-2">
-              <div className="surface px-4 py-3">
-                <span className="block text-[12px] font-medium text-fg">Choose one OCR engine</span>
-                <span className="block text-[11px] text-muted">
-                  Download only the engine you want. Both read images; they are alternatives.
-                </span>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => setOcrEngine("tesseract")}
-                    className={`rounded-[12px] border px-3 py-2 text-left transition-colors ${
-                      ocrEngine === "tesseract"
-                        ? "border-fg bg-sunken"
-                        : "border-line hover:border-line-strong"
-                    }`}
-                  >
-                    <span className="block text-[11px] font-medium text-fg">Tesseract</span>
-                    <span className="block text-[11px] text-muted">Fast · smaller · default</span>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!ocrStatus?.accurate_compiled}
-                    onClick={() => setOcrEngine("accurate")}
-                    className={`rounded-[12px] border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
-                      ocrEngine === "accurate"
-                        ? "border-fg bg-sunken"
-                        : "border-line hover:border-line-strong"
-                    }`}
-                  >
-                    <span className="block text-[11px] font-medium text-fg">PP-OCRv6</span>
-                    <span className="block text-[11px] text-muted">Slower · may read small UI text better</span>
-                  </button>
+        {step === 1 && (
+          <div className="w-full max-w-2xl space-y-6">
+            {/* Read Images (OCR) */}
+            <section className="space-y-3">
+              <div className="flex items-center gap-2">
+                <ScanText className="h-4 w-4 text-muted" />
+                <div>
+                  <h2 className="text-[15px] font-semibold tracking-tight text-fg">Read images (OCR)</h2>
+                  <p className="text-[11px] text-muted">Optional, but recommended. Start stays disabled until one engine is ready.</p>
                 </div>
-                {!ocrStatus?.accurate_compiled && (
-                  <p className="pt-2 text-[11px] text-subtle">
-                    PP-OCRv6 is not compiled into this build. Rebuild with default features to enable it.
-                  </p>
-                )}
               </div>
-
-              {ocrEngine === "tesseract" && (
-              <div className="surface px-4 py-3">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <span className="block text-[12px] font-medium text-fg">OCR language data</span>
-                    <span className="block text-[11px] text-muted">English tessdata, ~4 MB · uses Tesseract</span>
-                  </div>
-                  {ocrStatus?.available ? (
-                    <span className="flex h-8 items-center gap-1.5 rounded-[8px] px-2 text-[11px] text-success">
-                      <Check className="h-3.5 w-3.5" /> Ready
+              <div className="space-y-2">
+                {/* Tesseract */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedOcrEngine("tesseract")}
+                  className={`flex w-full items-center justify-between rounded-[12px] border px-4 py-3 text-left transition-colors ${
+                    selectedOcrEngine === "tesseract" ? "border-accent bg-accent/5" : "border-line bg-elevated hover:border-line-strong"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`flex h-4 w-4 items-center justify-center rounded-full border ${selectedOcrEngine === "tesseract" ? "border-accent bg-accent text-accent-fg" : "border-line-strong"}`}>
+                      {selectedOcrEngine === "tesseract" && <span className="h-1.5 w-1.5 rounded-full bg-accent-fg" />}
                     </span>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={ocrBusy}
-                      onClick={async () => {
-                        setPackError(null);
-                        setOcrBusy(true);
-                        try {
-                          const status = await invoke<OcrStatus>("download_ocr_language");
-                          setOcrStatus(status);
-                        } catch (e) {
-                          setPackError(`OCR download failed: ${String(e)}`);
-                        } finally {
-                          setOcrBusy(false);
-                        }
-                      }}
-                      className="flex h-8 items-center gap-1.5 rounded-[8px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
-                    >
-                      {ocrBusy ? (
-                        <>
-                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> Downloading…
-                        </>
-                      ) : (
-                        <>
-                          <Download className="h-3.5 w-3.5" /> Download
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
-                {ocrStatus && !ocrStatus.available && !ocrBusy && (
-                  <p className="pt-1.5 text-[11px] text-muted">
-                    {ocrStatus.engine_present
-                      ? "Tesseract found; language data is still missing."
-                      : "Tesseract is not installed; language data alone will not enable OCR."}
-                  </p>
-                )}
-              </div>
-              )}
-
-              {ocrEngine === "accurate" && (ocrStatus?.accurate_compiled ? (
-                <div className="surface px-4 py-3">
-                  <div className="flex items-center justify-between gap-4">
                     <div>
-                      <span className="block text-[12px] font-medium text-fg">
-                        PP-OCRv6 pack
-                      </span>
-                      <span className="block text-[11px] text-muted">
-                        ~6 MB · slower, in-process · may read small UI text better
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[13px] font-medium text-fg">Tesseract</span>
+                      </div>
+                      <span className="text-[11px] text-muted">Fast · smaller · default</span>
                     </div>
-                    {ocrPackStatus?.ready ? (
-                      <span className="flex h-8 items-center gap-1.5 rounded-[8px] px-2 text-[11px] text-success">
-                        <Check className="h-3.5 w-3.5" /> Ready
-                      </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {ocrStatus?.available ? (
+                      <>
+                        <span className="h-2 w-2 rounded-full bg-success" />
+                        <span className="text-[11px] text-success">Ready</span>
+                      </>
                     ) : (
                       <button
                         type="button"
-                        disabled={ocrPackStatus?.downloading}
-                        onClick={async () => {
+                        disabled={ocrBusy || !ocrStatus?.engine_present}
+                        onClick={async (e) => {
+                          e.stopPropagation();
                           setPackError(null);
+                          setOcrBusy(true);
                           try {
-                            setOcrPackStatus(
-                              await invoke<ModelsStatus>("download_ocr_pack"),
-                            );
-                          } catch (e) {
-                            setPackError(`PP-OCRv6 download failed: ${String(e)}`);
+                            const status = await invoke<OcrStatus>("download_ocr_language");
+                            setOcrStatus(status);
+                          } catch (err) {
+                            setPackError(`OCR download failed: ${String(err)}`);
+                          } finally {
+                            setOcrBusy(false);
                           }
                         }}
-                        className="flex h-8 shrink-0 items-center gap-1.5 rounded-[8px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                        className="flex h-7 items-center gap-1.5 rounded-[8px] border border-line px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
                       >
-                        {ocrPackStatus?.downloading ? (
-                          <>
-                            <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> Downloading…
-                          </>
-                        ) : (
-                          <>
-                            <Download className="h-3.5 w-3.5" /> Download
-                          </>
-                        )}
+                        {ocrBusy ? <LoaderCircle className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                        {ocrBusy ? "Downloading…" : "Download"}
                       </button>
                     )}
                   </div>
-                  {ocrPackStatus?.error && (
-                    <p className="pt-1.5 text-[11px] text-warning">{ocrPackStatus.error}</p>
-                  )}
-                </div>
-              ) : (
-                <div className="surface px-4 py-3">
-                  <div>
-                    <span className="block text-[12px] font-medium text-fg">PP-OCRv6 pack</span>
-                    <span className="block text-[11px] text-muted">Not compiled into this build.</span>
-                  </div>
-                </div>
-              ))}
+                </button>
 
-              <div className="surface px-4 py-3">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <span className="block text-[12px] font-medium text-fg">Semantic model</span>
-                    <span className="block text-[11px] text-muted">
-                      Optional neural tier for better recall
+                {/* PP-OCRv6 */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedOcrEngine("accurate")}
+                  className={`flex w-full items-center justify-between rounded-[12px] border px-4 py-3 text-left transition-colors ${
+                    selectedOcrEngine === "accurate" ? "border-accent bg-accent/5" : "border-line bg-elevated hover:border-line-strong"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`flex h-4 w-4 items-center justify-center rounded-full border ${selectedOcrEngine === "accurate" ? "border-accent bg-accent text-accent-fg" : "border-line-strong"}`}>
+                      {selectedOcrEngine === "accurate" && <span className="h-1.5 w-1.5 rounded-full bg-accent-fg" />}
                     </span>
+                    <div>
+                      <span className="text-[13px] font-medium text-fg">PP-OCRv6</span>
+                      <div className="text-[11px] text-muted">Slower · may read small UI text better</div>
+                    </div>
                   </div>
-                  {modelsStatus?.ready ? (
-                    <span className="flex h-8 items-center gap-1.5 rounded-[8px] px-2 text-[11px] text-success">
-                      <Check className="h-3.5 w-3.5" /> Ready
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={modelsStatus?.downloading}
-                      onClick={async () => {
-                        setPackError(null);
-                        try {
-                          await invoke("download_models");
-                          const status = await invoke<ModelsStatus>("get_models_status");
-                          setModelsStatus(status);
-                        } catch (e) {
-                          setPackError(`Model download failed: ${String(e)}`);
-                        }
-                      }}
-                      className="flex h-8 shrink-0 items-center gap-1.5 rounded-[8px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
-                    >
-                      {modelsStatus?.downloading ? (
-                        <>
-                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> Downloading…
-                        </>
-                      ) : (
-                        <>
-                          <Download className="h-3.5 w-3.5" /> Download
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
-                {modelsStatus?.downloading && modelsStatus.progress && (
-                  <div className="space-y-1 pt-2">
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-sunken">
-                      <div
-                        className="h-full rounded-full bg-accent transition-[width] duration-300"
-                        style={{
-                          width: `${Math.max(
-                            4,
-                            modelsStatus.progress.total > 0
-                              ? Math.round(
-                                  (modelsStatus.progress.downloaded / modelsStatus.progress.total) * 100,
-                                )
-                              : 0,
-                          )}%`,
+                  <div className="flex items-center gap-2">
+                    {ocrPackStatus?.ready ? (
+                      <>
+                        <span className="h-2 w-2 rounded-full bg-success" />
+                        <span className="text-[11px] text-success">Ready</span>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={ocrPackStatus?.downloading || !ocrStatus?.accurate_compiled}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          setPackError(null);
+                          setOcrPackBusy(true);
+                          try {
+                            const status = await invoke<ModelsStatus>("download_ocr_pack");
+                            setOcrPackStatus(status);
+                          } catch (err) {
+                            setPackError(`PP-OCRv6 download failed: ${String(err)}`);
+                          } finally {
+                            setOcrPackBusy(false);
+                          }
                         }}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between gap-2 text-[11px] text-subtle">
-                      <code className="min-w-0 truncate font-mono">
-                        {modelsStatus.progress.file || "downloading…"}
-                      </code>
-                      <span className="shrink-0 font-mono">
-                        {(modelsStatus.progress.downloaded / 1048576).toFixed(1)} /{" "}
-                        {(modelsStatus.progress.total / 1048576).toFixed(1)} MB
-                      </span>
-                    </div>
+                        className="flex h-7 items-center gap-1.5 rounded-[8px] border border-line px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                      >
+                        {ocrPackStatus?.downloading || ocrPackBusy ? <LoaderCircle className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                        {ocrPackStatus?.downloading || ocrPackBusy ? "Downloading…" : "Download"}
+                      </button>
+                    )}
                   </div>
+                </button>
+
+                {packError && (
+                  <p className="break-words rounded-[8px] border border-danger/30 bg-danger/5 px-3 py-2 font-mono text-[11px] text-danger">
+                    {packError}
+                  </p>
                 )}
-                {modelsStatus?.error && !modelsStatus.downloading && (
-                  <p className="pt-1.5 text-[11px] text-danger">{modelsStatus.error}</p>
+                {!ocrStatus?.engine_present && !ocrStatus?.accurate_compiled && (
+                  <p className="text-[11px] text-subtle">
+                    Tesseract is not installed and PP-OCRv6 is not compiled into this build.
+                  </p>
                 )}
               </div>
-            </div>
+            </section>
 
-            {packError && (
-              <p className="break-words rounded-[8px] border border-danger/30 bg-danger/5 px-3 py-2 font-mono text-[11px] text-danger">
-                {packError}
+            {/* Global Shortcut */}
+            <section className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Keyboard className="h-4 w-4 text-muted" />
+                <div>
+                  <h2 className="text-[15px] font-semibold tracking-tight text-fg">Global shortcut</h2>
+                  <p className="text-[11px] text-muted">Open Kensaku from anywhere. Esc hides it; the app keeps running in the background.</p>
+                  <p className="text-[11px] text-subtle">On Linux/Wayland, if the key does not register, bind a system shortcut to <code className="font-mono">kensaku --toggle</code>.</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between rounded-[12px] border border-line bg-elevated px-4 py-3">
+                <div className="flex items-center gap-1.5">
+                  {shortcut.split("+").map((k, i) => (
+                    <kbd key={i} className="rounded-[6px] border border-line px-2 py-1 font-mono text-[11px] text-fg">{k}</kbd>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCapturing(true)}
+                  className="flex h-7 w-7 items-center justify-center rounded-[8px] text-muted transition-colors hover:bg-sunken hover:text-fg"
+                  aria-label="Edit shortcut"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <p className="pt-1 text-[13px] font-semibold text-accent">
+                Open: {shortcut} · Close: Esc
               </p>
-            )}
+              {capturing && (
+                <p className="text-[11px] text-muted">Press your new shortcut… (Esc to cancel)</p>
+              )}
+            </section>
+
+            {/* What Kensaku does */}
+            <section className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-muted" />
+                <div>
+                  <h2 className="text-[15px] font-semibold tracking-tight text-fg">What Kensaku does</h2>
+                  <p className="text-[11px] text-muted">Search your files, contents and images — all locally.</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="rounded-[10px] border border-line bg-elevated p-3">
+                  <FileText className="h-4 w-4 text-muted" />
+                  <p className="pt-1.5 text-[12px] font-medium text-fg">Search everything</p>
+                  <p className="text-[11px] text-muted">Find files by name, content, image text (OCR) and meaning.</p>
+                </div>
+                <div className="rounded-[10px] border border-line bg-elevated p-3">
+                  <Filter className="h-4 w-4 text-muted" />
+                  <p className="pt-1.5 text-[12px] font-medium text-fg">Powerful filters</p>
+                  <p className="text-[11px] text-muted">Type, extension, folder, date, size, regex. Use / for commands.</p>
+                </div>
+                <div className="rounded-[10px] border border-line bg-elevated p-3">
+                  <Eye className="h-4 w-4 text-muted" />
+                  <p className="pt-1.5 text-[12px] font-medium text-fg">Quick preview</p>
+                  <p className="text-[11px] text-muted">Press Space to preview. Enter to open. Shift+Enter to show in folder. Esc clears, then hides.</p>
+                </div>
+                <div className="rounded-[10px] border border-line bg-elevated p-3">
+                  <Copy className="h-4 w-4 text-muted" />
+                  <p className="pt-1.5 text-[12px] font-medium text-fg">Drag and drop</p>
+                  <p className="text-[11px] text-muted">Drag a result to copy or move the file to another app.</p>
+                </div>
+                <div className="rounded-[10px] border border-line bg-elevated p-3">
+                  <Bot className="h-4 w-4 text-muted" />
+                  <p className="pt-1.5 text-[12px] font-medium text-fg">AI agent ready</p>
+                  <p className="text-[11px] text-muted">Works with AI agents over MCP (read-only by default).</p>
+                </div>
+                <div className="rounded-[10px] border border-line bg-elevated p-3">
+                  <Shield className="h-4 w-4 text-muted" />
+                  <p className="pt-1.5 text-[12px] font-medium text-fg">Local and private</p>
+                  <p className="text-[11px] text-muted">Nothing leaves your machine. Index stays local.</p>
+                </div>
+              </div>
+            </section>
           </div>
         )}
-
       </main>
 
       {/* Footer: step nav */}
       <footer className="flex h-16 shrink-0 items-center justify-between border-t border-line px-5">
         <div className="min-w-0 text-[11px] text-subtle">
           {step === 1 && `${selectedDirs.length} folder${selectedDirs.length === 1 ? "" : "s"} selected`}
-          {step === 2 && `${excludedDirs.length} ignored names`}
-
+          {step === 1 && !(ocrStatus?.available || ocrPackStatus?.ready) && (
+            <span className="ml-2 text-warning">· download an OCR engine to enable Start</span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {step > 0 && (
             <button
               type="button"
-              onClick={() => setStep((s) => (s - 1) as 0 | 1 | 2 | 3 | 4)}
+              onClick={() => setStep((s) => (s - 1) as 0 | 1)}
               className="flex h-9 items-center gap-1.5 rounded-[8px] px-3 text-[13px] text-muted transition-colors hover:text-fg"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Back
             </button>
           )}
-          {step < 4 ? (
+          {step < 1 ? (
             <button
               type="button"
-              onClick={() => setStep((s) => (s + 1) as 0 | 1 | 2 | 3 | 4)}
+              onClick={() => setStep((s) => (s + 1) as 0 | 1)}
               disabled={step === 1 && selectedDirs.length === 0}
               className="flex h-9 items-center gap-1.5 rounded-[8px] bg-fg px-5 text-[13px] font-medium text-bg transition-opacity hover:opacity-85 disabled:opacity-40"
             >
@@ -810,7 +642,11 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             <button
               type="button"
               onClick={handleFinish}
-              disabled={isSubmitting || selectedDirs.length === 0}
+              disabled={
+                isSubmitting ||
+                selectedDirs.length === 0 ||
+                !(ocrStatus?.available || ocrPackStatus?.ready)
+              }
               className="flex h-9 items-center gap-2 rounded-[8px] bg-fg px-5 text-[13px] font-medium text-bg transition-opacity hover:opacity-85 disabled:opacity-40"
             >
               {isSubmitting && <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}

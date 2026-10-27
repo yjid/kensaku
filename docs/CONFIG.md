@@ -1,0 +1,35 @@
+# Configuration reference (`config.toml` / `config.json`)
+
+Kensaku stores its settings in the OS config directory:
+- Linux: `~/.config/kensaku/config.json`
+- macOS: `~/Library/Application Support/kensaku/config.json`
+- Windows: `%APPDATA%\\kensaku\\config.json`
+
+The file is JSON (despite the `config.toml` shorthand used in docs). Keys are
+optional where noted; missing keys fall back to the listed default.
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `watched_dirs` | string[] | `[]` | Folders to index. |
+| `excluded_dirs` | string[] | common build/cache names | Directory names to skip. |
+| `excluded_extensions` | string[] | media/archive/binary exts | File extensions to skip. |
+| `shortcut` | string | `Alt+Space` | Global toggle shortcut. |
+| `max_results` | number | `200` | Maximum results per query. |
+| `is_setup_complete` | bool | `false` | First-run setup finished. |
+| `first_scan_done` | bool | `false` | First full crawl finished. |
+| `skip_hidden` | bool | `true` | Skip dotfiles/dotdirs. |
+| `semantic_enabled` | bool | `true` | Enable semantic (embedding) tier. |
+| `semantic_model` | string | `static` | `static`, `smart`, `none`. |
+| `semantic_f32_table` | bool | `false` | Keep static table in f32. |
+| `crawl_mode` | string | `full` | `full`, `balanced`, `eco`. |
+| `pause_indexing` | bool | `false` | Pause background crawling. |
+| `mcp_allow_reindex` | bool | `false` | Allow MCP `reindex` write tool. |
+| `ocr_enabled` | bool | `true` | Enable OCR for images. |
+| `ocr_engine` | string | `tesseract` | `tesseract` or `accurate`. |
+| `extractors` | object[] | `[]` | Opt-in external extractors. |
+| `visual_search_beta_enabled` | bool | `false` | Beta visual search tab. |
+| `agent_scoped_roots` | string[] | `[]` | MCP/CLI read-only scope roots. |
+| `include_ignored` | bool | `false` | Honor `.gitignore` (false = ignore parity). |
+| `results_view` | string | `grid` | `grid` or `list`. |
+| `show_thumbnails` | bool | `true` | Show thumbnails. |
+| `start_at_login` | bool | `false` | Autostart on sign-in. |

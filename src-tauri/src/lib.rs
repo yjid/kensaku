@@ -8,6 +8,7 @@ pub mod doctor;
 pub mod embed;
 pub mod indexer;
 pub mod models;
+pub mod main_window;
 pub mod ocr;
 pub mod preview;
 pub mod query;
@@ -20,7 +21,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock};
 use tauri::{
-    Manager, WindowEvent,
+    Manager,
     menu::{Menu, MenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
 };
@@ -164,6 +165,38 @@ fn apply_pending_reset_in(dir: &std::path::Path) -> bool {
 /// Must run before `KensakuConfig::load()` and before `IndexerManager::new()`:
 /// removing the directory while the database or index is open would leave
 /// handles pointing at deleted inodes.
+fn rebuild_marker_path_in(dir: &std::path::Path) -> std::path::PathBuf {
+    dir.join(".rebuild-requested")
+}
+
+fn rebuild_marker_path() -> std::path::PathBuf {
+    rebuild_marker_path_in(&KensakuConfig::config_dir())
+}
+
+pub fn rebuild_pending() -> bool {
+    rebuild_marker_path().exists()
+}
+
+fn apply_pending_rebuild_in(dir: &std::path::Path) -> bool {
+    let marker = rebuild_marker_path_in(dir);
+    if !marker.exists() {
+        return false;
+    }
+    // Keep settings (config.json); wipe only the index and metadata.
+    let _ = std::fs::remove_dir_all(dir.join("index"));
+    let _ = std::fs::remove_dir_all(dir.join("thumbs"));
+    for name in ["metadata.db", "metadata.db-wal", "metadata.db-shm"] {
+        let _ = std::fs::remove_file(dir.join(name));
+    }
+    let _ = std::fs::remove_file(&marker);
+    eprintln!("[Kensaku] Rebuild requested: index cleared in {}", dir.display());
+    true
+}
+
+fn maybe_apply_pending_rebuild() {
+    apply_pending_rebuild_in(&KensakuConfig::config_dir());
+}
+
 fn maybe_apply_pending_reset() {
     apply_pending_reset_in(&KensakuConfig::config_dir());
 }
@@ -177,6 +210,7 @@ pub fn run() {
 
     commands::init_process_start();
 
+    maybe_apply_pending_rebuild();
     maybe_apply_pending_reset();
 
     #[cfg(unix)]
@@ -230,15 +264,8 @@ pub fn run() {
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed
-                        && let Some(window) = app.get_webview_window("main")
-                    {
-                        if window.is_visible().unwrap_or(false) {
-                            let _ = window.hide();
-                        } else {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                    if event.state() == ShortcutState::Pressed {
+                        main_window::toggle(app);
                     }
                 })
                 .build(),
@@ -280,8 +307,11 @@ pub fn run() {
             commands::get_home_data,
             commands::toggle_pin,
             commands::hide_window,
+            commands::remember_query,
+            commands::last_query,
             commands::run_doctor,
             commands::reset_all,
+            commands::rebuild_index,
             commands::get_reset_pending,
             commands::get_autostart,
             commands::set_autostart,
@@ -302,14 +332,7 @@ pub fn run() {
                     let path = toggle_request_path();
                     if path.exists() {
                         let _ = std::fs::remove_file(&path);
-                        if let Some(window) = tauri::Manager::get_webview_window(&handle, "main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
+                        main_window::toggle(&handle);
                     }
                 });
             }
@@ -322,7 +345,9 @@ pub fn run() {
 
             // 1. Register global shortcut (e.g. Alt+Space)
             if let Ok(shortcut) = Shortcut::from_str(&shortcut_str) {
-                let _ = app.global_shortcut().register(shortcut);
+                if let Err(e) = app.global_shortcut().register(shortcut) {
+                    eprintln!("[Kensaku] Could not register global shortcut '{}': {}", shortcut_str, e);
+                }
             } else {
                 eprintln!(
                     "[Kensaku] Could not parse global shortcut: {}",
@@ -339,16 +364,7 @@ pub fn run() {
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
-                    "toggle" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                    }
+                    "toggle" => main_window::toggle(app),
                     "quit" => {
                         app.exit(0);
                     }
@@ -360,15 +376,7 @@ pub fn run() {
                         ..
                     } = event
                     {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
+                        main_window::toggle(tray.app_handle());
                     }
                 });
 
@@ -378,25 +386,22 @@ pub fn run() {
 
             let _ = tray_builder.build(app);
 
-            // 3. Keep app alive in background on window close
-            if let Some(window) = app.get_webview_window("main") {
-                let window_clone = window.clone();
-                window.on_window_event(move |event| {
-                    if let WindowEvent::CloseRequested { api, .. } = event {
-                        api.prevent_close();
-                        let _ = window_clone.hide();
-                    }
-                });
-
-                // Show window on launch
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            // 3. Create the search window on launch. Closing or hiding it destroys
+            // it (see main_window.rs), so the app keeps running with no UI in memory.
+            main_window::show(app.handle());
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Kensaku application");
+        .build(tauri::generate_context!())
+        .expect("error while running Kensaku application")
+        .run(|_app, event| {
+            // Destroying the search window (hide) must not end the app. The
+            // indexer, watcher and tray keep running. Only the tray's Quit
+            // (app.exit) ends it, and that call is not prevented here.
+            if let tauri::RunEvent::ExitRequested { api, code: None, .. } = event {
+                api.prevent_exit();
+            }
+        });
 }
 
 #[cfg(test)]

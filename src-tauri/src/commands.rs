@@ -9,8 +9,10 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
+use std::str::FromStr;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 static CURRENT_SEARCH_SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -899,13 +901,19 @@ pub async fn get_config(state: State<'_, AppState>) -> Result<KensakuConfig, Str
 }
 
 #[tauri::command]
-pub async fn save_config(config: KensakuConfig, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn save_config(config: KensakuConfig, state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
     if let Some(daemon) = state.daemon.as_ref() {
         daemon.save_config(config.clone())?;
-        *state.indexer.config.write() = config;
-        return Ok(());
+        *state.indexer.config.write() = config.clone();
+    } else {
+        state.indexer.apply_config(config.clone())?;
     }
-    state.indexer.apply_config(config)
+    // Re-register the global shortcut so a newly chosen key works without a restart.
+    let _ = app.global_shortcut().unregister_all();
+    if let Ok(sc) = Shortcut::from_str(&config.shortcut) {
+        let _ = app.global_shortcut().register(sc);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -934,6 +942,7 @@ pub async fn complete_setup(
     shortcut: Option<String>,
     ocr_engine: Option<String>,
     state: State<'_, AppState>,
+    app: AppHandle,
 ) -> Result<(), String> {
     let mut config = KensakuConfig::load();
     config.watched_dirs = watched_dirs.into_iter().map(PathBuf::from).collect();
@@ -955,8 +964,15 @@ pub async fn complete_setup(
     crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
     crate::ocr::set_engine(&config.ocr_engine);
     crate::indexer::extract::set_external_extractors(config.extractors.clone());
-    *state.indexer.config.write() = config;
+    *state.indexer.config.write() = config.clone();
     state.indexer.start_indexing();
+
+    // Register the chosen global shortcut immediately so onboarding's choice
+    // works without a restart.
+    let _ = app.global_shortcut().unregister_all();
+    if let Ok(sc) = Shortcut::from_str(&config.shortcut) {
+        let _ = app.global_shortcut().register(sc);
+    }
 
     Ok(())
 }
@@ -1145,10 +1161,19 @@ pub async fn get_suggested_directories() -> Result<Vec<String>, String> {
 
 #[tauri::command]
 pub async fn hide_window(app_handle: AppHandle) -> Result<(), String> {
-    if let Some(win) = app_handle.get_webview_window("main") {
-        let _ = win.hide();
-    }
+    crate::main_window::hide(&app_handle);
     Ok(())
+}
+
+/// Keeps the search text so a recreated window restores it.
+#[tauri::command]
+pub fn remember_query(query: String) {
+    crate::main_window::remember_query(&query);
+}
+
+#[tauri::command]
+pub fn last_query() -> String {
+    crate::main_window::last_query()
 }
 
 /// Wipes all Kensaku state on the next launch.
@@ -1171,6 +1196,17 @@ pub async fn reset_all(app: AppHandle, confirm: String) -> Result<(), String> {
 
     // Never returns: the process exits and relaunches, and the fresh process
     // applies the pending reset before constructing any application state.
+    app.restart();
+}
+
+#[tauri::command]
+pub async fn rebuild_index(app: AppHandle) -> Result<(), String> {
+    let dir = KensakuConfig::config_dir();
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create config directory: {}", e))?;
+    let marker = dir.join(".rebuild-requested");
+    std::fs::write(&marker, b"1")
+        .map_err(|e| format!("Failed to write rebuild marker: {}", e))?;
     app.restart();
 }
 

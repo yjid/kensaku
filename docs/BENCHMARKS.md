@@ -183,3 +183,14 @@ search, ~128 MB of entry metadata. Linear scaling is optimistic:
 Holding the < 15 ms search target at 1M files needs a stronger prefilter
 (trigram/prefix index) or a sharded scan. Treat the 1M figures as a planning
 budget until a real corpus is measured.
+
+## Idle CPU while hidden
+
+Sample the hidden process with `pidstat` (Linux):
+
+```bash
+pidstat -u -p <kensaku-pid> 1 30
+```
+
+Or read `/proc/<pid>/stat` (utime+stime) twice a second and divide by the
+number of CPUs. Report average %CPU over 30 s while the window is hidden.
