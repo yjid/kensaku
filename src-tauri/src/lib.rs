@@ -345,7 +345,9 @@ pub fn run() {
 
             // 1. Register global shortcut (e.g. Alt+Space)
             if let Ok(shortcut) = Shortcut::from_str(&shortcut_str) {
-                let _ = app.global_shortcut().register(shortcut);
+                if let Err(e) = app.global_shortcut().register(shortcut) {
+                    eprintln!("[Kensaku] Could not register global shortcut '{}': {}", shortcut_str, e);
+                }
             } else {
                 eprintln!(
                     "[Kensaku] Could not parse global shortcut: {}",

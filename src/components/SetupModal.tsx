@@ -539,6 +539,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 <div>
                   <h2 className="text-[15px] font-semibold tracking-tight text-fg">Global shortcut</h2>
                   <p className="text-[11px] text-muted">Open Kensaku from anywhere. Esc hides it; the app keeps running in the background.</p>
+                  <p className="text-[11px] text-subtle">On Linux/Wayland, if the key does not register, bind a system shortcut to <code className="font-mono">kensaku --toggle</code>.</p>
                 </div>
               </div>
               <div className="flex items-center justify-between rounded-[12px] border border-line bg-elevated px-4 py-3">
