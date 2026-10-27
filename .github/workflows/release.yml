@@ -224,9 +224,19 @@ jobs:
           test -d artifacts
           find artifacts -type f | grep -q . || { echo "no artifacts downloaded"; exit 1; }
 
-      - name: Checksums
+      # Bundle directories contain support files with identical basenames
+      # (icon.icns, icon.ico, ...). Only stage installable artifacts so the
+      # release never gets two assets with the same name.
+      - name: Stage release assets
         run: |
-          cd artifacts
+          mkdir -p release
+          find artifacts -type f \
+            \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
+               -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \
+               -o -name 'kensaku-cli-*' \) \
+            -exec cp -t release {} +
+          test -n "$(find release -type f -print -quit)" || { echo "no release assets staged"; exit 1; }
+          cd release
           find . -type f ! -name SHA256SUMS -exec sha256sum {} + | sort -k2 > SHA256SUMS
 
       - name: Create or update the draft release
@@ -236,4 +246,4 @@ jobs:
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || \
             gh release create "$TAG" --draft --title "Kensaku $TAG" --generate-notes
-          find artifacts -type f -print0 | xargs -0 gh release upload "$TAG" --clobber
+          find release -type f -print0 | xargs -0 gh release upload "$TAG" --clobber
