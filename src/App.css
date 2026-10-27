@@ -8,45 +8,45 @@
 
 :root {
   /* paper (light) */
-  --bg: #fafaf8;
+  --bg: #f5f5f4;
   --bg-elevated: #ffffff;
-  --bg-sunken: #f2f2ee;
+  --bg-sunken: #efefed;
   --fg: #111110;
   --fg-muted: #6b6b66;
   --fg-subtle: #9a9a94;
-  --border: #e4e4de;
+  --border: #e8e8e5;
   --border-strong: #d0d0c8;
-  --accent: #2f7d6d;
+  --accent: #1c1c1e;
   --accent-fg: #ffffff;
-  --accent-soft: #e3f0ec;
+  --accent-soft: #ededeb;
   --blue: #3d5af1;
   --pink: #d98b8b;
   --olive: #8f8f5a;
   --danger: #c2452d;
   --warning: #b5761f;
-  --success: #2f7d6d;
+  --success: #3f7a55;
   --scrim: rgba(17, 17, 16, 0.32);
   --icon-tint-opacity: 0.12;
 }
 
 [data-theme="void"] {
-  --bg: #0a0a0b;
-  --bg-elevated: #121214;
-  --bg-sunken: #060607;
+  --bg: #111112;
+  --bg-elevated: #18181a;
+  --bg-sunken: #0d0d0e;
   --fg: #f2f2ef;
   --fg-muted: #9a9a96;
   --fg-subtle: #6a6a66;
   --border: #232326;
   --border-strong: #33333a;
-  --accent: #4fb39d;
-  --accent-fg: #06231d;
-  --accent-soft: #13251f;
+  --accent: #f2f2f2;
+  --accent-fg: #111111;
+  --accent-soft: #1f1f21;
   --blue: #6b86ff;
   --pink: #e0a0a0;
   --olive: #b0b07a;
   --danger: #e5644a;
   --warning: #e0a44a;
-  --success: #4fb39d;
+  --success: #6fbf8f;
   --scrim: rgba(0, 0, 0, 0.55);
   --icon-tint-opacity: 0.1;
 }
@@ -72,9 +72,8 @@
   --color-warning: var(--warning);
   --color-success: var(--success);
 
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
 }
 
 /* ------------------------------------------------------------------ */
@@ -99,7 +98,8 @@
     background: var(--bg);
     color: var(--fg);
     overflow: hidden;
-    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
     font-size: 13px;
     line-height: 1.45;
     letter-spacing: -0.01em;
@@ -157,7 +157,7 @@
   border: 1px solid var(--border);
   background: var(--bg-sunken);
   color: var(--fg-muted);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1;
   white-space: nowrap;
@@ -196,10 +196,19 @@
 /* Motion                                                              */
 /* ------------------------------------------------------------------ */
 
-@keyframes row-in {
+/* Apple-style motion. One curve for everything: the same ease-out used by
+   macOS and iOS sheets and popovers. No bounce, no linear fades. */
+:root {
+  --ease-apple: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-quick: 180ms;
+  --dur-base: 260ms;
+}
+
+/* Rows settle in with a small stagger; only the first handful animate. */
+@keyframes row-settle {
   from {
     opacity: 0;
-    transform: translateY(3px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -211,36 +220,43 @@
   opacity: 1;
 }
 
-/* Applied via inline style `--stagger-delay` on the first 8 rows. */
-@keyframes row-in-delayed {
-  from {
-    opacity: 0;
-    transform: translateY(3px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 .row-stagger {
-  animation: row-in-delayed 160ms ease-out both;
+  animation: row-settle var(--dur-base) var(--ease-apple) both;
   animation-delay: var(--stagger-delay, 0ms);
 }
 
-@keyframes overlay-in {
+/* Overlays (settings, dialogs) scale up from 97% while fading. */
+@keyframes overlay-rise {
   from {
     opacity: 0;
-    transform: translateY(4px) scale(0.99);
+    transform: scale(0.97);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: scale(1);
   }
 }
 
 .overlay-in {
-  animation: overlay-in 180ms ease-out both;
+  animation: overlay-rise var(--dur-base) var(--ease-apple) both;
+  transform-origin: center;
+}
+
+/* Menus open from their anchor corner, like a macOS popover. */
+@keyframes menu-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.menu-pop {
+  animation: menu-pop var(--dur-quick) var(--ease-apple) both;
+  transform-origin: top left;
 }
 
 @keyframes fade-in {
@@ -253,7 +269,23 @@
 }
 
 .fade-in {
-  animation: fade-in 150ms ease-out both;
+  animation: fade-in var(--dur-quick) var(--ease-apple) both;
+}
+
+/* Settings sections cross-fade in: a 6px rise and a fade, no snap. */
+@keyframes section-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.section-enter {
+  animation: section-enter var(--dur-base) var(--ease-apple) both;
 }
 
 /* Indeterminate 2px progress line under the search bar. */
@@ -306,5 +338,33 @@
   }
   .row-stagger {
     animation: none;
+  }
+}
+
+/* Hover and state changes use the same curve as the rest of the motion. */
+.transition-colors,
+.transition-opacity,
+.transition-transform,
+.transition-all {
+  transition-timing-function: var(--ease-apple);
+}
+
+/* Hover info bar: waits a beat, then rises and fades in. Calm, no bounce. */
+.hover-reveal {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 180ms var(--ease-apple), transform 220ms var(--ease-apple);
+  transition-delay: 0ms;
+}
+.group:hover .hover-reveal {
+  opacity: 1;
+  transform: translateY(0);
+  transition-delay: 220ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hover-reveal,
+  .group:hover .hover-reveal {
+    transition: none;
+    transform: none;
   }
 }

@@ -149,7 +149,7 @@ export function AskPanel({
               </p>
               {answer.sources.length > 0 && (
                 <div className="mt-3 border-t border-line pt-2">
-                  <p className="pb-1 text-[10px] uppercase tracking-wider text-subtle">
+                  <p className="pb-1 text-[11px] text-muted">
                     Sources {answer.answered ? "(cited first)" : ""}
                   </p>
                   {answer.sources.map((source) => (
