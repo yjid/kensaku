@@ -2,7 +2,7 @@ import React from "react";
 import { SearchResult } from "../types";
 import { FileTypeIcon } from "./FileTypeIcon";
 import { HighlightedName } from "./EmptyState";
-import { isThumbImage, useThumbnail, THUMBNAIL_LAZY_LIMIT } from "../lib/thumbnails";
+import { isThumbImage, useThumbnail } from "../lib/thumbnails";
 import { formatBytes, formatRelativeTime } from "../lib/format";
 
 /* Result card. Grid only. Every card is a true square. Files with a
@@ -45,10 +45,10 @@ function matchLabel(matchType: SearchResult["match_type"]): string {
 }
 
 export const ResultItem = React.memo<ResultItemProps>(
-  ({ result, query, index, isSelected, onSelect, onOpen, onContextMenu }) => {
+  ({ result, query, isSelected, onSelect, onOpen, onContextMenu }) => {
     /* Thumbnails only for image files in the initial window. */
-    const imageEligible =
-      !result.is_dir && isThumbImage(result.filename) && index < THUMBNAIL_LAZY_LIMIT;
+    // The virtual grid mounts only visible cards, so every image card may ask.
+    const imageEligible = !result.is_dir && isThumbImage(result.filename);
     const { src: thumbSrc, failed: thumbFailed } = useThumbnail(result.path, imageEligible);
     const hasThumb = Boolean(thumbSrc) && !thumbFailed;
 

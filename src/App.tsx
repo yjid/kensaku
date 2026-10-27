@@ -415,26 +415,42 @@ function App() {
     };
   }, [results, query, isSetupComplete]);
 
+  /* Infinite scroll guard. A page that adds nothing new marks this query as
+     exhausted, so the grid stops asking. In-flight requests are ref-guarded,
+     so repeated near-end signals can't stack up requests. */
+  const pageKey = `${query}\u0000${sort}`;
+  const [exhaustedKey, setExhaustedKey] = useState<string | null>(null);
+  const loadingRef = useRef(false);
+  const resultsLenRef = useRef(0);
+  resultsLenRef.current = results.length;
+
   const loadMore = useCallback(async () => {
-    if (loadingMore || !query.trim()) return;
+    if (loadingRef.current || !query.trim() || exhaustedKey === pageKey) return;
+    loadingRef.current = true;
     setLoadingMore(true);
+    const requestKey = pageKey;
     try {
-      const res = await invoke<SearchResponse>("search", {
-        query,
-        sort,
-        offset: results.length,
-      });
+      const offset = resultsLenRef.current;
+      const res = await invoke<SearchResponse>("search", { query, sort, offset });
+      // Discard a page for a query the user has already left.
+      if (queryRef.current !== query) return;
+      let added = 0;
       setResults((prev) => {
         const seen = new Set(prev.map((r) => r.path));
-        return [...prev, ...res.results.filter((r) => !seen.has(r.path))];
+        const fresh = res.results.filter((r) => !seen.has(r.path));
+        added = fresh.length;
+        return fresh.length ? [...prev, ...fresh] : prev;
       });
       setTotal(res.total ?? 0);
+      if (added === 0 || res.results.length === 0) setExhaustedKey(requestKey);
     } catch (err) {
       console.error("Load more error:", err);
+      setExhaustedKey(requestKey);
     } finally {
+      loadingRef.current = false;
       setLoadingMore(false);
     }
-  }, [query, sort, results.length, loadingMore]);
+  }, [query, sort, pageKey, exhaustedKey]);
 
   // Results never reorder while typing — sort is backend-provided and stable;
   // nothing needed here beyond identity-stable render keys.
@@ -763,7 +779,6 @@ function App() {
 
   const hasQuery = query.trim() !== "";
   const noResults = hasQuery && !isCommandMode && displayResults.length === 0;
-  const isIndexing = indexingStatus?.is_indexing ?? false;
   // The list keyboard navigation operates over — search results or recent files.
   const navList = displayResults;
 
@@ -843,14 +858,6 @@ function App() {
               )}
               {scopePrefix !== null && (
                 <ScopeMenu items={scopeItems} activeIndex={scopeIndex} onPick={applyScope} />
-              )}
-
-              {/* Global indexing progress: 2px accent line under the bar —
-                  pure feedback, no numbers. Stale results stay visible. */}
-              {isIndexing && (
-                <div className="progress-track shrink-0 px-0">
-                  <div className="progress-bar" />
-                </div>
               )}
 
               {/* Category chips */}
@@ -995,7 +1002,7 @@ function App() {
                       items={displayResults}
                       getKey={(res) => res.path}
                       selectedIndex={selectedIndex}
-                      hasMore={results.length < total}
+                      hasMore={results.length < total && exhaustedKey !== pageKey}
                       loading={loadingMore}
                       onNearEnd={loadMore}
                       onColumns={(cols) => {

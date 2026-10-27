@@ -1133,8 +1133,7 @@ pub async fn get_scope_suggestions(
 pub async fn get_suggested_directories() -> Result<Vec<String>, String> {
     let mut dirs_list = Vec::new();
     if let Some(home) = dirs::home_dir() {
-        dirs_list.push(home.to_string_lossy().to_string());
-
+        // Suggestions only: the home folder itself is never preselected.
         let candidates = [
             "Documents",
             "Downloads",

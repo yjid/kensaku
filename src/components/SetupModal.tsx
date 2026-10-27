@@ -61,7 +61,6 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     invoke<string[]>("get_suggested_directories")
       .then((dirs) => {
         setSuggestedDirs(dirs);
-        if (dirs.length > 0) setSelectedDirs(dirs.slice(0, 3));
       })
       .catch((err) => console.error("Failed to load suggested dirs:", err));
 
