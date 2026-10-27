@@ -355,7 +355,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             <img
               src={theme === "paper" ? "/setup-icon-paper.png" : "/setup-icon-void.png"}
               alt="Kensaku"
-              className="h-24 w-24 object-contain"
+              className="h-28 w-28 object-contain"
             />
             <h1 className="pt-4 text-[22px] font-semibold tracking-tight text-fg">
               Find anything on this computer.
@@ -776,7 +776,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             <button
               type="button"
               onClick={() => setStep((s) => (s - 1) as 0 | 1 | 2 | 3 | 4)}
-              className="flex h-8 items-center gap-1.5 rounded-[10px] border border-line px-3 text-[12px] text-muted transition-colors hover:border-line-strong hover:text-fg"
+              className="flex h-9 items-center gap-1.5 rounded-[10px] px-3 text-[13px] text-muted transition-colors hover:text-fg"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Back
             </button>
@@ -786,7 +786,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               type="button"
               onClick={() => setStep((s) => (s + 1) as 0 | 1 | 2 | 3 | 4)}
               disabled={step === 1 && selectedDirs.length === 0}
-              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-accent px-4 text-[12px] font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="flex h-9 items-center gap-1.5 rounded-[10px] bg-fg px-5 text-[13px] font-medium text-bg transition-opacity hover:opacity-85 disabled:opacity-40"
             >
               Continue <ArrowRight className="h-3.5 w-3.5" />
             </button>
@@ -795,7 +795,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               type="button"
               onClick={handleFinish}
               disabled={isSubmitting || selectedDirs.length === 0}
-              className="flex h-8 items-center gap-2 rounded-[10px] bg-accent px-4 text-[12px] font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="flex h-9 items-center gap-2 rounded-[10px] bg-fg px-5 text-[13px] font-medium text-bg transition-opacity hover:opacity-85 disabled:opacity-40"
             >
               {isSubmitting && <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}
               Start indexing

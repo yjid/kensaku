@@ -199,13 +199,13 @@ export const ResultItem = React.memo<ResultItemProps>(
         tabIndex={-1}
         className={`
           group relative flex ${index < 8 ? "row-stagger" : "row-enter"}
-          h-14
-          cursor-pointer select-none items-center gap-3 overflow-hidden rounded-[10px] border-l-2 px-3
+          h-[60px] mx-1
+          cursor-pointer select-none items-center gap-3 overflow-hidden rounded-[12px] px-3
           transition-colors duration-150
           ${
             isSelected
-              ? "border-accent bg-accent-soft"
-              : "border-transparent bg-transparent hover:bg-sunken"
+              ? "bg-sunken"
+              : "bg-transparent hover:bg-sunken/60"
           }
         `}
       >

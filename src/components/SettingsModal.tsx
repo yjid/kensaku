@@ -172,7 +172,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
 
       <div className="flex min-h-0 flex-1">
         {/* Rail: 200px, 32px icon rows, accent-soft active with 2px left bar. */}
-        <nav className="flex w-[200px] shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-line bg-sunken/50 p-3">
+        <nav className="flex w-[196px] shrink-0 flex-col gap-px overflow-y-auto border-r border-line bg-bg p-2.5">
           {SECTIONS.map((s) => {
             const active = section === s.id;
             const Icon = s.icon;
@@ -184,16 +184,10 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
                 aria-current={active ? "page" : undefined}
                 className={`relative flex h-8 w-full items-center gap-2 rounded-[10px] px-2.5 text-[13px] transition-colors duration-150 ${
                   active
-                    ? "bg-accent-soft font-medium text-fg"
-                    : "text-muted hover:bg-elevated hover:text-fg"
+                    ? "bg-sunken font-medium text-fg"
+                    : "text-muted hover:bg-sunken/60 hover:text-fg"
                 }`}
               >
-                {active && (
-                  <span
-                    aria-hidden="true"
-                    className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-accent"
-                  />
-                )}
                 <Icon
                   className={`h-[15px] w-[15px] shrink-0 transition-colors duration-150 ${
                     active ? "text-fg" : "text-muted"
