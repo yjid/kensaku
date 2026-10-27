@@ -51,6 +51,12 @@ export const FileRow = React.memo(function FileRow({
         onSelect();
         onContextMenu(e.clientX, e.clientY);
       }}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "copy";
+        e.dataTransfer.setData("text/plain", item.path);
+        e.dataTransfer.setData("text/uri-list", `file://${item.path}`);
+      }}
       style={{ height: FILE_ROW_HEIGHT }}
       className={`flex w-full cursor-default items-center gap-3 rounded-[10px] px-3 transition-colors duration-150 [transition-timing-function:var(--ease-apple)] ${
         selected ? "bg-sunken" : "hover:bg-sunken/70"

@@ -48,6 +48,12 @@ export const ResultItem = React.memo<ResultItemProps>(
           onSelect();
           onContextMenu(e.clientX, e.clientY);
         }}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = "copy";
+          e.dataTransfer.setData("text/plain", result.path);
+          e.dataTransfer.setData("text/uri-list", `file://${result.path}`);
+        }}
         aria-selected={isSelected}
         title={result.path}
         className="group card-in flex h-full w-full flex-col text-left outline-none"

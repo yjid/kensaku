@@ -10,23 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Kensaku",
-        "label": "main",
-        "width": 920,
-        "height": 640,
-        "minWidth": 720,
-        "minHeight": 520,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "center": true,
-        "shadow": true,
-        "resizable": true,
-        "visible": true
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null,
       "assetProtocol": {
@@ -45,7 +29,7 @@
     "targets": "all",
     "createUpdaterArtifacts": false,
     "publisher": "Yash Jangid",
-    "copyright": "Copyright © 2026 Yash Jangid",
+    "copyright": "Copyright \u00a9 2026 Yash Jangid",
     "category": "Productivity",
     "shortDescription": "Fast local search for files, content, documents and images.",
     "longDescription": "Kensaku indexes filenames, file contents, PDFs, Office documents and OCR'd images into one local index. It is a desktop app and a read-only search backend for AI agents (MCP + CLI). No cloud, no telemetry.",

@@ -55,3 +55,73 @@ mod tests {
         super::release_memory();
     }
 }
+
+/// Terminates the WebKit/WebView helper processes that survive the destruction
+/// of the search window, so the hidden app keeps only the Rust side in memory.
+///
+/// These helpers are children of the main process. Killing them is safe once
+/// the window (and its webview) has been destroyed; showing the window again
+/// spawns fresh ones.
+pub fn kill_webview_processes() {
+    let pid = std::process::id();
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(entries) = std::fs::read_dir("/proc") {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let pid_str = name.to_string_lossy();
+                if !pid_str.chars().all(|c| c.is_ascii_digit()) {
+                    continue;
+                }
+                let Ok(child_pid) = pid_str.parse::<i32>() else {
+                    continue;
+                };
+                if child_pid <= 0 || child_pid == pid as i32 {
+                    continue;
+                }
+                let stat = std::fs::read_to_string(format!("/proc/{}/stat", child_pid)).unwrap_or_default();
+                let Some(idx) = stat.rfind(')') else { continue };
+                let rest = &stat[idx + 1..];
+                let fields: Vec<&str> = rest.split_whitespace().collect();
+                // fields[0] = state, fields[1] = ppid
+                if fields.len() < 2 || fields[1] != pid.to_string() {
+                    continue;
+                }
+                let comm = std::fs::read_to_string(format!("/proc/{}/comm", child_pid))
+                    .unwrap_or_default();
+                let comm = comm.trim();
+                if comm.contains("WebKit") || comm.contains("webkit") {
+                    unsafe {
+                        libc::kill(child_pid, libc::SIGKILL);
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("pkill")
+            .args(["-P", &pid.to_string(), "WebKit"])
+            .status();
+    }
+
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args([
+                "/F",
+                "/FI",
+                &format!("PPID eq {}", pid),
+                "/FI",
+                "IMAGENAME eq msedgewebview2.exe",
+            ])
+            .status();
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+    {
+        let _ = pid;
+    }
+}

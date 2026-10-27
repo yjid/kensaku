@@ -7,7 +7,7 @@ use crate::config::CrawlMode;
 
 /// True only in `eco` mode while the machine is running on battery.
 pub fn should_pace(crawl_mode: CrawlMode) -> bool {
-    crawl_mode == CrawlMode::Eco && on_battery()
+    crawl_mode == CrawlMode::Eco && (on_battery() || heavy_load())
 }
 
 #[cfg(target_os = "linux")]
@@ -79,6 +79,29 @@ pub fn on_battery() -> bool {
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 pub fn on_battery() -> bool {
+    false
+}
+
+#[cfg(target_os = "linux")]
+pub fn heavy_load() -> bool {
+    use std::fs;
+    let Ok(s) = fs::read_to_string("/proc/loadavg") else {
+        return false;
+    };
+    let Some(first) = s.split_whitespace().next() else {
+        return false;
+    };
+    let Ok(load1) = first.parse::<f64>() else {
+        return false;
+    };
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+    load1 > cpus as f64 * 0.8
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn heavy_load() -> bool {
     false
 }
 

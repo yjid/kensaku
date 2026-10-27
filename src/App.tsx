@@ -21,8 +21,10 @@ import { HomeView } from "./components/HomeView";
 import { ResultItem, ResultView } from "./components/ResultItem";
 import { Settings } from "./components/SettingsModal";
 import { FilterChips } from "./components/FilterChips";
+import { KeyHintStrip } from "./components/KeyHintStrip";
 import { ContextMenu, ContextMenuItem } from "./components/ContextMenu";
 import { DetailsDialog } from "./components/DetailsDialog";
+import { HelpDialog } from "./components/HelpDialog";
 import { SearchBar } from "./components/SearchBar";
 import { CategoryChips } from "./components/CategoryChips";
 import { ResultControls } from "./components/ResultControls";
@@ -66,6 +68,20 @@ function putSnippet(
 function App() {
   const [isSetupComplete, setIsSetupComplete] = useState<boolean | null>(null);
   const [query, setQuery] = useState("");
+
+  // The window is recreated on every show, so restore the last query from Rust
+  // and keep it there as the user types.
+  useEffect(() => {
+    invoke<string>("last_query")
+      .then((q) => {
+        if (q) setQuery(q);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    invoke("remember_query", { query }).catch(() => {});
+  }, [query]);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
@@ -101,6 +117,7 @@ function App() {
   const view: ResultView = config?.results_view === "list" ? "list" : "grid";
   const [menu, setMenu] = useState<{ x: number; y: number; result: SearchResult } | null>(null);
   const [details, setDetails] = useState<SearchResult | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
   const [preview, setPreview] = useState<SearchResult | null>(null);
 
 
@@ -212,7 +229,7 @@ function App() {
       return;
     }
 
-    if (query.startsWith("/")) {
+    if (query.trim().startsWith("/")) {
       setResults([]);
       setActiveFilters([]);
       setHints([]);
@@ -227,7 +244,7 @@ function App() {
       const seq = ++currentSeqRef.current;
       queryRef.current = query;
       try {
-        const res = await invoke<SearchResponse>("search", { query, sort });
+        const res = await invoke<SearchResponse>("search", { query: query.trim(), sort });
         if (seq >= currentSeqRef.current) {
           // Seed rows with snippets already fetched for these paths so a
           // repeated path never flashes snippet-less. Existing snippets are
@@ -391,7 +408,7 @@ function App() {
     const requestKey = pageKey;
     try {
       const offset = resultsLenRef.current;
-      const res = await invoke<SearchResponse>("search", { query, sort, offset });
+      const res = await invoke<SearchResponse>("search", { query: query.trim(), sort, offset });
       // Discard a page for a query the user has already left.
       if (queryRef.current !== query) return;
       let added = 0;
@@ -546,7 +563,8 @@ function App() {
     ];
   }, [handleRunCommand, openSettings]);
 
-  const slashFilter = query.startsWith("/") ? query.slice(1).trim().toLowerCase() : null;
+  const trimmedQuery = query.trim();
+  const slashFilter = trimmedQuery.startsWith("/") ? trimmedQuery.slice(1).trim().toLowerCase() : null;
   const slashItems = useMemo(() => {
     if (slashFilter === null) return [];
     return slashCommands.filter(
@@ -614,8 +632,14 @@ function App() {
         return;
       }
 
+      if (e.key === "?" && document.activeElement !== inputRef.current) {
+        e.preventDefault();
+        setShowHelp(true);
+        return;
+      }
+
       // `/` command menu
-      if (query.startsWith("/")) {
+      if (query.trim().startsWith("/")) {
         if (e.key === "ArrowDown") {
           e.preventDefault();
           setSlashIndex((i) => (slashItems.length ? (i + 1) % slashItems.length : 0));
@@ -709,7 +733,7 @@ function App() {
         e.preventDefault();
         if (commandOutput) {
           setCommandOutput(null);
-        } else if (query) {
+        } else if (query.trim()) {
           setQuery("");
           inputRef.current?.focus();
         } else {
@@ -740,7 +764,7 @@ function App() {
     );
   }
 
-  const isCommandMode = query.startsWith("/");
+  const isCommandMode = query.trim().startsWith("/");
 
   const hasQuery = query.trim() !== "";
   const noResults = hasQuery && !isCommandMode && displayResults.length === 0;
@@ -779,6 +803,7 @@ function App() {
             />
           )}
           {details && <DetailsDialog result={details} onClose={() => setDetails(null)} />}
+          {showHelp && <HelpDialog onClose={() => setShowHelp(false)} />}
           {preview && (
             <PreviewDialog
               result={preview}
@@ -809,6 +834,7 @@ function App() {
                 isSearching={isSearching}
                 onFocusInput={() => {}}
                 resultCount={results.length}
+                shortcut={config?.shortcut ?? "Alt+Space"}
                 trailing={
                   <button
                     type="button"
@@ -1048,6 +1074,7 @@ function App() {
                 </div>
               </div>
 
+              <KeyHintStrip />
             </>
           )}
         </>
