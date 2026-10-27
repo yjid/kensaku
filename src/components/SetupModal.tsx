@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Check, Plus, X, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
+import { Switch } from "./settings/kit";
 import type { IndexingStatus, ModelsStatus, OcrStatus } from "../types";
 
 /* First run: three screens, one decision each.
@@ -32,6 +33,7 @@ function formatEta(seconds: number): string {
 
 export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void }) {
   const [step, setStep] = useState<0 | 1 | 2 | 3 | 4>(0);
+  const [startAtLogin, setStartAtLogin] = useState(false);
   const [suggestedDirs, setSuggestedDirs] = useState<string[]>([]);
   const [selectedDirs, setSelectedDirs] = useState<string[]>([]);
   const [customDirInput, setCustomDirInput] = useState("");
@@ -183,6 +185,12 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         shortcut: shortcut,
         ocrEngine,
       });
+      // Only touch autostart when the user asked for it; off is the default.
+      if (startAtLogin) {
+        await invoke("set_autostart", { enabled: true }).catch((err) =>
+          console.warn("Could not enable start at sign-in:", err),
+        );
+      }
       setScanning(true);
     } catch (err) {
       console.error("Setup failed:", err);
@@ -531,6 +539,15 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               <p className="text-[12px] text-muted">
                 Optional. Keyword search works without any of these.
               </p>
+            </div>
+            <div className="flex items-center justify-between rounded-[14px] border border-line bg-elevated px-4 py-3">
+              <div className="min-w-0 pr-4">
+                <span className="block text-[12px] font-medium text-fg">Start at sign-in</span>
+                <span className="block text-[11px] text-muted">
+                  Open Kensaku when you sign in, so search is ready at once.
+                </span>
+              </div>
+              <Switch checked={startAtLogin} onChange={setStartAtLogin} />
             </div>
             <div className="space-y-2">
               <div className="rounded-[14px] border border-line bg-elevated px-4 py-3">

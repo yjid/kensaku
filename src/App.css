@@ -86,6 +86,9 @@
     margin: 0;
     padding: 0;
     user-select: none;
+    /* Tailwind v4 defaults border color to currentColor, which is the light
+       text color in dark mode. Every border uses the theme border token. */
+    border-color: var(--border);
   }
 
   html,
