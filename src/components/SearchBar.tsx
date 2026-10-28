@@ -9,7 +9,6 @@ interface SearchBarProps {
   query: string;
   setQuery: (q: string) => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
-  isSearching: boolean;
   onFocusInput: () => void;
   resultCount: number;
   /** Total matches before the display limit, when known. */
@@ -24,7 +23,6 @@ export function SearchBar({
   query,
   setQuery,
   inputRef,
-  isSearching,
   onFocusInput,
   resultCount,
   total,
@@ -66,7 +64,7 @@ export function SearchBar({
           style={{ caretColor: "var(--blue)" }}
         />
 
-        {query && !isCommandMode && !isSearching && (
+        {query && !isCommandMode && (
           <span key={count} className="t-meta fade-in shrink-0 text-subtle">
             {count === 0 ? "No results" : `${count.toLocaleString("en-US")} ${count === 1 ? "result" : "results"}`}
           </span>
@@ -87,12 +85,6 @@ export function SearchBar({
         )}
 
         {trailing && <div className="flex shrink-0 items-center">{trailing}</div>}
-
-        {isSearching && (
-          <div className="pointer-events-none absolute inset-x-8 bottom-0 h-px overflow-hidden">
-            <div className="progress-bar" />
-          </div>
-        )}
       </div>
     </div>
   );

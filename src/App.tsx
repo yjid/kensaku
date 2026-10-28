@@ -96,7 +96,6 @@ function App() {
   const [facetExclude, setFacetExclude] = useState<Set<string>>(new Set());
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [indexingStatus, setIndexingStatus] = useState<IndexingStatus | null>(null);
-  const [isSearching, setIsSearching] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<string | undefined>(undefined);
   const [showDuplicates, setShowDuplicates] = useState(false);
@@ -236,7 +235,6 @@ function App() {
       setInterpretation([]);
       setFacets(undefined);
       setSelectedIndex(0);
-      setIsSearching(false);
       return;
     }
 
@@ -246,11 +244,9 @@ function App() {
       setHints([]);
       setInterpretation([]);
       setFacets(undefined);
-      setIsSearching(false);
       return;
     }
 
-    setIsSearching(true);
     const timer = setTimeout(async () => {
       const seq = ++currentSeqRef.current;
       queryRef.current = query;
@@ -295,8 +291,6 @@ function App() {
         }
       } catch (err) {
         console.error("Search error:", err);
-      } finally {
-        setIsSearching(false);
       }
     }, 40);
 
@@ -988,7 +982,6 @@ function App() {
                 query={query}
                 setQuery={setQuery}
                 inputRef={inputRef}
-                isSearching={isSearching}
                 onFocusInput={() => {}}
                 resultCount={results.length}
                 total={total}
