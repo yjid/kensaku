@@ -134,18 +134,36 @@
   --font-serif: "Instrument Serif", "New York", Georgia, serif;
 }
 
-/* The radius scale above, bound. Four steps, picked by what a thing IS
-   (a key cap, a control, a panel, a sheet) and never by how round it
-   should look. Status dots and spinners stay `rounded-full`: a circle is
-   not a radius step. */
+/* The radius scale above, bound. Tight, uniform steps in the Apple
+   manner: controls barely round, each step two pixels more, sheets one
+   whisper above panels. Picked by what a thing IS (a key cap, a control,
+   a panel, a sheet) and never by how round it should look. Status dots
+   and capsules stay `rounded-full`: a circle is not a radius step. */
 :root {
-  --r-small: 6px;   /* nested inside a control: kbd, swatch, focus ring */
-  --r-control: 10px; /* anything you click or type in                   */
-  --r-field: 14px;  /* the search field only. The query is the hero, so  */
+  --r-small: 4px;   /* nested inside a control: kbd, swatch, focus ring */
+  --r-control: 6px; /* anything you click or type in                   */
+  --r-field: 8px;   /* the search field only. The query is the hero, so  */
                     /* it sits one step above every other control. This  */
                     /* is the single documented exception to the scale.  */
-  --r-panel: 16px;  /* a tile, card or attached panel                   */
-  --r-sheet: 24px;  /* a centered dialog or sheet. ALL of them.         */
+  --r-panel: 10px;  /* a tile, card or attached panel                   */
+  --r-sheet: 12px;  /* a centered dialog or sheet. ALL of them.         */
+}
+
+/* Continuous corners. Apple draws every radius as a squircle — a
+   superellipse whose curve eases into the straight edge — which is why
+   their corners read as calm instead of bubbly. Chromium can paint that
+   natively (WebView2 does); the guard degrades to plain arcs elsewhere.
+   Capsules, dots and the scrollbar thumb stay perfectly round. */
+@supports (corner-shape: squircle) {
+  *,
+  ::before,
+  ::after {
+    corner-shape: squircle;
+  }
+  .rounded-full,
+  ::-webkit-scrollbar-thumb {
+    corner-shape: round;
+  }
 }
 
 :root {
