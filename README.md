@@ -12,13 +12,11 @@
   <a href="https://github.com/yjid/kensaku/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/yjid/kensaku?style=for-the-badge" /></a>
   <a href="https://github.com/yjid/kensaku/releases/latest"><img alt="Downloads" src="https://img.shields.io/github/downloads/yjid/kensaku/total?style=for-the-badge" /></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-111111?style=for-the-badge" /></a>
-  <a href="https://github.com/yjid/kensaku/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/yjid/kensaku/ci.yml?branch=master&style=for-the-badge" /></a>
 </p>
 
 <p align="center">
   <a href="#install">Install</a> ·
   <a href="#what-it-does">What it does</a> ·
-  <a href="#performance">Performance</a> ·
   <a href="#contributing">Contribute</a>
 </p>
 
@@ -28,15 +26,20 @@
 
 ---
 
-Kensaku (検索 = search) is a file search that reads inside your files. PDFs, DOCX, code, logs, screenshots. All local. No cloud. No account. No telemetry. Free. MIT. Don't like it? Fork it.
+Kensaku (検索 = search) is a file search that reads inside your files. PDFs, code, logs, screenshots. All local. No cloud. No account. No telemetry. Free. MIT. Don't like it? Fork it.
+
+You can't remember filenames. Nobody can. You remember what was *in* the file. So why the fuck does every search tool only search names?
+
+Kensaku searches names, full text, and meaning. It reads inside screenshots. It parses "screenshots from last week" as a query. It doesn't send anything anywhere. It doesn't ask you to log in. It doesn't care about your data. It just finds your shit.
 
 ## What it does
 
-- Reads text inside screenshots (OCR, built in)
-- Finds files by meaning, not just names — "the PDF about database indexing" finds `notes-final-2.pdf`
-- Parses "screenshots from last week" as a query
+- Reads text inside screenshots (OCR, built in, no extra setup)
+- Finds files by meaning — "the PDF about database indexing" finds `notes-final-2.pdf`
+- Parses "screenshots from last week" as a query. No filters to click.
 - Your AI agent can search it (MCP, read-only)
 - 1.3ms name search across 100k files. 9MB installer. ~20MB idle in tray.
+- Alt+Space to summon. Type. Enter. Done.
 
 ## Install
 
@@ -48,9 +51,9 @@ Download from the [latest release](https://github.com/yjid/kensaku/releases/late
 | macOS | `Kensaku_<version>_universal.dmg` |
 | Linux | `.AppImage`, `.deb`, or `.rpm` |
 
-Unsigned builds, so: Windows → SmartScreen → More info → Run anyway. macOS → System Settings → Privacy & Security → Open Anyway. [docs/INSTALL.md](docs/INSTALL.md) has the full steps.
+Unsigned builds. Windows → SmartScreen → More info → Run anyway. macOS → System Settings → Privacy & Security → Open Anyway. [docs/INSTALL.md](docs/INSTALL.md).
 
-First run: pick folders to index, set exclusions, optionally download OCR/model packs. Search works while the first scan runs.
+First run: pick folders to index. Search works while it scans.
 
 ```bash
 kensaku-cli search "docker error"
@@ -67,13 +70,11 @@ bun install
 bun run tauri build
 ```
 
-Rust (stable), Bun 1.1+, webview libs. `make dev`, `make build`, `make test`, `make reset`.
+Rust, Bun, webview libs. `make dev`, `make build`, `make test`.
 
 ## Search
 
-Names, full text, fuzzy (typo-tolerant), and meaning — one search. PDF, DOCX, PPTX, XLSX, EPUB, ODT/ODS/ODP, RTF, text, code, logs, CJK. OCR for images.
-
-Query language when you want precision:
+Names, full text, fuzzy, meaning — one search. PDF, DOCX, PPTX, XLSX, EPUB, ODT, RTF, text, code, logs, CJK. OCR for images.
 
 ```
 type:pdf invoice          ext:md in:"~/Notes"       modified:7d
@@ -88,17 +89,17 @@ Filters: Best match, Newest, Oldest, Largest, Name. Time travel: "last Tuesday",
 
 | What | Result |
 |---|---|
-| Name search, 100k files | **1.3 ms** avg (0.5 best, 2.4 worst) |
-| Re-index, nothing changed | **0.56 s** |
+| Name search, 100k files | 1.3 ms |
+| Re-index, nothing changed | 0.56 s |
 | Memory, 100k file names | ~12 MB |
 | Windows installer | 9 MB |
-| Idle in tray (24.5k index) | ~20 MB private |
+| Idle in tray | ~20 MB |
 
-Methodology + harnesses: [docs/BENCHMARKS.md](docs/BENCHMARKS.md). Numbers are Linux; Windows/macOS not yet measured separately.
+Linux numbers. Windows/macOS not separately measured yet. [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ## Privacy
 
-No telemetry. No account. No cloud search. Index stays in your OS config dir. You pick what's indexed. Hidden files and build folders skipped by default. `.pem`, `.key`, `.pfx` excluded. Credential files never indexed.
+No telemetry. No account. No cloud search. Index stays in your OS config dir. You pick what's indexed. Hidden files and build folders skipped by default. `.pem`, `.key`, `.pfx` excluded. Credential files never indexed. Nothing leaves your machine. Period.
 
 ## MCP (AI agents)
 
@@ -108,7 +109,7 @@ Point an MCP client at the CLI:
 { "mcpServers": { "kensaku": { "command": "kensaku-cli", "args": ["mcp"] } } }
 ```
 
-Read-only by default. Loopback HTTP via `kensaku-cli serve`. Responses budgeted in size; content returned as data, never instructions. [docs/AGENTS.md](docs/AGENTS.md).
+Read-only by default. [docs/AGENTS.md](docs/AGENTS.md).
 
 ## Limitations (I know, I know)
 
@@ -116,7 +117,7 @@ Read-only by default. Loopback HTTP via `kensaku-cli serve`. Responses budgeted 
 - OCR: Tesseract (default) + optional PP-OCRv6 pack.
 - Thumbnails: images only.
 - Visual search: beta, not in results yet.
-- Windows is the most-tested platform. macOS/Linux come from CI and need real-world testing.
+- Windows is the most-tested platform. macOS/Linux come from CI.
 
 ## Contributing
 
