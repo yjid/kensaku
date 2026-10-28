@@ -1041,7 +1041,15 @@ pub fn home_data_for(indexer: &crate::indexer::IndexerManager) -> Result<HomeDat
             })
         })
         .collect();
-    recent.sort_by_key(|a| std::cmp::Reverse(a.modified));
+    // Modified-time desc, with the path as a tie-break: files generated in
+    // one batch share timestamps, and without a deterministic tie-break the
+    // top-12 reshuffles whenever the index repopulates — the home screen
+    // would show a different "recent" set on every refetch.
+    recent.sort_by(|a, b| {
+        b.modified
+            .cmp(&a.modified)
+            .then_with(|| a.path.cmp(&b.path))
+    });
     recent.truncate(12);
 
     let pins = config
