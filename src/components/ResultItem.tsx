@@ -6,9 +6,10 @@ import { formatBytes, formatRelativeTime } from "../lib/format";
 import { HoverDetails } from "./HoverDetails";
 import { TypeTile } from "./TypeTile";
 
-/* Result card. A 4:3 tile, then name and one meta line below it. Images
-   fill the tile edge to edge; everything else is a typographic tile. The
-   selected card gets the ink ring, which is the only color on the grid. */
+/* Result card. A 16:10 tile, then name and one meta line below it — the
+   same card the home screen's recents use. Images fill the tile edge to
+   edge; everything else is a typographic tile. The selected card gets the
+   softened ink ring, which is the only color on the grid. */
 
 export type ResultView = "grid" | "list";
 
@@ -59,10 +60,9 @@ export const ResultItem = React.memo<ResultItemProps>(
         className="group card-in flex h-full w-full flex-col text-left outline-none"
       >
         <span
-          className={`surface relative block aspect-[4/3] w-full overflow-hidden transition-[transform,box-shadow] duration-[280ms] [transition-timing-function:var(--ease)] group-hover:-translate-y-[3px] group-hover:[box-shadow:var(--panel-edge),var(--shadow-float)] ${
-            isSelected ? "outline-2 outline-offset-[3px] outline-ink" : ""
+          className={`surface relative block aspect-[16/10] w-full overflow-hidden transition-[transform,box-shadow] duration-[280ms] [transition-timing-function:var(--ease)] group-hover:-translate-y-[3px] group-hover:[box-shadow:var(--panel-edge),var(--shadow-float)] ${
+            isSelected ? "outline-2 outline-offset-[3px] outline-[color-mix(in_srgb,var(--ink)_45%,transparent)]" : ""
           }`}
-          style={isSelected ? { outlineStyle: "solid" } : undefined}
         >
           {hasThumb ? (
             <img
