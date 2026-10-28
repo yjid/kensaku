@@ -1,4 +1,5 @@
 import type { HomeData } from "../types";
+import { useEffect, useRef } from "react";
 import { formatRelativeTime } from "../lib/format";
 import { isThumbImage, useThumbnail } from "../lib/thumbnails";
 import { TypeTile } from "./TypeTile";
@@ -25,8 +26,14 @@ function RecentTile({
   const eligible = Boolean(showThumbs) && !item.is_dir && isThumbImage(item.filename);
   const { src, failed } = useThumbnail(item.path, eligible);
   const name = item.filename || item.path;
+  const ref = useRef<HTMLButtonElement>(null);
+  /* Keyboard walks go below the fold: keep the focused tile in sight. */
+  useEffect(() => {
+    if (focused) ref.current?.scrollIntoView({ block: "nearest" });
+  }, [focused]);
   return (
     <button
+      ref={ref}
       type="button"
       onClick={onOpen}
       title={item.path}

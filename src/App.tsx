@@ -670,8 +670,13 @@ function App() {
   /* Space previews only once the user has moved into the results with the
      arrow keys. Typing clears it, so Space still types a space in a query. */
   const navigatingRef = useRef(false);
+  /* Whether the user has entered the list with a navigation key. The home
+     tiles draw their focus ring only after this — at first paint the ring
+     would sit on tile 0 and the first Tab press would look like a no-op. */
+  const [navActive, setNavActive] = useState(false);
   useEffect(() => {
     navigatingRef.current = false;
+    setNavActive(false);
   }, [query]);
 
   // Home and search are different lists: never carry a selection index
@@ -768,6 +773,7 @@ function App() {
         const enteringFromSearch = !navigatingRef.current;
         e.preventDefault();
         navigatingRef.current = true;
+        setNavActive(true);
         if (navList.length === 0) {
           setSelectedIndex(0);
           return;
@@ -1218,7 +1224,7 @@ function App() {
                       data={home}
                       onOpen={(path) => handleOpenFile(path)}
                       showThumbs={showThumbs}
-                      focusIndex={hasQuery ? null : selectedIndex}
+                      focusIndex={hasQuery || !navActive ? null : selectedIndex}
                       onSearch={(q) => {
                         setQuery(q);
                         inputRef.current?.focus();
