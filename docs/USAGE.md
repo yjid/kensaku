@@ -150,7 +150,7 @@ Results are deterministic: score, then path.
 > acquired in setup, and Settings shows installed status only. Later launches
 > stay search-first.
 
-- **General** — theme (`paper` / `void`), global shortcut, max results, start at login.
+- **General** — theme (`light` / `dark`), global shortcut, max results, start at login.
   The shortcut field records a combo when you click it and press the keys (Esc cancels).
 - **Folders** — watched roots, add/remove, drag-and-drop.
 - **Exclusions** — presets (Developer, Creative, All-round), directories, extensions.
