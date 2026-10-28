@@ -184,7 +184,9 @@ Results are deterministic: score, then path.
 - **Documents** — PDF, DOCX/PPTX/XLSX, EPUB/ODT, RTF; malformed files are skipped
   after an 8-second timeout.
 - **Images** — OCR via `tesseract` when the engine and language data are present.
-  The setup flow offers `eng.traineddata` as an optional pack; Settings → Search
+  When `tesseract` is not installed, Kensaku switches to the accurate PP-OCRv6
+  engine on its own and downloads that pack in the background. The setup flow
+  offers `eng.traineddata` as an optional pack; Settings → Search
   shows status and links to **Run setup again**. The toggle controls whether image
   text is indexed, and saving re-scans existing images. Thumbnails and dimensions
   are cached; near-duplicates use a perceptual hash, and screenshot bursts also

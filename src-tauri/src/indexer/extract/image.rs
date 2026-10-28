@@ -243,6 +243,17 @@ fn tesseract_command() -> Command {
     command
 }
 
+/// True when `tesseract --version` runs successfully.
+///
+/// A lighter probe than [`ocr_status`]: enough to decide at startup whether
+/// Tesseract is installed at all, without listing languages.
+pub fn tesseract_available() -> bool {
+    tesseract_command()
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
+}
+
 /// Inspects the tesseract binary and its language data. Never panics.
 pub fn ocr_status() -> OcrStatus {
     let dir = tessdata_dir();
