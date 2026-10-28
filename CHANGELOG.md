@@ -3,7 +3,7 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.0.5] — 2026-10-28
 
 ### Fixed
 - Theme choice is saved again. The UI renamed its themes to `light` / `dark`
@@ -11,6 +11,7 @@ versioning: [SemVer](https://semver.org/).
   names, so every `set_theme` call failed and the pick never reached disk.
   Both old names are still accepted and existing configs are migrated
   (config v5).
+- Red CI on master: `clippy::items_after_test_module` in `memory.rs` (merge artifact) fixed.
 
 ## [1.0.4] — 2026-10-28
 
