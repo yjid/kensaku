@@ -42,7 +42,7 @@ export function DetailsDialog({
       <div
         role="dialog"
         aria-label="Details"
-        className="elevated overlay-in w-full max-w-[440px] !rounded-[24px] p-7"
+        className="elevated overlay-in w-full max-w-[440px] rounded-sheet p-7"
       >
         <p className="t-title break-words text-fg">{result.filename}</p>
         <dl className="mt-6 divide-y divide-line">

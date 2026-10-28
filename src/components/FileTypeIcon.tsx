@@ -44,7 +44,7 @@ export const FileTypeIcon: React.FC<{
       aria-hidden="true"
       style={{ width: size, height: size }}
       className={`flex shrink-0 items-center justify-center text-muted ${
-        bare ? "" : "rounded-[10px] border border-line bg-elevated"
+        bare ? "" : "rounded-control border border-line bg-elevated"
       }`}
     >
       <Icon width={glyph} height={glyph} strokeWidth={1.5} />
