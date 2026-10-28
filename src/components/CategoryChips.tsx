@@ -21,7 +21,7 @@ export const CategoryChips: React.FC<CategoryChipsProps> = ({ results, facets, s
   const hasAny = results.length > 0;
   return (
     <div className="min-w-0 flex-1">
-      <div className="control no-scrollbar inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-[12px] p-1">
+      <div className="control no-scrollbar inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-control p-1">
         {CATEGORY_CHIPS.map((chip) => {
           const isExcluded = excluded.has(chip.id);
           const isSelected = chip.id === "all" ? empty : selected.has(chip.id);

@@ -26,7 +26,7 @@ export function ScopeMenu({
               e.preventDefault();
               onPick(path);
             }}
-            className={`flex w-full items-center gap-3 rounded-[10px] px-3 py-2 text-left transition-colors ${
+            className={`flex w-full items-center gap-3 rounded-control px-3 py-2 text-left transition-colors ${
               active ? "bg-accent-soft" : "hover:bg-accent-soft"
             }`}
           >

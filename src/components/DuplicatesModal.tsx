@@ -71,7 +71,7 @@ export function DuplicatesModal({ onClose }: { onClose: () => void }) {
         <button
           type="button"
           onClick={onClose}
-          className="flex h-8 w-8 items-center justify-center rounded-[10px] text-muted transition-colors hover:bg-accent-soft hover:text-fg"
+          className="flex h-8 w-8 items-center justify-center rounded-control text-muted transition-colors hover:bg-accent-soft hover:text-fg"
           title="Close"
         >
           <X className="h-4 w-4" />

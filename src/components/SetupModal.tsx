@@ -486,7 +486,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               }}
             />
             {packError && (
-              <p className="flex items-start gap-2 break-words rounded-[10px] bg-danger/10 px-3 py-2 text-[12px] text-danger">
+              <p className="flex items-start gap-2 break-words rounded-control bg-danger/10 px-3 py-2 text-[12px] text-danger">
                 <X className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {packError}
               </p>
             )}
@@ -515,7 +515,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                   <span className="text-[13px] text-fg">Press a new shortcut…</span>
                 ) : (
                   shortcut.split("+").map((k, i) => (
-                    <span key={i} className="kbd !h-7 !min-w-7 !rounded-[7px] !px-2 !text-[12px] text-fg">{k}</span>
+                    <span key={i} className="kbd !h-7 !min-w-7 !px-2 !text-[12px] text-fg">{k}</span>
                   ))
                 )}
               </span>
@@ -585,7 +585,7 @@ function Shell({
         <span className="t-meta text-subtle">{mark}</span>
       </aside>
       <section className="relative z-10 flex min-w-0 flex-1 flex-col">
-        <div className="surface m-2 flex min-h-0 flex-1 flex-col !rounded-[20px] px-8 pt-4 md:ml-0">
+        <div className="surface m-2 flex min-h-0 flex-1 flex-col rounded-sheet px-8 pt-4 md:ml-0">
           <div data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-end">{trailing}</div>
           <div className="mx-auto flex min-h-0 w-full max-w-[460px] flex-1 flex-col">{children}</div>
         </div>

@@ -178,7 +178,7 @@ export function OcrField({
               c ? { ...c, ocr_engine: e.target.value as "tesseract" | "accurate" } : c,
             )
           }
-          className="h-8 rounded-[8px] border border-line bg-[var(--panel)] px-2 text-[11px] text-fg"
+          className="h-8 rounded-control border border-line bg-[var(--panel)] px-2 text-[11px] text-fg"
         >
           <option value="tesseract">Tesseract — fast, smaller</option>
           <option value="accurate" disabled={!status?.accurate_compiled}>
@@ -274,7 +274,7 @@ export function OcrField({
               type="button"
               title={`Copy install command — ${platform.command}`}
               onClick={() => copy(platform.command)}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-muted transition-colors hover:bg-elevated hover:text-fg"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-elevated hover:text-fg"
             >
               {copied === platform.command ? (
                 <Check className="h-3.5 w-3.5 text-accent" />
@@ -285,7 +285,7 @@ export function OcrField({
           </div>
 
           {allPlatforms && (
-            <div className="space-y-0.5 rounded-[8px] border border-line bg-[var(--panel)] p-1.5">
+            <div className="space-y-0.5 rounded-control border border-line bg-[var(--panel)] p-1.5">
               {INSTALL_COMMANDS.map((p) => (
                 <div key={p.id} className="flex min-w-0 items-center gap-2 px-1.5 py-1">
                   <span className="w-32 shrink-0 truncate text-[11px] text-subtle">

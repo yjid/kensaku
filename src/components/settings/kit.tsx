@@ -61,7 +61,7 @@ export function SectionHeader({ title, description }: { title: string; descripti
 }
 
 export function Badge({ children }: { children: React.ReactNode }) {
-  return <span className="t-meta rounded-[6px] bg-accent-soft px-2 py-1 text-muted">{children}</span>;
+  return <span className="t-meta rounded-small bg-accent-soft px-2 py-1 text-muted">{children}</span>;
 }
 
 export function Switch({
@@ -108,7 +108,7 @@ export function Stepper({
 }) {
   const clamp = (v: number) => Math.min(max, Math.max(min, v));
   return (
-    <div className="flex h-8 items-center rounded-[10px] bg-accent-soft shadow-[inset_0_0_0_1px_var(--border)]">
+    <div className="flex h-8 items-center rounded-control bg-accent-soft shadow-[inset_0_0_0_1px_var(--border)]">
       <button type="button" onClick={() => onChange(clamp(value - step))} className="flex h-full w-8 items-center justify-center text-muted transition-colors hover:text-fg" aria-label="Decrease">
         −
       </button>
