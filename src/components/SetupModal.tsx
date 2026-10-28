@@ -26,6 +26,17 @@ function formatEta(seconds: number): string {
   return `~${hours}h ${mins % 60}m left`;
 }
 
+/* Picks the engine the UI should preselect. Mirrors the backend's startup
+   decision so the radio shows the engine that will actually run: the config
+   choice (`engine`), or PP-OCRv6 when tesseract is missing and the accurate
+   pack is compiled in. `null`/undefined fields degrade optimistically. */
+function pickEngine(status: OcrStatus): "tesseract" | "accurate" {
+  const accurateCompilable = status.accurate_compiled !== false;
+  if (status.engine === "accurate" && accurateCompilable) return "accurate";
+  if (!status.engine_present && accurateCompilable) return "accurate";
+  return "tesseract";
+}
+
 export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void }) {
   const [step, setStep] = useState<0 | 1>(0);
   // Start at sign-in is on by default, so the app is one shortcut away after a restart.
@@ -38,7 +49,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const [ocrPackStatus, setOcrPackStatus] = useState<ModelsStatus | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrPackBusy, setOcrPackBusy] = useState(false);
-  const [selectedOcrEngine, setSelectedOcrEngine] = useState<"tesseract" | "accurate">("tesseract");
+  const [selectedOcrEngine, setSelectedOcrEngine] = useState<"tesseract" | "accurate" | null>(null);
   const [packError, setPackError] = useState<string | null>(null);
   const [shortcut, setShortcut] = useState("Alt+Space");
   const [capturing, setCapturing] = useState(false);
@@ -105,10 +116,19 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     return () => window.removeEventListener("keydown", onKey);
   }, [capturing]);
 
-  // Load OCR state when the final screen opens.
+  // Load OCR state when the final screen opens. The selection mirrors the
+  // engine the backend actually runs — its startup probe may already have
+  // switched to PP-OCRv6 because tesseract is not installed — instead of
+  // re-persisting a dead default over the fallback on Finish. An explicit
+  // user choice (selection ≠ null) is never overwritten by re-entry.
   useEffect(() => {
     if (step !== 1) return;
-    invoke<OcrStatus>("get_ocr_status").then(setOcrStatus).catch(() => {});
+    invoke<OcrStatus>("get_ocr_status")
+      .then((s) => {
+        setOcrStatus(s);
+        setSelectedOcrEngine((prev) => prev ?? pickEngine(s));
+      })
+      .catch(() => {});
     invoke<ModelsStatus>("get_ocr_pack_status").then(setOcrPackStatus).catch(() => {});
   }, [step]);
 
@@ -170,7 +190,9 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         watchedDirs: selectedDirs,
         excludedDirs: excludedDirs,
         shortcut: shortcut,
-        ocrEngine: selectedOcrEngine,
+        // Keep the backend's engine choice when the user did not touch the
+        // radios (e.g. status never loaded) instead of resetting to a name.
+        ocrEngine: selectedOcrEngine ?? (ocrStatus ? pickEngine(ocrStatus) : "tesseract"),
       });
       // The default text model downloads without asking. Failure is not fatal:
       // keyword search works without it, and Settings can retry.
@@ -359,6 +381,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               ready={Boolean(ocrStatus?.available)}
               busy={ocrBusy}
               disabled={ocrBusy || !ocrStatus?.engine_present}
+              installHint={!ocrStatus || ocrStatus.engine_present ? null : "Not installed"}
               onDownload={async () => {
                 setPackError(null);
                 setOcrBusy(true);
@@ -379,6 +402,16 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               ready={Boolean(ocrPackStatus?.ready)}
               busy={Boolean(ocrPackStatus?.downloading || ocrPackBusy)}
               disabled={Boolean(ocrPackStatus?.downloading) || !ocrStatus?.accurate_compiled}
+              installHint={!ocrStatus?.accurate_compiled ? "Not in this build" : null}
+              busyLabel={
+                ocrPackStatus?.downloading && ocrPackStatus.progress
+                  ? `Downloading ${Math.round(
+                      ((ocrPackStatus.progress.downloaded ?? 0) /
+                        Math.max(1, ocrPackStatus.progress.total ?? 1)) *
+                        100,
+                    )}%`
+                  : undefined
+              }
               onDownload={async () => {
                 setPackError(null);
                 setOcrPackBusy(true);
@@ -396,8 +429,13 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 <X className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {packError}
               </p>
             )}
-            {ocrStatus && !ocrStatus.engine_present && !ocrStatus.accurate_compiled && (
-              <p className="text-[12px] text-subtle">Tesseract isn't installed and PP-OCRv6 isn't in this build.</p>
+            {/* Background downloads (startup auto-fallback) report failures
+                through the pack status, not through an invoke rejection —
+                surface them the same way. */}
+            {ocrPackStatus?.error && !ocrPackStatus.downloading && (
+              <p className="flex items-start gap-2 break-words rounded-[10px] bg-danger/10 px-3 py-2 text-[12px] text-danger">
+                <X className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {ocrPackStatus.error}
+              </p>
             )}
           </div>
 
@@ -534,6 +572,8 @@ function EngineOption({
   ready,
   busy,
   disabled,
+  installHint,
+  busyLabel,
   onDownload,
 }: {
   selected: boolean;
@@ -543,18 +583,25 @@ function EngineOption({
   ready: boolean;
   busy: boolean;
   disabled: boolean;
+  /** Replaces the Download button with a plain reason when set. */
+  installHint?: string | null;
+  busyLabel?: string;
   onDownload: () => void;
 }) {
   return (
     <div
       role="radio"
       aria-checked={selected}
+      aria-disabled={disabled || undefined}
       tabIndex={0}
-      onClick={onSelect}
-      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect()}
+      onClick={() => !disabled && onSelect()}
+      onKeyDown={(e) => {
+        if (disabled) return;
+        (e.key === "Enter" || e.key === " ") && onSelect();
+      }}
       className={`surface flex min-h-16 cursor-default items-center gap-4 px-4 py-3 transition-shadow duration-200 ${
         selected ? "![box-shadow:inset_0_0_0_1.5px_var(--ink)]" : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
-      }`}
+      } ${disabled ? "opacity-60" : ""}`}
     >
       <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors ${selected ? "bg-ink" : "shadow-[inset_0_0_0_1.5px_var(--border-strong)]"}`}>
         {selected && <span className="h-1.5 w-1.5 rounded-full bg-bg" />}
@@ -567,6 +614,8 @@ function EngineOption({
         <span className="t-meta flex items-center gap-1.5 text-success">
           <span className="h-1.5 w-1.5 rounded-full bg-success" /> Ready
         </span>
+      ) : installHint ? (
+        <span className="text-[12px] text-subtle">{installHint}</span>
       ) : (
         <button
           type="button"
@@ -578,7 +627,7 @@ function EngineOption({
           className="btn btn-secondary h-8 px-3 text-[12px]"
         >
           {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" strokeWidth={1.75} />}
-          {busy ? "Downloading" : "Download"}
+          {busy ? busyLabel ?? "Downloading" : "Download"}
         </button>
       )}
     </div>
