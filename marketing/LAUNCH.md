@@ -180,3 +180,172 @@ Rules that matter more than copy:
    GitHub URL, not the marketing landing page.
 5. Update the [latest release](https://github.com/yjid/kensaku/releases/latest)
    notes only via new releases — never edit a published release silently.
+
+---
+
+## 5. Product Hunt
+
+**Tagline (≤60 chars) — pick one, test in A/B:**
+
+1. `Ctrl+F for your screenshots` ← the one to lead with
+2. `Find files by what's inside them, not their names`
+3. `The file search that reads your screenshots`
+
+**Description (~260 chars):**
+
+```
+Kensaku indexes your files and reads inside them — PDFs, code, logs, and the
+text in your screenshots. Find by meaning ("the PDF about database
+indexing"), parse "screenshots from last week". 100% local, free, MIT.
+Your AI agent can search it too (MCP).
+```
+
+**Topics to tag:** Productivity, Developer Tools, Open Source, Privacy, AI
+
+**Maker first comment (post the second the listing goes live):**
+
+```
+Hey PH 👋 Maker here.
+
+I built Kensaku because I could never find my own screenshots. I knew the
+error said "CUDA out of memory", I knew I'd screenshotted it, and I had no
+idea it was called "Screenshot 2026-07-14 094231.png".
+
+So it reads the pixels. OCR, built in. Plus meaning-based search, natural
+language time filters, and MCP so your AI agent can search the same index
+read-only. Nothing leaves the machine. MIT.
+
+Honest limits: unsigned builds, no auto-updater yet, Windows is the
+most-tested platform. macOS/Linux come from CI and need real-world
+testing — that's the feedback I'm here for. What would you search for first?
+```
+
+**Rules that matter on PH:** launch at 00:01 PT (Tuesday–Thursday), the maker
+comment must be the first comment, and reply to every comment in the first
+24h. A short demo GIF in the gallery outperforms any screenshot.
+
+---
+
+## 6. Indie Hackers
+
+**Title:** `I'm launching Kensaku — local file search that reads your screenshots`
+
+**Post:**
+
+```
+I'm launching Kensaku (検索 = search) today.
+
+I built it because I kept losing screenshots of errors I could describe but
+not name. It indexes your files and reads inside them — PDFs, code, logs,
+and the text in screenshots via OCR. It also finds by meaning and parses
+things like "screenshots from last week".
+
+Numbers that matter to me right now: ~20 MB idle in the tray, 9 MB
+installer, 1.3 ms name search across 100k files, 0 bytes to the cloud.
+MIT, free.
+
+I'm not charging for it. The goal is to build the launcher people
+actually want to use, then figure out the business. macOS and Linux come
+from CI and need real-world testing — if you're on either, I'd love a
+test report.
+
+What's the first thing you'd search for?
+```
+
+---
+
+## 7. LinkedIn
+
+**Post (professional, first-person, no emoji spam):**
+
+```
+I shipped Kensaku today — a local file search that reads inside your files.
+
+The itch: I could never find my own screenshots. I knew the error said
+"CUDA out of memory", I knew I'd captured it, and I had no idea what I'd
+named the file.
+
+So I built one that reads the pixels. OCR is built in, along with full
+text search across PDFs/DOCX/code, meaning-based matches, and natural
+language time filters ("screenshots from last week"). Everything stays on
+your machine — no account, no telemetry, no cloud.
+
+Stack: Rust, Tauri 2, SQLite + Tantivy, model2vec for semantic search.
+MIT licensed, free. Windows/macOS/Linux.
+
+If you try it and it breaks, tell me — that's the most useful thing
+right now: github.com/yjid/kensaku
+```
+
+---
+
+## 8. Mastodon / Bluesky (short post + hashtags)
+
+```
+You can't Ctrl+F a screenshot. So I built Kensaku — local file search
+that reads inside your files (PDFs, code, logs, and the text in your
+screenshots). Meaning search + natural language time. 100% local, free,
+MIT. github.com/yjid/kensaku
+
+#opensource #rust #tauri #privacy #productivity
+```
+
+---
+
+## 9. Dev.to / Hashnode (long-form, SEO)
+
+**Title:** `How I built a local file search that reads inside your screenshots (Rust + Tauri)`
+
+**Outline (write it as a build log, not a press release):**
+
+1. The itch — the screenshot problem, with the concrete example
+2. Why "filename search" tools leave money on the table
+3. The architecture: SQLite WAL as durable truth, in-memory snapshot, Tantivy
+   for text, model2vec for meaning, Tesseract + PP-OCRv6 for pixels
+4. The hard parts: webview destruction on hide, OCR budgeting, keeping memory
+   flat on large folders, the theme bug that wouldn't die
+5. Benchmarks with methodology (link docs/BENCHMARKS.md)
+6. What's next — link the roadmap Discussions
+7. CTA: try it, star it, tell me what breaks
+
+---
+
+## 10. Demo assets (do these before posting anything)
+
+This is the highest-ROI 30 minutes of the whole launch. Posts with a short
+demo clip outperform text-only posts by a wide margin on every platform.
+
+- [ ] **10–15s screen recording, no audio:** Alt+Space → type "cuda out of
+      memory" → results appear → Enter opens the screenshot. One take.
+      Save as `demo.gif` (≤8 MB for GitHub) and an MP4 for PH/X.
+- [ ] **Static hero screenshot:** home screen with real recents + a search
+      in progress. Replace `assets/search-at-full-speed.png` if you can
+      (the current one is from before 1.0.6).
+- [ ] **Social preview:** upload `assets/social-preview.png` in repo
+      Settings → Social preview (GitHub doesn't allow this via API).
+- [ ] **One-liner for bios:** "I build Kensaku — local search that reads
+      inside your files. github.com/yjid/kensaku"
+
+---
+
+## 11. The universal 2-line pitch (use anywhere, verbatim)
+
+> Kensaku is local file search that reads inside your files — documents,
+> code, and even the text in your screenshots. 100% local, free, MIT.
+> github.com/yjid/kensaku
+
+---
+
+## 12. Order of operations (one day, ~3 hours)
+
+| Time (ET) | Action |
+|---|---|
+| 07:30 | Final read-through of all copy in this file. Fix anything stale. |
+| 08:00 | Post to r/SideProject (Title 1, hero image attached). Drop the per-sub first comment. |
+| 08:15 | Post to r/opensource with the stack line. |
+| 09:00 | Submit Show HN. Post the author deep-dive as the first comment immediately. |
+| 09:15 | LinkedIn post. |
+| 10:00 | Mastodon / Bluesky post. |
+| 12:00 | X main post + follow-up reply 4–6h later. |
+| 14:00 | Product Hunt (if launching there — 00:01 PT start, so PH is a separate day). |
+| All day | Reply to every comment. Ship one small fix mentioned in a comment and say so. |
