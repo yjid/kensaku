@@ -47,15 +47,6 @@ pub fn release_memory() {
 )))]
 pub fn release_memory() {}
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn release_memory_is_callable() {
-        super::release_memory();
-        super::release_memory();
-    }
-}
-
 /// Terminates the WebKit/WebView helper processes that survive the destruction
 /// of the search window, so the hidden app keeps only the Rust side in memory.
 ///
@@ -123,5 +114,14 @@ pub fn kill_webview_processes() {
     #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
         let _ = pid;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn release_memory_is_callable() {
+        super::release_memory();
+        super::release_memory();
     }
 }
