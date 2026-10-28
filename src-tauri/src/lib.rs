@@ -237,6 +237,52 @@ pub fn run() {
     let config = KensakuConfig::load();
     indexer::extract::set_ocr_enabled(config.ocr_enabled);
     ocr::set_engine(&config.ocr_engine);
+
+    // When Tesseract is not installed (the common case on Windows), switch to
+    // the accurate PP-OCRv6 engine automatically and download its pack instead
+    // of leaving OCR silently broken. Extraction re-reads the engine choice on
+    // every call, so the switch applies to files queued during the probe.
+    {
+        let mut config = config.clone();
+        let engine = config.ocr_engine.clone();
+        let ocr_enabled = config.ocr_enabled;
+        std::thread::Builder::new()
+            .name("kensaku-ocr-select".into())
+            .spawn(move || {
+                if !ocr_enabled || !ocr::accurate_compiled() {
+                    return;
+                }
+                if engine.eq_ignore_ascii_case(ocr::ACCURATE) {
+                    // The user already picked the accurate engine: make sure
+                    // its pack exists, whatever platform this is.
+                    if !ocr::pack_present() {
+                        models::download_ocr_pack();
+                    }
+                    return;
+                }
+                if engine.eq_ignore_ascii_case(ocr::TESSERACT)
+                    && !indexer::extract::image::tesseract_available()
+                {
+                    ocr::set_engine(ocr::ACCURATE);
+                    config.ocr_engine = ocr::ACCURATE.to_string();
+                    match config.save() {
+                        Ok(()) => {
+                            eprintln!(
+                                "[Kensaku] tesseract not found; switched OCR to the accurate pack"
+                            );
+                            if !ocr::pack_present() {
+                                models::download_ocr_pack();
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[Kensaku] could not switch OCR engine: {e}");
+                        }
+                    }
+                }
+            })
+            .expect("spawn ocr engine selector");
+    }
+
     let is_setup = config.is_setup_complete;
 
     let (indexer_manager, daemon_client) = if daemon_available {
