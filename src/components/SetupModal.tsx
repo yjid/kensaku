@@ -585,7 +585,7 @@ function Shell({
         <span className="t-meta text-subtle">{mark}</span>
       </aside>
       <section className="relative z-10 flex min-w-0 flex-1 flex-col">
-        <div className="surface m-2 flex min-h-0 flex-1 flex-col rounded-sheet px-8 pt-4 md:ml-0">
+        <div className="surface m-2 flex min-h-0 flex-1 flex-col rounded-sheet px-7 pt-3 md:ml-0">
           <div data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-end">{trailing}</div>
           <div className="mx-auto flex min-h-0 w-full max-w-[460px] flex-1 flex-col">{children}</div>
         </div>

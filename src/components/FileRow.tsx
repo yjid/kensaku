@@ -59,7 +59,7 @@ export const FileRow = React.memo(function FileRow({
         e.dataTransfer.setData("text/uri-list", `file://${item.path}`);
       }}
       style={{ height: FILE_ROW_HEIGHT }}
-      className={`group relative flex w-full cursor-default items-center gap-3 rounded-control px-3 transition-colors duration-150 ${
+      className={`group relative flex w-full cursor-default items-center gap-2.5 rounded-control px-2.5 transition-colors duration-150 ${
         selected ? "bg-accent-soft" : "hover:bg-accent-soft"
       }`}
     >

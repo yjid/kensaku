@@ -1013,7 +1013,7 @@ function App() {
 
 
               {!isCommandMode && interpretation.length > 0 && (
-                <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-4 pb-2">
+                <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3.5 pb-1.5">
                   <span className="t-meta mr-1 text-subtle">Understood as</span>
                   {interpretation.map((c, i) => (
                     <button
@@ -1036,7 +1036,7 @@ function App() {
 
               {/* One control bar: category chips on the left, layout and save on the right. */}
               {!isCommandMode && hasQuery && (
-                <div className="fade-in flex shrink-0 items-center gap-2 px-4 pb-2">
+                <div className="fade-in flex shrink-0 items-center gap-2 px-3.5 pb-1.5">
                   <CategoryChips
                     results={results}
                     facets={facets}
@@ -1061,7 +1061,7 @@ function App() {
               )}
 
               {saveOpen && (
-                <div className="overlay-in flex shrink-0 items-center gap-2 px-4 pb-2">
+                <div className="overlay-in flex shrink-0 items-center gap-2 px-3.5 pb-1.5">
                   <input
                     autoFocus
                     value={saveName}
@@ -1125,7 +1125,7 @@ function App() {
 
               {/* Command output banner */}
               {commandOutput && (
-                <div className="surface overlay-in mx-4 mb-2 flex shrink-0 items-start justify-between gap-3 px-4 py-3">
+                <div className="surface overlay-in mx-3.5 mb-1.5 flex shrink-0 items-start justify-between gap-3 px-3.5 py-2.5">
                   <div className="flex min-w-0 items-start gap-2">
                     <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />
                     <pre className="select-text whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-muted">
@@ -1196,7 +1196,7 @@ function App() {
                       }
                     />
                   ) : noResults ? (
-                    <div className="flex h-full flex-col items-start justify-end gap-4 px-5 pb-10 select-none">
+                    <div className="flex h-full flex-col items-start justify-end gap-4 px-4 pb-8 select-none">
                       <p className="t-moment rise-in max-w-lg text-muted">
                         Nothing called <span className="text-fg">{query.trim()}</span>, yet.
                       </p>

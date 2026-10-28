@@ -166,7 +166,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
                 type="button"
                 onClick={() => setSection(s.id)}
                 aria-current={active ? "page" : undefined}
-                className={`relative flex h-9 w-full items-center gap-3 rounded-control px-3 text-[13px] transition-colors duration-150 ${
+                className={`relative flex h-8 w-full items-center gap-2.5 rounded-control px-2.5 text-[13px] transition-colors duration-150 ${
                   active ? "control font-medium text-fg" : "text-muted hover:text-fg"
                 }`}
               >
@@ -187,7 +187,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
         >
           <X className="h-4 w-4" strokeWidth={1.75} />
         </button>
-        <div className="absolute inset-0 overflow-y-auto px-8 pb-24 pt-8" style={{ scrollbarGutter: "stable" }}>
+        <div className="absolute inset-0 overflow-y-auto px-6 pb-20 pt-6" style={{ scrollbarGutter: "stable" }}>
           <div className="mx-auto max-w-[640px]">
             {config ? (
               <SectionShell section={section}>{renderSection(section, config, setConfig)}</SectionShell>

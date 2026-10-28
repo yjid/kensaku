@@ -48,8 +48,8 @@ export function SearchBar({
   const Glyph = isCommandMode ? Terminal : Search;
 
   return (
-    <div data-tauri-drag-region className="px-4 pb-2 pt-3">
-      <div className="control flex h-12 items-center gap-3 overflow-hidden rounded-field pl-4 pr-1.5 transition-shadow duration-200 focus-within:[box-shadow:var(--control-edge),var(--control-shadow),0_0_0_3px_var(--ink-soft)]">
+    <div data-tauri-drag-region className="px-3.5 pb-1.5 pt-2.5">
+      <div className="relative flex h-11 items-center gap-2.5 overflow-hidden rounded-field pl-3.5 pr-1.5 transition-shadow duration-200 focus-within:[box-shadow:0_0_0_3px_var(--ink-soft)]">
         <Glyph className="h-5 w-5 shrink-0 text-muted" strokeWidth={1.75} />
         <input
           ref={inputRef}

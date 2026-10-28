@@ -74,7 +74,7 @@ export function HomeView({
 
   if (recent.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-start justify-end gap-4 px-5 pb-10">
+      <div className="flex flex-1 flex-col items-start justify-end gap-4 px-4 pb-8">
         <p className="t-moment rise-in max-w-md text-muted">Ask for a file the way you'd describe it to a friend.</p>
         <div className="flex flex-wrap gap-1.5">
           {SUGGESTIONS.map((q, i) => (
@@ -94,7 +94,7 @@ export function HomeView({
   }
 
   return (
-    <div className="px-4 pb-6 pt-2">
+    <div className="px-3.5 pb-4 pt-1.5">
       {saved.length > 0 && (
         <div className="mb-4 flex flex-wrap items-baseline gap-x-5 gap-y-2">
           <span className="t-meta text-subtle">Saved</span>

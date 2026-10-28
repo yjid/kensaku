@@ -29,7 +29,7 @@ function statusText(s: IndexingStatus | null | undefined): { text: string; busy:
 export const KeyHintStrip: React.FC<{ status?: IndexingStatus | null }> = ({ status }) => {
   const { text, busy } = statusText(status);
   return (
-    <div className="relative z-10 flex h-8 shrink-0 items-center justify-between gap-4 px-4 text-[11px] text-subtle">
+    <div className="relative z-10 flex h-7 shrink-0 items-center justify-between gap-4 px-3.5 text-[11px] text-subtle">
       <span className="flex items-center gap-2">
         {text && (
           <>
