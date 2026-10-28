@@ -31,7 +31,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/search-at-full-speed.png" width="100%" alt="Kensaku searching at full speed" />
+  <img src="assets/hero.png" width="100%" alt="Kensaku — find anything on your computer" />
 </p>
 
 ---
@@ -99,6 +99,10 @@ Filename tools are everywhere. Reading *inside* your files — locally, instantl
 **Pleasant to use**
 - Light and dark themes. Continuous-corner cards, a borderless search field, and hover details — a calm, native-feeling interface.
 - Right-click for open, show in folder, copy path, and details.
+
+<p align="center">
+  <img src="assets/search-dashboard.png" width="100%" alt="Kensaku search results" />
+</p>
 
 ### The query language
 
