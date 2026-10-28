@@ -35,6 +35,8 @@ fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .decorations(false)
         .transparent(true)
         .always_on_top(true)
+        .skip_taskbar(true)
+        .visible_on_all_workspaces(true)
         .center()
         .shadow(true)
         .resizable(true)
@@ -45,9 +47,12 @@ fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     // app keeps running in the background.
     let app_handle = app.clone();
     window.on_window_event(move |event| {
-        if let WindowEvent::CloseRequested { api, .. } = event {
-            api.prevent_close();
-            hide(&app_handle);
+        match event {
+            WindowEvent::CloseRequested { api, .. } => {
+                api.prevent_close();
+                hide(&app_handle);
+            }
+            _ => {}
         }
     });
     Ok(window)
