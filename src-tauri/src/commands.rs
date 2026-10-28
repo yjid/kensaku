@@ -444,13 +444,19 @@ pub async fn get_stats(state: State<'_, AppState>) -> Result<serde_json::Value, 
 
 #[tauri::command]
 pub async fn set_theme(theme: String, state: State<'_, AppState>) -> Result<(), String> {
-    let normalized = theme.trim().to_ascii_lowercase();
-    if normalized != "paper" && normalized != "void" {
-        return Err(format!(
-            "Unsupported theme '{}'. Expected 'paper' or 'void'.",
-            theme
-        ));
+    let lowered = theme.trim().to_ascii_lowercase();
+    // "paper" / "void" are the pre-1.1 names for the same two themes.
+    let normalized = match lowered.as_str() {
+        "light" | "paper" => "light",
+        "dark" | "void" => "dark",
+        _ => {
+            return Err(format!(
+                "Unsupported theme '{}'. Expected 'light' or 'dark'.",
+                theme
+            ))
+        }
     }
+    .to_string();
 
     let mut config = state.indexer.config.read().clone();
     config.theme = normalized;
