@@ -1194,7 +1194,7 @@ function App() {
                         )
                       }
                     />
-                  ) : noResults ? (
+                  ) : hasQuery ? (noResults ? (
                     <div className="flex h-full flex-col items-start justify-end gap-4 px-4 pb-8 select-none">
                       <p className="t-moment rise-in max-w-lg text-muted">
                         Nothing called <span className="text-fg">{query.trim()}</span>, yet.
@@ -1219,6 +1219,7 @@ function App() {
                         />
                       </div>
                     </div>
+                  ) : null
                   ) : (
                     <HomeView
                       data={home}
