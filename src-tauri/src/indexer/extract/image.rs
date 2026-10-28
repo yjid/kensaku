@@ -240,6 +240,9 @@ fn tesseract_command() -> Command {
     // provides the parallelism instead.
     command.env("OMP_THREAD_LIMIT", "1");
     command.env("OMP_NUM_THREADS", "1");
+    // On Windows, tesseract is a console application. Without this flag every
+    // invocation flashes a console window on the desktop (issue #N).
+    crate::util::process::hide_console(&mut command);
     command
 }
 

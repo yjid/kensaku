@@ -150,6 +150,8 @@ fn render_external(source: &Path, out_dir: &Path, kind: Kind) -> Result<PathBuf,
 
 /// Runs a command with a hard timeout. Returns true on a zero exit status.
 fn run_timed(cmd: &mut Command) -> bool {
+    // Hide console windows on Windows (pdftoppm is a console app).
+    crate::util::process::hide_console(cmd);
     let Ok(mut child) = cmd.stdout(Stdio::null()).stderr(Stdio::null()).spawn() else {
         return false;
     };

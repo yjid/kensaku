@@ -213,6 +213,9 @@ impl ExternalExtractor {
             command.current_dir(parent);
         }
 
+        // Hide console windows on Windows (external extractors are console apps).
+        crate::util::process::hide_console(&mut command);
+
         // A new process group lets the timeout path kill the plugin *and* any
         // helpers it spawned, instead of leaving them behind.
         #[cfg(unix)]
