@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import React from "react";
-import { Check, Plus, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download, X } from "lucide-react";
+import { Check, Plus, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download, X, FolderOpen } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
 import type { IndexingStatus, OcrStatus, ModelsStatus } from "../types";
 
@@ -44,6 +44,8 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const [suggestedDirs, setSuggestedDirs] = useState<string[]>([]);
   const [selectedDirs, setSelectedDirs] = useState<string[]>([]);
   const [customDirInput, setCustomDirInput] = useState("");
+  const [dirError, setDirError] = useState<string | null>(null);
+  const [dirBusy, setDirBusy] = useState(false);
   const excludedDirs = DEFAULT_EXCLUSIONS;
   const [ocrStatus, setOcrStatus] = useState<OcrStatus | null>(null);
   const [ocrPackStatus, setOcrPackStatus] = useState<ModelsStatus | null>(null);
@@ -169,17 +171,53 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     };
   }, [scanning, done, onSetupCompleted]);
 
+  const addDirs = (paths: string[]) =>
+    setSelectedDirs((prev) => [...prev, ...paths.filter((p) => !prev.includes(p))]);
+
   const toggleDir = (dir: string) =>
     setSelectedDirs((prev) =>
       prev.includes(dir) ? prev.filter((d) => d !== dir) : [...prev, dir],
     );
 
-  const addCustomDir = () => {
-    const t = customDirInput.trim();
-    if (t && !selectedDirs.includes(t)) {
-      setSelectedDirs((prev) => [...prev, t]);
-      setCustomDirInput("");
+  /* Native folder picker. The plugin module loads lazily so a plain-browser
+     dev preview (mockTauri) only pays for it when the picker is used. */
+  const browseForFolder = async () => {
+    setDirError(null);
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const picked = await open({
+        directory: true,
+        multiple: true,
+        title: "Choose folders to search",
+      });
+      if (!picked) return;
+      addDirs(Array.isArray(picked) ? picked : [picked]);
+    } catch (err) {
+      setDirError(`Folder picker unavailable here — type a path below instead. (${String(err)})`);
     }
+  };
+
+  /* Typed entry: accept several paths at once (comma/semicolon separated),
+     expand `~`, strip quotes, verify every folder exists. Bad paths surface
+     as a single inline error; good ones are added in canonical form. */
+  const addManualDirs = async () => {
+    const raw = customDirInput.trim();
+    if (!raw || dirBusy) return;
+    setDirBusy(true);
+    setDirError(null);
+    const ok: string[] = [];
+    const failed: string[] = [];
+    for (const part of raw.split(/[,;]/).map((s) => s.trim()).filter(Boolean)) {
+      try {
+        ok.push(await invoke<string>("validate_directory", { path: part }));
+      } catch (err) {
+        failed.push(String(err));
+      }
+    }
+    if (ok.length) addDirs(ok);
+    setCustomDirInput("");
+    if (failed.length) setDirError(failed.join("  ·  "));
+    setDirBusy(false);
   };
 
   const handleFinish = async () => {
@@ -321,7 +359,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
           <div className="flex flex-col gap-2">
             {[...suggestedDirs, ...selectedDirs.filter((d) => !suggestedDirs.includes(d))].map((dir, i) => {
               const selected = selectedDirs.includes(dir);
-              const name = dir.split("/").filter(Boolean).pop() || dir;
+              const name = dir.split(/[\\/]/).filter(Boolean).pop() || dir;
               return (
                 <button
                   key={dir}
@@ -335,7 +373,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[14px] font-medium text-fg">{name}</span>
-                    <span className="block truncate text-[12px] text-subtle">{dir.replace(/^\/(Users|home)\/[^/]+/, "~")}</span>
+                    <span className="block truncate text-[12px] text-subtle">{dir.replace(/^[/\\]+Users[/\\][^/\\]+/, "~")}</span>
                   </span>
                   <span
                     className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors duration-200 ${
@@ -347,20 +385,43 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 </button>
               );
             })}
-            <div className="flex gap-2 pt-1">
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={browseForFolder}
+              className="btn btn-secondary h-11 w-full !rounded-[12px]"
+            >
+              <FolderOpen className="h-4 w-4" strokeWidth={1.75} />
+              Browse for folder…
+              <span className="text-[11px] text-subtle">pick as many as you like</span>
+            </button>
+            <div className="flex gap-2">
               <input
                 type="text"
                 value={customDirInput}
-                placeholder="Add another folder, e.g. ~/Work"
+                placeholder="Or type a path — ~ works, commas separate several"
                 onChange={(e) => setCustomDirInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addCustomDir()}
+                onKeyDown={(e) => e.key === "Enter" && addManualDirs()}
                 spellCheck={false}
                 className="field h-10 min-w-0 flex-1"
               />
-              <button type="button" onClick={addCustomDir} disabled={!customDirInput.trim()} className="btn btn-secondary btn-icon h-10 w-10" aria-label="Add folder">
-                <Plus className="h-4 w-4" strokeWidth={1.75} />
+              <button
+                type="button"
+                onClick={addManualDirs}
+                disabled={!customDirInput.trim() || dirBusy}
+                className="btn btn-secondary btn-icon h-10 w-10"
+                aria-label="Add folder"
+              >
+                {dirBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" strokeWidth={1.75} />}
               </button>
             </div>
+            {dirError && (
+              <p className="flex items-start gap-2 break-words rounded-[10px] bg-danger/10 px-3 py-2 text-[12px] text-danger">
+                <X className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {dirError}
+              </p>
+            )}
           </div>
         </div>
       )}

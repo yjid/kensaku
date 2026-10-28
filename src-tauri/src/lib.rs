@@ -307,6 +307,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, _shortcut, event| {
@@ -349,6 +350,7 @@ pub fn run() {
             commands::run_setup_again,
             commands::complete_setup,
             commands::get_suggested_directories,
+            commands::validate_directory,
             commands::get_scope_suggestions,
             commands::get_home_data,
             commands::toggle_pin,
