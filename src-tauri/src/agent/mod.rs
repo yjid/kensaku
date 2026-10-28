@@ -854,15 +854,27 @@ mod scope_tests {
     #[test]
     fn empty_roots_allow_anything() {
         assert!(agent_path_allowed(&[], "/etc/passwd"));
+        // The normalization preserves POSIX roots, so with no configured
+        // roots the request passes through lexically unchanged. Windows
+        // renders the POSIX root with the native separator.
+        let expected = if cfg!(windows) { r"\tmp\demo" } else { "/tmp/demo" };
         assert_eq!(
             agent_scope_paths(&[], Some("/tmp/demo")).unwrap(),
-            vec!["/tmp/demo".to_string()]
+            vec![expected.to_string()]
         );
     }
 
     #[test]
     fn lexical_normalization_stays_above_root() {
-        assert_eq!(lexical_scope_path("/a/../..").to_string_lossy(), "/");
-        assert_eq!(lexical_scope_path("../a").to_string_lossy(), "../a");
+        // Traversing above the root collides with the root in both cases,
+        // but the fallback `..` for relative escapes is rendered with the
+        // native separator on Windows.
+        let (above_root, relative_escape) = if cfg!(windows) {
+            (r"\", r"..\a")
+        } else {
+            ("/", "../a")
+        };
+        assert_eq!(lexical_scope_path("/a/../..").to_string_lossy(), above_root);
+        assert_eq!(lexical_scope_path("../a").to_string_lossy(), relative_escape);
     }
 }

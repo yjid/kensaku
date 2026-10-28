@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import React from "react";
-import { Check, Plus, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download, X } from "lucide-react";
+import { Check, Plus, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download, X, FolderOpen } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
 import type { IndexingStatus, OcrStatus, ModelsStatus } from "../types";
 
@@ -26,6 +26,17 @@ function formatEta(seconds: number): string {
   return `~${hours}h ${mins % 60}m left`;
 }
 
+/* Picks the engine the UI should preselect. Mirrors the backend's startup
+   decision so the radio shows the engine that will actually run: the config
+   choice (`engine`), or PP-OCRv6 when tesseract is missing and the accurate
+   pack is compiled in. `null`/undefined fields degrade optimistically. */
+function pickEngine(status: OcrStatus): "tesseract" | "accurate" {
+  const accurateCompilable = status.accurate_compiled !== false;
+  if (status.engine === "accurate" && accurateCompilable) return "accurate";
+  if (!status.engine_present && accurateCompilable) return "accurate";
+  return "tesseract";
+}
+
 export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void }) {
   const [step, setStep] = useState<0 | 1>(0);
   // Start at sign-in is on by default, so the app is one shortcut away after a restart.
@@ -33,12 +44,14 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const [suggestedDirs, setSuggestedDirs] = useState<string[]>([]);
   const [selectedDirs, setSelectedDirs] = useState<string[]>([]);
   const [customDirInput, setCustomDirInput] = useState("");
+  const [dirError, setDirError] = useState<string | null>(null);
+  const [dirBusy, setDirBusy] = useState(false);
   const excludedDirs = DEFAULT_EXCLUSIONS;
   const [ocrStatus, setOcrStatus] = useState<OcrStatus | null>(null);
   const [ocrPackStatus, setOcrPackStatus] = useState<ModelsStatus | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrPackBusy, setOcrPackBusy] = useState(false);
-  const [selectedOcrEngine, setSelectedOcrEngine] = useState<"tesseract" | "accurate">("tesseract");
+  const [selectedOcrEngine, setSelectedOcrEngine] = useState<"tesseract" | "accurate" | null>(null);
   const [packError, setPackError] = useState<string | null>(null);
   const [shortcut, setShortcut] = useState("Alt+Space");
   const [capturing, setCapturing] = useState(false);
@@ -105,10 +118,19 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     return () => window.removeEventListener("keydown", onKey);
   }, [capturing]);
 
-  // Load OCR state when the final screen opens.
+  // Load OCR state when the final screen opens. The selection mirrors the
+  // engine the backend actually runs — its startup probe may already have
+  // switched to PP-OCRv6 because tesseract is not installed — instead of
+  // re-persisting a dead default over the fallback on Finish. An explicit
+  // user choice (selection ≠ null) is never overwritten by re-entry.
   useEffect(() => {
     if (step !== 1) return;
-    invoke<OcrStatus>("get_ocr_status").then(setOcrStatus).catch(() => {});
+    invoke<OcrStatus>("get_ocr_status")
+      .then((s) => {
+        setOcrStatus(s);
+        setSelectedOcrEngine((prev) => prev ?? pickEngine(s));
+      })
+      .catch(() => {});
     invoke<ModelsStatus>("get_ocr_pack_status").then(setOcrPackStatus).catch(() => {});
   }, [step]);
 
@@ -149,17 +171,53 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     };
   }, [scanning, done, onSetupCompleted]);
 
+  const addDirs = (paths: string[]) =>
+    setSelectedDirs((prev) => [...prev, ...paths.filter((p) => !prev.includes(p))]);
+
   const toggleDir = (dir: string) =>
     setSelectedDirs((prev) =>
       prev.includes(dir) ? prev.filter((d) => d !== dir) : [...prev, dir],
     );
 
-  const addCustomDir = () => {
-    const t = customDirInput.trim();
-    if (t && !selectedDirs.includes(t)) {
-      setSelectedDirs((prev) => [...prev, t]);
-      setCustomDirInput("");
+  /* Native folder picker. The plugin module loads lazily so a plain-browser
+     dev preview (mockTauri) only pays for it when the picker is used. */
+  const browseForFolder = async () => {
+    setDirError(null);
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const picked = await open({
+        directory: true,
+        multiple: true,
+        title: "Choose folders to search",
+      });
+      if (!picked) return;
+      addDirs(Array.isArray(picked) ? picked : [picked]);
+    } catch (err) {
+      setDirError(`Folder picker unavailable here — type a path below instead. (${String(err)})`);
     }
+  };
+
+  /* Typed entry: accept several paths at once (comma/semicolon separated),
+     expand `~`, strip quotes, verify every folder exists. Bad paths surface
+     as a single inline error; good ones are added in canonical form. */
+  const addManualDirs = async () => {
+    const raw = customDirInput.trim();
+    if (!raw || dirBusy) return;
+    setDirBusy(true);
+    setDirError(null);
+    const ok: string[] = [];
+    const failed: string[] = [];
+    for (const part of raw.split(/[,;]/).map((s) => s.trim()).filter(Boolean)) {
+      try {
+        ok.push(await invoke<string>("validate_directory", { path: part }));
+      } catch (err) {
+        failed.push(String(err));
+      }
+    }
+    if (ok.length) addDirs(ok);
+    setCustomDirInput("");
+    if (failed.length) setDirError(failed.join("  ·  "));
+    setDirBusy(false);
   };
 
   const handleFinish = async () => {
@@ -170,7 +228,9 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         watchedDirs: selectedDirs,
         excludedDirs: excludedDirs,
         shortcut: shortcut,
-        ocrEngine: selectedOcrEngine,
+        // Keep the backend's engine choice when the user did not touch the
+        // radios (e.g. status never loaded) instead of resetting to a name.
+        ocrEngine: selectedOcrEngine ?? (ocrStatus ? pickEngine(ocrStatus) : "tesseract"),
       });
       // The default text model downloads without asking. Failure is not fatal:
       // keyword search works without it, and Settings can retry.
@@ -299,7 +359,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
           <div className="flex flex-col gap-2">
             {[...suggestedDirs, ...selectedDirs.filter((d) => !suggestedDirs.includes(d))].map((dir, i) => {
               const selected = selectedDirs.includes(dir);
-              const name = dir.split("/").filter(Boolean).pop() || dir;
+              const name = dir.split(/[\\/]/).filter(Boolean).pop() || dir;
               return (
                 <button
                   key={dir}
@@ -313,7 +373,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[14px] font-medium text-fg">{name}</span>
-                    <span className="block truncate text-[12px] text-subtle">{dir.replace(/^\/(Users|home)\/[^/]+/, "~")}</span>
+                    <span className="block truncate text-[12px] text-subtle">{dir.replace(/^[/\\]+Users[/\\][^/\\]+/, "~")}</span>
                   </span>
                   <span
                     className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors duration-200 ${
@@ -325,20 +385,43 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 </button>
               );
             })}
-            <div className="flex gap-2 pt-1">
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={browseForFolder}
+              className="btn btn-secondary h-11 w-full !rounded-[12px]"
+            >
+              <FolderOpen className="h-4 w-4" strokeWidth={1.75} />
+              Browse for folder…
+              <span className="text-[11px] text-subtle">pick as many as you like</span>
+            </button>
+            <div className="flex gap-2">
               <input
                 type="text"
                 value={customDirInput}
-                placeholder="Add another folder, e.g. ~/Work"
+                placeholder="Or type a path — ~ works, commas separate several"
                 onChange={(e) => setCustomDirInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addCustomDir()}
+                onKeyDown={(e) => e.key === "Enter" && addManualDirs()}
                 spellCheck={false}
                 className="field h-10 min-w-0 flex-1"
               />
-              <button type="button" onClick={addCustomDir} disabled={!customDirInput.trim()} className="btn btn-secondary btn-icon h-10 w-10" aria-label="Add folder">
-                <Plus className="h-4 w-4" strokeWidth={1.75} />
+              <button
+                type="button"
+                onClick={addManualDirs}
+                disabled={!customDirInput.trim() || dirBusy}
+                className="btn btn-secondary btn-icon h-10 w-10"
+                aria-label="Add folder"
+              >
+                {dirBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" strokeWidth={1.75} />}
               </button>
             </div>
+            {dirError && (
+              <p className="flex items-start gap-2 break-words rounded-[10px] bg-danger/10 px-3 py-2 text-[12px] text-danger">
+                <X className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {dirError}
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -359,6 +442,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               ready={Boolean(ocrStatus?.available)}
               busy={ocrBusy}
               disabled={ocrBusy || !ocrStatus?.engine_present}
+              installHint={!ocrStatus || ocrStatus.engine_present ? null : "Not installed"}
               onDownload={async () => {
                 setPackError(null);
                 setOcrBusy(true);
@@ -379,6 +463,16 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               ready={Boolean(ocrPackStatus?.ready)}
               busy={Boolean(ocrPackStatus?.downloading || ocrPackBusy)}
               disabled={Boolean(ocrPackStatus?.downloading) || !ocrStatus?.accurate_compiled}
+              installHint={!ocrStatus?.accurate_compiled ? "Not in this build" : null}
+              busyLabel={
+                ocrPackStatus?.downloading && ocrPackStatus.progress
+                  ? `Downloading ${Math.round(
+                      ((ocrPackStatus.progress.downloaded ?? 0) /
+                        Math.max(1, ocrPackStatus.progress.total ?? 1)) *
+                        100,
+                    )}%`
+                  : undefined
+              }
               onDownload={async () => {
                 setPackError(null);
                 setOcrPackBusy(true);
@@ -396,8 +490,13 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 <X className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {packError}
               </p>
             )}
-            {ocrStatus && !ocrStatus.engine_present && !ocrStatus.accurate_compiled && (
-              <p className="text-[12px] text-subtle">Tesseract isn't installed and PP-OCRv6 isn't in this build.</p>
+            {/* Background downloads (startup auto-fallback) report failures
+                through the pack status, not through an invoke rejection —
+                surface them the same way. */}
+            {ocrPackStatus?.error && !ocrPackStatus.downloading && (
+              <p className="flex items-start gap-2 break-words rounded-[10px] bg-danger/10 px-3 py-2 text-[12px] text-danger">
+                <X className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {ocrPackStatus.error}
+              </p>
             )}
           </div>
 
@@ -534,6 +633,8 @@ function EngineOption({
   ready,
   busy,
   disabled,
+  installHint,
+  busyLabel,
   onDownload,
 }: {
   selected: boolean;
@@ -543,18 +644,25 @@ function EngineOption({
   ready: boolean;
   busy: boolean;
   disabled: boolean;
+  /** Replaces the Download button with a plain reason when set. */
+  installHint?: string | null;
+  busyLabel?: string;
   onDownload: () => void;
 }) {
   return (
     <div
       role="radio"
       aria-checked={selected}
+      aria-disabled={disabled || undefined}
       tabIndex={0}
-      onClick={onSelect}
-      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect()}
+      onClick={() => !disabled && onSelect()}
+      onKeyDown={(e) => {
+        if (disabled) return;
+        (e.key === "Enter" || e.key === " ") && onSelect();
+      }}
       className={`surface flex min-h-16 cursor-default items-center gap-4 px-4 py-3 transition-shadow duration-200 ${
         selected ? "![box-shadow:inset_0_0_0_1.5px_var(--ink)]" : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
-      }`}
+      } ${disabled ? "opacity-60" : ""}`}
     >
       <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors ${selected ? "bg-ink" : "shadow-[inset_0_0_0_1.5px_var(--border-strong)]"}`}>
         {selected && <span className="h-1.5 w-1.5 rounded-full bg-bg" />}
@@ -567,6 +675,8 @@ function EngineOption({
         <span className="t-meta flex items-center gap-1.5 text-success">
           <span className="h-1.5 w-1.5 rounded-full bg-success" /> Ready
         </span>
+      ) : installHint ? (
+        <span className="text-[12px] text-subtle">{installHint}</span>
       ) : (
         <button
           type="button"
@@ -578,7 +688,7 @@ function EngineOption({
           className="btn btn-secondary h-8 px-3 text-[12px]"
         >
           {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" strokeWidth={1.75} />}
-          {busy ? "Downloading" : "Download"}
+          {busy ? busyLabel ?? "Downloading" : "Download"}
         </button>
       )}
     </div>

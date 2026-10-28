@@ -143,6 +143,7 @@ function note(msg: string) {
 handlers.open_file = (a) => note(`Preview: would open ${a.path.split("/").pop()}`);
 handlers.open_folder = (a) => note(`Preview: would reveal ${a.path.split("/").pop()} in its folder`);
 handlers.hide_window = () => null;
+handlers.validate_directory = (args: { path: string }) => args.path;
 
 let cbId = 0;
 (window as any).__TAURI_INTERNALS__ = {

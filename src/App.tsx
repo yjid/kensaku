@@ -637,6 +637,42 @@ function App() {
     inputRef.current?.focus();
   }, []);
 
+  /* The result list both the keyboard navigation and the render operate over.
+     Declared before the key handlers because their closures read it even on
+     renders that return early below (first-launch setup screen): the setup
+     render registers the handlers while never reaching the declaration, so a
+     late `const navList` made every Space press throw a TDZ error. */
+  const displayResults = useMemo(
+    () =>
+      results.filter((r) => {
+        const cat = classify(r);
+        if (facetExclude.has(cat)) return false;
+        if (facetInclude.size > 0 && !facetInclude.has(cat)) return false;
+        return true;
+      }),
+    [results, facetInclude, facetExclude],
+  );
+  // The list keyboard navigation operates over — search results while a query
+  // is typed, otherwise the home screen's recent tiles. Home items are shaped
+  // as search results (no snippet, FileName match) so preview, details and
+  // open all share one code path with the search list.
+  const hasQuery = query.trim() !== "";
+  const homeNavList = useMemo(
+    () =>
+      (home?.recent ?? []).slice(0, 18).map((item) => ({
+        path: item.path,
+        filename: item.filename,
+        snippet: null,
+        score: 0,
+        file_size: item.size,
+        modified: item.modified,
+        is_dir: item.is_dir,
+        match_type: "FileName" as const,
+      })),
+    [home],
+  );
+  const navList = hasQuery ? displayResults : homeNavList;
+
   /* Space previews only once the user has moved into the results with the
      arrow keys. Typing clears it, so Space still types a space in a query. */
   const navigatingRef = useRef(false);
@@ -644,10 +680,18 @@ function App() {
     navigatingRef.current = false;
   }, [query]);
 
+  // Home and search are different lists: never carry a selection index
+  // across the boundary.
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [hasQuery]);
+
   const handleKeyDown = useCallback(
     async (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
       if (document.body.dataset.ksCapture === "1") return;
+      // The setup wizard owns the keyboard while it is open.
+      if (isSetupComplete !== true) return;
       // Overlays own the keyboard while they are open.
       if (showSettings || showDuplicates || showHelp || preview || details || menu) return;
       const inInput = document.activeElement === inputRef.current;
@@ -723,16 +767,38 @@ function App() {
       // Left/Right keep moving the caret while the query is being edited.
       if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && inInput && !navigatingRef.current) return;
 
-      if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Tab") {
+        // Whether the list was already being walked matters for Tab: entering
+        // from the search field lands on the first result instead of skipping
+        // to the second. Capture before the flag flips below.
+        const enteringFromSearch = !navigatingRef.current;
         e.preventDefault();
         navigatingRef.current = true;
         if (navList.length === 0) {
           setSelectedIndex(0);
           return;
         }
+        // Tab walks the list linearly from the search field: the first press
+        // lands on the first result, later presses step forward (Shift+Tab
+        // back) with wrap. Grid geometry is deliberately ignored — Tab is
+        // always a single-step walk.
+        if (e.key === "Tab") {
+          if (enteringFromSearch) {
+            setSelectedIndex(e.shiftKey ? navList.length - 1 : 0);
+          } else {
+            setSelectedIndex((prev) =>
+              e.shiftKey
+                ? (prev - 1 + navList.length) % navList.length
+                : (prev + 1) % navList.length,
+            );
+          }
+          return;
+        }
         // Grid view navigates by rows first: Up/Down jump a whole row,
         // Left/Right step within the row. List view stays linear with wrap.
-        const grid = view === "grid";
+        // The home screen is always a linear walk — its tile grid is a
+        // different component, so the measured column count may be stale.
+        const grid = view === "grid" && hasQuery;
         if (grid) {
           const cols = gridColumnCount();
           if (e.key === "ArrowLeft") {
@@ -783,7 +849,7 @@ function App() {
         setDetails(navList[selectedIndex]);
       }
     },
-    [showSettings, showDuplicates, showHelp, details, menu, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope, preview],
+    [isSetupComplete, showSettings, showDuplicates, showHelp, details, menu, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope, preview],
   );
 
   // Window-level, so shortcuts keep working after a dialog closes and focus
@@ -801,6 +867,8 @@ function App() {
     const onEsc = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (e.defaultPrevented) return;
+      // The setup wizard owns the keyboard (its shortcut capture handles Esc).
+      if (isSetupComplete !== true) return;
       if (document.body.dataset.ksCapture === "1") return;
       // Let open overlays handle their own Escape.
       if (showSettings || showDuplicates || showHelp || preview || details || saveOpen) return;
@@ -831,20 +899,24 @@ function App() {
     };
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, [showSettings, showDuplicates, showHelp, preview, details, saveOpen, slashFilter, scopePrefix, commandOutput, query]);
+  }, [isSetupComplete, showSettings, showDuplicates, showHelp, preview, details, saveOpen, slashFilter, scopePrefix, commandOutput, query]);
+
+  // Dismiss like a launcher: hide when the window loses focus (clicking away,
+  // switching apps), unless a modal overlay is open. The setup wizard and
+  // native dialogs (folder picker, shortcut capture) also take focus away —
+  // hiding there would destroy the window mid-decision.
+  useEffect(() => {
+    const onBlur = () => {
+      if (isSetupComplete !== true) return;
+      if (showSettings || showDuplicates || showHelp || preview || details || saveOpen || menu) return;
+      invoke("hide_window").catch(() => undefined);
+    };
+    window.addEventListener("blur", onBlur);
+    return () => window.removeEventListener("blur", onBlur);
+  }, [isSetupComplete, showSettings, showDuplicates, showHelp, preview, details, saveOpen, menu]);
 
   /* ---------------- render ---------------- */
 
-  const displayResults = useMemo(
-    () =>
-      results.filter((r) => {
-        const cat = classify(r);
-        if (facetExclude.has(cat)) return false;
-        if (facetInclude.size > 0 && !facetInclude.has(cat)) return false;
-        return true;
-      }),
-    [results, facetInclude, facetExclude],
-  );
   if (isSetupComplete === null) {
     return (
       <div className="flex h-screen items-center justify-center bg-bg" />
@@ -853,10 +925,7 @@ function App() {
 
   const isCommandMode = query.trim().startsWith("/");
 
-  const hasQuery = query.trim() !== "";
   const noResults = hasQuery && !isCommandMode && displayResults.length === 0;
-  // The list keyboard navigation operates over — search results or recent files.
-  const navList = displayResults;
 
   return (
     <div
@@ -1156,6 +1225,7 @@ function App() {
                       data={home}
                       onOpen={(path) => handleOpenFile(path)}
                       showThumbs={showThumbs}
+                      focusIndex={hasQuery ? null : selectedIndex}
                       onSearch={(q) => {
                         setQuery(q);
                         inputRef.current?.focus();

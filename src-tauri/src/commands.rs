@@ -1143,17 +1143,10 @@ pub async fn get_scope_suggestions(
 pub async fn get_suggested_directories() -> Result<Vec<String>, String> {
     let mut dirs_list = Vec::new();
     if let Some(home) = dirs::home_dir() {
-        // Suggestions only: the home folder itself is never preselected.
-        let candidates = [
-            "Documents",
-            "Downloads",
-            "Desktop",
-            "Projects",
-            "Code",
-            "Development",
-            "Pictures",
-            "Videos",
-        ];
+        // Suggestions only: the home folder itself is never preselected. The
+        // short list keeps the setup screen scannable — everything else is a
+        // folder-picker or a typed path away.
+        let candidates = ["Documents", "Downloads", "Desktop", "Pictures"];
 
         for c in candidates {
             let p = home.join(c);
@@ -1163,6 +1156,47 @@ pub async fn get_suggested_directories() -> Result<Vec<String>, String> {
         }
     }
     Ok(dirs_list)
+}
+
+/// Validates a user-typed folder path and returns its canonical form.
+///
+/// Accepts `~` expansion, quoted paths and stray whitespace, and refuses
+/// anything that is not an existing directory — so the setup screen can show
+/// a clear error instead of silently watching a typo forever. The canonical
+/// form is what `complete_setup` stores and what the UI dedupes against.
+#[tauri::command]
+pub async fn validate_directory(path: String) -> Result<String, String> {
+    let trimmed = path.trim().trim_matches('"').trim().to_string();
+    let resolved = if trimmed == "~" {
+        dirs::home_dir()
+    } else if let Some(rest) = trimmed
+        .strip_prefix("~/")
+        .or_else(|| trimmed.strip_prefix("~\\"))
+    {
+        dirs::home_dir().map(|home| home.join(rest))
+    } else {
+        Some(std::path::PathBuf::from(&trimmed))
+    };
+    let Some(candidate) = resolved else {
+        return Err("Could not resolve the home directory".to_string());
+    };
+    if !candidate.exists() {
+        return Err(format!("Folder not found: {}", candidate.display()));
+    }
+    if !candidate.is_dir() {
+        return Err(format!("Not a folder: {}", candidate.display()));
+    }
+    let mut canonical = candidate
+        .canonicalize()
+        .map_err(|e| format!("Could not resolve {}: {}", candidate.display(), e))?
+        .to_string_lossy()
+        .to_string();
+    // Windows canonicalize() returns an extended-length path (\\?\C:\...);
+    // every other command and the UI expect the plain form.
+    if let Some(stripped) = canonical.strip_prefix("\\\\?\\") {
+        canonical = stripped.to_string();
+    }
+    Ok(canonical)
 }
 
 #[tauri::command]
@@ -1224,9 +1258,10 @@ pub async fn get_reset_pending() -> Result<bool, String> {
 /// Builds the platform autostart handle for the running executable.
 ///
 /// `current_exe()` is the release binary when Kensaku is installed normally. In
-/// development (`cargo run`) it resolves to `target/debug/kensaku`, so enabling
-/// autostart there registers the dev binary. That is acceptable: only released
-/// builds are ever registered by end users, and it keeps `cargo run` usable.
+/// development (`cargo run`) it resolves to `target/debug/kensaku`, which is a
+/// console-subsystem binary on Windows: registered at sign-in it would open a
+/// terminal window that stays for the whole session. Dev builds therefore
+/// refuse to register (see `set_autostart`) and clear stale entries.
 fn autostart_handle() -> Result<AutoLaunch, String> {
     let exe = std::env::current_exe()
         .map_err(|e| format!("Could not resolve the Kensaku executable path: {}", e))?;
@@ -1253,6 +1288,15 @@ pub async fn get_autostart() -> Result<bool, String> {
 
 #[tauri::command]
 pub async fn set_autostart(enabled: bool) -> Result<(), String> {
+    // A dev build is a console binary on Windows: at sign-in it would open a
+    // terminal window that remains for the whole session. Only the installed
+    // release build may register itself.
+    if enabled && cfg!(debug_assertions) {
+        eprintln!(
+            "[Kensaku] autostart is ignored in dev builds; install the release build for start at sign-in"
+        );
+        return Ok(());
+    }
     let handle = autostart_handle()?;
     let result = if enabled {
         handle.enable()
@@ -1266,6 +1310,34 @@ pub async fn set_autostart(enabled: bool) -> Result<(), String> {
             e
         )
     })
+}
+
+/// Removes autostart entries left behind by dev sessions.
+///
+/// A previous dev run that completed setup registered the debug binary in
+/// the user's Run key, so every login opened a console window. Dev builds
+/// clear that on startup; release builds never touch it.
+pub fn self_heal_autostart() {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    let handle = match autostart_handle() {
+        Ok(handle) => handle,
+        Err(_) => return,
+    };
+    match handle.is_enabled() {
+        Ok(true) => {
+            if let Err(e) = handle.disable() {
+                eprintln!("[Kensaku] could not remove the dev autostart entry: {e}");
+            } else {
+                eprintln!(
+                    "[Kensaku] removed the dev-build autostart entry (it opened a console at sign-in)"
+                );
+            }
+        }
+        Ok(false) => {}
+        Err(_) => {}
+    }
 }
 
 #[tauri::command]
