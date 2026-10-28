@@ -690,6 +690,8 @@ function App() {
     async (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
       if (document.body.dataset.ksCapture === "1") return;
+      // The setup wizard owns the keyboard while it is open.
+      if (isSetupComplete !== true) return;
       // Overlays own the keyboard while they are open.
       if (showSettings || showDuplicates || showHelp || preview || details || menu) return;
       const inInput = document.activeElement === inputRef.current;
@@ -847,7 +849,7 @@ function App() {
         setDetails(navList[selectedIndex]);
       }
     },
-    [showSettings, showDuplicates, showHelp, details, menu, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope, preview],
+    [isSetupComplete, showSettings, showDuplicates, showHelp, details, menu, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope, preview],
   );
 
   // Window-level, so shortcuts keep working after a dialog closes and focus
@@ -865,6 +867,8 @@ function App() {
     const onEsc = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (e.defaultPrevented) return;
+      // The setup wizard owns the keyboard (its shortcut capture handles Esc).
+      if (isSetupComplete !== true) return;
       if (document.body.dataset.ksCapture === "1") return;
       // Let open overlays handle their own Escape.
       if (showSettings || showDuplicates || showHelp || preview || details || saveOpen) return;
@@ -895,18 +899,21 @@ function App() {
     };
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, [showSettings, showDuplicates, showHelp, preview, details, saveOpen, slashFilter, scopePrefix, commandOutput, query]);
+  }, [isSetupComplete, showSettings, showDuplicates, showHelp, preview, details, saveOpen, slashFilter, scopePrefix, commandOutput, query]);
 
   // Dismiss like a launcher: hide when the window loses focus (clicking away,
-  // switching apps), unless a modal overlay is open.
+  // switching apps), unless a modal overlay is open. The setup wizard and
+  // native dialogs (folder picker, shortcut capture) also take focus away —
+  // hiding there would destroy the window mid-decision.
   useEffect(() => {
     const onBlur = () => {
+      if (isSetupComplete !== true) return;
       if (showSettings || showDuplicates || showHelp || preview || details || saveOpen || menu) return;
       invoke("hide_window").catch(() => undefined);
     };
     window.addEventListener("blur", onBlur);
     return () => window.removeEventListener("blur", onBlur);
-  }, [showSettings, showDuplicates, showHelp, preview, details, saveOpen, menu]);
+  }, [isSetupComplete, showSettings, showDuplicates, showHelp, preview, details, saveOpen, menu]);
 
   /* ---------------- render ---------------- */
 
