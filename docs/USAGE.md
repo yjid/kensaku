@@ -6,7 +6,9 @@
 ## The window
 
 Press <kbd>Alt</kbd>+<kbd>Space</kbd> (configurable in Settings) to toggle the
-floating search window. It hides on close and keeps the index warm.
+floating search window. It hides on close, when it loses focus (clicking away),
+and keeps the index warm. It stays out of the taskbar/dock and appears on every
+workspace, like a launcher.
 
 The main page is intentionally just **search + category chips + files**. Every
 statistic and setting lives in Settings, so the search surface stays quiet.

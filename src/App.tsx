@@ -851,6 +851,17 @@ function App() {
     return () => window.removeEventListener("keydown", onEsc);
   }, [showSettings, showDuplicates, showHelp, preview, details, saveOpen, slashFilter, scopePrefix, commandOutput, query]);
 
+  // Dismiss like a launcher: hide when the window loses focus (clicking away,
+  // switching apps), unless a modal overlay is open.
+  useEffect(() => {
+    const onBlur = () => {
+      if (showSettings || showDuplicates || showHelp || preview || details || saveOpen || menu) return;
+      invoke("hide_window").catch(() => undefined);
+    };
+    window.addEventListener("blur", onBlur);
+    return () => window.removeEventListener("blur", onBlur);
+  }, [showSettings, showDuplicates, showHelp, preview, details, saveOpen, menu]);
+
   /* ---------------- render ---------------- */
 
   if (isSetupComplete === null) {
