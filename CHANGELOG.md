@@ -3,6 +3,15 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Theme choice is saved again. The UI renamed its themes to `light` / `dark`
+  in 1.0.4, but the backend still only accepted the old `paper` / `void`
+  names, so every `set_theme` call failed and the pick never reached disk.
+  Both old names are still accepted and existing configs are migrated
+  (config v5).
+
 ## [1.0.4] — 2026-10-28
 
 ### Changed
