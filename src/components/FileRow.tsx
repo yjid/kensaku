@@ -63,7 +63,7 @@ export const FileRow = React.memo(function FileRow({
         selected ? "bg-accent-soft" : "hover:bg-accent-soft"
       }`}
     >
-      {selected && <span className="absolute left-0 top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-full bg-ink" />}
+      {selected && <span className="absolute left-0 top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-full bg-ink/40" />}
       {thumb ? (
         <img src={thumb} alt="" draggable={false} className="h-8 w-8 shrink-0 rounded-control object-cover shadow-[var(--panel-edge)]" />
       ) : (
