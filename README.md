@@ -5,12 +5,12 @@
 <h1 align="center">Kensaku <span title="kensaku = search, in Japanese">検索</span></h1>
 
 <p align="center">
-  <b>The launcher that reads inside your files.</b>
+  <b>Fast, light, and efficient. Find anything on your computer.</b>
 </p>
 
 <p align="center">
-  Names, full text, meaning — even the words inside your screenshots.<br/>
-  All of it on your machine. Press <kbd>Alt</kbd>+<kbd>Space</kbd>, type what you remember, press <kbd>Enter</kbd>.
+  Search 100,000 file names in about a millisecond, using roughly 12 MB of memory.<br/>
+  Search inside documents, images, and code too. Nothing leaves your machine.
 </p>
 
 <p align="center">
