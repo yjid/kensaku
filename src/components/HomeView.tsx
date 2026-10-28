@@ -13,11 +13,13 @@ function RecentTile({
   item,
   index,
   showThumbs,
+  focused,
   onOpen,
 }: {
   item: HomeData["recent"][number];
   index: number;
   showThumbs?: boolean;
+  focused?: boolean;
   onOpen: () => void;
 }) {
   const eligible = Boolean(showThumbs) && !item.is_dir && isThumbImage(item.filename);
@@ -28,10 +30,16 @@ function RecentTile({
       type="button"
       onClick={onOpen}
       title={item.path}
+      data-index={index}
+      aria-current={focused ? "true" : undefined}
       style={{ ["--stagger-delay" as string]: `${Math.min(index, 11) * 32}ms` }}
       className="group card-in flex min-w-0 flex-col text-left outline-none"
     >
-      <span className="surface relative block aspect-[4/3] w-full overflow-hidden transition-[transform,box-shadow] duration-[280ms] [transition-timing-function:var(--ease)] group-hover:-translate-y-[3px] group-hover:[box-shadow:var(--panel-edge),var(--shadow-float)] group-focus-visible:outline-2 group-focus-visible:outline-offset-[3px] group-focus-visible:outline-ink">
+      <span
+        className={`surface relative block aspect-[4/3] w-full overflow-hidden transition-[transform,box-shadow] duration-[280ms] [transition-timing-function:var(--ease)] group-hover:-translate-y-[3px] group-hover:[box-shadow:var(--panel-edge),var(--shadow-float)] group-focus-visible:outline-2 group-focus-visible:outline-offset-[3px] group-focus-visible:outline-ink ${
+          focused ? "outline-2 outline-offset-[3px] outline-ink" : ""
+        }`}
+      >
         {eligible && src && !failed ? (
           <img src={src} alt="" draggable={false} className="fade-in h-full w-full object-cover transition-transform duration-[520ms] [transition-timing-function:var(--ease)] group-hover:scale-[1.04]" />
         ) : (
@@ -51,11 +59,14 @@ export function HomeView({
   onSearch,
   onOpen,
   showThumbs,
+  focusIndex,
 }: {
   data: HomeData | null;
   onSearch: (query: string) => void;
   onOpen: (path: string) => void;
   showThumbs?: boolean;
+  /** Keyboard-walk selection; mirrors the launcher's result selection. */
+  focusIndex?: number | null;
 }) {
   if (!data) return null;
   const recent = data.recent.slice(0, 18);
@@ -102,7 +113,14 @@ export function HomeView({
       <p className="t-meta mb-2.5 px-0.5 text-subtle">Recent</p>
       <div className="grid gap-x-3 gap-y-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(168px, 1fr))" }}>
         {recent.map((r, i) => (
-          <RecentTile key={r.path} item={r} index={i} showThumbs={showThumbs} onOpen={() => onOpen(r.path)} />
+          <RecentTile
+            key={r.path}
+            item={r}
+            index={i}
+            showThumbs={showThumbs}
+            focused={focusIndex === i}
+            onOpen={() => onOpen(r.path)}
+          />
         ))}
       </div>
     </div>
