@@ -78,6 +78,11 @@ pub fn show(app: &AppHandle) {
 /// Hides the search window by destroying it, then returns freed memory.
 pub fn hide(app: &AppHandle) {
     if let Some(window) = existing(app) {
+        // Hide first, then destroy: on Windows, tearing down a visible
+        // transparent + always-on-top window while WebView2 crashes out (the
+        // process list is killed below) can briefly leave a composited ghost
+        // frame on screen. Once hidden, nothing of the window is visible.
+        let _ = window.hide();
         let _ = window.destroy();
     }
     // WebKit/WebView helpers otherwise stay alive after the window is
