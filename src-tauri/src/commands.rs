@@ -134,7 +134,31 @@ fn resident_set_bytes() -> u64 {
         .unwrap_or(0)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
+fn resident_set_bytes() -> u64 {
+    // Working set: this process's pages currently resident in physical
+    // memory — the same number Task Manager shows. The hide-path's
+    // EmptyWorkingSet trim legitimately drives it near zero while the
+    // window is gone; a zero reading there is the trim working, not a bug.
+    use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+    use windows::Win32::System::Threading::GetCurrentProcess;
+
+    let mut pmc = PROCESS_MEMORY_COUNTERS::default();
+    let read = unsafe {
+        GetProcessMemoryInfo(
+            GetCurrentProcess(),
+            &mut pmc,
+            std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+        )
+    };
+    if read.is_ok() {
+        pmc.WorkingSetSize as u64
+    } else {
+        0
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 fn resident_set_bytes() -> u64 {
     0
 }
