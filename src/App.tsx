@@ -637,6 +637,24 @@ function App() {
     inputRef.current?.focus();
   }, []);
 
+  /* The result list both the keyboard navigation and the render operate over.
+     Declared before the key handlers because their closures read it even on
+     renders that return early below (first-launch setup screen): the setup
+     render registers the handlers while never reaching the declaration, so a
+     late `const navList` made every Space press throw a TDZ error. */
+  const displayResults = useMemo(
+    () =>
+      results.filter((r) => {
+        const cat = classify(r);
+        if (facetExclude.has(cat)) return false;
+        if (facetInclude.size > 0 && !facetInclude.has(cat)) return false;
+        return true;
+      }),
+    [results, facetInclude, facetExclude],
+  );
+  // The list keyboard navigation operates over — search results or recent files.
+  const navList = displayResults;
+
   /* Space previews only once the user has moved into the results with the
      arrow keys. Typing clears it, so Space still types a space in a query. */
   const navigatingRef = useRef(false);
@@ -835,16 +853,6 @@ function App() {
 
   /* ---------------- render ---------------- */
 
-  const displayResults = useMemo(
-    () =>
-      results.filter((r) => {
-        const cat = classify(r);
-        if (facetExclude.has(cat)) return false;
-        if (facetInclude.size > 0 && !facetInclude.has(cat)) return false;
-        return true;
-      }),
-    [results, facetInclude, facetExclude],
-  );
   if (isSetupComplete === null) {
     return (
       <div className="flex h-screen items-center justify-center bg-bg" />
@@ -855,8 +863,6 @@ function App() {
 
   const hasQuery = query.trim() !== "";
   const noResults = hasQuery && !isCommandMode && displayResults.length === 0;
-  // The list keyboard navigation operates over — search results or recent files.
-  const navList = displayResults;
 
   return (
     <div
