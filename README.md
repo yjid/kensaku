@@ -226,11 +226,23 @@ Full threat model: [SECURITY.md](SECURITY.md).
 - Visual search is a beta model download and is not part of search results yet.
 - Windows gets the most real-world testing today. macOS and Linux builds ship from CI and would benefit from more hands on them — see below.
 
+## What might come next
+
+Kensaku is actively built, and the roadmap bends toward what people ask for. Some directions being explored:
+
+- **A glass theme — and more customization.** A translucent, vibrancy-style finish, with adjustable density, accents, and per-surface control. The current light/dark pair is the floor, not the ceiling.
+- **App search and launch.** Type "term", open Terminal. Installed applications join the same instant index, so the launcher stops where your files end and your tools begin.
+- **Internet quick search.** For the things your files can't answer — opt-in, off by default, clearly separated from local results so the local-first promise stays intact.
+- **Ask your files questions.** An answers layer on top of the index: "what was the design retainer?" answered from your own documents. Local-first by default, cloud models only if you opt in with a key.
+
+None of this ships on a promise — it ships in the order the community pushes. **You tell us:** open a [discussion](https://github.com/yjid/kensaku/discussions) with your use case, or upvote an existing idea in the [issue tracker](https://github.com/yjid/kensaku/issues). The loudest real-world need gets the next slot.
+
 ## Contributing
 
 Kensaku is young, MIT-licensed, and built by people who wanted a better launcher. Every kind of help moves it forward:
 
 - **Use it and break it.** Bug reports with steps to reproduce are the single most valuable contribution right now — especially from macOS and Linux users.
+- **Shape the roadmap.** Feature ideas land in [Discussions](https://github.com/yjid/kensaku/discussions); the ones with real use cases behind them get built first.
 - **Good first issues.** Check the [issue tracker](https://github.com/yjid/kensaku/issues) for tasks scoped for a first contribution.
 - **Search quality.** Ranking, typo tolerance, and new extractors ([docs/EXTRACTORS.md](docs/EXTRACTORS.md) shows how to add one).
 - **Agents and integrations.** MCP tooling and guides ([docs/AGENTS.md](docs/AGENTS.md)).
