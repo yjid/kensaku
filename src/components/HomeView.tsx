@@ -36,8 +36,8 @@ function RecentTile({
       className="group card-in flex min-w-0 flex-col text-left outline-none"
     >
       <span
-        className={`surface relative block aspect-[4/3] w-full overflow-hidden transition-[transform,box-shadow] duration-[280ms] [transition-timing-function:var(--ease)] group-hover:-translate-y-[3px] group-hover:[box-shadow:var(--panel-edge),var(--shadow-float)] group-focus-visible:outline-2 group-focus-visible:outline-offset-[3px] group-focus-visible:outline-ink ${
-          focused ? "outline-2 outline-offset-[3px] outline-ink" : ""
+        className={`surface relative block aspect-[16/10] w-full overflow-hidden transition-[transform,box-shadow] duration-[280ms] [transition-timing-function:var(--ease)] group-hover:-translate-y-[3px] group-hover:[box-shadow:var(--panel-edge),var(--shadow-float)] group-focus-visible:outline-2 group-focus-visible:outline-offset-[3px] group-focus-visible:outline-[color-mix(in_srgb,var(--ink)_45%,transparent)] ${
+          focused ? "outline-2 outline-offset-[3px] outline-[color-mix(in_srgb,var(--ink)_45%,transparent)]" : ""
         }`}
       >
         {eligible && src && !failed ? (

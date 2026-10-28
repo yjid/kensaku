@@ -23,7 +23,7 @@ export const TypeTile: React.FC<{
   const ext = extOf(filename, isDir);
   const isCode = classify({ is_dir: isDir, filename }) === "code";
   const label = isDir ? "/" : `.${ext}`;
-  const size = compact ? 15 : label.length > 5 ? 26 : 32;
+  const size = compact ? 15 : label.length > 5 ? 20 : 24;
 
   return (
     <span className="absolute inset-0 flex flex-col justify-between p-3">

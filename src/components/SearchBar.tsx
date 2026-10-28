@@ -47,7 +47,7 @@ export function SearchBar({
 
   return (
     <div data-tauri-drag-region className="px-3.5 pb-1.5 pt-2.5">
-      <div className="relative flex h-11 items-center gap-2.5 overflow-hidden rounded-field pl-3.5 pr-1.5 transition-shadow duration-200 focus-within:[box-shadow:0_0_0_3px_var(--ink-soft)]">
+      <div className="relative flex h-11 items-center gap-2.5 pl-3.5 pr-1.5">
         <Glyph className="h-5 w-5 shrink-0 text-muted" strokeWidth={1.75} />
         <input
           ref={inputRef}
