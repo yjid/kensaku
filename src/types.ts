@@ -34,6 +34,10 @@ export interface HomeItem {
   size: number;
   modified: number;
   is_dir: boolean;
+  /** Last open through Kensaku (0 = never opened via the launcher). */
+  last_open: number;
+  /** Total opens through Kensaku. */
+  opens: number;
 }
 
 export interface ExternalExtractor {

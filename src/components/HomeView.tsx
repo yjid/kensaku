@@ -55,7 +55,9 @@ function RecentTile({
       </span>
       <span className="flex min-w-0 flex-col px-0.5 pt-2">
         <span className="truncate text-[13px] font-medium leading-[18px] text-fg">{name}</span>
-        <span className="t-meta truncate text-subtle">{formatRelativeTime(item.modified)}</span>
+        <span className="t-meta truncate text-subtle">
+          {item.last_open > 0 ? `Opened ${formatRelativeTime(item.last_open)}` : formatRelativeTime(item.modified)}
+        </span>
       </span>
     </button>
   );

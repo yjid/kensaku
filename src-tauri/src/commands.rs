@@ -1014,6 +1014,10 @@ pub struct HomeItem {
     pub size: u64,
     pub modified: u64,
     pub is_dir: bool,
+    /// Last time the file was opened through Kensaku (0 = never).
+    pub last_open: u64,
+    /// Total opens through Kensaku.
+    pub opens: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1032,22 +1036,29 @@ pub fn home_data_for(indexer: &crate::indexer::IndexerManager) -> Result<HomeDat
             if e.is_dir || e.modified == 0 {
                 return None;
             }
+            let (opens, last_open) = metadata.get_usage(&e.path);
             Some(HomeItem {
                 path: e.path.to_string_lossy().to_string(),
                 filename: e.name.clone(),
                 size: e.size,
                 modified: e.modified,
                 is_dir: e.is_dir,
+                last_open,
+                opens,
             })
         })
         .collect();
-    // Modified-time desc, with the path as a tie-break: files generated in
-    // one batch share timestamps, and without a deterministic tie-break the
-    // top-12 reshuffles whenever the index repopulates — the home screen
-    // would show a different "recent" set on every refetch.
+    // "Recent" means last touched: opening a file through Kensaku counts
+    // (that timestamp lives in `last_open`), otherwise its on-disk modified
+    // time. Sort by the later of the two, opens as a secondary signal, and
+    // the path as the deterministic tie-break — files generated in one batch
+    // share timestamps, and without it the tail of the list would reshuffle
+    // on every refetch.
+    let touched = |item: &HomeItem| item.last_open.max(item.modified);
     recent.sort_by(|a, b| {
-        b.modified
-            .cmp(&a.modified)
+        touched(b)
+            .cmp(&touched(a))
+            .then_with(|| b.opens.cmp(&a.opens))
             .then_with(|| a.path.cmp(&b.path))
     });
     recent.truncate(12);
@@ -1058,13 +1069,18 @@ pub fn home_data_for(indexer: &crate::indexer::IndexerManager) -> Result<HomeDat
         .map(|p| {
             let path = std::path::PathBuf::from(p);
             match metadata.get(&path) {
-                Some(e) => HomeItem {
-                    path: p.clone(),
-                    filename: e.name.clone(),
-                    size: e.size,
-                    modified: e.modified,
-                    is_dir: e.is_dir,
-                },
+                Some(e) => {
+                    let (opens, last_open) = metadata.get_usage(&e.path);
+                    HomeItem {
+                        path: p.clone(),
+                        filename: e.name.clone(),
+                        size: e.size,
+                        modified: e.modified,
+                        is_dir: e.is_dir,
+                        last_open,
+                        opens,
+                    }
+                }
                 None => HomeItem {
                     path: p.clone(),
                     filename: path
@@ -1074,6 +1090,8 @@ pub fn home_data_for(indexer: &crate::indexer::IndexerManager) -> Result<HomeDat
                     size: 0,
                     modified: 0,
                     is_dir: path.is_dir(),
+                    last_open: 0,
+                    opens: 0,
                 },
             }
         })

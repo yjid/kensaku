@@ -102,7 +102,7 @@ const handlers: Record<string, (a: any) => unknown> = {
   get_config: () => structuredClone(config),
   save_config: (a) => Object.assign(config, a.config),
   get_home_data: () => ({
-    recent: params.get("empty") ? [] : FILES.slice(0, 12).map((r) => ({ path: r.path, filename: r.filename, size: r.file_size, modified: r.modified, is_dir: r.is_dir })),
+    recent: params.get("empty") ? [] : FILES.slice(0, 12).map((r) => ({ path: r.path, filename: r.filename, size: r.file_size, modified: r.modified, is_dir: r.is_dir, last_open: 0, opens: 0 })),
     pins: [], saved_searches: config.saved_searches,
   }),
   get_indexing_status: () => indexStatus,
