@@ -234,6 +234,7 @@ Kensaku is actively built, and the roadmap bends toward what people ask for. Som
 - **App search and launch.** Type "term", open Terminal. Installed applications join the same instant index, so the launcher stops where your files end and your tools begin. → [vote & discuss](https://github.com/yjid/kensaku/discussions/37)
 - **Internet quick search.** For the things your files can't answer — opt-in, off by default, clearly separated from local results so the local-first promise stays intact. → [vote & discuss](https://github.com/yjid/kensaku/discussions/38)
 - **Ask your files questions.** An answers layer on top of the index: "what was the design retainer?" answered from your own documents. Local-first by default, cloud models only if you opt in with a key. → [vote & discuss](https://github.com/yjid/kensaku/discussions/39)
+- **Auto-updater & in-app updates.** A "check for updates" button is in the app now; a signed auto-updater is the real answer and needs signing + infra first. → [vote & discuss](https://github.com/yjid/kensaku/discussions/40)
 
 None of this ships on a promise — it ships in the order the community pushes. **You tell us:** open a [discussion](https://github.com/yjid/kensaku/discussions) with your use case, or upvote an existing idea in the [issue tracker](https://github.com/yjid/kensaku/issues). The loudest real-world need gets the next slot.
 

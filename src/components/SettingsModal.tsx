@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Bot,
   Check,
@@ -1430,6 +1432,33 @@ function ResetDialog({ onClose }: { onClose: () => void }) {
 function AboutSection() {
   const resetPending = useResetPending();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [version, setVersion] = useState<string>("…");
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getVersion()
+      .then((v) => {
+        if (!cancelled) setVersion(v);
+      })
+      .catch(() => {
+        if (!cancelled) setVersion("unknown");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const checkForUpdates = async () => {
+    setChecking(true);
+    try {
+      await openUrl("https://github.com/yjid/kensaku/releases/latest");
+    } catch {
+      /* fall back to nothing; the link is also in the docs */
+    } finally {
+      setChecking(false);
+    }
+  };
 
   return (
     <>
@@ -1447,7 +1476,10 @@ function AboutSection() {
             <p className="text-[15px] font-semibold text-fg">
               Kensaku <span className="font-normal text-muted">検索</span>
             </p>
-            <p className="font-mono text-[11px] text-subtle">1.0.0</p>
+            <p className="font-mono text-[11px] text-subtle">{version}</p>
+            <p className="mt-1 text-[11px] text-subtle">
+              Auto-update isn't wired up yet — updates are manual.
+            </p>
           </div>
           <div className="flex items-center gap-1.5">
             {["Rust", "Tauri 2", "MIT"].map((b) => (
@@ -1459,6 +1491,19 @@ function AboutSection() {
               </span>
             ))}
           </div>
+        </div>
+        <div className="border-t border-line px-4 py-3">
+          <button
+            type="button"
+            onClick={checkForUpdates}
+            disabled={checking}
+            className="btn btn-secondary h-8 !rounded-control"
+          >
+            {checking ? "Opening…" : "Check for updates"}
+          </button>
+          <span className="ml-3 text-[11px] text-subtle">
+            Opens the latest release page in your browser.
+          </span>
         </div>
       </Card>
 
