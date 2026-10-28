@@ -432,9 +432,19 @@ pub fn run() {
 
             let _ = tray_builder.build(app);
 
-            // 3. Create the search window on launch. Closing or hiding it destroys
-            // it (see main_window.rs), so the app keeps running with no UI in memory.
-            main_window::show(app.handle());
+            // 3. Start in the background: tray, watcher and indexer only, no
+            // window. The window is created by the first toggle (Alt+Space,
+            // tray click), and hide/destroy frees it again (main_window.rs).
+            // Only a pending first-run setup needs UI right away.
+            if is_setup {
+                // Stay hidden; nothing to create yet.
+            } else {
+                main_window::show(app.handle());
+            }
+
+            // A dev session may have registered the debug binary for
+            // sign-in; that would open a console at every login.
+            commands::self_heal_autostart();
 
             Ok(())
         })

@@ -1224,9 +1224,10 @@ pub async fn get_reset_pending() -> Result<bool, String> {
 /// Builds the platform autostart handle for the running executable.
 ///
 /// `current_exe()` is the release binary when Kensaku is installed normally. In
-/// development (`cargo run`) it resolves to `target/debug/kensaku`, so enabling
-/// autostart there registers the dev binary. That is acceptable: only released
-/// builds are ever registered by end users, and it keeps `cargo run` usable.
+/// development (`cargo run`) it resolves to `target/debug/kensaku`, which is a
+/// console-subsystem binary on Windows: registered at sign-in it would open a
+/// terminal window that stays for the whole session. Dev builds therefore
+/// refuse to register (see `set_autostart`) and clear stale entries.
 fn autostart_handle() -> Result<AutoLaunch, String> {
     let exe = std::env::current_exe()
         .map_err(|e| format!("Could not resolve the Kensaku executable path: {}", e))?;
@@ -1253,6 +1254,15 @@ pub async fn get_autostart() -> Result<bool, String> {
 
 #[tauri::command]
 pub async fn set_autostart(enabled: bool) -> Result<(), String> {
+    // A dev build is a console binary on Windows: at sign-in it would open a
+    // terminal window that remains for the whole session. Only the installed
+    // release build may register itself.
+    if enabled && cfg!(debug_assertions) {
+        eprintln!(
+            "[Kensaku] autostart is ignored in dev builds; install the release build for start at sign-in"
+        );
+        return Ok(());
+    }
     let handle = autostart_handle()?;
     let result = if enabled {
         handle.enable()
@@ -1266,6 +1276,34 @@ pub async fn set_autostart(enabled: bool) -> Result<(), String> {
             e
         )
     })
+}
+
+/// Removes autostart entries left behind by dev sessions.
+///
+/// A previous dev run that completed setup registered the debug binary in
+/// the user's Run key, so every login opened a console window. Dev builds
+/// clear that on startup; release builds never touch it.
+pub fn self_heal_autostart() {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    let handle = match autostart_handle() {
+        Ok(handle) => handle,
+        Err(_) => return,
+    };
+    match handle.is_enabled() {
+        Ok(true) => {
+            if let Err(e) = handle.disable() {
+                eprintln!("[Kensaku] could not remove the dev autostart entry: {e}");
+            } else {
+                eprintln!(
+                    "[Kensaku] removed the dev-build autostart entry (it opened a console at sign-in)"
+                );
+            }
+        }
+        Ok(false) => {}
+        Err(_) => {}
+    }
 }
 
 #[tauri::command]
