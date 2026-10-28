@@ -837,12 +837,16 @@ function App() {
   // switching apps), unless a modal overlay is open.
   useEffect(() => {
     const onBlur = () => {
+      // First-run setup is a flow, not a transient overlay. Hiding destroys
+      // the webview, so an alt-tab on step 2 would drop the folders the user
+      // just picked and restart setup. Only dismiss once setup is done.
+      if (isSetupComplete !== true) return;
       if (showSettings || showDuplicates || showHelp || preview || details || saveOpen || menu) return;
       invoke("hide_window").catch(() => undefined);
     };
     window.addEventListener("blur", onBlur);
     return () => window.removeEventListener("blur", onBlur);
-  }, [showSettings, showDuplicates, showHelp, preview, details, saveOpen, menu]);
+  }, [isSetupComplete, showSettings, showDuplicates, showHelp, preview, details, saveOpen, menu]);
 
   /* ---------------- render ---------------- */
 
