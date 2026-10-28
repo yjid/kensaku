@@ -30,6 +30,7 @@ import { CategoryChips } from "./components/CategoryChips";
 import { ResultControls } from "./components/ResultControls";
 import { VirtualGrid } from "./components/VirtualGrid";
 import { FileRow } from "./components/FileRow";
+import { normalizeTheme } from "./hooks/useTheme";
 import { PreviewDialog } from "./components/PreviewDialog";
 import { classify } from "./lib/categories";
 import {
@@ -112,6 +113,19 @@ function App() {
       .then(setConfig)
       .catch(() => undefined);
   }, [showSettings]);
+  /* The backend config is the durable copy of the theme — localStorage does
+     not survive the launcher destroying its webview on hide. Re-apply the
+     persisted pick on every (re)mount so close/open keeps the chosen finish. */
+  useEffect(() => {
+    if (config?.theme === undefined || config?.theme === null) return;
+    const normalized = normalizeTheme(config.theme);
+    document.documentElement.dataset.theme = normalized;
+    try {
+      localStorage.setItem("kensaku.theme", normalized);
+    } catch {
+      /* ignore */
+    }
+  }, [config?.theme]);
   const showThumbs = config?.show_thumbnails !== false;
   const view: ResultView = config?.results_view === "list" ? "list" : "grid";
   const [menu, setMenu] = useState<{ x: number; y: number; result: SearchResult } | null>(null);

@@ -26,10 +26,14 @@ function apply(t: Theme) {
 }
 
 /**
- * Theme control. Two finishes: light and dark. Persists via localStorage
- * and best-effort mirrors the choice to the backend (`set_theme` may not exist
- * yet, never blocks on failure). `data-theme` is also set pre-paint in index.html.
+ * Theme control. Two finishes: light and dark. localStorage holds the
+ * pre-paint pick, but the backend config is the durable source of truth —
+ * the launcher destroys its webview on hide, so localStorage (which may not
+ * survive that) must never be trusted alone. On mount the persisted config
+ * wins, unless the user has already picked in this session.
  */
+let lastLocalChange = 0;
+
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(readStored);
 
@@ -37,7 +41,31 @@ export function useTheme() {
     apply(theme);
   }, [theme]);
 
+  useEffect(() => {
+    const startedAt = Date.now();
+    let cancelled = false;
+    invoke<{ theme?: string }>("get_config")
+      .then((cfg) => {
+        if (cancelled || lastLocalChange > startedAt) return;
+        const persisted = normalizeTheme(cfg?.theme);
+        setThemeState((current) => {
+          if (persisted === current) return current;
+          try {
+            localStorage.setItem(STORAGE_KEY, persisted);
+          } catch {
+            /* ignore */
+          }
+          return persisted;
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const setTheme = useCallback((t: Theme) => {
+    lastLocalChange = Date.now();
     setThemeState(t);
     try {
       localStorage.setItem(STORAGE_KEY, t);

@@ -364,7 +364,17 @@ function GeneralSection({
       <Card title="Appearance">
         <div className="grid grid-cols-2 gap-4 p-4">
           {(["light", "dark"] as const).map((value) => (
-            <ThemeSwatch key={value} value={value} active={theme === value} onSelect={() => setTheme(value)} />
+            <ThemeSwatch
+              key={value}
+              value={value}
+              active={theme === value}
+              onSelect={() => {
+                setTheme(value);
+                /* Keep the app's config copy in step, or a later Save would
+                   write the stale theme back over the persisted pick. */
+                setConfig((c) => (c ? { ...c, theme: value } : c));
+              }}
+            />
           ))}
         </div>
       </Card>
