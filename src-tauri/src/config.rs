@@ -158,7 +158,8 @@ pub struct KensakuConfig {
     /// developers do ("ignore parity").
     #[serde(default)]
     pub include_ignored: bool,
-    /// Persisted UI theme ("paper" or "void").
+    /// Persisted UI theme ("light" or "dark"). Legacy "paper" / "void"
+    /// configs are migrated at load (v5).
     #[serde(default = "default_theme")]
     pub theme: String,
     /// Personal vocabulary: `term` matches any of `expansions`.
@@ -199,7 +200,20 @@ fn default_results_view() -> String {
 }
 
 fn default_theme() -> String {
-    "paper".to_string()
+    "dark".to_string()
+}
+
+/// Canonicalizes a theme name to "light" or "dark".
+///
+/// Accepts the current names and the pre-1.1 names ("paper" / "void").
+/// Anything unrecognized falls back to the default, which keeps a
+/// hand-edited config from wedging the app.
+pub fn normalize_theme(raw: &str) -> String {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "light" | "paper" => "light".to_string(),
+        "dark" | "void" => "dark".to_string(),
+        _ => default_theme(),
+    }
 }
 
 impl Default for KensakuConfig {
@@ -315,7 +329,7 @@ impl Default for KensakuConfig {
             pins: Vec::new(),
             show_thumbnails: true,
             results_view: default_results_view(),
-            config_version: 4,
+            config_version: 5,
         }
     }
 }
@@ -401,6 +415,15 @@ impl KensakuConfig {
                 }
             }
             cfg.config_version = 4;
+            migrated = true;
+        }
+
+        if cfg.config_version < 5 {
+            // v5: the UI renamed its two themes from "paper" / "void" to
+            // "light" / "dark". Carry the user's pick over instead of
+            // silently dropping them back to the default.
+            cfg.theme = normalize_theme(&cfg.theme);
+            cfg.config_version = 5;
             migrated = true;
         }
 
@@ -554,12 +577,12 @@ mod tests {
     }
 
     #[test]
-    fn default_config_is_v2_and_paper() {
+    fn default_config_is_current_version_and_dark() {
         let cfg = KensakuConfig::default();
-        assert_eq!(cfg.config_version, 4);
+        assert_eq!(cfg.config_version, 5);
         assert!(cfg.skip_hidden);
         assert!(cfg.ocr_enabled);
-        assert_eq!(cfg.theme, "paper");
+        assert_eq!(cfg.theme, "dark");
     }
 
     #[test]
@@ -611,7 +634,7 @@ mod tests {
 
         let cfg = KensakuConfig::load_from_str(legacy);
 
-        assert_eq!(cfg.config_version, 4);
+        assert_eq!(cfg.config_version, 5);
         // Legacy document/image extensions are stripped (case-insensitively)...
         assert!(
             !cfg.excluded_extensions
@@ -634,7 +657,7 @@ mod tests {
         // Missing defaults are filled in by serde.
         assert!(cfg.skip_hidden);
         assert!(cfg.ocr_enabled);
-        assert_eq!(cfg.theme, "paper");
+        assert_eq!(cfg.theme, "dark");
     }
 
     #[test]
@@ -650,7 +673,7 @@ mod tests {
         }"#;
 
         let cfg = KensakuConfig::load_from_str(current);
-        assert_eq!(cfg.config_version, 4);
+        assert_eq!(cfg.config_version, 5);
         assert_eq!(
             cfg.excluded_extensions,
             vec![
@@ -667,6 +690,37 @@ mod tests {
     }
 
     #[test]
+    fn v5_migration_renames_legacy_theme_names() {
+        for (stored, expected) in [("paper", "light"), ("void", "dark")] {
+            let legacy = format!(
+                r#"{{
+                "watched_dirs": [],
+                "excluded_dirs": [],
+                "excluded_extensions": [],
+                "shortcut": "Alt+Space",
+                "max_results": 50,
+                "is_setup_complete": true,
+                "theme": "{}",
+                "config_version": 4
+            }}"#,
+                stored
+            );
+
+            let cfg = KensakuConfig::load_from_str(&legacy);
+            assert_eq!(cfg.theme, expected, "theme {} should become {}", stored, expected);
+            assert_eq!(cfg.config_version, 5);
+        }
+    }
+
+    #[test]
+    fn v5_migration_keeps_current_theme_names_and_repairs_junk() {
+        assert_eq!(normalize_theme("light"), "light");
+        assert_eq!(normalize_theme("DARK"), "dark");
+        assert_eq!(normalize_theme("  Void "), "dark");
+        assert_eq!(normalize_theme("solarized"), default_theme());
+    }
+
+    #[test]
     fn v2_migration_strips_dotted_document_and_image_extensions() {
         let legacy = r#"{
             "watched_dirs": [],
@@ -679,7 +733,7 @@ mod tests {
         }"#;
 
         let cfg = KensakuConfig::load_from_str(legacy);
-        assert_eq!(cfg.config_version, 4);
+        assert_eq!(cfg.config_version, 5);
         assert_eq!(
             cfg.excluded_extensions,
             vec![
@@ -720,8 +774,8 @@ mod tests {
     #[test]
     fn corrupt_config_falls_back_to_defaults() {
         let cfg = KensakuConfig::load_from_str("{ not json");
-        assert_eq!(cfg.config_version, 4);
-        assert_eq!(cfg.theme, "paper");
+        assert_eq!(cfg.config_version, 5);
+        assert_eq!(cfg.theme, "dark");
     }
 
     #[test]
@@ -740,8 +794,8 @@ mod tests {
 
         let saved: KensakuConfig =
             serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(saved.config_version, 4);
-        assert_eq!(saved.theme, "paper");
+        assert_eq!(saved.config_version, 5);
+        assert_eq!(saved.theme, "dark");
 
         // A second save replaces the existing file atomically.
         let updated = KensakuConfig {
