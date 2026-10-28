@@ -391,7 +391,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             <button
               type="button"
               onClick={browseForFolder}
-              className="btn btn-secondary h-11 w-full !rounded-[12px]"
+              className="btn btn-secondary h-11 w-full"
             >
               <FolderOpen className="h-4 w-4" strokeWidth={1.75} />
               Browse for folder…
@@ -418,7 +418,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               </button>
             </div>
             {dirError && (
-              <p className="flex items-start gap-2 break-words rounded-[10px] bg-danger/10 px-3 py-2 text-[12px] text-danger">
+              <p className="flex items-start gap-2 break-words rounded-control bg-danger/10 px-3 py-2 text-[12px] text-danger">
                 <X className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {dirError}
               </p>
             )}
@@ -494,7 +494,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 through the pack status, not through an invoke rejection —
                 surface them the same way. */}
             {ocrPackStatus?.error && !ocrPackStatus.downloading && (
-              <p className="flex items-start gap-2 break-words rounded-[10px] bg-danger/10 px-3 py-2 text-[12px] text-danger">
+              <p className="flex items-start gap-2 break-words rounded-control bg-danger/10 px-3 py-2 text-[12px] text-danger">
                 <X className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {ocrPackStatus.error}
               </p>
             )}
