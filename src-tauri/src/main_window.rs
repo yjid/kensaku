@@ -47,12 +47,9 @@ fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     // app keeps running in the background.
     let app_handle = app.clone();
     window.on_window_event(move |event| {
-        match event {
-            WindowEvent::CloseRequested { api, .. } => {
-                api.prevent_close();
-                hide(&app_handle);
-            }
-            _ => {}
+        if let WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            hide(&app_handle);
         }
     });
     Ok(window)
