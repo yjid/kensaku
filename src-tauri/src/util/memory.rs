@@ -100,15 +100,21 @@ pub fn kill_webview_processes() {
 
     #[cfg(windows)]
     {
-        let _ = std::process::Command::new("taskkill")
-            .args([
-                "/F",
-                "/FI",
-                &format!("PPID eq {}", pid),
-                "/FI",
-                "IMAGENAME eq msedgewebview2.exe",
-            ])
-            .status();
+        // taskkill cannot filter by parent PID (its /FI grammar has no PPID),
+        // so enumerate processes ourselves and terminate the WebView2 helpers
+        // directly. Best-effort: any API failure just skips that step.
+        for child in windows_webview_children(pid) {
+            unsafe {
+                use windows::Win32::Foundation::CloseHandle;
+                use windows::Win32::System::Threading::{
+                    OpenProcess, TerminateProcess, PROCESS_TERMINATE,
+                };
+                if let Ok(handle) = OpenProcess(PROCESS_TERMINATE, false, child) {
+                    let _ = TerminateProcess(handle, 0);
+                    let _ = CloseHandle(handle);
+                }
+            }
+        }
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
@@ -117,11 +123,74 @@ pub fn kill_webview_processes() {
     }
 }
 
+/// Process IDs of live processes whose parent is `parent` and whose image
+/// name is `msedgewebview2.exe`, via a Toolhelp32 snapshot.
+///
+/// An empty result covers every failure mode (snapshot could not be created,
+/// iteration failed) — callers treat "unknown" the same as "none".
+#[cfg(windows)]
+fn windows_webview_children(parent: u32) -> Vec<u32> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+
+    let mut children = Vec::new();
+    unsafe {
+        let snapshot = match CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) {
+            Ok(handle) => handle,
+            Err(_) => return children,
+        };
+        let mut entry = PROCESSENTRY32W {
+            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        if Process32FirstW(snapshot, &mut entry).is_ok() {
+            loop {
+                if entry.th32ParentProcessID == parent {
+                    let name_len = entry
+                        .szExeFile
+                        .iter()
+                        .position(|&unit| unit == 0)
+                        .unwrap_or(entry.szExeFile.len());
+                    let name = String::from_utf16_lossy(&entry.szExeFile[..name_len]);
+                    if name.eq_ignore_ascii_case("msedgewebview2.exe") {
+                        children.push(entry.th32ProcessID);
+                    }
+                }
+                if Process32NextW(snapshot, &mut entry).is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = CloseHandle(snapshot);
+    }
+    children
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn release_memory_is_callable() {
         super::release_memory();
         super::release_memory();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn webview_child_scan_never_panics() {
+        // A dead parent must answer "none" without touching the OS APIs that
+        // could fail loudly, and the snapshot walk must be repeatable.
+        assert!(super::windows_webview_children(u32::MAX - 1).is_empty());
+        let _ = super::windows_webview_children(std::process::id());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn kill_webview_processes_is_callable() {
+        // Safe on a live process: at most it terminates real msedgewebview2
+        // children, which is exactly the production behavior.
+        super::kill_webview_processes();
     }
 }

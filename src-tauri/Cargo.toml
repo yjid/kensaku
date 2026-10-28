@@ -57,6 +57,16 @@ tree-sitter-python = "0.25"
 tree-sitter-javascript = "0.25"
 tree-sitter-typescript = "0.23"
 
+[target.'cfg(windows)'.dependencies]
+# Direct process enumeration for the webview cleanup: taskkill rejects a
+# `PPID eq` filter ("The search filter cannot be recognized"), so the child
+# scan has to run in-process via the Toolhelp32 snapshot API.
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Threading",
+] }
+
 [profile.release]
 # Thin LTO + parallel codegen units keeps release builds ~2-3x faster than
 # fat LTO with codegen-units = 1, with near-identical runtime performance.
