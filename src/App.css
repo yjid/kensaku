@@ -18,6 +18,9 @@
 /* Space     4px base: 4 8 12 16 24 32 48 64.                          */
 /* Radius    6 (kbd, small) · 10 (controls) · 16 (tiles, panels) ·     */
 /*           24 (sheets) · full (status dots only).                    */
+/*           Bound as --r-small/control/panel/sheet. Use the token,    */
+/*           never a literal: a `rounded-[Npx]` cannot be audited and  */
+/*           does not move when the system moves.                      */
 /* Motion    One curve (--ease). 160 quick, 280 base, 520 slow.        */
 /*                                                                     */
 /* Components reference tokens via Tailwind (bg-bg, text-muted …) or   */
@@ -118,9 +121,31 @@
   --color-danger: var(--danger);
   --color-warning: var(--warning);
   --color-success: var(--success);
+  /* Radius steps as utilities: rounded-small, rounded-control,
+     rounded-panel, rounded-sheet. */
+  --radius-small: var(--r-small);
+  --radius-control: var(--r-control);
+  --radius-field: var(--r-field);
+  --radius-panel: var(--r-panel);
+  --radius-sheet: var(--r-sheet);
+
   --font-sans: "Inter Variable", "SF Pro Text", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
   --font-serif: "Instrument Serif", "New York", Georgia, serif;
+}
+
+/* The radius scale above, bound. Four steps, picked by what a thing IS
+   (a key cap, a control, a panel, a sheet) and never by how round it
+   should look. Status dots and spinners stay `rounded-full`: a circle is
+   not a radius step. */
+:root {
+  --r-small: 6px;   /* nested inside a control: kbd, swatch, focus ring */
+  --r-control: 10px; /* anything you click or type in                   */
+  --r-field: 14px;  /* the search field only. The query is the hero, so  */
+                    /* it sits one step above every other control. This  */
+                    /* is the single documented exception to the scale.  */
+  --r-panel: 16px;  /* a tile, card or attached panel                   */
+  --r-sheet: 24px;  /* a centered dialog or sheet. ALL of them.         */
 }
 
 :root {
@@ -181,7 +206,7 @@
   :focus-visible {
     outline: 2px solid color-mix(in srgb, var(--blue) 70%, transparent);
     outline-offset: 2px;
-    border-radius: 6px;
+    border-radius: var(--r-small);
   }
 
   ::selection {
@@ -224,7 +249,7 @@
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: 5px;
+  border-radius: var(--r-small);
   background: var(--accent-soft);
   box-shadow: inset 0 -1px 0 var(--border);
   color: var(--fg-muted);
@@ -310,7 +335,7 @@
     gap: 6px;
     height: 32px;
     padding: 0 14px;
-    border-radius: 10px;
+    border-radius: var(--r-control);
     font-size: 13px;
     font-weight: 500;
     letter-spacing: -0.01em;
@@ -335,7 +360,7 @@
     -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(160%);
     backdrop-filter: blur(var(--panel-blur)) saturate(160%);
     box-shadow: var(--panel-edge);
-    border-radius: 16px;
+    border-radius: var(--r-panel);
   }
 
   /* Floating layers: menus, dialogs, popovers. */
@@ -345,7 +370,7 @@
     backdrop-filter: blur(max(var(--panel-blur), 24px)) saturate(180%);
     box-shadow: var(--panel-edge), var(--shadow-float);
     border: 0;
-    border-radius: 16px;
+    border-radius: var(--r-panel);
   }
 
   .menu-row {
@@ -354,7 +379,7 @@
     gap: 10px;
     height: 32px;
     padding: 0 10px;
-    border-radius: 8px;
+    border-radius: var(--r-control);
     font-size: 13px;
     color: var(--fg);
     transition: background-color 120ms var(--ease);
@@ -369,7 +394,7 @@
     gap: 6px;
     height: 28px;
     padding: 0 10px;
-    border-radius: 8px;
+    border-radius: var(--r-control);
     font-size: 13px;
     font-weight: 450;
     white-space: nowrap;
@@ -389,11 +414,12 @@
     align-items: center;
     gap: 2px;
     padding: 2px;
-    border-radius: 10px;
+    border-radius: var(--r-control);
     background: var(--accent-soft);
     box-shadow: inset 0 0 0 1px var(--border);
   }
-  .pill-group .pill { height: 24px; padding: 0 8px; border-radius: 8px; font-weight: 500; }
+  /* Concentric with its group: outer radius minus the group's padding. */
+  .pill-group .pill { height: 24px; padding: 0 8px; border-radius: calc(var(--r-control) - 2px); font-weight: 500; }
   .pill-group .pill[aria-checked="true"] { background: var(--bg-elevated); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), inset 0 0 0 1px var(--border); }
 
   .pill-select { position: relative; display: inline-flex; align-items: center; }
@@ -402,7 +428,7 @@
     -webkit-appearance: none;
     height: 28px;
     padding: 0 24px 0 10px;
-    border-radius: 8px;
+    border-radius: var(--r-control);
     border: 0;
     background: transparent;
     color: var(--fg-muted);
@@ -420,7 +446,7 @@
     height: 36px;
     width: 100%;
     padding: 0 12px;
-    border-radius: 10px;
+    border-radius: var(--r-control);
     background: var(--accent-soft);
     box-shadow: inset 0 0 0 1px var(--border);
     color: var(--fg);
@@ -452,7 +478,7 @@
     gap: 6px;
     height: 30px;
     padding: 0 14px;
-    border-radius: 9px;
+    border-radius: var(--r-control);
     font-size: 13px;
     font-weight: 500;
     color: var(--fg-muted);

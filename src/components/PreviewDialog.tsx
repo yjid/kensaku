@@ -85,7 +85,7 @@ export function PreviewDialog({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div role="dialog" aria-label="Preview" className="elevated overlay-in flex max-h-full w-full max-w-3xl flex-col overflow-hidden !rounded-[24px]">
+      <div role="dialog" aria-label="Preview" className="elevated overlay-in flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-sheet">
         <div className="flex items-center justify-between gap-4 px-6 pb-4 pt-5">
           <div className="min-w-0">
             <p className="t-lead truncate font-medium text-fg">{result.filename}</p>
@@ -95,9 +95,9 @@ export function PreviewDialog({
             Open
           </button>
         </div>
-        <div className="mx-3 flex min-h-[340px] flex-1 items-center justify-center overflow-auto rounded-[16px] bg-accent-soft p-6 shadow-[inset_0_0_0_1px_var(--border)]">
+        <div className="mx-3 flex min-h-[340px] flex-1 items-center justify-center overflow-auto rounded-panel bg-accent-soft p-6 shadow-[inset_0_0_0_1px_var(--border)]">
           {src ? (
-            <img src={src} alt="" className="fade-in max-h-[66vh] max-w-full rounded-[10px] object-contain shadow-[var(--shadow-float)]" />
+            <img src={src} alt="" className="fade-in max-h-[66vh] max-w-full rounded-control object-contain shadow-[var(--shadow-float)]" />
           ) : text ? (
             <pre className="w-full self-stretch overflow-auto whitespace-pre-wrap font-mono text-[12px] leading-[18px] text-fg">
               {text}

@@ -136,7 +136,7 @@ export function DoctorSection() {
       )}
 
       {phase === "error" && (
-        <div className="overflow-hidden rounded-[12px] border border-danger/30 bg-elevated">
+        <div className="overflow-hidden rounded-panel border border-danger/30 bg-elevated">
           <p className="p-4 text-[12px] font-medium text-danger">Doctor unavailable — backend not connected</p>
           <p className="px-4 pb-3 text-[12px] leading-[18px] text-muted">
             The <code className="font-mono">run_doctor</code> command did not answer. It should

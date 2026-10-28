@@ -59,15 +59,15 @@ export const FileRow = React.memo(function FileRow({
         e.dataTransfer.setData("text/uri-list", `file://${item.path}`);
       }}
       style={{ height: FILE_ROW_HEIGHT }}
-      className={`group relative flex w-full cursor-default items-center gap-3 rounded-[10px] px-3 transition-colors duration-150 ${
+      className={`group relative flex w-full cursor-default items-center gap-3 rounded-control px-3 transition-colors duration-150 ${
         selected ? "bg-accent-soft" : "hover:bg-accent-soft"
       }`}
     >
       {selected && <span className="absolute left-0 top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-full bg-ink" />}
       {thumb ? (
-        <img src={thumb} alt="" draggable={false} className="h-8 w-8 shrink-0 rounded-[8px] object-cover shadow-[var(--panel-edge)]" />
+        <img src={thumb} alt="" draggable={false} className="h-8 w-8 shrink-0 rounded-control object-cover shadow-[var(--panel-edge)]" />
       ) : (
-        <span className="surface flex h-8 w-8 shrink-0 items-center justify-center !rounded-[8px] font-mono text-[10px] font-medium text-muted">
+        <span className="surface flex h-8 w-8 shrink-0 items-center justify-center rounded-control font-mono text-[10px] font-medium text-muted">
           {item.is_dir ? "/" : ext.slice(0, 4)}
         </span>
       )}

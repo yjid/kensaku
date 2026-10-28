@@ -166,7 +166,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
                 type="button"
                 onClick={() => setSection(s.id)}
                 aria-current={active ? "page" : undefined}
-                className={`relative flex h-9 w-full items-center gap-3 rounded-[10px] px-3 text-[13px] transition-colors duration-150 ${
+                className={`relative flex h-9 w-full items-center gap-3 rounded-control px-3 text-[13px] transition-colors duration-150 ${
                   active ? "control font-medium text-fg" : "text-muted hover:text-fg"
                 }`}
               >
@@ -178,7 +178,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
         </div>
       </nav>
 
-      <main className="surface relative z-10 m-2 ml-0 min-w-0 flex-1 overflow-hidden !rounded-[28px]">
+      <main className="surface relative z-10 m-2 ml-0 min-w-0 flex-1 overflow-hidden rounded-sheet">
         <button
           type="button"
           title="Close (Esc)"
@@ -374,7 +374,7 @@ function GeneralSection({
           <button
             type="button"
             onClick={() => setCapturing(true)}
-            className={`flex h-8 min-w-40 items-center justify-center rounded-[8px] border px-3 font-mono text-[12px] transition-colors duration-150 ${
+            className={`flex h-8 min-w-40 items-center justify-center rounded-control border px-3 font-mono text-[12px] transition-colors duration-150 ${
               capturing
                 ? "border-accent text-accent"
                 : "border-line bg-accent-soft text-fg hover:border-line-strong"
@@ -497,7 +497,7 @@ function FoldersSection({
             if (paths.length === 0 && input.trim()) paths.push(input.trim());
             addDropped(paths);
           }}
-          className="mx-4 my-2.5 flex h-16 items-center justify-center rounded-[8px] border border-dashed border-line text-[11px] text-subtle transition-colors duration-150"
+          className="mx-4 my-2.5 flex h-16 items-center justify-center rounded-control border border-dashed border-line text-[11px] text-subtle transition-colors duration-150"
         >
           Drop folders here to add them for watching
         </div>
@@ -831,7 +831,7 @@ function SearchSection({
                 c ? { ...c, aliases: [...(c.aliases ?? []), { term: "", expansions: [] }] } : c,
               )
             }
-            className="flex h-7 items-center gap-1 rounded-[8px] border border-line px-2.5 text-[12px] text-muted transition-colors hover:border-line-strong hover:text-fg"
+            className="flex h-7 items-center gap-1 rounded-control border border-line px-2.5 text-[12px] text-muted transition-colors hover:border-line-strong hover:text-fg"
           >
             <Plus className="h-3 w-3" /> Add alias
           </button>
@@ -933,7 +933,7 @@ function AiSection({ config, setConfig }: { config: KensakuConfig; setConfig: Re
             <button
               type="button"
               onClick={reembed}
-              className="flex h-7 items-center gap-1.5 rounded-[8px] border border-line px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong"
+              className="flex h-7 items-center gap-1.5 rounded-control border border-line px-2.5 text-[11px] text-fg transition-colors hover:border-line-strong"
             >
               <RefreshCw className="h-3 w-3" />
               {reembedState === "pending" ? "Queued…" : "Re-embed all"}
@@ -1023,7 +1023,7 @@ function BetaSection({
           <p className="text-[12px] font-medium text-fg">Visual search</p>
           <p className="text-[12px] leading-[18px] text-muted">Find images by what they show. Coming later.</p>
         </div>
-        <span className="shrink-0 rounded-[6px] border border-line px-2 py-0.5 text-[12px] text-muted">Coming later</span>
+        <span className="shrink-0 rounded-small border border-line px-2 py-0.5 text-[12px] text-muted">Coming later</span>
       </div>
     </Card>
   );
@@ -1101,7 +1101,7 @@ function AgentConnectCard() {
                   type="button"
                   disabled={busy === status.id || !status.config_path}
                   onClick={() => void install(status.id)}
-                  className="flex h-6 items-center rounded-[8px] border border-line px-2 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
+                  className="flex h-6 items-center rounded-control border border-line px-2 text-[11px] text-fg transition-colors hover:border-line-strong disabled:opacity-50"
                 >
                   {busy === status.id ? "Adding…" : "Add Kensaku"}
                 </button>
@@ -1386,7 +1386,7 @@ function ResetDialog({ onClose }: { onClose: () => void }) {
               onChange={(e) => setText(e.target.value)}
               autoComplete="off"
               spellCheck={false}
-              className={`h-9 w-full rounded-[8px] border bg-accent-soft px-2.5 font-mono text-[12px] text-fg outline-none transition-colors focus:border-accent ${
+              className={`h-9 w-full rounded-control border bg-accent-soft px-2.5 font-mono text-[12px] text-fg outline-none transition-colors focus:border-accent ${
                 text && !matches ? "border-danger/50" : "border-line"
               }`}
             />
@@ -1399,14 +1399,14 @@ function ResetDialog({ onClose }: { onClose: () => void }) {
             <button
               type="button"
               onClick={onClose}
-              className="flex h-8 items-center rounded-[8px] border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong"
+              className="flex h-8 items-center rounded-control border border-line px-3 text-[12px] text-fg transition-colors hover:border-line-strong"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!matches || running}
-              className="flex h-8 items-center rounded-[10px] bg-danger px-3 text-[12px] font-medium text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-8 items-center rounded-control bg-danger px-3 text-[12px] font-medium text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {running ? "Resetting…" : "Reset and restart"}
             </button>
@@ -1424,7 +1424,7 @@ function AboutSection() {
   return (
     <>
       {resetPending && (
-        <div className="flex items-center gap-2 rounded-[12px] border border-warning/40 bg-elevated px-4 py-2.5">
+        <div className="flex items-center gap-2 rounded-control border border-warning/40 bg-elevated px-4 py-2.5">
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
           <p className="text-[12px] text-muted">A reset is pending and will finish on next launch.</p>
         </div>
@@ -1497,7 +1497,7 @@ function AboutSection() {
                 console.error(e);
               }
             }}
-            className="h-8 shrink-0 rounded-[8px] border border-line px-3 text-[11px] font-medium text-fg transition-colors hover:border-line-strong"
+            className="h-8 shrink-0 rounded-control border border-line px-3 text-[11px] font-medium text-fg transition-colors hover:border-line-strong"
           >
             Run setup again…
           </button>
@@ -1509,7 +1509,7 @@ function AboutSection() {
         <p className="pb-2 text-[11px] font-medium text-danger">
           Danger zone
         </p>
-        <div className="overflow-hidden rounded-[12px] border border-danger/30 bg-elevated">
+        <div className="overflow-hidden rounded-panel border border-danger/30 bg-elevated">
           <div className="flex items-center justify-between gap-4 p-4">
             <div className="min-w-0">
               <p className="text-[13px] font-medium text-fg">Reset Kensaku</p>
@@ -1521,7 +1521,7 @@ function AboutSection() {
             <button
               type="button"
               onClick={() => setConfirmOpen(true)}
-              className="h-8 shrink-0 rounded-[8px] border border-danger/40 px-3 text-[11px] font-medium text-danger transition-colors hover:bg-danger/10"
+              className="h-8 shrink-0 rounded-control border border-danger/40 px-3 text-[11px] font-medium text-danger transition-colors hover:bg-danger/10"
             >
               Reset everything…
             </button>
@@ -1542,7 +1542,7 @@ function ThemeSwatch({ value, active, onSelect }: { value: "light" | "dark"; act
     <button type="button" onClick={onSelect} aria-pressed={active} className="group flex flex-col gap-2.5 text-left outline-none">
       <span
         data-theme={value}
-        className={`relative block aspect-[16/10] w-full overflow-hidden rounded-[12px] bg-bg transition-[outline-color,transform] duration-200 group-hover:-translate-y-0.5 ${
+        className={`relative block aspect-[16/10] w-full overflow-hidden rounded-panel bg-bg transition-[outline-color,transform] duration-200 group-hover:-translate-y-0.5 ${
           active ? "outline-2 outline-offset-[3px] outline-ink" : "outline-0"
         }`}
         style={{ outlineStyle: active ? "solid" : "none", boxShadow: "inset 0 0 0 1px var(--border)" }}
@@ -1551,7 +1551,7 @@ function ThemeSwatch({ value, active, onSelect }: { value: "light" | "dark"; act
           {[0, 1, 2, 3, 4, 5].map((i) => (
             <span
               key={i}
-              className="block rounded-[4px]"
+              className="block rounded-small"
               style={{
                 background: i % 3 === 1 ? "var(--fg-subtle)" : "var(--bg-elevated)",
                 opacity: i % 3 === 1 ? 0.5 : 1,

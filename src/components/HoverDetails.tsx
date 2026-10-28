@@ -38,7 +38,7 @@ export function HoverDetails({ result }: { result: SearchResult }) {
   return (
     <span
       aria-hidden="true"
-      className="hover-reveal pointer-events-none absolute bottom-2 left-2 z-20 max-w-[calc(100%-16px)] rounded-[8px] bg-[var(--panel)] px-2 py-1 shadow-[var(--panel-edge)] backdrop-blur-xl"
+      className="hover-reveal pointer-events-none absolute bottom-2 left-2 z-20 max-w-[calc(100%-16px)] rounded-control bg-[var(--panel)] px-2 py-1 shadow-[var(--panel-edge)] backdrop-blur-xl"
     >
       <span className="t-meta block truncate text-muted">{parts.join(" · ")}</span>
     </span>

@@ -928,7 +928,7 @@ function App() {
                     type="button"
                     title="Settings"
                     onClick={() => openSettings()}
-                    className="btn btn-ghost btn-icon h-9 w-9 !rounded-[10px]"
+                    className="btn btn-ghost btn-icon h-9 w-9"
                   >
                     <SettingsIcon className="h-4 w-4" strokeWidth={1.75} />
                   </button>
