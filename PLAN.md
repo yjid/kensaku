@@ -1,6 +1,6 @@
 # Kensaku — remaining work plan
 
-Status: master at `v1.0.4` (2026-10-28). ui-refresh merged.
+Status: master at `v1.0.5` (2026-10-28). ui-refresh merged.
 (`pr3-destroy-on-hide`, `pr5-onboarding`). Everything below is not yet merged.
 
 Legend: **[code]** = I can implement directly. **[you]** = needs your action
