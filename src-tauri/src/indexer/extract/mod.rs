@@ -265,7 +265,7 @@ const EXTRACTION_TIMEOUT: Duration = Duration::from_secs(8);
 /// large documents (books, manuals) are not stuck pending forever, while
 /// small files keep the snappy default. Capped at 120 s.
 fn extraction_timeout_for(file_size: u64) -> Duration {
-    let extra = (file_size / (5 * 1024 * 1024)) as u64 * 2;
+    let extra = file_size / (5 * 1024 * 1024) * 2;
     let secs = (8 + extra).min(120);
     Duration::from_secs(secs)
 }
