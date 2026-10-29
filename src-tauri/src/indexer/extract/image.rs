@@ -16,6 +16,17 @@ pub const MAX_IMAGE_PIXELS: u64 = 50_000_000;
 /// Value used to disambiguate temporary thumbnail files.
 static THUMB_TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
+/// Process-wide cap on image size for OCR (0 = no limit).
+static OCR_MAX_IMAGE_BYTES: AtomicU64 = AtomicU64::new(0);
+
+pub fn set_ocr_max_image_bytes(bytes: u64) {
+    OCR_MAX_IMAGE_BYTES.store(bytes, Ordering::SeqCst);
+}
+
+pub fn ocr_max_image_bytes() -> u64 {
+    OCR_MAX_IMAGE_BYTES.load(Ordering::SeqCst)
+}
+
 /// Whether the extension is one of the raster formats we can decode cheaply.
 ///
 /// HEIC/HEIF and SVG are deliberately excluded: the former is not supported by
@@ -456,6 +467,17 @@ pub fn reset_tesseract_probe() {
 /// and the file should be retried later; `NoText` is a final answer.
 pub fn ocr_image(path: &Path) -> crate::ocr::OcrOutcome {
     use crate::ocr::{ACCURATE, OcrOutcome, TESSERACT};
+
+    // Opt-in size cap (`ocr_max_image_bytes`, 0 = off). Skipping is a final
+    // answer, not "retry later"; changing the cap re-queues images through
+    // the OCR signature.
+    let cap = ocr_max_image_bytes();
+    if cap > 0
+        && let Ok(meta) = std::fs::metadata(path)
+        && meta.len() > cap
+    {
+        return OcrOutcome::NoText;
+    }
 
     match crate::ocr::usable_engine() {
         ACCURATE => match crate::ocr::extract_image_ocr(path) {

@@ -1,5 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static MAX_SEMANTIC_UNITS: AtomicUsize = AtomicUsize::new(20);
+
+pub fn set_max_semantic_units(n: usize) {
+    MAX_SEMANTIC_UNITS.store(n.max(1), Ordering::SeqCst);
+}
+
+pub fn max_semantic_units() -> usize {
+    MAX_SEMANTIC_UNITS.load(Ordering::SeqCst)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Unit {
@@ -18,12 +29,23 @@ pub fn chunk_text(text: &str, file_size: usize) -> Vec<(usize, usize, String)> {
         return Vec::new();
     }
 
-    // Split words with their byte offsets in text
-    let mut word_offsets: Vec<(usize, usize)> = Vec::new();
+    let max_units = max_semantic_units();
+    // How many words we ever need to look at: enough to fill `max_units`
+    // windows. Beyond this we can stop scanning — the rest of the document
+    // is never embedded by this chunker anyway.
+    let scan_cap = (max_units.saturating_sub(1)) * 192 + 240 + 1;
+
+    // Split words with their byte offsets in text, stopping early for huge docs.
+    let mut word_offsets: Vec<(usize, usize)> = Vec::with_capacity(scan_cap.min(4096));
     let mut in_word = false;
     let mut word_start = 0;
+    let mut fully_scanned = true;
 
     for (byte_idx, ch) in text.char_indices() {
+        if word_offsets.len() >= scan_cap {
+            fully_scanned = false;
+            break;
+        }
         if ch.is_whitespace() {
             if in_word {
                 word_offsets.push((word_start, byte_idx));
@@ -35,18 +57,21 @@ pub fn chunk_text(text: &str, file_size: usize) -> Vec<(usize, usize, String)> {
         }
     }
     if in_word {
-        word_offsets.push((word_start, text.len()));
+        if word_offsets.len() < scan_cap {
+            word_offsets.push((word_start, text.len()));
+        } else {
+            fully_scanned = false;
+        }
     }
 
-    // If <= 240 tokens: doc-level unit
-    if word_offsets.len() <= 240 {
+    // If the whole text fit in scan_cap and has <= 240 tokens: doc-level unit.
+    if fully_scanned && word_offsets.len() <= 240 {
         return vec![(0, file_size, text.to_string())];
     }
 
     let mut chunks = Vec::new();
     let window_size = 240;
     let step = 240 - 48; // 192 tokens step with 48 tokens overlap
-    let max_units = 20;
 
     let mut start_idx = 0;
     while start_idx < word_offsets.len() && chunks.len() < max_units {

@@ -221,7 +221,14 @@ pub fn usable_engine() -> &'static str {
 /// Fingerprint of "what OCR would produce right now". When it differs from
 /// the one stored with the index, images and PDFs are re-read once.
 pub fn signature() -> String {
-    format!("{}:{}", usable_engine(), OCR_REVISION)
+    // The image-size cap is part of "what OCR would produce": raising it
+    // must re-read images that were skipped.
+    format!(
+        "{}:{}:{}",
+        usable_engine(),
+        OCR_REVISION,
+        crate::indexer::extract::image::ocr_max_image_bytes()
+    )
 }
 
 /// Updates the process-wide OCR backend from config.

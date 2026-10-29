@@ -473,6 +473,23 @@ impl ContentIndex {
         self.writer.is_some()
     }
 
+    /// Deletes every document in the index and commits.
+    ///
+    /// Used by the in-process rebuild (`IndexerManager::rebuild_all`) when the
+    /// index directory itself could not be deleted because another handle
+    /// still had it mapped (Windows): purging logically is equivalent, and
+    /// Tantivy reclaims the space at the next segment merge.
+    pub fn truncate(&mut self) -> Result<(), String> {
+        {
+            let mut writer = self.writer()?.write();
+            writer.delete_all_documents().map_err(|e| e.to_string())?;
+            writer.commit().map_err(|e| e.to_string())?;
+        }
+        // Cached snippets belong to the deleted documents.
+        self.snippet_cache = Mutex::new(SnippetCache::new(32));
+        Ok(())
+    }
+
     fn writer(&self) -> Result<&Arc<RwLock<IndexWriter>>, String> {
         self.writer
             .as_ref()

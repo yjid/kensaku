@@ -13,7 +13,7 @@ pub use provider::EmbeddingProviderKind;
 pub use queue::EmbeddingQueue;
 pub use scanner::{ExactScanner, SemanticHit};
 pub use table::StaticTable;
-pub use units::{Unit, UnitStore, chunk_text};
+pub use units::{Unit, UnitStore, chunk_text, max_semantic_units, set_max_semantic_units};
 pub use visual::{
     MockVisualEncoder, SimilarImageResult, VISUAL_DIM, VisualEncoder, VisualStore, VisualUnit,
 };

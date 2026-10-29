@@ -55,6 +55,9 @@ export function StatsForNerds() {
   const i = stats.index;
   const ing = stats.ingestion;
   const rt = stats.runtime;
+  // A rebuild is busy from click to crawl end; the backend also rejects
+  // rebuilds while any crawl is running, so live stats gate the button too.
+  const busy = rebuilding || ing.is_indexing;
 
   const copyDiagnostics = async () => {
     try {
@@ -90,20 +93,29 @@ export function StatsForNerds() {
         </button>
         <button
           type="button"
-          disabled={rebuilding}
+          disabled={busy}
           onClick={async () => {
-            if (!window.confirm("Rebuild the index from scratch? This restarts Kensaku.")) return;
+            if (
+              !window.confirm(
+                "Rebuild the index from scratch? Kensaku clears the full-text index, semantic units and thumbnails, then rescans your folders.",
+              )
+            )
+              return;
             setRebuilding(true);
             try {
+              // Resolves as soon as the in-process rebuild starts; progress
+              // shows up in live stats and the bar below.
               await invoke("rebuild_index");
             } catch (err) {
               console.error("Rebuild failed:", err);
+              alert("Rebuild failed: " + err);
+            } finally {
               setRebuilding(false);
             }
           }}
           className="btn btn-secondary h-8 px-3 text-[12px]"
         >
-          {rebuilding ? "Rebuilding…" : "Rebuild index"}
+          {rebuilding ? "Rebuilding…" : ing.is_indexing ? "Indexing…" : "Rebuild index"}
         </button>
       </div>
 

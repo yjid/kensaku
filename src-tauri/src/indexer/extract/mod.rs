@@ -12,7 +12,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 /// Process-wide OCR setting, mirroring [`crate::config::KensakuConfig::ocr_enabled`].
@@ -30,6 +30,28 @@ pub fn set_ocr_enabled(enabled: bool) {
 /// True when image OCR is allowed.
 pub fn ocr_enabled() -> bool {
     OCR_ENABLED.load(Ordering::SeqCst)
+}
+
+/// Process-wide content caps, mirroring KensakuConfig so the extraction
+/// pipeline (which runs outside the config RwLock) sees updates immediately.
+static CONTENT_MAX_FILE_SIZE_BYTES: AtomicU64 = AtomicU64::new(20 * 1024 * 1024);
+static CONTENT_MAX_TEXT_BYTES: AtomicUsize = AtomicUsize::new(1_000_000);
+
+pub fn set_content_caps(max_file_size_mb: u64, max_text_bytes: usize) {
+    CONTENT_MAX_FILE_SIZE_BYTES.store(
+        max_file_size_mb.saturating_mul(1024 * 1024),
+        Ordering::SeqCst,
+    );
+    CONTENT_MAX_TEXT_BYTES.store(max_text_bytes.max(1024), Ordering::SeqCst);
+    clear_extraction_cache();
+}
+
+pub fn content_max_file_size_bytes() -> u64 {
+    CONTENT_MAX_FILE_SIZE_BYTES.load(Ordering::SeqCst)
+}
+
+pub fn content_max_text_bytes() -> usize {
+    CONTENT_MAX_TEXT_BYTES.load(Ordering::SeqCst)
 }
 
 /// Replaces the opt-in external extractor registry and drops cached results so
@@ -250,6 +272,15 @@ pub fn insert_cached_document(path: &Path, document: DocumentExtract) {
 /// network/FUSE filesystem) must not block indexing forever.
 const EXTRACTION_TIMEOUT: Duration = Duration::from_secs(8);
 
+/// Wall-clock budget for extracting a single file. Scales with file size so
+/// large documents (books, manuals) are not stuck pending forever, while
+/// small files keep the snappy default. Capped at 120 s.
+fn extraction_timeout_for(file_size: u64) -> Duration {
+    let extra = file_size / (5 * 1024 * 1024) * 2;
+    let secs = (EXTRACTION_TIMEOUT.as_secs() + extra).min(120);
+    Duration::from_secs(secs)
+}
+
 /// How long a caller waits for a free extraction slot before giving up on the
 /// file for this crawl. This is backpressure, not a work timeout: without it a
 /// stalled document could permanently consume every slot.
@@ -352,7 +383,7 @@ fn extraction_pool() -> Option<&'static rayon::ThreadPool> {
 /// document is reported once instead of on every crawl.
 static TIMEOUT_WARNED: std::sync::OnceLock<Mutex<HashSet<PathBuf>>> = std::sync::OnceLock::new();
 
-fn warn_extraction_timeout(path: &Path) {
+fn warn_extraction_timeout(path: &Path, timeout: Duration) {
     let warned = TIMEOUT_WARNED.get_or_init(|| Mutex::new(HashSet::new()));
     let mut warned = warned.lock().unwrap();
     // Keep the bookkeeping bounded on systems with many broken documents.
@@ -362,7 +393,7 @@ fn warn_extraction_timeout(path: &Path) {
     if warned.insert(path.to_path_buf()) {
         eprintln!(
             "[Kensaku] Text extraction timed out after {}s; leaving pending: {}",
-            EXTRACTION_TIMEOUT.as_secs(),
+            timeout.as_secs(),
             path.display()
         );
     }
@@ -432,8 +463,8 @@ fn extract_document_tracked(
         .ok()?
         .as_secs();
 
-    // Content policy: metadata-only above 20 MB
-    if file_size > 20_000_000 {
+    // Content policy: metadata-only above the configured file-size cap.
+    if file_size > content_max_file_size_bytes() {
         return None;
     }
 
@@ -459,7 +490,7 @@ fn extract_document_tracked(
         }
     }
 
-    let capped_bytes = (max_bytes as usize).min(1_000_000);
+    let capped_bytes = (max_bytes as usize).min(content_max_text_bytes());
     let format = sniff_format(path);
 
     // Run the extraction on the dedicated pool and time it out. On timeout the
@@ -502,10 +533,10 @@ fn extract_document_tracked(
                 let _ = tx.send(result);
             });
 
-            match rx.recv_timeout(EXTRACTION_TIMEOUT) {
+            match rx.recv_timeout(extraction_timeout_for(file_size)) {
                 Ok(result) => result,
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    warn_extraction_timeout(path);
+                    warn_extraction_timeout(path, extraction_timeout_for(file_size));
                     retry.store(true, Ordering::SeqCst);
                     None
                 }

@@ -145,10 +145,29 @@ pub struct KensakuConfig {
     /// default: no external command ever runs without explicit configuration.
     #[serde(default)]
     pub extractors: Vec<ExternalExtractor>,
+    /// Skip OCR on images larger than this many bytes (0 = no limit). Useful
+    /// for speeding up the first scan on screenshot-heavy corpora. Default 0.
+    #[serde(default)]
+    pub ocr_max_image_bytes: u64,
     /// Beta visual-search model pack. This only gates the Beta settings tab and
     /// model download; it is intentionally not wired into search yet.
     #[serde(default)]
     pub visual_search_beta_enabled: bool,
+    /// Content depth for large documents. `quick` (default) keeps the historic
+    /// caps; `balanced` and `deep` raise them for book/manual-sized files.
+    /// Stored as a string so unknown values fall back to `quick`.
+    #[serde(default = "default_content_depth")]
+    pub content_depth: String,
+    /// Maximum file size (in MB) that gets its text extracted. Files above
+    /// this are indexed by name/filters only. Default 20.
+    #[serde(default = "default_content_max_file_size_mb")]
+    pub content_max_file_size_mb: u64,
+    /// Maximum extracted text (in bytes) per document. Default 1 MB.
+    #[serde(default = "default_content_max_text_bytes")]
+    pub content_max_text_bytes: usize,
+    /// Maximum semantic units (chunks) per document. Default 20.
+    #[serde(default = "default_content_max_semantic_units")]
+    pub content_max_semantic_units: usize,
     /// Agent-surface scope: when non-empty, MCP/HTTP/CLI results and snippet
     /// reads are restricted to these roots (read-only scoping per root).
     #[serde(default)]
@@ -197,6 +216,22 @@ fn default_semantic_model() -> String {
 
 fn default_results_view() -> String {
     "grid".to_string()
+}
+
+fn default_content_depth() -> String {
+    "quick".to_string()
+}
+
+fn default_content_max_file_size_mb() -> u64 {
+    20
+}
+
+fn default_content_max_text_bytes() -> usize {
+    1_000_000
+}
+
+fn default_content_max_semantic_units() -> usize {
+    20
 }
 
 fn default_theme() -> String {
@@ -318,10 +353,15 @@ impl Default for KensakuConfig {
             pause_indexing: false,
             mcp_allow_reindex: false,
             visual_search_beta_enabled: false,
+            content_depth: default_content_depth(),
+            content_max_file_size_mb: default_content_max_file_size_mb(),
+            content_max_text_bytes: default_content_max_text_bytes(),
+            content_max_semantic_units: default_content_max_semantic_units(),
             agent_scoped_roots: Vec::new(),
             include_ignored: false,
             extractors: Vec::new(),
             ocr_enabled: true,
+            ocr_max_image_bytes: 0,
             ocr_engine: default_ocr_engine(),
             theme: default_theme(),
             aliases: default_aliases(),

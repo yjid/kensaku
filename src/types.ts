@@ -142,11 +142,13 @@ export interface IndexingStatus {
   semantic_ready?: boolean;
   phase?:
     | "idle"
+    | "rebuilding"
     | "walking"
     | "extracting"
     | "embedding"
     | "committing"
-    | "paused";
+    | "paused"
+    | "error";
   total_files?: number;
   extract_done?: number;
   extract_total?: number;
@@ -164,12 +166,17 @@ export interface KensakuConfig {
   semantic_model?: string;
   semantic_f32_table?: boolean;
   visual_search_beta_enabled?: boolean;
+  content_depth?: string;
+  content_max_file_size_mb?: number;
+  content_max_text_bytes?: number;
+  content_max_semantic_units?: number;
   crawl_mode?: "full" | "balanced" | "eco";
   pause_indexing?: boolean;
   mcp_allow_reindex?: boolean;
   extractors?: ExternalExtractor[];
   skip_hidden?: boolean;
   ocr_enabled?: boolean;
+  ocr_max_image_bytes?: number;
   ocr_engine?: "tesseract" | "accurate";
   theme?: "light" | "dark";
   aliases?: Alias[];
