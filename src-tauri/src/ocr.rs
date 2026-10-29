@@ -68,8 +68,7 @@ fn runtime_loadable() -> bool {
             );
             let path = match std::env::var("ORT_DYLIB_PATH") {
                 Ok(path) if !path.trim().is_empty() => path,
-                _ => app_local_runtime_path(&dll_name)
-                    .unwrap_or(dll_name),
+                _ => app_local_runtime_path(&dll_name).unwrap_or(dll_name),
             };
             // `init_from` returns an error for a missing/incompatible
             // library, but guard against a panic from a broken loader anyway.

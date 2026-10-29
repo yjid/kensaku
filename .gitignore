@@ -104,3 +104,6 @@ tmp/
 scratch/
 *.tmp
 *.temp
+
+# ONNX Runtime staged by the Windows release build (release.yml)
+src-tauri/onnxruntime.dll
