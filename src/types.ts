@@ -177,7 +177,7 @@ export interface KensakuConfig {
   skip_hidden?: boolean;
   ocr_enabled?: boolean;
   ocr_max_image_bytes?: number;
-  ocr_engine?: "tesseract" | "accurate";
+  ocr_engine?: OcrEngine;
   theme?: "light" | "dark";
   aliases?: Alias[];
   saved_searches?: SavedSearch[];
@@ -262,6 +262,8 @@ export interface InstallOutcome {
 /* ---- OCR (get_ocr_status / download_ocr_language). The backend may ---- */
 /* ---- not expose these yet; consumers must degrade to "unknown".     ---- */
 
+export type OcrEngine = "tesseract" | "accurate" | "indra";
+
 export interface OcrStatus {
   engine_present: boolean;
   languages: string[];
@@ -269,14 +271,18 @@ export interface OcrStatus {
   available: boolean;
   tessdata_dir: string;
   error: string | null;
-  engine?: "tesseract" | "accurate";
+  engine?: OcrEngine;
   /** PP-OCR can read: pack + runtime present and its self-test read known text. */
   accurate_available?: boolean;
   accurate_compiled?: boolean;
   /** Why PP-OCR cannot read right now, or null when it can. */
   accurate_problem?: string | null;
+  /** Indra can read: pack + runtime present and its self-test read known text. */
+  indra_available?: boolean;
+  /** Why Indra cannot read right now, or null when it can. */
+  indra_problem?: string | null;
   /** The engine actually reading images now; can differ from `engine`. */
-  active_engine?: "tesseract" | "accurate" | "none";
+  active_engine?: OcrEngine | "none";
 }
 
 /* ---- SystemStats (get_stats). The backend may not expose this yet; ---- */

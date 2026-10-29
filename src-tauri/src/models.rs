@@ -83,6 +83,85 @@ const OCR_ARTIFACTS: [Artifact; 3] = [
 ];
 
 /// Optional ONNX smart embedding pack (bge-small-en-v1.5 int8).
+/// Optional Indra OCR pack (datalab-to/indra-ocr, pinned to the v1.1.0 model
+/// tag): detector, orientation and script classifiers, four recognizers and
+/// their vocabularies. Weights under a modified OpenRAIL-M license, so they
+/// are downloaded only when the user selects Indra.
+const INDRA_ARTIFACTS: [Artifact; 8] = [
+    Artifact {
+        name: "det.onnx",
+        urls: &[
+            "https://huggingface.co/datalab-to/indra-ocr/resolve/v1.1.0/det.onnx",
+            "https://hf-mirror.com/datalab-to/indra-ocr/resolve/v1.1.0/det.onnx",
+        ],
+        bytes_expected: 389_948,
+        sha256: Some("f2bd4cba23e9c328cf7ec824634e423e191a2c6aacbbf35c62bd79dd70f62f59"),
+    },
+    Artifact {
+        name: "rec.onnx",
+        urls: &[
+            "https://huggingface.co/datalab-to/indra-ocr/resolve/v1.1.0/rec.onnx",
+            "https://hf-mirror.com/datalab-to/indra-ocr/resolve/v1.1.0/rec.onnx",
+        ],
+        bytes_expected: 5_042_161,
+        sha256: Some("475972a2710be4a3cbfeb2bc7f3624ffd563de07de42476fc7a290d4e1ece484"),
+    },
+    Artifact {
+        name: "rec_cjk.onnx",
+        urls: &[
+            "https://huggingface.co/datalab-to/indra-ocr/resolve/v1.1.0/rec_cjk.onnx",
+            "https://hf-mirror.com/datalab-to/indra-ocr/resolve/v1.1.0/rec_cjk.onnx",
+        ],
+        bytes_expected: 10_176_018,
+        sha256: Some("4a035516a17e62cdf33a4fe2d88077654cb8841cff024685cdef4e351694ef50"),
+    },
+    Artifact {
+        name: "rec_rtl.onnx",
+        urls: &[
+            "https://huggingface.co/datalab-to/indra-ocr/resolve/v1.1.0/rec_rtl.onnx",
+            "https://hf-mirror.com/datalab-to/indra-ocr/resolve/v1.1.0/rec_rtl.onnx",
+        ],
+        bytes_expected: 4_812_710,
+        sha256: Some("468796bd684486a8388c30c8b4ed2a26e3eeb1f8ff02831c24c2e12c79a2a834"),
+    },
+    Artifact {
+        name: "rec_world.onnx",
+        urls: &[
+            "https://huggingface.co/datalab-to/indra-ocr/resolve/v1.1.0/rec_world.onnx",
+            "https://hf-mirror.com/datalab-to/indra-ocr/resolve/v1.1.0/rec_world.onnx",
+        ],
+        bytes_expected: 5_627_990,
+        sha256: Some("c8d1e59f21b04966f179d2d2d8e22b230d22110b3f89855bbbf2624a58c40043"),
+    },
+    Artifact {
+        name: "script.onnx",
+        urls: &[
+            "https://huggingface.co/datalab-to/indra-ocr/resolve/v1.1.0/script.onnx",
+            "https://hf-mirror.com/datalab-to/indra-ocr/resolve/v1.1.0/script.onnx",
+        ],
+        bytes_expected: 191_630,
+        sha256: Some("b6ce4e926e19c243faaf37bd46880398bf2cb4ae56a29e1177a3b017c1280e36"),
+    },
+    Artifact {
+        name: "orient.onnx",
+        urls: &[
+            "https://huggingface.co/datalab-to/indra-ocr/resolve/v1.1.0/orient.onnx",
+            "https://hf-mirror.com/datalab-to/indra-ocr/resolve/v1.1.0/orient.onnx",
+        ],
+        bytes_expected: 371_802,
+        sha256: Some("20eaf670f55a7cf9facfe1bdd6c7b8e40be75bbf4d48a3df43f66aa3bbd874fd"),
+    },
+    Artifact {
+        name: "meta.json",
+        urls: &[
+            "https://huggingface.co/datalab-to/indra-ocr/resolve/v1.1.0/meta.json",
+            "https://hf-mirror.com/datalab-to/indra-ocr/resolve/v1.1.0/meta.json",
+        ],
+        bytes_expected: 211_869,
+        sha256: Some("4ce4c94b46f5d644033c02e718322014ff4081270f385038c571912b56696339"),
+    },
+];
+
 pub const SMART_ARTIFACTS: [Artifact; 3] = [
     Artifact {
         name: "model.onnx",
@@ -254,6 +333,10 @@ pub fn ocr_status() -> ModelsStatus {
     status_for(&crate::ocr::pack_dir(), &OCR_ARTIFACTS)
 }
 
+pub fn indra_status() -> ModelsStatus {
+    status_for(&crate::ocr_indra::pack_dir(), &INDRA_ARTIFACTS)
+}
+
 pub fn smart_dir() -> PathBuf {
     models_dir().join("smart")
 }
@@ -334,7 +417,8 @@ pub fn download_all() {
     start_download(models_dir(), &ARTIFACTS, "kensaku-model-download", "model");
 }
 
-/// Called once the OCR pack has finished downloading and verifying.
+/// Called once an OCR pack (PP-OCR or Indra) has finished downloading and
+/// verifying.
 static OCR_PACK_READY: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
 
 /// Registers what to do when the OCR pack becomes available (start a crawl
@@ -350,6 +434,16 @@ pub fn download_ocr_pack() {
         &OCR_ARTIFACTS,
         "kensaku-ocr-download",
         "OCR pack",
+    );
+}
+
+/// Starts a background download of the optional Indra OCR pack.
+pub fn download_indra_pack() {
+    start_download(
+        crate::ocr_indra::pack_dir(),
+        &INDRA_ARTIFACTS,
+        "kensaku-indra-download",
+        "Indra OCR pack",
     );
 }
 
@@ -410,7 +504,8 @@ fn run_download(dir: PathBuf, artifacts: &'static [Artifact], label: &'static st
         Ok(()) => {
             set_progress(None);
             set_error(None);
-            if std::ptr::eq(artifacts, &OCR_ARTIFACTS[..])
+            if (std::ptr::eq(artifacts, &OCR_ARTIFACTS[..])
+                || std::ptr::eq(artifacts, &INDRA_ARTIFACTS[..]))
                 && let Some(callback) = OCR_PACK_READY.get()
             {
                 // Clear the flag first so a callback that checks status sees

@@ -137,8 +137,9 @@ pub struct KensakuConfig {
     pub mcp_allow_reindex: bool,
     #[serde(default = "default_true")]
     pub ocr_enabled: bool,
-    /// OCR backend: `tesseract` (fast default) or `accurate` (optional
-    /// PP-OCRv6 pack). Falls back to Tesseract when the pack is absent.
+    /// OCR backend: `tesseract` (fast default), `accurate` (optional
+    /// PP-OCRv6 pack) or `indra` (optional Indra OCR pack). Indra falls back
+    /// to PP-OCR, PP-OCR to Tesseract, when a pack is absent.
     #[serde(default = "default_ocr_engine")]
     pub ocr_engine: String,
     /// Opt-in external extractors keyed by extension or MIME type. Empty by

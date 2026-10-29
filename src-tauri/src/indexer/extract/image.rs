@@ -55,7 +55,7 @@ pub struct OcrStatus {
     pub tessdata_dir: String,
     /// Last error line when the engine is missing or failing.
     pub error: Option<String>,
-    /// Currently selected backend (`tesseract` or `accurate`).
+    /// Currently selected backend (`tesseract`, `accurate` or `indra`).
     pub engine: String,
     /// Whether PP-OCR can actually read: compiled in, pack present, runtime
     /// loaded, and its self-test read known text correctly.
@@ -64,8 +64,13 @@ pub struct OcrStatus {
     pub accurate_compiled: bool,
     /// Why PP-OCR cannot read right now, in plain words. `None` when it can.
     pub accurate_problem: Option<String>,
+    /// Whether Indra can actually read: compiled in, pack present, runtime
+    /// loaded, and its self-test read known text correctly.
+    pub indra_available: bool,
+    /// Why Indra cannot read right now, in plain words. `None` when it can.
+    pub indra_problem: Option<String>,
     /// The engine that is really reading images right now (`accurate`,
-    /// `tesseract`, or `none`), which can differ from the selected one.
+    /// `indra`, `tesseract`, or `none`), which can differ from the selected one.
     pub active_engine: String,
 }
 
@@ -93,6 +98,8 @@ fn build_status(
         accurate_available: crate::ocr::accurate_available(),
         accurate_compiled: crate::ocr::accurate_compiled(),
         accurate_problem: crate::ocr::accurate_problem(),
+        indra_available: crate::ocr_indra::available(),
+        indra_problem: crate::ocr_indra::problem(),
         active_engine: crate::ocr::usable_engine().to_string(),
     }
 }
@@ -466,7 +473,7 @@ pub fn reset_tesseract_probe() {
 /// See [`crate::ocr::OcrOutcome`]: `Unavailable` means no engine could run
 /// and the file should be retried later; `NoText` is a final answer.
 pub fn ocr_image(path: &Path) -> crate::ocr::OcrOutcome {
-    use crate::ocr::{ACCURATE, OcrOutcome, TESSERACT};
+    use crate::ocr::{ACCURATE, INDRA, OcrOutcome, TESSERACT};
 
     // Opt-in size cap (`ocr_max_image_bytes`, 0 = off). Skipping is a final
     // answer, not "retry later"; changing the cap re-queues images through
@@ -480,6 +487,13 @@ pub fn ocr_image(path: &Path) -> crate::ocr::OcrOutcome {
     }
 
     match crate::ocr::usable_engine() {
+        INDRA => match crate::ocr_indra::extract_image(path) {
+            OcrOutcome::Unavailable if crate::ocr::accurate_available() => {
+                crate::ocr::extract_image_ocr(path)
+            }
+            OcrOutcome::Unavailable if tesseract_usable() => tesseract_ocr(path),
+            outcome => outcome,
+        },
         ACCURATE => match crate::ocr::extract_image_ocr(path) {
             // The accurate engine was usable a moment ago; if it just failed
             // to load, Tesseract is still better than nothing.
@@ -493,7 +507,7 @@ pub fn ocr_image(path: &Path) -> crate::ocr::OcrOutcome {
 
 /// Reads text from a decoded image (a scanned PDF page).
 pub fn ocr_decoded_image(image: &DynamicImage) -> crate::ocr::OcrOutcome {
-    use crate::ocr::{ACCURATE, OcrOutcome, TESSERACT};
+    use crate::ocr::{ACCURATE, INDRA, OcrOutcome, TESSERACT};
 
     let via_tesseract = |image: &DynamicImage| {
         // Tesseract needs a file. A unique temp PNG, removed right after.
@@ -513,6 +527,13 @@ pub fn ocr_decoded_image(image: &DynamicImage) -> crate::ocr::OcrOutcome {
         outcome
     };
     match crate::ocr::usable_engine() {
+        INDRA => match crate::ocr_indra::extract_decoded(image) {
+            OcrOutcome::Unavailable if crate::ocr::accurate_available() => {
+                crate::ocr::extract_decoded_image(image)
+            }
+            OcrOutcome::Unavailable if tesseract_usable() => via_tesseract(image),
+            outcome => outcome,
+        },
         ACCURATE => match crate::ocr::extract_decoded_image(image) {
             OcrOutcome::Unavailable if tesseract_usable() => via_tesseract(image),
             outcome => outcome,

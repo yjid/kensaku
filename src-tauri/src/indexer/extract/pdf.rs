@@ -95,14 +95,15 @@ pub fn extract_pdf(path: &Path, max_bytes: usize) -> Option<PdfExtractResult> {
 }
 
 /// Most pages of a scanned PDF that get OCR'd. PP-OCR reads a page in about
-/// 0.15 s, so 20 pages fit comfortably in the extraction time budget;
-/// Tesseract takes about 1 s a page, so it stays at 6 to avoid timing out
-/// (a timed-out file is retried, so too many pages would retry forever).
+/// 0.15 s, so 20 pages fit comfortably in the extraction time budget; Indra
+/// takes up to about 0.75 s on a dense page, so 10; Tesseract takes about 1 s
+/// a page, so it stays at 6 to avoid timing out (a timed-out file is
+/// retried, so too many pages would retry forever).
 fn max_ocr_pages() -> usize {
-    if crate::ocr::usable_engine() == crate::ocr::ACCURATE {
-        20
-    } else {
-        6
+    match crate::ocr::usable_engine() {
+        crate::ocr::ACCURATE => 20,
+        crate::ocr::INDRA => 10,
+        _ => 6,
     }
 }
 

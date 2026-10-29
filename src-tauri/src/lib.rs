@@ -10,6 +10,7 @@ pub mod indexer;
 pub mod models;
 pub mod main_window;
 pub mod ocr;
+pub mod ocr_indra;
 pub mod preview;
 pub mod query;
 pub mod search;
@@ -242,7 +243,7 @@ pub fn run() {
     ocr::set_engine(&config.ocr_engine);
 
     // Self-heal on every launch: make sure the always-on Tesseract language
-    // data and the optional PP-OCR pack are present, so a missed download
+    // data and the optional PP-OCR (or selected Indra) pack are present, so a missed download
     // during setup or an interrupted first run cannot leave the app without
     // a working OCR engine. Downloads run in the background and re-queue
     // images through the OCR pack ready callback once they finish.
@@ -251,11 +252,13 @@ pub fn run() {
             let _ = crate::indexer::extract::image::download_eng_tessdata();
         });
     }
-    if crate::ocr::accurate_compiled()
-        && crate::ocr::runtime_loadable()
-        && !crate::ocr::pack_present()
-    {
-        crate::models::download_ocr_pack();
+    if crate::ocr::accurate_compiled() && crate::ocr::runtime_loadable() {
+        // One download at a time: the selected engine's pack first.
+        if crate::ocr::engine_name() == crate::ocr::INDRA && !crate::ocr_indra::pack_present() {
+            crate::models::download_indra_pack();
+        } else if !crate::ocr::pack_present() {
+            crate::models::download_ocr_pack();
+        }
     }
 
     // OCR engine selection (switching to PP-OCR when Tesseract is missing,
@@ -333,6 +336,8 @@ pub fn run() {
             commands::download_ocr_language,
             commands::get_ocr_pack_status,
             commands::download_ocr_pack,
+            commands::get_indra_pack_status,
+            commands::download_indra_pack,
             commands::get_smart_pack_status,
             commands::download_smart_pack,
             commands::get_visual_pack_status,

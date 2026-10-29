@@ -112,7 +112,8 @@ const handlers: Record<string, (a: any) => unknown> = {
   get_suggested_directories: () => ["/Users/mira/Documents", "/Users/mira/Desktop", "/Users/mira/Pictures", "/Users/mira/Code"],
   get_scope_suggestions: () => ["~/Documents", "~/Pictures", "~/Code"],
   get_ocr_status: () => ({ available: true, engine_present: true, accurate_compiled: true, accurate_available: true, accurate_problem: null, active_engine: "tesseract", engine: "tesseract", languages: ["eng"] }),
-  get_ocr_pack_status: () => ({ ready: false, downloading: false }),
+  get_ocr_pack_status: () => ({ ready: false, downloading: false, dir: "~/.config/kensaku/ocr", artifacts: [] }),
+  get_indra_pack_status: () => ({ ready: false, downloading: false, dir: "~/.config/kensaku/ocr-indra", artifacts: [] }),
   get_models_status: () => ({ ready: true }),
   get_autostart: () => true,
   get_file_details: (a) => {
@@ -121,7 +122,7 @@ const handlers: Record<string, (a: any) => unknown> = {
   },
   read_file_content: () => "Northwind Traders\nInvoice 2026-10\n\nDesign retainer, October    4,800.00\nPayment terms: net 14\n",
   find_duplicates: () => [],
-  run_doctor: () => ({ checks: [] }),
+  run_doctor: () => ({ checks: [], summary: { ok: 0, warn: 0, fail: 0 } }),
   get_stats: () => ({ files: 48213, index_bytes: 212_000_000, memory_bytes: 38_000_000 }),
   agent_connect_status: () => [],
   "plugin:event|listen": () => 1,

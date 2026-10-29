@@ -25,7 +25,7 @@ optional where noted; missing keys fall back to the listed default.
 | `pause_indexing` | bool | `false` | Pause background crawling. |
 | `mcp_allow_reindex` | bool | `false` | Allow MCP `reindex` write tool. |
 | `ocr_enabled` | bool | `true` | Enable OCR for images. |
-| `ocr_engine` | string | `tesseract` | `tesseract` or `accurate`. |
+| `ocr_engine` | string | `tesseract` | `tesseract`, `accurate` (PP-OCRv6) or `indra` (Indra OCR; ~27 MB model download, weights under a modified OpenRAIL-M license). |
 | `extractors` | object[] | `[]` | Opt-in external extractors. |
 | `visual_search_beta_enabled` | bool | `false` | Beta visual search tab. |
 | `agent_scoped_roots` | string[] | `[]` | MCP/CLI read-only scope roots. |

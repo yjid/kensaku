@@ -11,6 +11,8 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 pub const TESSERACT: &str = "tesseract";
 pub const ACCURATE: &str = "accurate";
+/// Indra OCR (see [`crate::ocr_indra`]).
+pub const INDRA: &str = "indra";
 /// No engine can run on this machine right now.
 pub const NONE: &str = "none";
 
@@ -198,10 +200,21 @@ pub fn accurate_available() -> bool {
 /// when it can run, otherwise whichever other engine can, otherwise [`NONE`].
 ///
 /// Selecting PP-OCR on a machine where it cannot run (no pack yet, Intel Mac)
-/// must not mean "no OCR" while Tesseract is sitting right there.
+/// must not mean "no OCR" while Tesseract is sitting right there. Indra falls
+/// back to PP-OCR first, then Tesseract.
 pub fn usable_engine() -> &'static str {
     let tesseract = || crate::indexer::extract::image::tesseract_usable();
-    if engine_name() == ACCURATE {
+    if engine_name() == INDRA {
+        if crate::ocr_indra::available() {
+            INDRA
+        } else if accurate_available() {
+            ACCURATE
+        } else if tesseract() {
+            TESSERACT
+        } else {
+            NONE
+        }
+    } else if engine_name() == ACCURATE {
         if accurate_available() {
             ACCURATE
         } else if tesseract() {
@@ -233,11 +246,13 @@ pub fn signature() -> String {
 
 /// Updates the process-wide OCR backend from config.
 ///
-/// Values other than `accurate` (including the old `native` string) fall back
-/// to Tesseract.
+/// Values other than `accurate` and `indra` (including the old `native`
+/// string) fall back to Tesseract.
 pub fn set_engine(engine: &str) {
     let value = if engine.eq_ignore_ascii_case(ACCURATE) {
         1
+    } else if engine.eq_ignore_ascii_case(INDRA) {
+        2
     } else {
         0
     };
@@ -247,6 +262,7 @@ pub fn set_engine(engine: &str) {
 pub fn engine_name() -> &'static str {
     match ENGINE.load(Ordering::SeqCst) {
         1 => ACCURATE,
+        2 => INDRA,
         _ => TESSERACT,
     }
 }
@@ -409,8 +425,8 @@ fn accurate_engine() -> Option<std::sync::Arc<paddleocr_rs_onnx::OcrEngine>> {
 }
 
 /// A tiny image with known text, used to prove the engine actually reads.
-const SELF_TEST_IMAGE: &[u8] = include_bytes!("../tests/fixtures/ocr-ui-text/001.png");
-const SELF_TEST_EXPECTED: &str = "open settings";
+pub(crate) const SELF_TEST_IMAGE: &[u8] = include_bytes!("../tests/fixtures/ocr-ui-text/001.png");
+pub(crate) const SELF_TEST_EXPECTED: &str = "open settings";
 
 /// Runs the accurate engine once on a known image and checks the words come
 /// back, spaces included. Cached once it has run against a present pack, so
@@ -469,6 +485,8 @@ mod tests {
         assert_eq!(engine_name(), TESSERACT);
         set_engine(ACCURATE);
         assert_eq!(engine_name(), ACCURATE);
+        set_engine("Indra");
+        assert_eq!(engine_name(), INDRA);
         // The retired `native` value must fall back to Tesseract rather than
         // claiming a backend that does not exist.
         set_engine("native");
