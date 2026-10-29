@@ -435,8 +435,8 @@ pub fn extract_image_ocr(path: &Path) -> Option<String> {
     let mut child = command.spawn().ok()?;
     if let Some(mut stdin) = child.stdin.take() {
         // Writing in a separate thread avoids deadlocking when the input is
-        // larger than the OS pipe buffer.
-        let bytes = bytes.clone();
+        // larger than the OS pipe buffer. The buffer is moved, not cloned —
+        // large scans can be tens of megabytes.
         std::thread::spawn(move || {
             let _ = stdin.write_all(&bytes);
         });
