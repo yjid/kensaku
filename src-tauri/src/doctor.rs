@@ -531,32 +531,33 @@ fn check_ocr() -> DoctorCheck {
         return ok(ID, LABEL, "OCR is turned off in Settings".to_string());
     }
     let status = crate::indexer::extract::image::ocr_status();
-    match status.active_engine.as_str() {
-        crate::ocr::ACCURATE => ok(
+    // The selected engine cannot run: say so instead of silently using
+    // another one.
+    let selected_problem = match status.engine.as_str() {
+        crate::ocr::INDRA => status.indra_problem.clone().map(|p| ("Indra OCR", p)),
+        crate::ocr::ACCURATE => status.accurate_problem.clone().map(|p| ("PP-OCR", p)),
+        _ => None,
+    };
+    let fallback = |detail: String| match &selected_problem {
+        Some((name, problem)) if status.active_engine != status.engine => warn(
             ID,
             LABEL,
-            "PP-OCR is reading images (self-test passed)".to_string(),
+            format!("{name} is selected but cannot run: {problem}. {detail}"),
+            None,
         ),
-        crate::ocr::TESSERACT => {
-            let detail = format!(
-                "Tesseract is reading images · languages: {}",
-                status.languages.join(", ")
-            );
-            match (
-                status.engine == crate::ocr::ACCURATE,
-                status.accurate_problem,
-            ) {
-                // PP-OCR was picked but cannot run: say so instead of
-                // silently using the other engine.
-                (true, Some(problem)) => warn(
-                    ID,
-                    LABEL,
-                    format!("PP-OCR is selected but cannot run: {problem}. {detail}"),
-                    None,
-                ),
-                _ => ok(ID, LABEL, detail),
-            }
-        }
+        _ => ok(ID, LABEL, detail),
+    };
+    match status.active_engine.as_str() {
+        crate::ocr::INDRA => ok(
+            ID,
+            LABEL,
+            "Indra OCR is reading images (self-test passed)".to_string(),
+        ),
+        crate::ocr::ACCURATE => fallback("PP-OCR is reading images (self-test passed)".to_string()),
+        crate::ocr::TESSERACT => fallback(format!(
+            "Tesseract is reading images · languages: {}",
+            status.languages.join(", ")
+        )),
         _ => {
             let tesseract = if status.engine_present {
                 "Tesseract has no language data".to_string()

@@ -718,6 +718,19 @@ pub async fn download_ocr_pack() -> Result<crate::models::ModelsStatus, String> 
     Ok(crate::models::ocr_status())
 }
 
+/// Reports the optional Indra OCR pack inventory.
+#[tauri::command]
+pub async fn get_indra_pack_status() -> Result<crate::models::ModelsStatus, String> {
+    Ok(crate::models::indra_status())
+}
+
+/// Starts the background download of the Indra OCR pack.
+#[tauri::command]
+pub async fn download_indra_pack() -> Result<crate::models::ModelsStatus, String> {
+    crate::models::download_indra_pack();
+    Ok(crate::models::indra_status())
+}
+
 /// Reports the optional smart embedding pack inventory.
 #[tauri::command]
 pub async fn get_smart_pack_status() -> Result<crate::models::ModelsStatus, String> {
@@ -987,7 +1000,7 @@ pub async fn complete_setup(
         config.shortcut = sc;
     }
     if let Some(engine) = ocr_engine
-        && (engine == crate::ocr::TESSERACT || engine == crate::ocr::ACCURATE)
+        && [crate::ocr::TESSERACT, crate::ocr::ACCURATE, crate::ocr::INDRA].contains(&engine.as_str())
     {
         config.ocr_engine = engine;
     }

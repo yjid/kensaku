@@ -7,7 +7,7 @@ import {
   RefreshCw,
   TriangleAlert,
 } from "lucide-react";
-import { KensakuConfig, ModelsStatus, OcrStatus } from "../../types";
+import { KensakuConfig, ModelsStatus, OcrEngine, OcrStatus } from "../../types";
 import { formatBytes } from "../../lib/format";
 import { Switch } from "./kit";
 
@@ -17,7 +17,30 @@ import { Switch } from "./kit";
    reserved so resolving the status never shifts the row. */
 
 const OCR_DESCRIPTION =
-  "Read text from screenshots, scans and photos. PP-OCRv6 is built in and used by default; Tesseract is the fallback where it cannot run. Existing images are re-scanned after saving.";
+  "Read text from screenshots, scans and photos. PP-OCRv6 is built in and used by default; Indra OCR is an optional download; Tesseract is the fallback where neither can run. Existing images are re-scanned after saving.";
+
+/* Engines that run from a downloaded model pack inside Kensaku. */
+const PACKS = {
+  accurate: {
+    name: "PP-OCRv6",
+    statusCommand: "get_ocr_pack_status",
+    downloadCommand: "download_ocr_pack",
+    blurb: "About 6 MB · runs inside Kensaku · reads small UI text well.",
+  },
+  indra: {
+    name: "Indra OCR",
+    statusCommand: "get_indra_pack_status",
+    downloadCommand: "download_indra_pack",
+    blurb:
+      "About 27 MB · runs inside Kensaku · 80+ languages, scans, tilted and turned pages. Model weights under a modified OpenRAIL-M license.",
+  },
+} as const;
+
+const ENGINE_NAMES: Record<OcrEngine, string> = {
+  tesseract: "Tesseract",
+  accurate: "PP-OCRv6",
+  indra: "Indra OCR",
+};
 
 const INSTALL_COMMANDS = [
   {
@@ -68,6 +91,9 @@ export function OcrField({
   const [copied, setCopied] = useState<string | null>(null);
   const platform = pickPlatform();
 
+  const engine: OcrEngine = config.ocr_engine ?? "tesseract";
+  const packInfo = engine === "tesseract" ? null : PACKS[engine];
+
   const check = useCallback(async () => {
     try {
       setStatus(await invoke<OcrStatus>("get_ocr_status"));
@@ -75,12 +101,13 @@ export function OcrField({
       console.warn("get_ocr_status not available:", err);
       setStatus(null);
     }
+    if (!packInfo) return;
     try {
-      setPack(await invoke<ModelsStatus>("get_ocr_pack_status"));
+      setPack(await invoke<ModelsStatus>(packInfo.statusCommand));
     } catch {
       setPack(null);
     }
-  }, []);
+  }, [packInfo]);
 
   useEffect(() => {
     check();
@@ -99,11 +126,12 @@ export function OcrField({
   }, [downloading, check]);
 
   const downloadPack = async () => {
+    if (!packInfo) return;
     setPackBusy(true);
     try {
-      setPack(await invoke<ModelsStatus>("download_ocr_pack"));
+      setPack(await invoke<ModelsStatus>(packInfo.downloadCommand));
     } catch (err) {
-      console.warn("download_ocr_pack failed:", err);
+      console.warn(`${packInfo.downloadCommand} failed:`, err);
     } finally {
       setPackBusy(false);
     }
@@ -125,28 +153,31 @@ export function OcrField({
     }
   };
 
-  const engine = config.ocr_engine ?? "tesseract";
-  const usingPpocr = engine === "accurate";
-  /* Ready means PP-OCR read its test image correctly, not that files exist. */
-  const ppocrReady = !!status?.accurate_available;
-  const fallbackToTesseract = usingPpocr && !ppocrReady && status?.active_engine === "tesseract";
-  /* PP-OCR's own controls (download, problem) live in its section, so the
-     switch stays usable while it gets ready. */
+  const usingPpocr = packInfo !== null;
+  /* Ready means the engine read its test image correctly, not that files exist. */
+  const ppocrReady = engine === "indra" ? !!status?.indra_available : !!status?.accurate_available;
+  const packProblem = engine === "indra" ? status?.indra_problem : status?.accurate_problem;
+  const fallbackEngine =
+    usingPpocr && !ppocrReady && status?.active_engine && status.active_engine !== "none"
+      ? ENGINE_NAMES[status.active_engine]
+      : null;
+  /* A pack engine's own controls (download, problem) live in its section, so
+     the switch stays usable while it gets ready. */
   const unavailable = usingPpocr ? false : status !== null && !status.available;
   const engineMissing = !usingPpocr && status !== null && !status.engine_present;
   const noLanguages = !usingPpocr && !engineMissing && status !== null && !status.available;
 
   const hint: React.ReactNode | null = usingPpocr ? (
     ppocrReady ? (
-      <span className="font-mono text-muted">PP-OCRv6 ready · verified on a test image</span>
+      <span className="font-mono text-muted">{packInfo.name} ready · verified on a test image</span>
     ) : downloading ? (
-      <span className="font-mono text-muted">Downloading PP-OCRv6…</span>
+      <span className="font-mono text-muted">Downloading {packInfo.name}…</span>
     ) : status === null ? null : (
       <>
         <TriangleAlert className="h-3 w-3 shrink-0 text-warning" />
         <span className="text-warning">
-          {status.accurate_problem ?? "PP-OCRv6 cannot run."}
-          {fallbackToTesseract ? " Using Tesseract meanwhile." : ""}
+          {packProblem ?? `${packInfo.name} cannot run.`}
+          {fallbackEngine ? ` Using ${fallbackEngine} meanwhile.` : ""}
         </span>
       </>
     )
@@ -187,14 +218,14 @@ export function OcrField({
       <div className="mt-3 flex items-center justify-between gap-4 border-t border-line pt-3">
         <div>
           <p className="text-[11px] font-medium text-fg">OCR engine</p>
-          <p className="text-[12px] text-muted">Pick one. Both read images; they are alternatives.</p>
+          <p className="text-[12px] text-muted">Pick one. All read images; they are alternatives.</p>
         </div>
         <select
           aria-label="OCR engine"
           value={engine}
           onChange={(e) =>
             setConfig((c) =>
-              c ? { ...c, ocr_engine: e.target.value as "tesseract" | "accurate" } : c,
+              c ? { ...c, ocr_engine: e.target.value as OcrEngine } : c,
             )
           }
           className="h-8 rounded-control border border-line bg-[var(--panel)] px-2 text-[11px] text-fg"
@@ -203,6 +234,9 @@ export function OcrField({
           <option value="accurate" disabled={!status?.accurate_compiled}>
             PP-OCRv6 (recommended)
           </option>
+          <option value="indra" disabled={!status?.accurate_compiled}>
+            Indra OCR (multilingual, scans)
+          </option>
         </select>
       </div>
 
@@ -210,10 +244,8 @@ export function OcrField({
         <div className="mt-3 border-t border-line pt-3">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-[11px] font-medium text-fg">PP-OCRv6 pack</p>
-              <p className="text-[12px] leading-[18px] text-muted">
-                About 6 MB · runs inside Kensaku · reads small UI text well.
-              </p>
+              <p className="text-[11px] font-medium text-fg">{packInfo.name} pack</p>
+              <p className="text-[12px] leading-[18px] text-muted">{packInfo.blurb}</p>
               <p className="mt-0.5 font-mono text-[11px] text-subtle">
                 {pack?.downloading
                   ? `Downloading ${Math.round(
@@ -222,7 +254,7 @@ export function OcrField({
                   : pack?.ready
                     ? ppocrReady
                       ? "Installed · verified"
-                      : status?.accurate_problem ?? "Installed"
+                      : packProblem ?? "Installed"
                     : pack?.error
                       ? pack.error
                       : "Not installed"}
@@ -268,7 +300,7 @@ export function OcrField({
       ) : (
         <div className="mt-3 border-t border-line pt-3">
           <p className="text-[12px] leading-[18px] text-muted">
-            PP-OCRv6 is not compiled into this build. Rebuild with default features to enable it.
+            {packInfo?.name} is not compiled into this build. Rebuild with default features to enable it.
           </p>
         </div>
       ))}

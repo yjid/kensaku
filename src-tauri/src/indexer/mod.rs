@@ -1616,6 +1616,9 @@ impl IndexerManager {
             if crate::ocr::engine_name() == crate::ocr::ACCURATE && !crate::ocr::pack_present() {
                 crate::models::download_ocr_pack();
             }
+            if crate::ocr::engine_name() == crate::ocr::INDRA && !crate::ocr_indra::pack_present() {
+                crate::models::download_indra_pack();
+            }
         }
 
         let signature = crate::ocr::signature();

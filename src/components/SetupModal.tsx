@@ -4,7 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import React from "react";
 import { Check, Plus, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download, X, FolderOpen, Minus } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
-import type { IndexingStatus, OcrStatus, ModelsStatus } from "../types";
+import type { IndexingStatus, OcrEngine, OcrStatus, ModelsStatus } from "../types";
 
 /* First run: three screens, one decision each.
    1 Welcome → 2 Pick folders → 3 Exclusions + start. */
@@ -31,10 +31,11 @@ function formatEta(seconds: number): string {
    decision so the radio shows the engine that will actually run: the config
    choice (`engine`), or PP-OCRv6 when tesseract is missing and the accurate
    pack is compiled in. `null`/undefined fields degrade optimistically. */
-function pickEngine(status: OcrStatus): "tesseract" | "accurate" {
+function pickEngine(status: OcrStatus): OcrEngine {
   const accurateCompilable = status.accurate_compiled !== false;
+  if (status.engine === "indra" && accurateCompilable) return "indra";
   if (status.engine === "accurate" && accurateCompilable) return "accurate";
-  if (!status.engine_present && accurateCompilable) return "accurate";
+  if (!status.engine_present && accurateCompilable) return "indra";
   return "tesseract";
 }
 
@@ -52,7 +53,9 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const [ocrPackStatus, setOcrPackStatus] = useState<ModelsStatus | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrPackBusy, setOcrPackBusy] = useState(false);
-  const [selectedOcrEngine, setSelectedOcrEngine] = useState<"tesseract" | "accurate" | null>(null);
+  const [indraPackStatus, setIndraPackStatus] = useState<ModelsStatus | null>(null);
+  const [indraPackBusy, setIndraPackBusy] = useState(false);
+  const [selectedOcrEngine, setSelectedOcrEngine] = useState<OcrEngine | null>(null);
   const [packError, setPackError] = useState<string | null>(null);
   const [shortcut, setShortcut] = useState("Alt+Space");
   const [capturing, setCapturing] = useState(false);
@@ -136,7 +139,17 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
       })
       .catch(() => {});
     invoke<ModelsStatus>("get_ocr_pack_status").then(setOcrPackStatus).catch(() => {});
+    invoke<ModelsStatus>("get_indra_pack_status").then(setIndraPackStatus).catch(() => {});
   }, [step]);
+
+  // Poll while the Indra pack download is running.
+  useEffect(() => {
+    if (step !== 1 || !indraPackStatus?.downloading) return;
+    const id = window.setInterval(() => {
+      invoke<ModelsStatus>("get_indra_pack_status").then(setIndraPackStatus).catch(() => {});
+    }, 600);
+    return () => window.clearInterval(id);
+  }, [step, indraPackStatus?.downloading]);
 
   // Poll while an OCR pack download is running.
   useEffect(() => {
@@ -372,7 +385,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     );
   }
 
-  const ocrReady = Boolean(ocrStatus?.available || ocrPackStatus?.ready);
+  const ocrReady = Boolean(ocrStatus?.available || ocrPackStatus?.ready || indraPackStatus?.ready);
 
   return (
     <Shell
@@ -512,6 +525,36 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                   setPackError(`Download failed: ${String(err)}`);
                 } finally {
                   setOcrPackBusy(false);
+                }
+              }}
+            />
+            <EngineOption
+              selected={selectedOcrEngine === "indra"}
+              onSelect={() => setSelectedOcrEngine("indra")}
+              name="Indra OCR"
+              note="80+ languages, reads scans and tilted pages."
+              ready={Boolean(indraPackStatus?.ready)}
+              busy={Boolean(indraPackStatus?.downloading || indraPackBusy)}
+              disabled={Boolean(indraPackStatus?.downloading) || !ocrStatus?.accurate_compiled}
+              installHint={!ocrStatus?.accurate_compiled ? "Not in this build" : null}
+              busyLabel={
+                indraPackStatus?.downloading && indraPackStatus.progress
+                  ? `Downloading ${Math.round(
+                      ((indraPackStatus.progress.downloaded ?? 0) /
+                        Math.max(1, indraPackStatus.progress.total ?? 1)) *
+                        100,
+                    )}%`
+                  : undefined
+              }
+              onDownload={async () => {
+                setPackError(null);
+                setIndraPackBusy(true);
+                try {
+                  setIndraPackStatus(await invoke<ModelsStatus>("download_indra_pack"));
+                } catch (err) {
+                  setPackError(`Download failed: ${String(err)}`);
+                } finally {
+                  setIndraPackBusy(false);
                 }
               }}
             />

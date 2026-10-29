@@ -98,3 +98,10 @@ debug = false
 default = ["accurate-ocr"]
 accurate-ocr = ["dep:paddleocr_rs_onnx", "dep:ort"]
 smart-embeddings = ["dep:ort"]
+
+# Vendored paddleocr_rs_onnx 0.2.8 (MIT) with one change: its ONNX Runtime
+# environment is public (`shared_environment`), because `ort` allows a single
+# environment per process and Indra OCR needs the same one. Drop this patch
+# once upstream exposes the environment.
+[patch.crates-io]
+paddleocr_rs_onnx = { path = "vendor/paddleocr_rs_onnx" }
