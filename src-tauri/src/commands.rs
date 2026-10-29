@@ -996,6 +996,8 @@ pub async fn complete_setup(
     config.save()?;
 
     crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
+    crate::indexer::extract::set_content_caps(config.content_max_file_size_mb, config.content_max_text_bytes);
+    crate::embed::set_max_semantic_units(config.content_max_semantic_units);
     crate::ocr::set_engine(&config.ocr_engine);
     crate::indexer::extract::set_external_extractors(config.extractors.clone());
     *state.indexer.config.write() = config.clone();
