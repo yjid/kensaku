@@ -238,50 +238,10 @@ pub fn run() {
     indexer::extract::set_ocr_enabled(config.ocr_enabled);
     ocr::set_engine(&config.ocr_engine);
 
-    // When Tesseract is not installed (the common case on Windows), switch to
-    // the accurate PP-OCRv6 engine automatically and download its pack instead
-    // of leaving OCR silently broken. Extraction re-reads the engine choice on
-    // every call, so the switch applies to files queued during the probe.
-    {
-        let mut config = config.clone();
-        let engine = config.ocr_engine.clone();
-        let ocr_enabled = config.ocr_enabled;
-        std::thread::Builder::new()
-            .name("kensaku-ocr-select".into())
-            .spawn(move || {
-                if !ocr_enabled || !ocr::accurate_compiled() {
-                    return;
-                }
-                if engine.eq_ignore_ascii_case(ocr::ACCURATE) {
-                    // The user already picked the accurate engine: make sure
-                    // its pack exists, whatever platform this is.
-                    if !ocr::pack_present() {
-                        models::download_ocr_pack();
-                    }
-                    return;
-                }
-                if engine.eq_ignore_ascii_case(ocr::TESSERACT)
-                    && !indexer::extract::image::tesseract_available()
-                {
-                    ocr::set_engine(ocr::ACCURATE);
-                    config.ocr_engine = ocr::ACCURATE.to_string();
-                    match config.save() {
-                        Ok(()) => {
-                            eprintln!(
-                                "[Kensaku] tesseract not found; switched OCR to the accurate pack"
-                            );
-                            if !ocr::pack_present() {
-                                models::download_ocr_pack();
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("[Kensaku] could not switch OCR engine: {e}");
-                        }
-                    }
-                }
-            })
-            .expect("spawn ocr engine selector");
-    }
+    // OCR engine selection (switching to PP-OCR when Tesseract is missing,
+    // fetching its pack) happens at the start of every crawl, in
+    // `IndexerManager::sync_ocr_state`, so it also runs in the daemon and
+    // re-queues already-indexed images.
 
     let is_setup = config.is_setup_complete;
 
@@ -297,6 +257,24 @@ pub fn run() {
         }
         (manager, None)
     };
+
+    // When the PP-OCR pack finishes downloading, OCR every image that was
+    // indexed without it. In daemon mode the daemon owns the index: re-sending
+    // the config makes it notice the new OCR signature and crawl.
+    {
+        let manager = Arc::clone(&indexer_manager);
+        let daemon = daemon_client.is_some();
+        models::on_ocr_pack_ready(move || {
+            if daemon {
+                let config = manager.config.read().clone();
+                if let Err(e) = crate::daemon::DaemonClient.save_config(config) {
+                    eprintln!("[Kensaku OCR] could not notify the daemon: {e}");
+                }
+            } else {
+                manager.start_indexing_when_idle();
+            }
+        });
+    }
 
     let app_state = AppState {
         indexer: indexer_manager,

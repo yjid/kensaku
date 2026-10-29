@@ -1282,6 +1282,30 @@ impl MetadataDb {
             .map_err(|e| format!("Failed to mark all content pending: {}", e))
     }
 
+    /// Sets the pending flag for a single path.
+    pub fn set_content_pending(&self, path: &Path) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE nodes SET content_pending = 1 WHERE path = ?1",
+            params![path.to_string_lossy().to_string()],
+        )
+        .map_err(|e| format!("Failed to mark '{}' pending: {}", path.display(), e))?;
+        Ok(())
+    }
+
+    /// Marks every image *and every PDF* for a content re-read: what OCR
+    /// produces changed, and scanned PDFs are OCR'd too.
+    pub fn mark_ocr_targets_pending(&self) -> Result<usize, String> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE nodes SET content_pending = 1
+             WHERE is_dir = 0
+               AND lower(extension) IN ('png','jpg','jpeg','gif','webp','bmp','tiff','tif','pdf')",
+            [],
+        )
+        .map_err(|e| format!("Failed to mark OCR targets pending: {}", e))
+    }
+
     /// Clears the pending flag for a single path.
     pub fn clear_content_pending(&self, path: &Path) -> Result<(), String> {
         let conn = self.conn.lock();

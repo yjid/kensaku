@@ -86,6 +86,18 @@ export function OcrField({
     check();
   }, [check]);
 
+  /* While the pack downloads, poll so progress moves and the status flips to
+     ready (self-test included) the moment it lands. */
+  const downloading = !!pack?.downloading;
+  useEffect(() => {
+    if (!downloading) return;
+    const id = window.setInterval(check, 1000);
+    return () => {
+      window.clearInterval(id);
+      void check();
+    };
+  }, [downloading, check]);
+
   const downloadPack = async () => {
     setPackBusy(true);
     try {
@@ -115,20 +127,27 @@ export function OcrField({
 
   const engine = config.ocr_engine ?? "tesseract";
   const usingPpocr = engine === "accurate";
-  const ppocrReady = !!status?.accurate_compiled && !!pack?.ready;
-  const unavailable = usingPpocr
-    ? !ppocrReady
-    : status !== null && !status.available;
+  /* Ready means PP-OCR read its test image correctly, not that files exist. */
+  const ppocrReady = !!status?.accurate_available;
+  const fallbackToTesseract = usingPpocr && !ppocrReady && status?.active_engine === "tesseract";
+  /* PP-OCR's own controls (download, problem) live in its section, so the
+     switch stays usable while it gets ready. */
+  const unavailable = usingPpocr ? false : status !== null && !status.available;
   const engineMissing = !usingPpocr && status !== null && !status.engine_present;
   const noLanguages = !usingPpocr && !engineMissing && status !== null && !status.available;
 
   const hint: React.ReactNode | null = usingPpocr ? (
     ppocrReady ? (
-      <span className="font-mono text-muted">PP-OCRv6 ready</span>
-    ) : (
+      <span className="font-mono text-muted">PP-OCRv6 ready · verified on a test image</span>
+    ) : downloading ? (
+      <span className="font-mono text-muted">Downloading PP-OCRv6…</span>
+    ) : status === null ? null : (
       <>
         <TriangleAlert className="h-3 w-3 shrink-0 text-warning" />
-        <span className="text-warning">PP-OCRv6 pack is not downloaded yet.</span>
+        <span className="text-warning">
+          {status.accurate_problem ?? "PP-OCRv6 cannot run."}
+          {fallbackToTesseract ? " Using Tesseract meanwhile." : ""}
+        </span>
       </>
     )
   ) : engineMissing ? (
@@ -201,7 +220,9 @@ export function OcrField({
                       ((pack.progress?.downloaded ?? 0) / Math.max(1, pack.progress?.total ?? 1)) * 100,
                     )}%`
                   : pack?.ready
-                    ? "Installed"
+                    ? ppocrReady
+                      ? "Installed · verified"
+                      : status?.accurate_problem ?? "Installed"
                     : pack?.error
                       ? pack.error
                       : "Not installed"}

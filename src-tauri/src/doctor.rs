@@ -527,32 +527,58 @@ fn check_ocr() -> DoctorCheck {
     const ID: &str = "ocr";
     const LABEL: &str = "OCR engine";
 
+    if !crate::indexer::extract::ocr_enabled() {
+        return ok(ID, LABEL, "OCR is turned off in Settings".to_string());
+    }
     let status = crate::indexer::extract::image::ocr_status();
-
-    if status.available {
-        ok(
+    match status.active_engine.as_str() {
+        crate::ocr::ACCURATE => ok(
             ID,
             LABEL,
-            format!("languages: {}", status.languages.join(", ")),
-        )
-    } else if status.engine_present {
-        warn(
-            ID,
-            LABEL,
-            "tesseract is installed but no language data is available.".to_string(),
-            Some("Download English language data in Settings → Search".to_string()),
-        )
-    } else {
-        let detail = match status.error {
-            Some(error) => format!("tesseract not found: {}", error),
-            None => "tesseract not found".to_string(),
-        };
-        warn(
-            ID,
-            LABEL,
-            detail,
-            Some("Install tesseract and its English language data for your distro".to_string()),
-        )
+            "PP-OCR is reading images (self-test passed)".to_string(),
+        ),
+        crate::ocr::TESSERACT => {
+            let detail = format!(
+                "Tesseract is reading images · languages: {}",
+                status.languages.join(", ")
+            );
+            match (
+                status.engine == crate::ocr::ACCURATE,
+                status.accurate_problem,
+            ) {
+                // PP-OCR was picked but cannot run: say so instead of
+                // silently using the other engine.
+                (true, Some(problem)) => warn(
+                    ID,
+                    LABEL,
+                    format!("PP-OCR is selected but cannot run: {problem}. {detail}"),
+                    None,
+                ),
+                _ => ok(ID, LABEL, detail),
+            }
+        }
+        _ => {
+            let tesseract = if status.engine_present {
+                "Tesseract has no language data".to_string()
+            } else {
+                match status.error {
+                    Some(error) => format!("Tesseract not found ({error})"),
+                    None => "Tesseract not found".to_string(),
+                }
+            };
+            let accurate = status
+                .accurate_problem
+                .unwrap_or_else(|| "PP-OCR cannot run".to_string());
+            warn(
+                ID,
+                LABEL,
+                format!("No OCR engine can read images. {tesseract}; {accurate}."),
+                Some(
+                    "Download the PP-OCR pack in Settings → Search, or install Tesseract"
+                        .to_string(),
+                ),
+            )
+        }
     }
 }
 
@@ -563,16 +589,17 @@ fn check_ocr_pack() -> DoctorCheck {
     let present = status.artifacts.iter().filter(|a| a.present).count();
     let total = status.artifacts.len();
     if status.ready {
-        ok(
-            ID,
-            LABEL,
-            format!(
-                "{}/{} artifacts present ({})",
-                present,
-                total,
-                format_bytes(status.total_present_bytes)
+        match crate::ocr::accurate_problem() {
+            None => ok(
+                ID,
+                LABEL,
+                format!(
+                    "installed ({}) and verified on a test image",
+                    format_bytes(status.total_present_bytes)
+                ),
             ),
-        )
+            Some(problem) => warn(ID, LABEL, format!("installed, but {problem}"), None),
+        }
     } else if crate::ocr::engine_name() == crate::ocr::ACCURATE {
         warn(
             ID,
