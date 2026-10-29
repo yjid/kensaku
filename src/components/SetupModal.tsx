@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import React from "react";
-import { Check, Plus, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download, X, FolderOpen } from "lucide-react";
+import { Check, Plus, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download, X, FolderOpen, Minus } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
 import type { IndexingStatus, OcrStatus, ModelsStatus } from "../types";
 
@@ -250,6 +251,32 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     }
   };
 
+  /* The search window is a floating popup: always on top, no taskbar entry.
+     Setup can index for a long time, so while it is up the window behaves
+     like a normal app window that can be minimized and found again in the
+     taskbar. The popup behavior comes back when setup closes. */
+  useEffect(() => {
+    const win = getCurrentWindow();
+    win.setSkipTaskbar(false).catch(() => {});
+    win.setAlwaysOnTop(false).catch(() => {});
+    return () => {
+      win.setSkipTaskbar(true).catch(() => {});
+      win.setAlwaysOnTop(true).catch(() => {});
+    };
+  }, []);
+
+  const minimizeButton = (
+    <button
+      type="button"
+      title="Minimize"
+      aria-label="Minimize"
+      onClick={() => getCurrentWindow().minimize().catch((err) => console.warn("Could not minimize:", err))}
+      className="btn btn-ghost btn-icon h-8 !rounded-full"
+    >
+      <Minus className="h-4 w-4" strokeWidth={1.75} />
+    </button>
+  );
+
   const themeButton = (
     <button type="button" title="Theme" onClick={toggle} className="btn btn-ghost btn-icon h-8 !rounded-full">
       {theme === "light" ? <Moon className="h-4 w-4" strokeWidth={1.75} /> : <Sun className="h-4 w-4" strokeWidth={1.75} />}
@@ -260,7 +287,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     const files = scanStatus?.files_indexed ?? 0;
     const content = scanStatus?.content_indexed ?? 0;
     return (
-      <Shell mark="Ready" trailing={themeButton} brand={<BrandMoment word="見つけた" gloss="found it." />}>
+      <Shell mark="Ready" trailing={<>{themeButton}{minimizeButton}</>} brand={<BrandMoment word="見つけた" gloss="found it." />}>
         <div className="flex flex-1 flex-col justify-center gap-10">
           <div className="space-y-3">
             <h1 className="t-title rise-in text-fg">Your files are ready.</h1>
@@ -313,7 +340,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     };
 
     return (
-      <Shell mark="Indexing" trailing={themeButton} brand={<BrandMoment word="検索" gloss="to search." busy />}>
+      <Shell mark="Indexing" trailing={<>{themeButton}{minimizeButton}</>} brand={<BrandMoment word="検索" gloss="to search." busy />}>
         <div className="flex flex-1 flex-col justify-center gap-8">
           <div className="space-y-2">
             <p className="t-meta text-subtle">{phaseLabel[phase] ?? st?.current_status ?? "Starting"}</p>
@@ -347,7 +374,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   return (
     <Shell
       mark={`0${step + 1} / 02`}
-      trailing={themeButton}
+      trailing={<>{themeButton}{minimizeButton}</>}
       brand={<BrandMoment word="検索" gloss="to search." />}
     >
       {step === 0 && (
@@ -586,7 +613,7 @@ function Shell({
       </aside>
       <section className="relative z-10 flex min-w-0 flex-1 flex-col">
         <div className="surface m-2 flex min-h-0 flex-1 flex-col rounded-sheet px-7 pt-3 md:ml-0">
-          <div data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-end">{trailing}</div>
+          <div data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-end gap-1">{trailing}</div>
           <div className="mx-auto flex min-h-0 w-full max-w-[460px] flex-1 flex-col">{children}</div>
         </div>
       </section>
