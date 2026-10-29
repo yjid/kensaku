@@ -241,21 +241,25 @@ pub fn run() {
     crate::embed::set_max_semantic_units(config.content_max_semantic_units);
     ocr::set_engine(&config.ocr_engine);
 
-    // Self-heal on every launch: make sure the always-on Tesseract language
-    // data and the optional PP-OCR pack are present, so a missed download
-    // during setup or an interrupted first run cannot leave the app without
-    // a working OCR engine. Downloads run in the background and re-queue
-    // images through the OCR pack ready callback once they finish.
-    if !crate::indexer::extract::image::tesseract_usable() {
+    // Self-heal on launch, without surprise downloads:
+    // - Tesseract language data only when the Tesseract binary is installed
+    //   but has no language. Without the binary the data is useless, and
+    //   PP-OCR is the default engine anyway.
+    // - The PP-OCR pack only when OCR is on. (A crawl also fetches it when
+    //   needed; see `IndexerManager::sync_ocr_state`.)
+    if config.ocr_enabled {
         std::thread::spawn(|| {
-            let _ = crate::indexer::extract::image::download_eng_tessdata();
+            use crate::indexer::extract::image;
+            if image::tesseract_available() && !image::tesseract_usable() {
+                let _ = image::download_eng_tessdata();
+            }
         });
-    }
-    if crate::ocr::accurate_compiled()
-        && crate::ocr::runtime_loadable()
-        && !crate::ocr::pack_present()
-    {
-        crate::models::download_ocr_pack();
+        if crate::ocr::accurate_compiled()
+            && crate::ocr::runtime_loadable()
+            && !crate::ocr::pack_present()
+        {
+            crate::models::download_ocr_pack();
+        }
     }
 
     // OCR engine selection (switching to PP-OCR when Tesseract is missing,
