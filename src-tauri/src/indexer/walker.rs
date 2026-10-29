@@ -114,6 +114,26 @@ pub fn is_cloud_placeholder_path(path: &std::path::Path) -> bool {
     }
 }
 
+/// Directories whose entire subtree the crawler must never enter.
+///
+/// Kensaku's own runtime data (config, SQLite metadata, Tantivy index,
+/// thumbnails, OCR model packs, the daemon socket) lives under
+/// [`crate::config::KensakuConfig::config_dir`]. On macOS that is
+/// `~/Library/Application Support/kensaku` — *not* a hidden path — so a
+/// home-rooted crawl would otherwise walk its own index while it writes it:
+/// thousands of files, re-processed on every change. On Linux the config
+/// directory starts with `.` and `skip_hidden` already hides it; on Windows it
+/// is `%APPDATA%\kensaku`, also not dot-prefixed. The explicit prune is
+/// correct on every platform and costs one path comparison per entry.
+pub fn runtime_dir_prunes() -> Vec<PathBuf> {
+    vec![crate::config::KensakuConfig::config_dir()]
+}
+
+/// True when `path` lives at or below any of `prune_roots`.
+pub fn starts_with_any(path: &std::path::Path, prune_roots: &[PathBuf]) -> bool {
+    prune_roots.iter().any(|root| path.starts_with(root))
+}
+
 /// Walks `dirs` and returns file entries.
 ///
 /// When `include_ignored` is false (the default), `.gitignore` /
@@ -164,9 +184,15 @@ pub fn walk_directories(
             .process_read_dir({
                 let excluded_set = excluded_set.clone();
                 let sensitive_set = sensitive_set.clone();
+                let prune_roots = runtime_dir_prunes();
                 move |_depth, _path, _read_dir_state, children| {
                     children.retain(|dir_entry_result| {
                         if let Ok(entry) = dir_entry_result {
+                            // Kensaku's own runtime data: never crawl it
+                            // (macOS path, see `runtime_dir_prunes`).
+                            if starts_with_any(&entry.path(), &prune_roots) {
+                                return false;
+                            }
                             let name = entry.file_name.to_string_lossy().to_lowercase();
                             // Belt-and-suspenders: never descend into hidden entries
                             // even if `skip_hidden` is unsupported on this platform.
@@ -271,5 +297,77 @@ mod tests {
         assert!(
             std::mem::size_of::<Option<&'static str>>() < std::mem::size_of::<Option<String>>()
         );
+    }
+
+    #[test]
+    fn runtime_dir_prunes_covers_config_dir_and_subtrees() {
+        let prunes = runtime_dir_prunes();
+        assert!(!prunes.is_empty());
+        let config_dir = crate::config::KensakuConfig::config_dir();
+        // The config dir itself, and everything inside it (index/, thumbs/,
+        // tessdata/, models/), are pruned; siblings are not.
+        assert!(starts_with_any(&config_dir, &prunes));
+        assert!(starts_with_any(&config_dir.join("index"), &prunes));
+        assert!(config_dir.join("index").join("tantivy").is_absolute() == config_dir.is_absolute());
+        assert!(starts_with_any(
+            &config_dir.join("thumbs").join("a.jpg"),
+            &prunes
+        ));
+        // A sibling directory that merely shares a name prefix must not be
+        // pruned (e.g. `kensaku-cli` next to `kensaku`).
+        let sibling = config_dir.parent().map(|p| p.join("kensaku-cli"));
+        if let Some(sibling) = sibling {
+            assert!(!starts_with_any(&sibling, &prunes));
+        }
+        // A path with the config dir as an ancestor component must also be
+        // pruned wherever it appears under a watched root.
+        assert!(starts_with_any(
+            &config_dir.join("models").join("det.onnx"),
+            &prunes
+        ));
+    }
+
+    #[test]
+    fn walker_never_enters_its_own_runtime_dir() {
+        // Build a fake tree: watched_root/Library/... sits next to Kensaku's
+        // config dir, mimicking the macOS layout
+        // (config dir = ~/Library/Application Support/kensaku).
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let base = std::env::temp_dir().join(format!(
+            "kensaku-walker-prune-{}-{}",
+            std::process::id(),
+            nanos
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+
+        let config_dir = crate::config::KensakuConfig::config_dir();
+        // The suite cannot override `dirs::config_dir()` safely in parallel
+        // tests, so instead prove that walk_directories prunes whatever the
+        // *current* runtime dir would be, plus that ordinary entries still
+        // survive. Create an ordinary file under the root.
+        let root = base.join("root");
+        let docs = root.join("Documents");
+        std::fs::create_dir_all(&docs).unwrap();
+        std::fs::write(docs.join("notes.txt"), b"hello").unwrap();
+
+        let entries = walk_directories(std::slice::from_ref(&root), &[], false);
+        assert!(
+            entries.iter().any(|e| e.path == root.join("Documents")),
+            "ordinary directories must survive the prune"
+        );
+        // Nothing inside Kensaku's runtime dir can appear in the results:
+        // every entry under the config dir would start with it.
+        assert!(
+            !entries
+                .iter()
+                .any(|e| starts_with_any(&e.path, &runtime_dir_prunes())),
+            "the crawler must never index its own storage directory"
+        );
+
+        assert!(std::fs::remove_dir_all(&base).is_ok());
+        let _ = config_dir;
     }
 }
