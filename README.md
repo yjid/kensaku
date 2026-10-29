@@ -31,7 +31,11 @@
 </p>
 
 <p align="center">
-  <img src="assets/hero.png" width="100%" alt="Kensaku searching for 'invoice' and matching text inside a PDF, a screenshot, a spreadsheet and a note" />
+  <img src="assets/demo.gif" width="100%" alt="Typing 'cuda out of memory' into Kensaku. Fifteen files match, and a quick look on the first one shows the error text sitting inside a screenshot." />
+</p>
+
+<p align="center">
+  <sub>Searching for text that only exists inside a screenshot. 10 seconds, no cuts.</sub>
 </p>
 
 ---

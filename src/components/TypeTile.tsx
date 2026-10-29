@@ -28,8 +28,12 @@ export const TypeTile: React.FC<{
   return (
     <span className="absolute inset-0 flex flex-col justify-between p-3">
       {snippet && !compact ? (
+        /* Clamp to what the tile can actually show. At the 16/10 tile the box
+           is ~57px tall once the extension has its line, so mono (16px) gets
+           three lines and proportional (17px) gets three. A fourth line was
+           being sliced through the middle of its glyphs. */
         <span
-          className={`line-clamp-4 text-muted ${
+          className={`min-h-0 line-clamp-3 [overflow-wrap:anywhere] text-muted ${
             isCode ? "font-mono text-[11px] leading-[16px]" : "text-[12px] leading-[17px]"
           }`}
         >
