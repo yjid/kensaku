@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -407,9 +407,24 @@ pub fn extract_image_ocr(path: &Path) -> Option<String> {
         return Some(text);
     }
 
-    // Try tesseract (available on Linux and macOS with Homebrew)
+    // Try tesseract (available on Linux and macOS with Homebrew).
+    //
+    // Feed the image bytes through stdin instead of handing tesseract the
+    // original path. On macOS, an external process reading a file inside a
+    // protected folder (Documents, Desktop, Downloads, Pictures) triggers its
+    // own TCC permission prompt for *every* file, which is what produced the
+    // repeated "allow access" dialogs during a crawl. Reading the bytes here
+    // (in the main process, which already holds the folder grant) and piping
+    // them to tesseract keeps the child process from touching the protected
+    // file at all.
+    let bytes = std::fs::read(path).ok()?;
+
     let mut command = tesseract_command();
-    command.arg(path).arg("stdout").arg("--psm").arg("3"); // Fully automatic page segmentation
+    command
+        .args(["stdin", "stdout", "--psm", "3"]) // Fully automatic page segmentation
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
 
     // Prefer Kensaku's private language data when it has been downloaded, but
     // never override a working system installation.
@@ -417,7 +432,16 @@ pub fn extract_image_ocr(path: &Path) -> Option<String> {
         command.env("TESSDATA_PREFIX", dir);
     }
 
-    let output = command.output().ok()?;
+    let mut child = command.spawn().ok()?;
+    if let Some(mut stdin) = child.stdin.take() {
+        // Writing in a separate thread avoids deadlocking when the input is
+        // larger than the OS pipe buffer.
+        let bytes = bytes.clone();
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(&bytes);
+        });
+    }
+    let output = child.wait_with_output().ok()?;
 
     if !output.status.success() {
         return None;
