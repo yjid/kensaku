@@ -145,6 +145,10 @@ pub struct KensakuConfig {
     /// default: no external command ever runs without explicit configuration.
     #[serde(default)]
     pub extractors: Vec<ExternalExtractor>,
+    /// Skip OCR on images larger than this many bytes (0 = no limit). Useful
+    /// for speeding up the first scan on screenshot-heavy corpora. Default 0.
+    #[serde(default)]
+    pub ocr_max_image_bytes: u64,
     /// Beta visual-search model pack. This only gates the Beta settings tab and
     /// model download; it is intentionally not wired into search yet.
     #[serde(default)]
@@ -357,6 +361,7 @@ impl Default for KensakuConfig {
             include_ignored: false,
             extractors: Vec::new(),
             ocr_enabled: true,
+            ocr_max_image_bytes: 0,
             ocr_engine: default_ocr_engine(),
             theme: default_theme(),
             aliases: default_aliases(),

@@ -176,6 +176,7 @@ export interface KensakuConfig {
   extractors?: ExternalExtractor[];
   skip_hidden?: boolean;
   ocr_enabled?: boolean;
+  ocr_max_image_bytes?: number;
   ocr_engine?: "tesseract" | "accurate";
   theme?: "light" | "dark";
   aliases?: Alias[];
