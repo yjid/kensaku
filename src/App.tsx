@@ -35,6 +35,8 @@ import { normalizeTheme } from "./hooks/useTheme";
 import { PreviewDialog } from "./components/PreviewDialog";
 import { classify } from "./lib/categories";
 import { inFilter } from "./lib/query";
+import { isNewerVersion } from "./lib/version";
+import { getVersion } from "@tauri-apps/api/app";
 import {
   Settings as SettingsIcon,
   RefreshCw,
@@ -138,11 +140,16 @@ function App() {
   }, [isSetupComplete]);
 
   useEffect(() => {
-    fetch("https://api.github.com/repos/yjid/kensaku/releases/latest")
-      .then((r) => r.json())
-      .then((j: any) => {
-        const tag = String(j?.tag_name || "").replace(/^v/, "");
-        if (tag && tag !== "1.0.10") setUpdateAvailable(tag);
+    /* Compare against the running app's real version, and only flag a
+       strictly newer release: "not equal" offered a downgrade whenever the
+       latest published release was older than this build. */
+    Promise.all([
+      getVersion(),
+      fetch("https://api.github.com/repos/yjid/kensaku/releases/latest").then((r) => r.json()),
+    ])
+      .then(([current, latest]: [string, { tag_name?: string }]) => {
+        const tag = String(latest?.tag_name || "").replace(/^v/, "");
+        if (tag && isNewerVersion(tag, current)) setUpdateAvailable(tag);
       })
       .catch(() => {});
   }, []);

@@ -17,7 +17,7 @@ import { Switch } from "./kit";
    reserved so resolving the status never shifts the row. */
 
 const OCR_DESCRIPTION =
-  "Read text from screenshots, scans and photos. Tesseract is the fast default; PP-OCRv6 is an optional slower engine. Existing images are re-scanned after saving.";
+  "Read text from screenshots, scans and photos. PP-OCRv6 is built in and used by default; Tesseract is the fallback where it cannot run. Existing images are re-scanned after saving.";
 
 const INSTALL_COMMANDS = [
   {
@@ -199,9 +199,9 @@ export function OcrField({
           }
           className="h-8 rounded-control border border-line bg-[var(--panel)] px-2 text-[11px] text-fg"
         >
-          <option value="tesseract">Tesseract — fast, smaller</option>
+          <option value="tesseract">Tesseract (needs a separate install)</option>
           <option value="accurate" disabled={!status?.accurate_compiled}>
-            PP-OCRv6 — slower, UI text
+            PP-OCRv6 (recommended)
           </option>
         </select>
       </div>
@@ -212,7 +212,7 @@ export function OcrField({
             <div className="min-w-0">
               <p className="text-[11px] font-medium text-fg">PP-OCRv6 pack</p>
               <p className="text-[12px] leading-[18px] text-muted">
-                About 6 MB · slower, in-process · may read small UI text better.
+                About 6 MB · runs inside Kensaku · reads small UI text well.
               </p>
               <p className="mt-0.5 font-mono text-[11px] text-subtle">
                 {pack?.downloading

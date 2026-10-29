@@ -72,6 +72,9 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     invoke<string[]>("get_suggested_directories")
       .then((dirs) => {
         setSuggestedDirs(dirs);
+        // Start with the usual places selected (Documents, Desktop, Downloads,
+        // Pictures) so most people can just continue; clicking deselects.
+        setSelectedDirs((prev) => (prev.length > 0 ? prev : dirs));
       })
       .catch((err) => console.error("Failed to load suggested dirs:", err));
 
@@ -236,7 +239,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
       // The default text model downloads without asking. Failure is not fatal:
       // keyword search works without it, and Settings can retry.
       invoke("download_models").catch((err) => console.warn("Model download did not start:", err));
-      // Only touch autostart when the user asked for it; off is the default.
+      // Start at sign-in is on by default (see `startAtLogin`).
       if (startAtLogin) {
         await invoke("set_autostart", { enabled: true }).catch((err) =>
           console.warn("Could not enable start at sign-in:", err),
@@ -486,7 +489,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               selected={selectedOcrEngine === "accurate"}
               onSelect={() => setSelectedOcrEngine("accurate")}
               name="PP-OCRv6"
-              note="Slower. Reads small interface text better."
+              note="Recommended. Built in, reads small interface text well."
               ready={Boolean(ocrPackStatus?.ready)}
               busy={Boolean(ocrPackStatus?.downloading || ocrPackBusy)}
               disabled={Boolean(ocrPackStatus?.downloading) || !ocrStatus?.accurate_compiled}

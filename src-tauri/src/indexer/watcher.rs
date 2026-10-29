@@ -5,7 +5,7 @@ use crate::indexer::content::{
 use crate::indexer::extract::image as image_util;
 use crate::indexer::metadata::MetadataStore;
 use crate::indexer::walker::{
-    FileEntry, file_identity, is_cloud_placeholder, is_cloud_placeholder_path, runtime_dir_prunes,
+    FileEntry, file_identity, is_cloud_placeholder, is_cloud_placeholder_path, prunes_for_roots,
     starts_with_any, walk_directories,
 };
 use notify::event::{ModifyKind, RenameMode};
@@ -430,7 +430,7 @@ fn is_path_excluded(path: &Path, cfg: &KensakuConfig) -> bool {
     // macOS that path is not hidden, so every write would otherwise be
     // re-indexed through these very events. Pruned by path, matching the
     // crawler's `runtime_dir_prunes`.
-    if starts_with_any(path, &runtime_dir_prunes()) {
+    if starts_with_any(path, &prunes_for_roots(&cfg.watched_dirs)) {
         return true;
     }
     path.components().any(|component| {
@@ -1053,7 +1053,7 @@ mod tests {
         // On macOS the config dir (index, SQLite WAL, thumbnails, OCR packs)
         // is not a hidden path; the watcher must ignore every event from it
         // just like the crawler does (`runtime_dir_prunes`).
-        let runtime_dir = runtime_dir_prunes()
+        let runtime_dir = crate::indexer::walker::runtime_dir_prunes()
             .pop()
             .expect("there is always at least one prune root");
         let marker = runtime_dir.join("index-wal.txt");
