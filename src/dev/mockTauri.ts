@@ -7,6 +7,8 @@
   *   #setup=1     start on onboarding
   *   #q=invoice   open with a query
   *   #empty=1     home with no recent files
+  *   #view=list   results as a list instead of the tile grid
+  *   #theme=light start in the light theme
  */
 import { classify } from "../lib/categories";
 
@@ -25,6 +27,16 @@ const f = (path: string, size: number, ago: number, snippet: string | null = nul
 
 const FILES: R[] = [
   f("/Users/mira/Documents/Contracts/Northwind invoice 2026-10.pdf", 284_000, 2 * 3600, "Invoice total due on receipt. Payment terms net 14.", "Both"),
+  f("/Users/mira/Pictures/Screenshots/Screenshot 2026-10-22 at 11.07.png", 740_000, 26 * 3600, "PAID · invoice #88241 · Northwind Traders", "Content"),
+  f("/Users/mira/Documents/Finance/invoice-tracker.xlsx", 61_000, 2 * day, "Oct invoice sent, awaiting payment", "Both"),
+  f("/Users/mira/Documents/Contracts/Acme invoice 2026-09.pdf", 191_000, 36 * day, "Invoice 2026-09. Design retainer, September.", "Both"),
+  f("/Users/mira/Documents/Notes/Chasing the Acme invoice.md", 3_100, 5 * day, "They said the invoice was paid on the 14th.", "Content"),
+  f("/Users/mira/Documents/Contracts/Northwind invoice 2026-08.pdf", 203_000, 68 * day, "Invoice 2026-08. Design retainer, August.", "Both"),
+  f("/Users/mira/Downloads/invoice_receipt_8841.pdf", 48_000, 11 * day, "Receipt for invoice 8841. Thank you.", "Both"),
+  f("/Users/mira/Documents/Finance/Expenses Oct.xlsx", 44_000, 9 * day, "Row 14: Northwind invoice, reimbursable", "Content"),
+  f("/Users/mira/Pictures/Screenshots/Screenshot 2026-09-30 at 16.55.png", 612_000, 29 * day, "Overdue: invoice 2026-08 · 31 days", "Content"),
+  f("/Users/mira/Documents/Templates/invoice-template.docx", 28_000, 54 * day, "[Client name] — invoice [number]", "Both"),
+  f("/Users/mira/Code/kensaku/docs/billing-notes.md", 4_400, 17 * day, "Stripe sends the invoice; we never store a card.", "Content"),
   f("/Users/mira/Design/Brand/kensaku-wordmark-final.svg", 12_400, 5 * 3600),
   f("/Users/mira/Pictures/Screenshots/Screenshot 2026-10-26 at 18.42.png", 1_820_000, day),
   f("/Users/mira/Code/kensaku/src-tauri/src/search/rank.rs", 18_900, day, "fn rerank(query: &Query, hits: &mut [Hit]) {", "Content"),
@@ -33,7 +45,6 @@ const FILES: R[] = [
   f("/Users/mira/Movies/launch-teaser-v3.mp4", 148_000_000, 4 * day),
   f("/Users/mira/Documents/Resume/Mira Tan — Resume 2026.pdf", 96_000, 6 * day, "Principal engineer, search infrastructure.", "Semantic"),
   f("/Users/mira/Pictures/Moodboard/concrete-04.jpg", 2_100_000, 8 * day),
-  f("/Users/mira/Documents/Finance/Expenses Oct.xlsx", 44_000, 9 * day),
   f("/Users/mira/Code/kensaku/README.md", 9_800, 10 * day, "Fast, light, private search for your files.", "Content"),
   f("/Users/mira/Pictures/Moodboard/glass-study-02.png", 1_640_000, 12 * day),
   f("/Users/mira/Documents/Talks/Search is a feeling.key", 22_000_000, 14 * day),
@@ -64,9 +75,12 @@ const config: Record<string, unknown> = {
   watched_dirs: ["/Users/mira/Documents", "/Users/mira/Pictures", "/Users/mira/Code"],
   excluded_dirs: ["node_modules", ".git"], excluded_extensions: [],
   shortcut: "Alt+Space", max_results: 200, is_setup_complete: params.get("setup") !== "1",
-  semantic_enabled: true, ocr_enabled: true, ocr_engine: "tesseract", theme: "dark",
+  semantic_enabled: true, ocr_enabled: true, ocr_engine: "tesseract",
+  theme: params.get("theme") === "light" ? "light" : "dark",
   saved_searches: [{ name: "Invoices", query: "invoice type:pdf" }, { name: "This week's screenshots", query: "screenshot modified:7d" }],
-  pins: [], show_thumbnails: true, results_view: "grid", crawl_mode: "balanced",
+  pins: [], show_thumbnails: true,
+  results_view: params.get("view") === "list" ? "list" : "grid",
+  crawl_mode: "balanced",
 };
 
 function search(query: string) {
