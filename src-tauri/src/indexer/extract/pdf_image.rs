@@ -240,7 +240,9 @@ fn raw_to_image(
         (8, 4) => {
             let cmyk = take(data, w * h * 4)?;
             let rgb: Vec<u8> = cmyk
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .flat_map(|p| {
                     let k = 255 - u32::from(p[3]);
                     [p[0], p[1], p[2]].map(|c| ((255 - u32::from(c)) * k / 255) as u8)

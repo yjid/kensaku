@@ -184,7 +184,7 @@ fn main() {
     {
         // OCR the already-indexed images once the PP-OCR pack lands.
         let manager = Arc::clone(&manager);
-        kensaku::models::on_ocr_pack_ready(move || manager.start_indexing_when_idle());
+        kensaku_lib::models::on_ocr_pack_ready(move || manager.start_indexing_when_idle());
     }
     manager.start_indexing();
 
