@@ -310,6 +310,14 @@ impl DaemonClient {
         request("reindex", serde_json::json!({}))?;
         Ok(())
     }
+
+    /// Re-scans the watched folders. GUI-initiated: unlike the MCP `reindex`
+    /// tool this needs no `mcp_allow_reindex` opt-in — the request comes from
+    /// the app's own UI, not from an agent.
+    pub fn rescan(&self) -> Result<(), String> {
+        request("rescan", serde_json::json!({}))?;
+        Ok(())
+    }
 }
 
 #[cfg(unix)]

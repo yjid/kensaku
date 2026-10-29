@@ -16,6 +16,7 @@ function statusText(s: IndexingStatus | null | undefined): { text: string; busy:
   if (!s) return { text: "", busy: false };
   if (s.paused) return { text: "Indexing paused", busy: false };
   if (s.is_indexing || (s.phase && s.phase !== "idle")) {
+    if (s.phase === "rebuilding") return { text: s.current_status || "Rebuilding index…", busy: true };
     const done = s.extract_done ?? s.files_indexed;
     const total = s.extract_total ?? s.total_files;
     return {

@@ -340,6 +340,14 @@ fn handle_client(stream: LocalSocketStream, token: &str, manager: &Arc<IndexerMa
                     Ok(json!({"started": true}))
                 }
             }
+            "rescan" => {
+                // GUI-initiated re-scan of the watched folders. Unlike the
+                // MCP `reindex` tool this is not gated on
+                // `mcp_allow_reindex`: it is the user speaking from the
+                // app's own UI, not an agent.
+                manager.start_indexing();
+                Ok(json!({"started": true}))
+            }
             "search" => {
                 let query = params.get("query").and_then(|v| v.as_str()).unwrap_or("");
                 let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(10) as usize;

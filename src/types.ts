@@ -142,11 +142,13 @@ export interface IndexingStatus {
   semantic_ready?: boolean;
   phase?:
     | "idle"
+    | "rebuilding"
     | "walking"
     | "extracting"
     | "embedding"
     | "committing"
-    | "paused";
+    | "paused"
+    | "error";
   total_files?: number;
   extract_done?: number;
   extract_total?: number;

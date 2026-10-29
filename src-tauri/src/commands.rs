@@ -854,7 +854,11 @@ pub async fn execute_command(
 
     match cmd.as_str() {
         "reindex" => {
-            state.indexer.start_indexing();
+            if let Some(daemon) = state.daemon.as_ref() {
+                daemon.rescan()?;
+            } else {
+                state.indexer.start_indexing();
+            }
             Ok(CommandOutput {
                 success: true,
                 message: "Reindexing started across configured directories...".to_string(),
@@ -995,7 +999,13 @@ pub async fn complete_setup(
     crate::ocr::set_engine(&config.ocr_engine);
     crate::indexer::extract::set_external_extractors(config.extractors.clone());
     *state.indexer.config.write() = config.clone();
-    state.indexer.start_indexing();
+    if let Some(daemon) = state.daemon.as_ref() {
+        // In daemon mode this window cannot write the stores; ask the daemon
+        // (which owns them) to rescan instead.
+        daemon.rescan()?;
+    } else {
+        state.indexer.start_indexing();
+    }
 
     // Register the chosen global shortcut immediately so onboarding's choice
     // works without a restart.
@@ -1290,14 +1300,15 @@ pub async fn reset_all(app: AppHandle, confirm: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn rebuild_index(app: AppHandle) -> Result<(), String> {
-    let dir = KensakuConfig::config_dir();
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create config directory: {}", e))?;
-    let marker = dir.join(".rebuild-requested");
-    std::fs::write(&marker, b"1")
-        .map_err(|e| format!("Failed to write rebuild marker: {}", e))?;
-    app.restart();
+pub async fn rebuild_index(state: State<'_, AppState>) -> Result<(), String> {
+    // In daemon mode this window is a read-only client; the daemon owns the
+    // stores and there is no safe way to wipe them from here.
+    if state.daemon.is_some() {
+        return Err(
+            "The index is owned by the Kensaku daemon. Stop the daemon, then rebuild.".to_string(),
+        );
+    }
+    state.indexer.clone().rebuild_all()
 }
 
 #[tauri::command]

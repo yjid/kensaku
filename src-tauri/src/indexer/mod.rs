@@ -1142,6 +1142,170 @@ impl IndexerManager {
         });
     }
 
+    /// Rebuilds the index in place and starts a fresh crawl, with no process
+    /// restart. The stores behind `Arc<RwLock<_>>` are emptied and swapped
+    /// live, the Tantivy writer is dropped with `content_index`, and the
+    /// normal crawl repopulates everything with its usual status events.
+    ///
+    /// The previous implementation wrote a marker and called
+    /// `AppHandle::restart()`, which spawned a second process while this one
+    /// still held the single-instance lock: on losing the race the fresh
+    /// instance exited and the old one was gone (the app closed and would not
+    /// open again), the marker consumer deleted `index/` and `metadata.db`
+    /// under the still-running old process, and re-spawning the binary
+    /// flashed a console window in dev builds.
+    pub fn rebuild_all(self: Arc<Self>) -> Result<(), String> {
+        // The rebuild gate is the crawl gate: reject instead of racing a crawl
+        // that is already running.
+        if self
+            .is_running
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Err(
+                "Indexing is already running — wait for the scan to finish, then rebuild."
+                    .to_string(),
+            );
+        }
+
+        let mut st = self.status.write();
+        st.is_indexing = true;
+        st.paused = false;
+        st.phase = "rebuilding".to_string();
+        st.files_indexed = 0;
+        st.total_files = 0;
+        st.extract_done = 0;
+        st.extract_total = 0;
+        st.current_status = "Rebuilding index…".to_string();
+        Self::emit_status(&self.app_handle, &st);
+        drop(st);
+
+        thread::spawn(move || self.run_rebuild());
+        Ok(())
+    }
+
+    /// Teardown half of `rebuild_all`: runs on its own thread because stopping
+    /// the embedding worker joins it, then hands the empty stores to the
+    /// normal crawl for repopulation.
+    fn run_rebuild(self: Arc<Self>) {
+        // A panic anywhere below would leave the crawl gate (`is_running`)
+        // stuck, blocking every later crawl and rebuild for the process
+        // lifetime. The guard hands the gate back even on an unwind; the
+        // paths that finish on purpose settle it first and release it
+        // themselves.
+        struct GateGuard {
+            gate: Arc<AtomicBool>,
+            status: Arc<RwLock<IndexingStatus>>,
+            app_handle: Arc<RwLock<Option<tauri::AppHandle>>>,
+            settled: bool,
+        }
+        impl Drop for GateGuard {
+            fn drop(&mut self) {
+                if !self.settled {
+                    let mut st = self.status.write();
+                    st.is_indexing = false;
+                    st.paused = false;
+                    st.phase = "idle".to_string();
+                    st.current_status = "Rebuild failed".to_string();
+                    IndexerManager::emit_status(&self.app_handle, &st);
+                }
+                self.gate.store(false, Ordering::SeqCst);
+            }
+        }
+        let mut guard = GateGuard {
+            gate: Arc::clone(&self.is_running),
+            status: Arc::clone(&self.status),
+            app_handle: Arc::clone(&self.app_handle),
+            settled: false,
+        };
+
+        // Freeze every writer that touches the stores about to be wiped.
+        // Holding the crawl gate pauses the phash backfill and blocks new
+        // crawls; the watcher and the embedding worker are stopped here.
+        if let Some(mut handle) = self.watcher_handle.lock().take() {
+            handle.stop();
+        }
+        self.watcher_ok.store(false, Ordering::SeqCst);
+        if let Some(mut queue) = self.embedding_queue.lock().take() {
+            queue.stop();
+        }
+
+        {
+            let mut st = self.status.write();
+            st.current_status = "Rebuilding index — clearing old data…".to_string();
+            Self::emit_status(&self.app_handle, &st);
+        }
+
+        // Clearing `content_index` drops the Tantivy writer and reader, so
+        // nothing keeps the index directory locked afterwards (Windows cares).
+        *self.content_index.write() = None;
+
+        // Wipe the database through the live connection, then swap in a fresh
+        // in-memory store that reopens it empty. The wipe is plain SQL, so no
+        // open file handle anywhere can break it — unlike the delete-the-file
+        // approach of the old restart-based rebuild.
+        if let Some(db) = self.metadata.read().db() {
+            let _ = db.reset_visual_index();
+            let _ = db.clear();
+        }
+        *self.metadata.write() = MetadataStore::new();
+        self.unit_store.write().clear();
+        self.visual_store.write().clear();
+
+        let index_dir = KensakuConfig::index_dir();
+        // Deleting the directory reclaims the old segments outright. If a
+        // just-dropped mmap still holds a file (Windows), the fresh handle
+        // opens the stale index and `truncate` purges it logically instead.
+        let reclaimed = std::fs::remove_dir_all(&index_dir).is_ok();
+        let mut fresh_index = match ContentIndex::new(&index_dir) {
+            Ok(index) => Some(index),
+            Err(e) => {
+                eprintln!(
+                    "[Kensaku] Rebuild failed: could not recreate the content index: {}",
+                    e
+                );
+                let mut st = self.status.write();
+                st.is_indexing = false;
+                st.phase = "error".to_string();
+                st.current_status = format!("Rebuild failed: {}", e);
+                Self::emit_status(&self.app_handle, &st);
+                // The detailed status above is final for this run; the guard
+                // only needs to hand the crawl gate back.
+                guard.settled = true;
+                drop(guard);
+                return;
+            }
+        };
+        if !reclaimed
+            && let Err(e) = fresh_index
+                .as_mut()
+                .expect("fresh index exists on the Ok path")
+                .truncate()
+        {
+            // Purge failed too: the crawl below still overwrites documents
+            // for existing paths, but stale ones linger until a successful
+            // rebuild. Loud enough to notice.
+            eprintln!(
+                "[Kensaku] Rebuild: could not purge the old content index: {}",
+                e
+            );
+        }
+        *self.content_index.write() = fresh_index;
+
+        // Thumbnails are derived data and regenerate during the crawl.
+        // Best-effort: files still open for a read are simply skipped.
+        let _ = std::fs::remove_dir_all(KensakuConfig::config_dir().join("thumbs"));
+
+        // Hand the empty stores to the normal crawl. Settle first so the
+        // guard touches no status, release the gate explicitly (the crawl
+        // must be able to take it again), then start: `start_indexing`
+        // re-takes the gate, emits its own walking status, and restarts the
+        // watcher and the embedding worker when done.
+        guard.settled = true;
+        drop(guard);
+        self.start_indexing();
+    }
+
     pub fn get_status(&self) -> IndexingStatus {
         self.status.read().clone()
     }
