@@ -156,7 +156,7 @@ fn runtime_probe() -> &'static Result<String, String> {
 
 /// True when the dynamic ONNX Runtime library can be loaded. Probed once per
 /// process: installing the library later requires a restart.
-fn runtime_loadable() -> bool {
+pub fn runtime_loadable() -> bool {
     #[cfg(feature = "accurate-ocr")]
     {
         runtime_probe().is_ok()

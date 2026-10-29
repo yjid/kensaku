@@ -12,6 +12,7 @@ import {
   Facets,
   HomeData,
   KensakuConfig,
+  DoctorReport,
 } from "./types";
 import { SetupModal } from "./components/SetupModal";
 import { DuplicatesModal } from "./components/DuplicatesModal";
@@ -98,6 +99,8 @@ function App() {
   const [facetExclude, setFacetExclude] = useState<Set<string>>(new Set());
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [indexingStatus, setIndexingStatus] = useState<IndexingStatus | null>(null);
+  const [doctorReport, setDoctorReport] = useState<DoctorReport | null>(null);
+  const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<string | undefined>(undefined);
   const [showDuplicates, setShowDuplicates] = useState(false);
@@ -127,6 +130,23 @@ function App() {
       /* ignore */
     }
   }, [config?.theme]);
+  useEffect(() => {
+    if (isSetupComplete !== true) return;
+    invoke<DoctorReport>("run_doctor")
+      .then(setDoctorReport)
+      .catch(() => {});
+  }, [isSetupComplete]);
+
+  useEffect(() => {
+    fetch("https://api.github.com/repos/yjid/kensaku/releases/latest")
+      .then((r) => r.json())
+      .then((j: any) => {
+        const tag = String(j?.tag_name || "").replace(/^v/, "");
+        if (tag && tag !== "1.0.10") setUpdateAvailable(tag);
+      })
+      .catch(() => {});
+  }, []);
+
   const showThumbs = config?.show_thumbnails !== false;
   const view: ResultView = config?.results_view === "list" ? "list" : "grid";
   const [menu, setMenu] = useState<{ x: number; y: number; result: SearchResult } | null>(null);
@@ -1259,7 +1279,7 @@ function App() {
                 </div>
               )}
 
-              <KeyHintStrip status={indexingStatus} />
+              <KeyHintStrip status={indexingStatus} doctor={doctorReport} updateAvailable={updateAvailable} onDoctor={() => { setShowSettings(true); setSettingsSection("doctor"); }} onUpdate={() => window.open("https://github.com/yjid/kensaku/releases/latest", "_blank")} />
             </>
           )}
         </>
