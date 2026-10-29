@@ -5,7 +5,8 @@ use crate::indexer::content::{
 use crate::indexer::extract::image as image_util;
 use crate::indexer::metadata::MetadataStore;
 use crate::indexer::walker::{
-    FileEntry, file_identity, is_cloud_placeholder, is_cloud_placeholder_path, walk_directories,
+    FileEntry, file_identity, is_cloud_placeholder, is_cloud_placeholder_path, runtime_dir_prunes,
+    starts_with_any, walk_directories,
 };
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
@@ -424,6 +425,14 @@ fn rescan_watched_dirs(
 }
 
 fn is_path_excluded(path: &Path, cfg: &KensakuConfig) -> bool {
+    // Kensaku's own runtime data (index, SQLite WAL, thumbnails, OCR packs)
+    // lives under `config_dir()` and is written while the watcher runs. On
+    // macOS that path is not hidden, so every write would otherwise be
+    // re-indexed through these very events. Pruned by path, matching the
+    // crawler's `runtime_dir_prunes`.
+    if starts_with_any(path, &runtime_dir_prunes()) {
+        return true;
+    }
     path.components().any(|component| {
         component
             .as_os_str()
@@ -1037,6 +1046,49 @@ mod tests {
             Instant::now(),
         );
         assert!(metadata.read().get(&file).is_none());
+    }
+
+    #[test]
+    fn writes_inside_kensakus_runtime_dir_are_never_indexed() {
+        // On macOS the config dir (index, SQLite WAL, thumbnails, OCR packs)
+        // is not a hidden path; the watcher must ignore every event from it
+        // just like the crawler does (`runtime_dir_prunes`).
+        let runtime_dir = runtime_dir_prunes()
+            .pop()
+            .expect("there is always at least one prune root");
+        let marker = runtime_dir.join("index-wal.txt");
+
+        // The event target lives in the real runtime dir, but the test's
+        // backing stores are scratch directories — the prune decision is made
+        // purely from the path before any store is touched.
+        let tmp = temp_dir("runtime-prune");
+        let cfg = KensakuConfig::default();
+        let metadata = store(&tmp);
+        let content_index = no_content();
+        let mut queue = PendingUpserts::default();
+        let now = Instant::now();
+
+        let changes = handle_event(
+            &event(EventKind::Create(CreateKind::File), &[&marker]),
+            &cfg,
+            &metadata,
+            &content_index,
+            &mut queue,
+            now,
+        );
+        assert_eq!(changes, 0, "created, but inside Kensaku's own storage");
+        assert_eq!(queue.len(), 0, "must not be queued for settle");
+
+        handle_event(
+            &event(EventKind::Remove(RemoveKind::Any), &[&marker]),
+            &cfg,
+            &metadata,
+            &content_index,
+            &mut queue,
+            now,
+        );
+        assert_eq!(queue.len(), 0);
+        assert_eq!(metadata.read().len(), 0);
     }
 
     #[test]
