@@ -58,6 +58,11 @@ tree-sitter-python = "0.25"
 tree-sitter-javascript = "0.25"
 tree-sitter-typescript = "0.23"
 
+[dev-dependencies]
+# Builds Flate-compressed image streams for the scanned-PDF decoder tests.
+# Already in the tree via zip/png; no new download.
+flate2 = "1"
+
 [target.'cfg(windows)'.dependencies]
 # Direct process enumeration for the webview cleanup: taskkill rejects a
 # `PPID eq` filter ("The search filter cannot be recognized"), so the child

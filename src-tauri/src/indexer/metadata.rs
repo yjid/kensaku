@@ -321,6 +321,35 @@ impl MetadataStore {
         NO_PARENT
     }
 
+    /// Marks every image and PDF for a content re-read. Used when what OCR
+    /// produces has changed (an engine became usable, an OCR fix shipped).
+    pub fn mark_ocr_targets_pending(&mut self) -> usize {
+        let mut marked = 0;
+        for i in 0..self.arena.len() {
+            let idx = i as u32;
+            if self.arena.node(idx).is_dir() {
+                continue;
+            }
+            let ocr_target = self.arena.extension(idx).as_deref().is_some_and(|ext| {
+                crate::indexer::extract::image::is_supported_image_extension(ext)
+                    || ext.eq_ignore_ascii_case("pdf")
+            });
+            if ocr_target {
+                self.arena.node_mut(idx).set_content_pending(true);
+                marked += 1;
+            }
+        }
+        if marked > 0 {
+            self.generation.fetch_add(1, Ordering::SeqCst);
+        }
+        if let Some(db) = self.db.as_ref()
+            && let Err(e) = db.mark_ocr_targets_pending()
+        {
+            eprintln!("[Kensaku] Failed to mark OCR targets pending: {}", e);
+        }
+        marked
+    }
+
     pub fn mark_images_pending(&mut self) -> usize {
         let mut marked = 0;
         for i in 0..self.arena.len() {
@@ -419,6 +448,27 @@ impl MetadataStore {
             eprintln!("[Kensaku] Failed to mark content pending: {}", e);
         }
         marked
+    }
+
+    /// Flags one file for a content re-read on the next crawl.
+    pub fn set_content_pending(&mut self, path: &Path) {
+        if let Some(idx) = self.find_path_index(path) {
+            let node = self.arena.node(idx);
+            if !node.content_pending() {
+                self.arena.node_mut(idx).set_content_pending(true);
+                self.generation.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        if let Some(db) = self.db.as_ref()
+            && let Err(e) = db.set_content_pending(path)
+        {
+            eprintln!(
+                "[Kensaku] Failed to mark '{}' pending: {}",
+                path.display(),
+                e
+            );
+        }
     }
 
     pub fn clear_content_pending(&mut self, path: &Path) {

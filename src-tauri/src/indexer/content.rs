@@ -1285,6 +1285,13 @@ pub fn read_text_content(path: &Path, max_bytes: u64) -> Option<String> {
     crate::indexer::extract::extract_document(path, max_bytes).map(|doc| doc.text)
 }
 
+/// [`read_text_content`] plus whether the read was incomplete and should be
+/// retried (timeout, busy, or OCR that could not run yet).
+pub fn read_text_content_checked(path: &Path, max_bytes: u64) -> (Option<String>, bool) {
+    let (document, retry) = crate::indexer::extract::extract_document_checked(path, max_bytes);
+    (document.map(|doc| doc.text), retry)
+}
+
 /// Defuses QueryParser metacharacters in user-supplied text.
 ///
 /// Replacing them with spaces preserves the surrounding words while ensuring

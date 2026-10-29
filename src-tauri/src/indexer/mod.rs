@@ -13,7 +13,7 @@ use crate::config::KensakuConfig;
 use crate::embed::units::chunk_text;
 use crate::embed::{EMBEDDING_DIM, EmbeddingQueue, ModelRegistry, Unit, UnitStore};
 use crate::indexer::content::{
-    ContentIndex, is_indexable_extension, is_indexable_file_name, read_text_content,
+    ContentIndex, is_indexable_extension, is_indexable_file_name, read_text_content_checked,
 };
 use crate::indexer::metadata::MetadataStore;
 use crate::indexer::walker::{FileEntry, is_cloud_placeholder_path, walk_directories};
@@ -119,6 +119,9 @@ struct ExtractedWork {
     image_phash: Option<u64>,
     /// Whether a missing opportunistic hash must invalidate the stored dHash.
     phash_needs_refresh: bool,
+    /// Extraction did not finish (timeout, busy, OCR not runnable yet): keep
+    /// the file pending and try again next crawl.
+    retry: bool,
 }
 
 fn fnv_hash(data: &str) -> u64 {
@@ -566,6 +569,11 @@ impl IndexerManager {
         let watcher_ok = Arc::clone(&self.watcher_ok);
 
         thread::spawn(move || {
+            // Apply OCR settings and re-queue images/PDFs when what OCR would
+            // produce has changed. Runs before the walk, so this same crawl
+            // re-reads them.
+            Self::sync_ocr_state(&config_arc, &metadata);
+
             let (watched_dirs, excluded_dirs, excluded_exts, crawl_mode, include_ignored) = {
                 let cfg = config_arc.read();
                 (
@@ -757,6 +765,10 @@ impl IndexerManager {
 
             let extract_done = AtomicUsize::new(0);
             let mut extracted_paths: HashSet<PathBuf> = HashSet::new();
+            // Files whose extraction did not finish this crawl. They keep (or
+            // gain) the pending flag so the next crawl retries them; before,
+            // a timed-out or OCR-less image was recorded as "no text" forever.
+            let mut retry_paths: HashSet<PathBuf> = HashSet::new();
             let mut units_added = 0usize;
 
             // Bounded handoff: at most 32 extracted documents (and their
@@ -794,7 +806,7 @@ impl IndexerManager {
                             let _ = db.set_image_dimensions(&job.path, width, height);
                         }
 
-                        let content = read_text_content(&job.path, 1_048_576);
+                        let (content, retry) = read_text_content_checked(&job.path, 1_048_576);
                         let image_sig = job.is_image.then(|| {
                             content
                                 .as_deref()
@@ -850,6 +862,7 @@ impl IndexerManager {
                             image_sig,
                             image_phash,
                             phash_needs_refresh: job.phash_needs_refresh,
+                            retry,
                         });
                     });
                 });
@@ -922,7 +935,9 @@ impl IndexerManager {
                         }
                     }
 
-                    if pending_images.contains(&work.path) && work.content.is_some() {
+                    if work.retry {
+                        retry_paths.insert(work.path.clone());
+                    } else if pending_images.contains(&work.path) && work.content.is_some() {
                         extracted_paths.insert(work.path.clone());
                     }
 
@@ -983,16 +998,33 @@ impl IndexerManager {
             }
 
             // A pending image re-scanned by this crawl is done. When extraction
-            // produced nothing (OCR disabled, unreadable, or no text), drop any
-            // stale OCR document so search stops returning it. Paths skipped by
-            // exclusions never enter `pending_images`, so their flag is kept.
+            // produced nothing because OCR is off, drop any stale OCR document
+            // so search stops returning it. Paths skipped by exclusions never
+            // enter `pending_images`, so their flag is kept.
+            //
+            // Incomplete reads are the exception: their old text stays (it is
+            // better than nothing) and they stay pending for the next crawl.
+            let ocr_on = crate::indexer::extract::ocr_enabled();
             for path in &pending_images {
+                if retry_paths.contains(path) {
+                    continue;
+                }
                 if !extracted_paths.contains(path)
+                    && !ocr_on
                     && let Some(c_index) = content_index.read().as_ref()
                 {
                     let _ = c_index.remove(path);
                 }
                 metadata.write().clear_content_pending(path);
+            }
+            for path in &retry_paths {
+                metadata.write().set_content_pending(path);
+            }
+            if !retry_paths.is_empty() {
+                println!(
+                    "[Kensaku Indexer] {} file(s) left pending for retry (timeout or OCR not ready)",
+                    retry_paths.len()
+                );
             }
 
             // Commit the SQLite transaction (batched writes)
@@ -1364,6 +1396,86 @@ impl IndexerManager {
         self.watcher_ok.load(Ordering::Relaxed)
     }
 
+    /// Brings the process OCR state in line with config and the machine.
+    ///
+    /// - Applies `ocr_enabled` / `ocr_engine`.
+    /// - When Tesseract cannot run and PP-OCR is compiled in, switches to
+    ///   PP-OCR (the common case on a fresh Windows or Mac) and fetches its
+    ///   pack. This used to happen in the GUI only, bypassing every re-queue,
+    ///   so images indexed before the switch never got text.
+    /// - Compares [`crate::ocr::signature`] with the one recorded for this
+    ///   index. On a change (an engine became usable, the user switched, an
+    ///   OCR fix shipped) every image and PDF is re-queued and the extraction
+    ///   cache dropped. Returns true when it re-queued.
+    fn sync_ocr_state(
+        config_arc: &Arc<RwLock<KensakuConfig>>,
+        metadata: &Arc<RwLock<MetadataStore>>,
+    ) -> bool {
+        let mut config = config_arc.read().clone();
+        crate::indexer::extract::image::reset_tesseract_probe();
+        crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
+        crate::ocr::set_engine(&config.ocr_engine);
+        if !config.ocr_enabled {
+            return false;
+        }
+
+        if crate::ocr::accurate_compiled() {
+            if crate::ocr::engine_name() == crate::ocr::TESSERACT
+                && !crate::indexer::extract::image::tesseract_usable()
+            {
+                config.ocr_engine = crate::ocr::ACCURATE.to_string();
+                crate::ocr::set_engine(crate::ocr::ACCURATE);
+                match config.save() {
+                    Ok(()) => {
+                        eprintln!("[Kensaku OCR] tesseract not found; switched to PP-OCR");
+                        *config_arc.write() = config.clone();
+                    }
+                    Err(e) => eprintln!("[Kensaku OCR] could not save the engine switch: {e}"),
+                }
+            }
+            if crate::ocr::engine_name() == crate::ocr::ACCURATE && !crate::ocr::pack_present() {
+                crate::models::download_ocr_pack();
+            }
+        }
+
+        let signature = crate::ocr::signature();
+        if read_ocr_signature().as_deref() == Some(signature.as_str()) {
+            return false;
+        }
+        write_ocr_signature(&signature);
+        if crate::ocr::usable_engine() == crate::ocr::NONE {
+            // Nothing can read images yet. Remembered, so the moment an
+            // engine becomes usable the signature differs and everything is
+            // re-read.
+            eprintln!("[Kensaku OCR] no OCR engine can run yet");
+            return false;
+        }
+        crate::indexer::extract::clear_cache();
+        let marked = metadata.write().mark_ocr_targets_pending();
+        eprintln!(
+            "[Kensaku OCR] using {} (revision {}); {} image/PDF file(s) queued for OCR",
+            crate::ocr::usable_engine(),
+            crate::ocr::OCR_REVISION,
+            marked
+        );
+        true
+    }
+
+    /// Starts a crawl now, or as soon as the running one finishes. Used when
+    /// the OCR pack lands mid-crawl: a plain `start_indexing` would be a
+    /// no-op and the newly OCR-able images would wait for the next restart.
+    pub fn start_indexing_when_idle(self: &Arc<Self>) {
+        let manager = Arc::clone(self);
+        let _ = thread::Builder::new()
+            .name("kensaku-crawl-when-idle".into())
+            .spawn(move || {
+                while manager.is_running.load(Ordering::SeqCst) {
+                    thread::sleep(Duration::from_secs(2));
+                }
+                manager.start_indexing();
+            });
+    }
+
     pub fn apply_config(&self, config: KensakuConfig) -> Result<(), String> {
         let previous = self.config.read().clone();
         let ocr_changed =
@@ -1378,7 +1490,8 @@ impl IndexerManager {
         if ocr_changed {
             crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
             crate::ocr::set_engine(&config.ocr_engine);
-            let marked = self.metadata.write().mark_images_pending();
+            crate::indexer::extract::clear_cache();
+            let marked = self.metadata.write().mark_ocr_targets_pending();
             eprintln!(
                 "[Kensaku] OCR {}: {} image(s) queued for re-scan",
                 if config.ocr_enabled {
@@ -1427,10 +1540,37 @@ impl IndexerManager {
             }
         }
 
+        // An OCR engine became usable without a config change (pack
+        // downloaded by the GUI while a daemon owns the index): the crawl's
+        // `sync_ocr_state` notices and re-queues.
+        if !reindex
+            && config.ocr_enabled
+            && read_ocr_signature().as_deref() != Some(crate::ocr::signature().as_str())
+        {
+            reindex = true;
+        }
+
         if reindex {
             self.start_indexing();
         }
         Ok(())
+    }
+}
+
+/// Where the OCR signature of the current index is recorded.
+fn ocr_signature_path() -> PathBuf {
+    KensakuConfig::config_dir().join("ocr-state")
+}
+
+fn read_ocr_signature() -> Option<String> {
+    std::fs::read_to_string(ocr_signature_path())
+        .ok()
+        .map(|s| s.trim().to_string())
+}
+
+fn write_ocr_signature(signature: &str) {
+    if let Err(e) = std::fs::write(ocr_signature_path(), signature) {
+        eprintln!("[Kensaku OCR] could not record OCR state: {e}");
     }
 }
 

@@ -7,6 +7,9 @@ pub struct PdfExtractResult {
     pub page_count: usize,
     pub is_encrypted: bool,
     pub is_scanned: bool,
+    /// The PDF looked scanned but no OCR engine could run, so the text is a
+    /// placeholder that should be replaced once one can.
+    pub ocr_unavailable: bool,
 }
 
 pub fn extract_pdf(path: &Path, max_bytes: usize) -> Option<PdfExtractResult> {
@@ -26,6 +29,7 @@ pub fn extract_pdf(path: &Path, max_bytes: usize) -> Option<PdfExtractResult> {
                 page_count: 0,
                 is_encrypted: true,
                 is_scanned: false,
+                ocr_unavailable: false,
             });
         }
 
@@ -49,10 +53,22 @@ pub fn extract_pdf(path: &Path, max_bytes: usize) -> Option<PdfExtractResult> {
             }
         }
 
+        // Fewer than 50 characters of real text across the whole document
+        // means scanned pages (often with a stamped page number or a scanner
+        // banner, which is why this is not "exactly empty").
         let is_scanned = page_count > 0 && full_text.trim().len() < 50;
-        let text = if is_scanned && full_text.trim().is_empty() {
-            extract_scanned_pdf_ocr(&doc, max_bytes)
-                .unwrap_or_else(|| "[Scanned PDF: Image only]".to_string())
+        let mut ocr_unavailable = false;
+        let text = if is_scanned && crate::indexer::extract::ocr_enabled() {
+            let (ocr_text, unavailable) = extract_scanned_pdf_ocr(&doc, max_bytes);
+            ocr_unavailable = unavailable;
+            match ocr_text {
+                Some(ocr_text) if full_text.trim().is_empty() => ocr_text,
+                Some(ocr_text) => format!("{}\n\n{}", full_text.trim(), ocr_text),
+                None if full_text.trim().is_empty() => "[Scanned PDF: Image only]".to_string(),
+                None => full_text,
+            }
+        } else if is_scanned && full_text.trim().is_empty() {
+            "[Scanned PDF: Image only]".to_string()
         } else {
             full_text
         };
@@ -62,6 +78,7 @@ pub fn extract_pdf(path: &Path, max_bytes: usize) -> Option<PdfExtractResult> {
             page_count,
             is_encrypted: false,
             is_scanned,
+            ocr_unavailable,
         })
     });
 
@@ -77,43 +94,40 @@ pub fn extract_pdf(path: &Path, max_bytes: usize) -> Option<PdfExtractResult> {
     }
 }
 
-/// Extracts embedded image streams from a PDF and attempts OCR when pages contain no text.
-fn extract_scanned_pdf_ocr(doc: &Document, max_bytes: usize) -> Option<String> {
-    let mut collected = String::new();
-    let mut image_count = 0usize;
+/// Most pages a scanned PDF is OCR'd for. Each page costs ~0.2 s with
+/// PP-OCR and ~1 s with Tesseract, and extraction has a time budget.
+const MAX_OCR_PAGES: usize = 6;
 
-    for object in doc.objects.values() {
-        if collected.len() >= max_bytes || image_count >= 5 {
+/// OCRs the page images of a scanned PDF, in page order.
+///
+/// Returns the text (if any) and whether OCR was unavailable, so the caller
+/// can retry the file once an engine can run. Undecodable images (JPEG 2000,
+/// fax, JBIG2) are logged once per file rather than skipped silently.
+fn extract_scanned_pdf_ocr(doc: &Document, max_bytes: usize) -> (Option<String>, bool) {
+    use crate::ocr::OcrOutcome;
+
+    let mut skipped: Vec<String> = Vec::new();
+    let images = crate::indexer::extract::pdf_image::page_images(doc, MAX_OCR_PAGES, |reason| {
+        if skipped.len() < 3 {
+            skipped.push(reason);
+        }
+    });
+    if images.is_empty() && !skipped.is_empty() {
+        eprintln!(
+            "[Kensaku PDF] scanned PDF has no image Kensaku can decode: {}",
+            skipped.join("; ")
+        );
+    }
+
+    let mut collected = String::new();
+    let mut unavailable = false;
+    for image in &images {
+        if collected.len() >= max_bytes {
             break;
         }
-        let Ok(stream) = object.as_stream() else {
-            continue;
-        };
-        let Ok(subtype) = stream.dict.get(b"Subtype").and_then(|o| o.as_name()) else {
-            continue;
-        };
-        if subtype != b"Image" {
-            continue;
-        }
-        let Ok(data) = stream.decompressed_content() else {
-            continue;
-        };
-        let Ok(img) = image::load_from_memory(&data) else {
-            continue;
-        };
-        image_count += 1;
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let tmp_path = std::env::temp_dir().join(format!(
-            "kensaku-pdf-ocr-{}-{}.png",
-            std::process::id(),
-            nanos
-        ));
-        if img.save(&tmp_path).is_ok() {
-            if let Some(ocr_text) = crate::indexer::extract::image::extract_image_ocr(&tmp_path) {
-                let trimmed = ocr_text.trim();
+        match crate::indexer::extract::image::ocr_decoded_image(image) {
+            OcrOutcome::Text(text) => {
+                let trimmed = text.trim();
                 if !trimmed.is_empty() {
                     if !collected.is_empty() {
                         collected.push_str("\n\n");
@@ -121,13 +135,14 @@ fn extract_scanned_pdf_ocr(doc: &Document, max_bytes: usize) -> Option<String> {
                     collected.push_str(trimmed);
                 }
             }
-            let _ = std::fs::remove_file(&tmp_path);
+            OcrOutcome::NoText => {}
+            OcrOutcome::Unavailable => {
+                unavailable = true;
+                break;
+            }
         }
     }
 
-    if collected.trim().is_empty() {
-        None
-    } else {
-        Some(collected)
-    }
+    let text = (!collected.trim().is_empty()).then_some(collected);
+    (text, unavailable)
 }

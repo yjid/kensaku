@@ -181,6 +181,11 @@ fn main() {
     // Start indexer
     let cfg = KensakuConfig::load();
     let manager = Arc::new(IndexerManager::new(cfg));
+    {
+        // OCR the already-indexed images once the PP-OCR pack lands.
+        let manager = Arc::clone(&manager);
+        kensaku::models::on_ocr_pack_ready(move || manager.start_indexing_when_idle());
+    }
     manager.start_indexing();
 
     for stream in listener.incoming() {

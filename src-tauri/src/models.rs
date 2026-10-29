@@ -334,6 +334,15 @@ pub fn download_all() {
     start_download(models_dir(), &ARTIFACTS, "kensaku-model-download", "model");
 }
 
+/// Called once the OCR pack has finished downloading and verifying.
+static OCR_PACK_READY: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
+
+/// Registers what to do when the OCR pack becomes available (start a crawl
+/// so already-indexed images are OCR'd). First registration wins.
+pub fn on_ocr_pack_ready(callback: impl Fn() + Send + Sync + 'static) {
+    let _ = OCR_PACK_READY.set(Box::new(callback));
+}
+
 /// Starts a background download of the optional accurate OCR pack.
 pub fn download_ocr_pack() {
     start_download(
@@ -401,6 +410,14 @@ fn run_download(dir: PathBuf, artifacts: &'static [Artifact], label: &'static st
         Ok(()) => {
             set_progress(None);
             set_error(None);
+            if std::ptr::eq(artifacts, &OCR_ARTIFACTS[..])
+                && let Some(callback) = OCR_PACK_READY.get()
+            {
+                // Clear the flag first so a callback that checks status sees
+                // the download as finished.
+                DOWNLOADING.store(false, Ordering::SeqCst);
+                callback();
+            }
         }
         Err(e) => {
             set_progress(None);
