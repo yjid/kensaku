@@ -193,8 +193,30 @@
     height: 100%;
   }
 
-  body {
+  /* A full-bleed scrim uses `position: fixed`, so it escapes #root's clip
+     and would paint square corners back over the window. Any new overlay
+     that covers the whole viewport needs this class. */
+  .scrim-full {
+    border-radius: var(--r-sheet);
+  }
+
+  /* The window surface. `decorations(false) + transparent(true)` means the
+     OS draws no frame, so the app has to round its own corners or it shows
+     up as a hard-edged black rectangle (true on macOS and most Linux
+     compositors; Windows 11 rounds borderless windows itself). A window is
+     the outermost sheet, so it takes the sheet step rather than a new one. */
+  #root {
     background: var(--bg);
+    border-radius: var(--r-sheet);
+    overflow: hidden;
+    transition: background-color var(--dur-slow) var(--ease);
+  }
+
+  body {
+    /* The window is transparent and undecorated, so the app's own surface
+       is #root, not body. Painting the background here would square off
+       the corners #root rounds below. */
+    background: transparent;
     color: var(--fg);
     overflow: hidden;
     font-family: var(--font-sans);
