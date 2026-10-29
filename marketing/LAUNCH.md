@@ -55,7 +55,7 @@ extension point (docs/EXTRACTORS.md) if you want to teach it a new format.
 
 ### Attach
 
-`assets/search-at-full-speed.png` to every Reddit post (visual ≈ 2× engagement).
+`assets/hero.png` to every Reddit post (visual ≈ 2× engagement).
 
 ### Per-sub first comment (post it yourself immediately after submitting)
 
@@ -318,9 +318,10 @@ demo clip outperform text-only posts by a wide margin on every platform.
 - [ ] **10–15s screen recording, no audio:** Alt+Space → type "cuda out of
       memory" → results appear → Enter opens the screenshot. One take.
       Save as `demo.gif` (≤8 MB for GitHub) and an MP4 for PH/X.
-- [ ] **Static hero screenshot:** home screen with real recents + a search
-      in progress. Replace `assets/search-at-full-speed.png` if you can
-      (the current one is from before 1.0.6).
+- [x] **Static hero screenshot:** `assets/hero.png`, a real 920x640
+      capture of 1.0.8 searching "invoice", matching inside a PDF, a
+      screenshot, a spreadsheet and a note. Light twin in
+      `assets/search-light.png`.
 - [ ] **Social preview:** upload `assets/social-preview.png` in repo
       Settings → Social preview (GitHub doesn't allow this via API).
 - [ ] **One-liner for bios:** "I build Kensaku — local search that reads

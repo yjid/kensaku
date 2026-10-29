@@ -31,7 +31,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/hero.png" width="100%" alt="Kensaku — find anything on your computer" />
+  <img src="assets/hero.png" width="100%" alt="Kensaku searching for 'invoice' and matching text inside a PDF, a screenshot, a spreadsheet and a note" />
 </p>
 
 ---
@@ -101,7 +101,7 @@ Filename tools are everywhere. Reading *inside* your files — locally, instantl
 - Right-click for open, show in folder, copy path, and details.
 
 <p align="center">
-  <img src="assets/search-dashboard.png" width="100%" alt="Kensaku search results" />
+  <img src="assets/search-light.png" width="100%" alt="The same search in the light theme" />
 </p>
 
 ### The query language
