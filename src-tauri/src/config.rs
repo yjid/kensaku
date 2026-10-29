@@ -210,7 +210,7 @@ fn default_true() -> bool {
 /// PP-OCR ships with every installer and is verified at runtime; where it
 /// cannot run (Intel Macs) the engine selection falls back to Tesseract.
 fn default_ocr_engine() -> String {
-    "accurate".to_string()
+    "indra".to_string()
 }
 
 fn default_semantic_model() -> String {
@@ -503,7 +503,9 @@ impl KensakuConfig {
             //   runtime, so the old default engine moves to it (Tesseract
             //   remains the automatic fallback where PP-OCR cannot run).
             if cfg.ocr_engine.eq_ignore_ascii_case("tesseract") {
-                cfg.ocr_engine = default_ocr_engine();
+                // v6 introduced PP-OCR as the default; keep that migration
+                // anchored to PP-OCR rather than following future default changes.
+                cfg.ocr_engine = "accurate".to_string();
             }
             // - Media, archives, fonts and design files become findable by
             //   name (their contents are still never read).
@@ -742,7 +744,7 @@ mod tests {
     #[test]
     fn fresh_defaults_are_the_1_0_10_defaults() {
         let cfg = KensakuConfig::default();
-        assert_eq!(cfg.ocr_engine, "accurate");
+        assert_eq!(cfg.ocr_engine, "indra");
         assert!(!cfg.excluded_extensions.iter().any(|e| e == "mp4" || e == "zip"));
         assert!(cfg.excluded_extensions.iter().any(|e| e == "exe"));
         assert!(!cfg.excluded_dirs.iter().any(|d| d.contains('*')));
