@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -407,9 +407,35 @@ pub fn extract_image_ocr(path: &Path) -> Option<String> {
         return Some(text);
     }
 
-    // Try tesseract (available on Linux and macOS with Homebrew)
+    // Try tesseract (available on Linux and macOS with Homebrew).
+    //
+    // On macOS, feed the image bytes through stdin instead of handing
+    // tesseract the original path. An external process reading a file inside
+    // a protected folder (Documents, Desktop, Downloads, Pictures) triggers
+    // its own TCC permission prompt for *every* file, which is what produced
+    // the repeated "allow access" dialogs during a crawl. Reading the bytes
+    // here (in the main process, which already holds the folder grant) keeps
+    // the child process from touching the protected file at all.
+    //
+    // Linux and Windows have no per-process folder grant, so they keep
+    // passing the path: one less full-file copy in memory, and no reliance on
+    // how a particular tesseract build handles binary stdin.
+    let stdin_bytes = if cfg!(target_os = "macos") {
+        Some(std::fs::read(path).ok()?)
+    } else {
+        None
+    };
+
     let mut command = tesseract_command();
-    command.arg(path).arg("stdout").arg("--psm").arg("3"); // Fully automatic page segmentation
+    if stdin_bytes.is_some() {
+        command.arg("stdin").stdin(Stdio::piped());
+    } else {
+        command.arg(path).stdin(Stdio::null());
+    }
+    command
+        .args(["stdout", "--psm", "3"]) // Fully automatic page segmentation
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
 
     // Prefer Kensaku's private language data when it has been downloaded, but
     // never override a working system installation.
@@ -417,7 +443,17 @@ pub fn extract_image_ocr(path: &Path) -> Option<String> {
         command.env("TESSDATA_PREFIX", dir);
     }
 
-    let output = command.output().ok()?;
+    let mut child = command.spawn().ok()?;
+    if let (Some(bytes), Some(mut stdin)) = (stdin_bytes, child.stdin.take()) {
+        // Writing in a separate thread avoids deadlocking when the input is
+        // larger than the OS pipe buffer. The buffer is moved, not cloned:
+        // large scans can be tens of megabytes. Dropping `stdin` at the end
+        // of the thread closes the pipe, which is tesseract's EOF.
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(&bytes);
+        });
+    }
+    let output = child.wait_with_output().ok()?;
 
     if !output.status.success() {
         return None;
