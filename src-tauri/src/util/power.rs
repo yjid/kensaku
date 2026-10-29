@@ -100,7 +100,24 @@ pub fn heavy_load() -> bool {
     load1 > cpus as f64 * 0.8
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+pub fn heavy_load() -> bool {
+    // `getloadavg` is a 1-minute load average read, available on every macOS
+    // release, so eco mode paces the crawl on a busy Mac the same way it does
+    // on Linux. Failures degrade to "not heavy" (never throttles).
+    let mut averages = [0.0f64; 3];
+    let reported =
+        unsafe { libc::getloadavg(averages.as_mut_ptr(), averages.len() as libc::c_int) };
+    if reported < 1 {
+        return false;
+    }
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+    averages[0] > cpus as f64 * 0.8
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub fn heavy_load() -> bool {
     false
 }
