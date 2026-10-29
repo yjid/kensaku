@@ -33,6 +33,7 @@ import { FileRow } from "./components/FileRow";
 import { normalizeTheme } from "./hooks/useTheme";
 import { PreviewDialog } from "./components/PreviewDialog";
 import { classify } from "./lib/categories";
+import { inFilter } from "./lib/query";
 import {
   Settings as SettingsIcon,
   RefreshCw,
@@ -515,7 +516,7 @@ function App() {
     const match = hint.match(/📁\s*([^\?]+)/);
     setQuery((prev) =>
       match && match[1]
-        ? `${prev.trim()} in:"${match[1].trim()}"`
+        ? `${prev.trim()} ${inFilter(match[1].trim())}`
         : `${prev.trim()} ${hint}`.trim(),
     );
     inputRef.current?.focus();
@@ -641,7 +642,7 @@ function App() {
   }, [scopePrefix]);
 
   const applyScope = useCallback((path: string) => {
-    setQuery((prev) => prev.replace(/@[^\s]*$/, `in:"${path}" `));
+    setQuery((prev) => prev.replace(/@[^\s]*$/, () => `${inFilter(path)} `));
     inputRef.current?.focus();
   }, []);
 
