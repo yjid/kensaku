@@ -206,8 +206,10 @@ fn default_true() -> bool {
     true
 }
 
+/// PP-OCR ships with every installer and is verified at runtime; where it
+/// cannot run (Intel Macs) the engine selection falls back to Tesseract.
 fn default_ocr_engine() -> String {
-    "tesseract".to_string()
+    "accurate".to_string()
 }
 
 fn default_semantic_model() -> String {
@@ -219,19 +221,26 @@ fn default_results_view() -> String {
 }
 
 fn default_content_depth() -> String {
-    "quick".to_string()
+    "balanced".to_string()
 }
 
+/// Books and manuals are often 20-100 MB because of their images while their
+/// text is small; below this cap they get full-text search, above it they
+/// are still findable by name.
 fn default_content_max_file_size_mb() -> u64 {
-    20
+    100
 }
 
+/// About 2,000 pages of text. Extraction of ~6 MB measured 3.8 s, and the
+/// extraction timeout scales with file size.
 fn default_content_max_text_bytes() -> usize {
-    1_000_000
+    4_000_000
 }
 
+/// 48 overlapping chunks covers roughly the first 9,000 words. Only large
+/// documents use more than one; each chunk is 256 bytes of vector.
 fn default_content_max_semantic_units() -> usize {
-    20
+    48
 }
 
 fn default_theme() -> String {
@@ -250,6 +259,31 @@ pub fn normalize_theme(raw: &str) -> String {
         _ => default_theme(),
     }
 }
+
+/// Version written by this build; see `parse_and_migrate`.
+pub const CURRENT_CONFIG_VERSION: u32 = 6;
+
+/// Extensions skipped entirely (not even indexed by name).
+const DEFAULT_EXCLUDED_EXTENSIONS: &[&str] = &[
+    // Binaries and build artifacts
+    "exe", "dll", "so", "dylib", "bin", "o", "a", "lib", "class", "pyc", "pyo",
+    // Secrets / credentials (`key` is also Apple Keynote; private keys win)
+    "pem", "key", "pfx", "p12", "crt", "cer",
+    // Databases
+    "db", "sqlite", "sqlite3",
+    // Lock files
+    "lock", "lockb",
+    // Minified / generated
+    "min.js", "min.css", "map",
+];
+
+/// Extensions excluded by default up to config v5 that are now findable by
+/// name (v6 removes them from existing configs).
+const NAME_SEARCHABLE_SINCE_V6: &[&str] = &[
+    "psd", "ai", "sketch", "fig", "mp3", "mp4", "wav", "avi", "mov", "mkv", "flac", "ogg",
+    "webm", "zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz", "ttf", "otf", "woff",
+    "woff2", "eot",
+];
 
 impl Default for KensakuConfig {
     fn default() -> Self {
@@ -311,7 +345,6 @@ impl Default for KensakuConfig {
             "desktop.ini",
             // Misc
             ".Trash",
-            ".Trash-*",
             "lost+found",
         ]
         .into_iter()
@@ -320,22 +353,16 @@ impl Default for KensakuConfig {
 
         // Documents (PDF/Office/EPUB) and images are indexed via text extraction
         // and OCR, so they are deliberately NOT excluded by default.
-        let default_excluded_extensions: Vec<String> = vec![
-            // Raw/editor-only image formats we cannot read text from
-            "psd", "ai", "sketch", "fig", // Audio/Video
-            "mp3", "mp4", "wav", "avi", "mov", "mkv", "flac", "ogg", "webm", // Archives
-            "zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz", // Binaries
-            "exe", "dll", "so", "dylib", "bin", "o", "a", "lib", "class", "pyc", "pyo",
-            // Secrets / credentials
-            "pem", "key", "pfx", "p12", "crt", "cer", // Database
-            "db", "sqlite", "sqlite3", // Lock files
-            "lock", "lockb", // Minified/generated
-            "min.js", "min.css", "map", // Font
-            "ttf", "otf", "woff", "woff2", "eot",
-        ]
-        .into_iter()
-        .map(String::from)
-        .collect();
+        //
+        // Media, archives, fonts and design files are not excluded either:
+        // their contents are never read (they are not indexable types), but a
+        // search for "vacation.mp4" or "invoice.zip" must still find them by
+        // name. Only files nobody searches for, or must not be indexed, stay
+        // out entirely.
+        let default_excluded_extensions: Vec<String> = DEFAULT_EXCLUDED_EXTENSIONS
+            .iter()
+            .map(|ext| ext.to_string())
+            .collect();
 
         Self {
             watched_dirs: watched,
@@ -349,7 +376,7 @@ impl Default for KensakuConfig {
             semantic_enabled: true,
             semantic_model: "static".to_string(),
             semantic_f32_table: false,
-            crawl_mode: CrawlMode::Full,
+            crawl_mode: CrawlMode::default(),
             pause_indexing: false,
             mcp_allow_reindex: false,
             visual_search_beta_enabled: false,
@@ -369,7 +396,7 @@ impl Default for KensakuConfig {
             pins: Vec::new(),
             show_thumbnails: true,
             results_view: default_results_view(),
-            config_version: 5,
+            config_version: CURRENT_CONFIG_VERSION,
         }
     }
 }
@@ -464,6 +491,42 @@ impl KensakuConfig {
             // silently dropping them back to the default.
             cfg.theme = normalize_theme(&cfg.theme);
             cfg.config_version = 5;
+            migrated = true;
+        }
+
+        if cfg.config_version < 6 {
+            // v6: better defaults (1.0.10). Only values still on an old
+            // default move; anything the user changed is left alone.
+            //
+            // - OCR: PP-OCR now ships with every installer and is verified at
+            //   runtime, so the old default engine moves to it (Tesseract
+            //   remains the automatic fallback where PP-OCR cannot run).
+            if cfg.ocr_engine.eq_ignore_ascii_case("tesseract") {
+                cfg.ocr_engine = default_ocr_engine();
+            }
+            // - Media, archives, fonts and design files become findable by
+            //   name (their contents are still never read).
+            cfg.excluded_extensions.retain(|ext| {
+                let normalized = ext.trim_start_matches('.').to_ascii_lowercase();
+                !NAME_SEARCHABLE_SINCE_V6.contains(&normalized.as_str())
+            });
+            // - `.Trash-*` never matched: exclusions are exact names.
+            cfg.excluded_dirs.retain(|dir| dir != ".Trash-*");
+            // - Content depth: raise the caps that are still at the old
+            //   defaults so books and manuals become searchable.
+            if cfg.content_max_file_size_mb == 20 {
+                cfg.content_max_file_size_mb = default_content_max_file_size_mb();
+            }
+            if cfg.content_max_text_bytes == 1_000_000 {
+                cfg.content_max_text_bytes = default_content_max_text_bytes();
+            }
+            if cfg.content_max_semantic_units == 20 {
+                cfg.content_max_semantic_units = default_content_max_semantic_units();
+            }
+            if cfg.content_depth == "quick" {
+                cfg.content_depth = default_content_depth();
+            }
+            cfg.config_version = 6;
             migrated = true;
         }
 
@@ -619,7 +682,7 @@ mod tests {
     #[test]
     fn default_config_is_current_version_and_dark() {
         let cfg = KensakuConfig::default();
-        assert_eq!(cfg.config_version, 5);
+        assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
         assert!(cfg.skip_hidden);
         assert!(cfg.ocr_enabled);
         assert_eq!(cfg.theme, "dark");
@@ -641,9 +704,60 @@ mod tests {
     }
 
     #[test]
+    fn v6_moves_old_defaults_and_keeps_user_choices() {
+        let old_defaults = r#"{
+            "watched_dirs": [], "excluded_dirs": [".git", ".Trash-*"],
+            "excluded_extensions": ["mp4", ".zip", "ttf", "exe", "pem", "key"],
+            "shortcut": "Alt+Space", "max_results": 50, "is_setup_complete": true,
+            "ocr_engine": "tesseract", "content_max_file_size_mb": 20,
+            "content_max_text_bytes": 1000000, "content_max_semantic_units": 20,
+            "content_depth": "quick", "config_version": 5
+        }"#;
+        let cfg = KensakuConfig::load_from_str(old_defaults);
+        assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
+        assert_eq!(cfg.ocr_engine, "accurate");
+        assert_eq!(cfg.excluded_extensions, vec!["exe", "pem", "key"]);
+        assert_eq!(cfg.excluded_dirs, vec![".git"]);
+        assert_eq!(cfg.content_max_file_size_mb, 100);
+        assert_eq!(cfg.content_max_text_bytes, 4_000_000);
+        assert_eq!(cfg.content_max_semantic_units, 48);
+        assert_eq!(cfg.content_depth, "balanced");
+
+        // Values the user changed stay exactly as they were.
+        let customized = r#"{
+            "watched_dirs": [], "excluded_dirs": [], "excluded_extensions": ["log"],
+            "shortcut": "Alt+Space", "max_results": 50, "is_setup_complete": true,
+            "ocr_engine": "accurate", "content_max_file_size_mb": 5,
+            "content_max_text_bytes": 200000, "content_max_semantic_units": 8,
+            "config_version": 5
+        }"#;
+        let cfg = KensakuConfig::load_from_str(customized);
+        assert_eq!(cfg.excluded_extensions, vec!["log"]);
+        assert_eq!(cfg.content_max_file_size_mb, 5);
+        assert_eq!(cfg.content_max_text_bytes, 200_000);
+        assert_eq!(cfg.content_max_semantic_units, 8);
+    }
+
+    #[test]
+    fn fresh_defaults_are_the_1_0_10_defaults() {
+        let cfg = KensakuConfig::default();
+        assert_eq!(cfg.ocr_engine, "accurate");
+        assert!(!cfg.excluded_extensions.iter().any(|e| e == "mp4" || e == "zip"));
+        assert!(cfg.excluded_extensions.iter().any(|e| e == "exe"));
+        assert!(!cfg.excluded_dirs.iter().any(|d| d.contains('*')));
+        assert_eq!(cfg.content_max_file_size_mb, 100);
+        // A fresh config round-trips without migrating anything.
+        let json = serde_json::to_string(&cfg).unwrap();
+        let (_, migrated) = KensakuConfig::parse_and_migrate(&json).unwrap();
+        assert!(!migrated);
+    }
+
+    #[test]
     fn crawl_mode_and_pause_parse_from_config() {
         let cfg = KensakuConfig::default();
-        assert_eq!(cfg.crawl_mode, CrawlMode::Full);
+        // One default whether the config is fresh or the key is missing.
+        assert_eq!(cfg.crawl_mode, CrawlMode::Balanced);
+        assert_eq!(cfg.crawl_mode, CrawlMode::default());
         assert!(!cfg.pause_indexing);
 
         let raw = r#"{
@@ -674,7 +788,7 @@ mod tests {
 
         let cfg = KensakuConfig::load_from_str(legacy);
 
-        assert_eq!(cfg.config_version, 5);
+        assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
         // Legacy document/image extensions are stripped (case-insensitively)...
         assert!(
             !cfg.excluded_extensions
@@ -693,7 +807,8 @@ mod tests {
         );
         // ...while user-defined exclusions survive.
         assert!(cfg.excluded_extensions.iter().any(|e| e == "rs"));
-        assert!(cfg.excluded_extensions.iter().any(|e| e == "zip"));
+        // v6 makes archives findable by name.
+        assert!(!cfg.excluded_extensions.iter().any(|e| e == "zip"));
         // Missing defaults are filled in by serde.
         assert!(cfg.skip_hidden);
         assert!(cfg.ocr_enabled);
@@ -713,7 +828,7 @@ mod tests {
         }"#;
 
         let cfg = KensakuConfig::load_from_str(current);
-        assert_eq!(cfg.config_version, 5);
+        assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
         assert_eq!(
             cfg.excluded_extensions,
             vec![
@@ -748,7 +863,7 @@ mod tests {
 
             let cfg = KensakuConfig::load_from_str(&legacy);
             assert_eq!(cfg.theme, expected, "theme {} should become {}", stored, expected);
-            assert_eq!(cfg.config_version, 5);
+            assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
         }
     }
 
@@ -773,12 +888,11 @@ mod tests {
         }"#;
 
         let cfg = KensakuConfig::load_from_str(legacy);
-        assert_eq!(cfg.config_version, 5);
+        assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
         assert_eq!(
             cfg.excluded_extensions,
             vec![
                 ".o".to_string(),
-                "zip".to_string(),
                 "pem".to_string(),
                 "key".to_string(),
                 "pfx".to_string(),
@@ -814,7 +928,7 @@ mod tests {
     #[test]
     fn corrupt_config_falls_back_to_defaults() {
         let cfg = KensakuConfig::load_from_str("{ not json");
-        assert_eq!(cfg.config_version, 5);
+        assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
         assert_eq!(cfg.theme, "dark");
     }
 
@@ -834,7 +948,7 @@ mod tests {
 
         let saved: KensakuConfig =
             serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(saved.config_version, 5);
+        assert_eq!(saved.config_version, CURRENT_CONFIG_VERSION);
         assert_eq!(saved.theme, "dark");
 
         // A second save replaces the existing file atomically.

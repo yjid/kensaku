@@ -183,14 +183,13 @@ but no language data (points to setup), engine missing (platform install command
 or unknown. The OCR switch is disabled until OCR can actually work. Doctor repeats
 the same check.
 
-### PP-OCRv6 pack (optional, slower)
+### PP-OCRv6 pack (default OCR engine)
 
 Normal app builds compile the PP-OCRv6 tiny engine via the default
 `accurate-ocr` feature. In **Setup → Optional packs** and Settings → Search you
-pick **one** OCR engine: Tesseract (fast, smaller) or PP-OCRv6 (slower, may read
-small UI text better). Only the selected engine's download is offered. PP-OCRv6
+pick **one** OCR engine: PP-OCRv6 (default, recommended) or Tesseract. Only the selected engine's download is offered. PP-OCRv6
 is ~6.1 MB (detector 1.7 MB, recognizer 4.3 MB, dictionary 27 KB) and is verified
-against pinned SHA-256 checksums. Tesseract remains the default. If the pack is
+against pinned SHA-256 checksums. Release installers bundle ONNX Runtime 1.31 (Windows, Apple silicon, Linux x64). If the pack is
 missing, or the build uses `--no-default-features`, Kensaku falls back to
 Tesseract. Native macOS/Windows OCR is not implemented yet and the Settings
 option is disabled.

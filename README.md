@@ -225,7 +225,7 @@ Full threat model: [SECURITY.md](SECURITY.md).
 **Known limitations**
 
 - Builds are not yet code-signed, and the auto-updater is not wired up yet.
-- OCR engines: Tesseract (default) and the optional PP-OCRv6 pack.
+- OCR: PP-OCRv6 by default (bundled runtime, ~6 MB model pack downloaded on first run). Intel Macs fall back to Tesseract. JPEG 2000, fax and JBIG2 scans are not decoded yet.
 - Thumbnails cover image files only. Documents and code show type icons.
 - Visual search is a beta model download and is not part of search results yet.
 - Windows gets the most real-world testing today. macOS and Linux builds ship from CI and would benefit from more hands on them — see below.

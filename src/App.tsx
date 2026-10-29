@@ -12,6 +12,7 @@ import {
   Facets,
   HomeData,
   KensakuConfig,
+  DoctorReport,
 } from "./types";
 import { SetupModal } from "./components/SetupModal";
 import { DuplicatesModal } from "./components/DuplicatesModal";
@@ -33,6 +34,9 @@ import { FileRow } from "./components/FileRow";
 import { normalizeTheme } from "./hooks/useTheme";
 import { PreviewDialog } from "./components/PreviewDialog";
 import { classify } from "./lib/categories";
+import { inFilter } from "./lib/query";
+import { isNewerVersion } from "./lib/version";
+import { getVersion } from "@tauri-apps/api/app";
 import {
   Settings as SettingsIcon,
   RefreshCw,
@@ -97,6 +101,8 @@ function App() {
   const [facetExclude, setFacetExclude] = useState<Set<string>>(new Set());
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [indexingStatus, setIndexingStatus] = useState<IndexingStatus | null>(null);
+  const [doctorReport, setDoctorReport] = useState<DoctorReport | null>(null);
+  const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<string | undefined>(undefined);
   const [showDuplicates, setShowDuplicates] = useState(false);
@@ -126,6 +132,28 @@ function App() {
       /* ignore */
     }
   }, [config?.theme]);
+  useEffect(() => {
+    if (isSetupComplete !== true) return;
+    invoke<DoctorReport>("run_doctor")
+      .then(setDoctorReport)
+      .catch(() => {});
+  }, [isSetupComplete]);
+
+  useEffect(() => {
+    /* Compare against the running app's real version, and only flag a
+       strictly newer release: "not equal" offered a downgrade whenever the
+       latest published release was older than this build. */
+    Promise.all([
+      getVersion(),
+      fetch("https://api.github.com/repos/yjid/kensaku/releases/latest").then((r) => r.json()),
+    ])
+      .then(([current, latest]: [string, { tag_name?: string }]) => {
+        const tag = String(latest?.tag_name || "").replace(/^v/, "");
+        if (tag && isNewerVersion(tag, current)) setUpdateAvailable(tag);
+      })
+      .catch(() => {});
+  }, []);
+
   const showThumbs = config?.show_thumbnails !== false;
   const view: ResultView = config?.results_view === "list" ? "list" : "grid";
   const [menu, setMenu] = useState<{ x: number; y: number; result: SearchResult } | null>(null);
@@ -515,7 +543,7 @@ function App() {
     const match = hint.match(/📁\s*([^\?]+)/);
     setQuery((prev) =>
       match && match[1]
-        ? `${prev.trim()} in:"${match[1].trim()}"`
+        ? `${prev.trim()} ${inFilter(match[1].trim())}`
         : `${prev.trim()} ${hint}`.trim(),
     );
     inputRef.current?.focus();
@@ -641,7 +669,7 @@ function App() {
   }, [scopePrefix]);
 
   const applyScope = useCallback((path: string) => {
-    setQuery((prev) => prev.replace(/@[^\s]*$/, `in:"${path}" `));
+    setQuery((prev) => prev.replace(/@[^\s]*$/, () => `${inFilter(path)} `));
     inputRef.current?.focus();
   }, []);
 
@@ -1258,7 +1286,7 @@ function App() {
                 </div>
               )}
 
-              <KeyHintStrip status={indexingStatus} />
+              <KeyHintStrip status={indexingStatus} doctor={doctorReport} updateAvailable={updateAvailable} onDoctor={() => { setShowSettings(true); setSettingsSection("doctor"); }} onUpdate={() => window.open("https://github.com/yjid/kensaku/releases/latest", "_blank")} />
             </>
           )}
         </>

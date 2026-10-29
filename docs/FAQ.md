@@ -29,9 +29,9 @@ Yes — PDF, DOCX/PPTX/XLSX, EPUB/ODT, RTF. Scanned PDFs need OCR; encrypted PDF
 flagged, not indexed.
 
 **Does it search images?**
-By filename, by OCR text when `tesseract` **and** language data are available,
-or with the optional PP-OCRv6 pack (slower, in-process; may read small UI text
-better). Also by perceptual near-duplicate. Natural-language visual search ("red cap",
+By filename, and by OCR text: PP-OCRv6 by default (runs inside Kensaku, ~0.15 s
+a page), or Tesseract where PP-OCRv6 cannot run (Intel Macs) or if you pick it.
+Scanned PDFs are OCR'd too. Also by perceptual near-duplicate. Natural-language visual search ("red cap",
 "system design diagram"), similar-image lookup, and an
 optional local "this is me" identity are not part of 1.0.
 Semantic image search (CLIP) is not implemented yet.
@@ -43,12 +43,10 @@ chip. `/` opens the command menu and `@` inserts a directory scope. The explicit
 `key:value` grammar (for example `type:pdf` and `modified:<7d`) always works too.
 
 **OCR is on but no image text is indexed.**
-Tesseract is probably installed without language data. Settings → Search shows
-the state; download the English language pack in the guided setup flow
-(**About → Run setup again → Optional packs**) or install `tesseract-ocr-eng`.
-Choose one OCR engine in setup or Settings: Tesseract (fast, smaller) or
-PP-OCRv6 (slower, may read small UI text better). Only the selected engine's
-pack is offered.
+Open Settings → Search → OCR: it shows which engine is actually reading
+images and, if PP-OCRv6 cannot run, why (pack still downloading, Intel Mac).
+"Verified" means PP-OCRv6 read a test image correctly. With Tesseract, make sure
+language data is installed (`tesseract-ocr-eng`) or download it in setup.
 Existing images are re-scanned. Doctor repeats the check. The setup pack button
 shows download state, success, or the backend error.
 

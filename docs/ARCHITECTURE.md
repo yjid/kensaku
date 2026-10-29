@@ -593,7 +593,7 @@ GitHub Actions (AppImage/deb/AUR, dmg universal, msi/exe) · benchmark harness +
 11. **Daemon owns the index before more workers land.** The webview must not be in the memory path for OCR, image decoding, or model packs.
 12. **Compact arena inside the daemon.** The daemon owns the name/attribute arenas; clients never receive the full metadata payload.
 13. **Thumbnail hashing, not full-image hashing.** A 480 px thumbnail is the source for dHash; full decodes never happen just to compute a duplicate key.
-14. **Tesseract by default, PP-OCRv6 opt-in.** Bulk indexing stays fast and light; the PP-OCRv6 tiny pack is a ~6 MB, slower alternative for small UI text. Native platform OCR is not implemented.
+14. **PP-OCRv6 by default, Tesseract as fallback** (since 1.0.10). PP-OCRv6 tiny runs in-process on a bundled ONNX Runtime at ~0.15 s/page and reads UI text better; Tesseract is used where it cannot run (Intel Macs). Native platform OCR is not implemented.
 15. **Exact → folded → semantic.** Never let tolerant matching run when exact results already fill the limit; verify folded candidates against the raw text.
 
 ---

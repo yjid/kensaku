@@ -12,12 +12,30 @@ export function normalizeTheme(raw: string | null | undefined): Theme {
   return "dark";
 }
 
+/** The OS appearance: what a first run should look like. */
+function systemTheme(): Theme {
+  try {
+    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+}
+
+function hasStored(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
 function readStored(): Theme {
   try {
-    return normalizeTheme(localStorage.getItem(STORAGE_KEY));
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored === null ? systemTheme() : normalizeTheme(stored);
   } catch {
     /* storage unavailable (e.g. webview restrictions) */
-    return "dark";
+    return systemTheme();
   }
 }
 
@@ -44,9 +62,24 @@ export function useTheme() {
   useEffect(() => {
     const startedAt = Date.now();
     let cancelled = false;
-    invoke<{ theme?: string }>("get_config")
+    const firstPaintFromSystem = !hasStored();
+    invoke<{ theme?: string; is_setup_complete?: boolean }>("get_config")
       .then((cfg) => {
         if (cancelled || lastLocalChange > startedAt) return;
+        // First run (setup not finished, no pick yet): match the OS instead
+        // of the config's built-in "dark", and persist it so the choice is
+        // stable from then on. Existing installs keep their saved theme.
+        if (firstPaintFromSystem && cfg?.is_setup_complete !== true) {
+          const os = systemTheme();
+          setThemeState(os);
+          try {
+            localStorage.setItem(STORAGE_KEY, os);
+          } catch {
+            /* ignore */
+          }
+          invoke("set_theme", { theme: os }).catch(() => undefined);
+          return;
+        }
         const persisted = normalizeTheme(cfg?.theme);
         setThemeState((current) => {
           if (persisted === current) return current;

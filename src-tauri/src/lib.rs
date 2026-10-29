@@ -23,7 +23,7 @@ use std::sync::{Arc, OnceLock};
 use tauri::{
     Manager,
     menu::{Menu, MenuItem},
-    tray::{TrayIconBuilder, TrayIconEvent},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
@@ -241,6 +241,23 @@ pub fn run() {
     crate::embed::set_max_semantic_units(config.content_max_semantic_units);
     ocr::set_engine(&config.ocr_engine);
 
+    // Self-heal on every launch: make sure the always-on Tesseract language
+    // data and the optional PP-OCR pack are present, so a missed download
+    // during setup or an interrupted first run cannot leave the app without
+    // a working OCR engine. Downloads run in the background and re-queue
+    // images through the OCR pack ready callback once they finish.
+    if !crate::indexer::extract::image::tesseract_usable() {
+        std::thread::spawn(|| {
+            let _ = crate::indexer::extract::image::download_eng_tessdata();
+        });
+    }
+    if crate::ocr::accurate_compiled()
+        && crate::ocr::runtime_loadable()
+        && !crate::ocr::pack_present()
+    {
+        crate::models::download_ocr_pack();
+    }
+
     // OCR engine selection (switching to PP-OCR when Tesseract is missing,
     // fetching its pack) happens at the start of every crawl, in
     // `IndexerManager::sync_ocr_state`, so it also runs in the daemon and
@@ -389,9 +406,12 @@ pub fn run() {
             let quit_item = MenuItem::with_id(app, "quit", "Quit Kensaku", true, None::<&str>)?;
             let tray_menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
+            // Windows users expect a click on the tray icon to offer the
+            // menu (Open / Quit), and a double-click to open. Elsewhere a
+            // left click toggles the window and the menu is a right click.
             let mut tray_builder = TrayIconBuilder::new()
                 .menu(&tray_menu)
-                .show_menu_on_left_click(false)
+                .show_menu_on_left_click(cfg!(windows))
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "toggle" => main_window::toggle(app),
                     "quit" => {
@@ -399,14 +419,19 @@ pub fn run() {
                     }
                     _ => {}
                 })
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: tauri::tray::MouseButton::Left,
+                .on_tray_icon_event(|tray, event| match event {
+                    // Click fires on press and on release. Acting on both
+                    // toggled twice, so the window opened and closed again.
+                    TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
                         ..
-                    } = event
-                    {
-                        main_window::toggle(tray.app_handle());
-                    }
+                    } if !cfg!(windows) => main_window::toggle(tray.app_handle()),
+                    TrayIconEvent::DoubleClick {
+                        button: MouseButton::Left,
+                        ..
+                    } => main_window::show(tray.app_handle()),
+                    _ => {}
                 });
 
             if let Some(icon) = app.default_window_icon() {

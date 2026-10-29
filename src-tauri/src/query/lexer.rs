@@ -13,6 +13,13 @@ pub enum Token {
     Regex(String),
 }
 
+/// Inside quotes, a backslash escapes only `"` and another backslash. Any other
+/// backslash is literal, so Windows paths (`in:"C:\Users\me"`) and regex
+/// classes (`re:"\d+"`) survive as typed.
+fn is_escape(chars: &[char], i: usize) -> bool {
+    chars[i] == '\\' && matches!(chars.get(i + 1), Some('"') | Some('\\'))
+}
+
 pub fn tokenize(input: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
     let chars: Vec<char> = input.chars().collect();
@@ -40,12 +47,10 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             i += 1; // skip opening quote
             let mut text = String::new();
             while i < len && chars[i] != '"' {
-                if chars[i] == '\\' && i + 1 < len {
+                if is_escape(&chars, i) {
                     i += 1;
-                    text.push(chars[i]);
-                } else {
-                    text.push(chars[i]);
                 }
+                text.push(chars[i]);
                 i += 1;
             }
             if i < len && chars[i] == '"' {
@@ -83,12 +88,10 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 i += 1; // skip opening quote
                 let mut val = String::new();
                 while i < len && chars[i] != '"' {
-                    if chars[i] == '\\' && i + 1 < len {
+                    if is_escape(&chars, i) {
                         i += 1;
-                        val.push(chars[i]);
-                    } else {
-                        val.push(chars[i]);
                     }
+                    val.push(chars[i]);
                     i += 1;
                 }
                 if i < len && chars[i] == '"' {
@@ -135,4 +138,47 @@ pub fn tokenize(input: &str) -> Vec<Token> {
     }
 
     tokens
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn kv_value(input: &str) -> String {
+        match tokenize(input).into_iter().next() {
+            Some(Token::KeyValue { value, .. }) => value,
+            other => panic!("expected key/value, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn quoted_windows_path_keeps_backslashes() {
+        assert_eq!(kv_value(r#"in:"c:\Folder""#), r"c:\Folder");
+        assert_eq!(
+            kv_value(r#"in:"C:\Users\me\My Docs""#),
+            r"C:\Users\me\My Docs"
+        );
+    }
+
+    #[test]
+    fn escaped_quote_and_backslash_still_unescape() {
+        assert_eq!(kv_value(r#"in:"/tmp/a\"b\\c""#), r#"/tmp/a"b\c"#);
+        assert_eq!(kv_value(r#"in:"C:\\Users\\me""#), r"C:\Users\me");
+    }
+
+    #[test]
+    fn quoted_phrase_keeps_literal_backslash() {
+        assert_eq!(
+            tokenize(r#""C:\Temp""#),
+            vec![Token::Quoted(r"C:\Temp".to_string())]
+        );
+    }
+
+    #[test]
+    fn regex_class_keeps_backslash() {
+        assert_eq!(
+            tokenize(r#"re:"\d+""#),
+            vec![Token::Regex(r"\d+".to_string())]
+        );
+    }
 }

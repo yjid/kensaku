@@ -767,6 +767,66 @@ mod tests {
         );
     }
 
+    /// #59: a quoted absolute path, typed raw or escaped the way the UI
+    /// inserts it, must resolve to the folder. On Windows the fixture paths
+    /// are real `C:\Users\...` paths, so this runs the reported case.
+    #[test]
+    fn resolves_quoted_absolute_path_with_native_separators() {
+        let fixture = fixture();
+        let src = fixture.entries[fixture.src_idx]
+            .path
+            .to_string_lossy()
+            .into_owned();
+        let escaped = src.replace('\\', "\\\\").replace('"', "\\\"");
+        for raw in [
+            format!("in:\"{src}\""),
+            format!("in:\"{escaped}\""),
+            format!("in:{src}"),
+        ] {
+            let query = parse_query(
+                &raw,
+                &fixture.entries,
+                &fixture.path_index,
+                Some(&fixture.trie),
+                1,
+            );
+            assert!(
+                query.filters.is_empty(),
+                "{raw}: fell back to a path filter"
+            );
+            assert_eq!(query.scopes.len(), 1, "{raw}: did not resolve a scope");
+            assert_eq!(query.scopes[0].dir_id, fixture.src_idx as u64, "{raw}");
+        }
+    }
+
+    /// Same case with a hard-coded Windows path, so Linux CI covers it too.
+    #[test]
+    fn resolves_quoted_windows_path_with_spaces() {
+        let dir = PathBuf::from(r"C:\Users\me\My Docs");
+        let entries = vec![
+            file_entry(dir.clone(), true),
+            file_entry(dir.join("a.txt"), false),
+        ];
+        let path_index: HashMap<PathBuf, usize> = entries
+            .iter()
+            .enumerate()
+            .map(|(i, e)| (e.path.clone(), i))
+            .collect();
+        let trie = DirectoryTrie::build(&entries, &path_index, 1);
+        for raw in [
+            r#"in:"C:\Users\me\My Docs""#,
+            r#"in:"C:\\Users\\me\\My Docs""#,
+        ] {
+            let query = parse_query(raw, &entries, &path_index, Some(&trie), 1);
+            assert!(
+                query.filters.is_empty(),
+                "{raw}: fell back to a path filter"
+            );
+            assert_eq!(query.scopes.len(), 1, "{raw}");
+            assert_eq!(query.scopes[0].path, dir, "{raw}");
+        }
+    }
+
     #[test]
     fn resolves_leading_directory_token() {
         let fixture = fixture();

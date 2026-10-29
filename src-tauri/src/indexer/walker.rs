@@ -129,6 +129,42 @@ pub fn runtime_dir_prunes() -> Vec<PathBuf> {
     vec![crate::config::KensakuConfig::config_dir()]
 }
 
+/// The OS's application-data tree directly under the home folder:
+/// `%USERPROFILE%\AppData` on Windows, `~/Library` on macOS. Browser caches,
+/// app containers and logs: huge, constantly changing, and never what a
+/// file search is for. (Linux keeps this in dot-folders, already hidden.)
+pub fn system_data_dirs() -> Vec<PathBuf> {
+    let Some(home) = dirs::home_dir() else {
+        return Vec::new();
+    };
+    if cfg!(windows) {
+        vec![home.join("AppData")]
+    } else if cfg!(target_os = "macos") {
+        vec![home.join("Library")]
+    } else {
+        Vec::new()
+    }
+}
+
+/// Everything a walk or watch over `roots` must not enter: Kensaku's own
+/// data always, plus the OS data trees, except one that a root lives inside.
+/// Someone who adds iCloud Drive (`~/Library/Mobile Documents/...`) on
+/// purpose gets it; someone who adds their home folder does not get
+/// `~/Library` with it.
+pub fn prunes_for_roots(roots: &[PathBuf]) -> Vec<PathBuf> {
+    prunes_for_roots_with(roots, system_data_dirs())
+}
+
+fn prunes_for_roots_with(roots: &[PathBuf], system: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut prunes = runtime_dir_prunes();
+    for dir in system {
+        if !roots.iter().any(|root| root.starts_with(&dir)) {
+            prunes.push(dir);
+        }
+    }
+    prunes
+}
+
 /// True when `path` lives at or below any of `prune_roots`.
 pub fn starts_with_any(path: &std::path::Path, prune_roots: &[PathBuf]) -> bool {
     prune_roots.iter().any(|root| path.starts_with(root))
@@ -184,7 +220,7 @@ pub fn walk_directories(
             .process_read_dir({
                 let excluded_set = excluded_set.clone();
                 let sensitive_set = sensitive_set.clone();
-                let prune_roots = runtime_dir_prunes();
+                let prune_roots = prunes_for_roots(dirs);
                 move |_depth, _path, _read_dir_state, children| {
                     children.retain(|dir_entry_result| {
                         if let Ok(entry) = dir_entry_result {
@@ -297,6 +333,23 @@ mod tests {
         assert!(
             std::mem::size_of::<Option<&'static str>>() < std::mem::size_of::<Option<String>>()
         );
+    }
+
+    #[test]
+    fn system_data_is_pruned_unless_a_root_lives_inside_it() {
+        let home = PathBuf::from("/home/me");
+        let library = home.join("Library");
+        // Home picked: ~/Library is skipped.
+        let prunes = prunes_for_roots_with(std::slice::from_ref(&home), vec![library.clone()]);
+        assert!(starts_with_any(&library.join("Caches/x"), &prunes));
+        assert!(!starts_with_any(&home.join("Documents/a.txt"), &prunes));
+        // iCloud Drive picked on purpose: it is indexed.
+        let icloud = library.join("Mobile Documents/com~apple~CloudDocs");
+        let prunes = prunes_for_roots_with(
+            &[home.clone(), icloud.clone()],
+            vec![library.clone()],
+        );
+        assert!(!starts_with_any(&icloud.join("notes.txt"), &prunes));
     }
 
     #[test]
