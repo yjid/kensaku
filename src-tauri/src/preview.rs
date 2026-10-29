@@ -9,8 +9,8 @@
 //! Renders run with a timeout and a small concurrency limit, so a grid full of
 //! PDFs cannot start dozens of processes at once.
 
-use std::path::{Path, PathBuf};
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -122,18 +122,32 @@ fn render_external(source: &Path, out_dir: &Path, kind: Kind) -> Result<PathBuf,
     let raw_base = work.join("frame");
 
     let _slot = acquire();
-    // Read the source bytes up front so pdftoppm can read the PDF from stdin.
-    // Passing the original path makes the child process (a separate binary)
-    // touch the protected folder itself, which on macOS re-triggers a TCC
-    // permission prompt per file.
-    let source_bytes = std::fs::read(source).ok();
     let ok = match kind {
-        Kind::Pdf => run_timed(
-            Command::new(tool)
-                .args(["-jpeg", "-r", "110", "-f", "1", "-l", "1", "-singlefile", "-"])
-                .arg(&raw_base),
-            source_bytes.as_deref(),
-        ),
+        Kind::Pdf => {
+            let mut cmd = Command::new(tool);
+            cmd.args(["-jpeg", "-r", "110", "-f", "1", "-l", "1", "-singlefile"]);
+            // On macOS, pdftoppm reads the PDF from stdin (`-`). Passing the
+            // original path makes the child process (a separate binary) touch
+            // the protected folder itself, which re-triggers a TCC permission
+            // prompt per file. Other platforms have no per-process grant and
+            // keep the path, so their behaviour is unchanged.
+            let stdin_data = if cfg!(target_os = "macos") {
+                match std::fs::read(source) {
+                    Ok(bytes) => {
+                        cmd.arg("-");
+                        Some(bytes)
+                    }
+                    Err(_) => None,
+                }
+            } else {
+                None
+            };
+            if stdin_data.is_none() {
+                cmd.arg(source);
+            }
+            cmd.arg(&raw_base);
+            run_timed(&mut cmd, stdin_data)
+        }
         Kind::Image => false,
     };
     let raw = raw_base.with_extension("jpg");
@@ -158,7 +172,7 @@ fn render_external(source: &Path, out_dir: &Path, kind: Kind) -> Result<PathBuf,
 ///
 /// When `stdin_data` is `Some`, the bytes are written to the child's stdin in a
 /// background thread so the (possibly large) input cannot deadlock the pipe.
-fn run_timed(cmd: &mut Command, stdin_data: Option<&[u8]>) -> bool {
+fn run_timed(cmd: &mut Command, stdin_data: Option<Vec<u8>>) -> bool {
     // Hide console windows on Windows (pdftoppm is a console app).
     crate::util::process::hide_console(cmd);
     let cmd = cmd.stdin(if stdin_data.is_some() {
@@ -170,7 +184,6 @@ fn run_timed(cmd: &mut Command, stdin_data: Option<&[u8]>) -> bool {
         return false;
     };
     if let (Some(data), Some(mut stdin)) = (stdin_data, child.stdin.take()) {
-        let data = data.to_vec();
         std::thread::spawn(move || {
             let _ = stdin.write_all(&data);
         });

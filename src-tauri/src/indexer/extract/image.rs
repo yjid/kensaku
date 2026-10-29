@@ -409,20 +409,31 @@ pub fn extract_image_ocr(path: &Path) -> Option<String> {
 
     // Try tesseract (available on Linux and macOS with Homebrew).
     //
-    // Feed the image bytes through stdin instead of handing tesseract the
-    // original path. On macOS, an external process reading a file inside a
-    // protected folder (Documents, Desktop, Downloads, Pictures) triggers its
-    // own TCC permission prompt for *every* file, which is what produced the
-    // repeated "allow access" dialogs during a crawl. Reading the bytes here
-    // (in the main process, which already holds the folder grant) and piping
-    // them to tesseract keeps the child process from touching the protected
-    // file at all.
-    let bytes = std::fs::read(path).ok()?;
+    // On macOS, feed the image bytes through stdin instead of handing
+    // tesseract the original path. An external process reading a file inside
+    // a protected folder (Documents, Desktop, Downloads, Pictures) triggers
+    // its own TCC permission prompt for *every* file, which is what produced
+    // the repeated "allow access" dialogs during a crawl. Reading the bytes
+    // here (in the main process, which already holds the folder grant) keeps
+    // the child process from touching the protected file at all.
+    //
+    // Linux and Windows have no per-process folder grant, so they keep
+    // passing the path: one less full-file copy in memory, and no reliance on
+    // how a particular tesseract build handles binary stdin.
+    let stdin_bytes = if cfg!(target_os = "macos") {
+        Some(std::fs::read(path).ok()?)
+    } else {
+        None
+    };
 
     let mut command = tesseract_command();
+    if stdin_bytes.is_some() {
+        command.arg("stdin").stdin(Stdio::piped());
+    } else {
+        command.arg(path).stdin(Stdio::null());
+    }
     command
-        .args(["stdin", "stdout", "--psm", "3"]) // Fully automatic page segmentation
-        .stdin(Stdio::piped())
+        .args(["stdout", "--psm", "3"]) // Fully automatic page segmentation
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
 
@@ -433,10 +444,11 @@ pub fn extract_image_ocr(path: &Path) -> Option<String> {
     }
 
     let mut child = command.spawn().ok()?;
-    if let Some(mut stdin) = child.stdin.take() {
+    if let (Some(bytes), Some(mut stdin)) = (stdin_bytes, child.stdin.take()) {
         // Writing in a separate thread avoids deadlocking when the input is
-        // larger than the OS pipe buffer. The buffer is moved, not cloned —
-        // large scans can be tens of megabytes.
+        // larger than the OS pipe buffer. The buffer is moved, not cloned:
+        // large scans can be tens of megabytes. Dropping `stdin` at the end
+        // of the thread closes the pipe, which is tesseract's EOF.
         std::thread::spawn(move || {
             let _ = stdin.write_all(&bytes);
         });
