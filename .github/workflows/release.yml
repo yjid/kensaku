@@ -27,13 +27,13 @@ jobs:
         include:
           - platform: ubuntu-22.04
             artifact: kensaku-linux
-            args: ""
+            args: "--config src-tauri/tauri.onnxruntime.linux.conf.json"
           - platform: macos-latest
             artifact: kensaku-macos
-            args: "--target universal-apple-darwin"
+            args: "--target universal-apple-darwin --config src-tauri/tauri.onnxruntime.macos.conf.json"
           - platform: windows-latest
             artifact: kensaku-windows
-            args: ""
+            args: "--config src-tauri/tauri.onnxruntime.windows.conf.json"
 
     steps:
       - uses: actions/checkout@v7
@@ -76,6 +76,60 @@ jobs:
 
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
+
+      # The `ort` crate is built with `load-dynamic` and compiled against
+      # ONNX Runtime 1.31, so PP-OCR only works when that library ships with
+      # the app (see `ocr::runtime_candidates`). Without it the accurate
+      # engine can never load: Windows may even find an old, incompatible
+      # copy in System32, and macOS/Linux have none at all. Each step
+      # downloads Microsoft's official build, verifies it, and stages it for
+      # the per-platform `--config` in the matrix, which adds it as a bundle
+      # resource for release builds only (local builds keep working without
+      # it). 1.31 has no Intel macOS build; on Intel Macs PP-OCR says so and
+      # Tesseract is used.
+      - name: Stage ONNX Runtime (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $version = "1.31.0"
+          $sha256 = "3958d8a44984160692c1b4ffd0de3cb48f8c39f9d34bb31e433db06e30b82195"
+          $url = "https://github.com/microsoft/onnxruntime/releases/download/v$version/onnxruntime-win-x64-$version.zip"
+          $zip = Join-Path $env:RUNNER_TEMP "onnxruntime.zip"
+          $out = Join-Path $env:RUNNER_TEMP "onnxruntime"
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+          $actual = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+          if ($actual -ne $sha256) { throw "onnxruntime zip checksum mismatch: $actual" }
+          Expand-Archive -Path $zip -DestinationPath $out -Force
+          Copy-Item -Path (Join-Path $out "onnxruntime-win-x64-$version\lib\onnxruntime.dll") -Destination "src-tauri\onnxruntime.dll"
+          if (-not (Test-Path "src-tauri\onnxruntime.dll")) { throw "onnxruntime.dll was not staged" }
+
+      - name: Stage ONNX Runtime (macOS, Apple silicon)
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=1.31.0
+          sha256=1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc
+          curl -fsSL -o "$RUNNER_TEMP/ort.tgz" \
+            "https://github.com/microsoft/onnxruntime/releases/download/v$version/onnxruntime-osx-arm64-$version.tgz"
+          echo "$sha256  $RUNNER_TEMP/ort.tgz" | shasum -a 256 -c -
+          tar xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
+          cp "$RUNNER_TEMP/onnxruntime-osx-arm64-$version/lib/libonnxruntime.$version.dylib" src-tauri/libonnxruntime.dylib
+          test -s src-tauri/libonnxruntime.dylib
+
+      - name: Stage ONNX Runtime (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=1.31.0
+          sha256=cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57
+          curl -fsSL -o "$RUNNER_TEMP/ort.tgz" \
+            "https://github.com/microsoft/onnxruntime/releases/download/v$version/onnxruntime-linux-x64-$version.tgz"
+          echo "$sha256  $RUNNER_TEMP/ort.tgz" | sha256sum -c -
+          tar xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
+          cp "$RUNNER_TEMP/onnxruntime-linux-x64-$version/lib/libonnxruntime.so.$version" src-tauri/libonnxruntime.so
+          test -s src-tauri/libonnxruntime.so
 
       # Unsigned builds: no certificates or notarization secrets are required.
       # To sign later, add the Apple/Windows secrets and the relevant Tauri

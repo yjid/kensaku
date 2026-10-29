@@ -1,6 +1,6 @@
 [package]
 name = "kensaku"
-version = "1.0.8"
+version = "1.0.9"
 default-run = "kensaku"
 description = "Blazing-fast local file and content search"
 authors = ["yjid"]
@@ -57,6 +57,11 @@ tree-sitter-rust = "0.24"
 tree-sitter-python = "0.25"
 tree-sitter-javascript = "0.25"
 tree-sitter-typescript = "0.23"
+
+[dev-dependencies]
+# Builds Flate-compressed image streams for the scanned-PDF decoder tests.
+# Already in the tree via zip/png; no new download.
+flate2 = "1"
 
 [target.'cfg(windows)'.dependencies]
 # Direct process enumeration for the webview cleanup: taskkill rejects a

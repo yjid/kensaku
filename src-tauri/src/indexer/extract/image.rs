@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -57,10 +57,16 @@ pub struct OcrStatus {
     pub error: Option<String>,
     /// Currently selected backend (`tesseract` or `accurate`).
     pub engine: String,
-    /// Whether the optional accurate pack is installed and compiled in.
+    /// Whether PP-OCR can actually read: compiled in, pack present, runtime
+    /// loaded, and its self-test read known text correctly.
     pub accurate_available: bool,
     /// Whether this binary was compiled with the accurate engine.
     pub accurate_compiled: bool,
+    /// Why PP-OCR cannot read right now, in plain words. `None` when it can.
+    pub accurate_problem: Option<String>,
+    /// The engine that is really reading images right now (`accurate`,
+    /// `tesseract`, or `none`), which can differ from the selected one.
+    pub active_engine: String,
 }
 
 /// Directory holding language data downloaded by Kensaku.
@@ -86,6 +92,8 @@ fn build_status(
         engine: crate::ocr::engine_name().to_string(),
         accurate_available: crate::ocr::accurate_available(),
         accurate_compiled: crate::ocr::accurate_compiled(),
+        accurate_problem: crate::ocr::accurate_problem(),
+        active_engine: crate::ocr::usable_engine().to_string(),
     }
 }
 
@@ -270,6 +278,9 @@ pub fn tesseract_available() -> bool {
 
 /// Inspects the tesseract binary and its language data. Never panics.
 pub fn ocr_status() -> OcrStatus {
+    // A status check is also the "re-check" button: pick up a Tesseract the
+    // user just installed.
+    reset_tesseract_probe();
     let dir = tessdata_dir();
 
     // Some builds print version information to stderr instead of stdout.
@@ -408,25 +419,153 @@ fn download_eng_tessdata_to(dir: &Path) -> Result<PathBuf, String> {
     Ok(target)
 }
 
-/// Extracts text from an image via OCR.
-/// On Linux: shells out to tesseract.
-/// Returns None if OCR fails or produces no text.
-pub fn extract_image_ocr(path: &Path) -> Option<String> {
-    if let Ok(meta) = std::fs::metadata(path)
-        && ocr_max_image_bytes() > 0
-        && meta.len() > ocr_max_image_bytes()
-    {
-        return None;
+/// Cached result of [`tesseract_available`]: 0 unknown, 1 yes, 2 no.
+///
+/// Engine selection runs for every image, and spawning `tesseract --version`
+/// each time would double the process count of a crawl. Reset with
+/// [`reset_tesseract_probe`] when the user may have installed it.
+static TESSERACT_PROBE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// True when Tesseract can run. Probed once, then cached.
+pub fn tesseract_usable() -> bool {
+    match TESSERACT_PROBE.load(Ordering::Relaxed) {
+        1 => true,
+        2 => false,
+        _ => {
+            let usable = tesseract_has_language();
+            TESSERACT_PROBE.store(if usable { 1 } else { 2 }, Ordering::Relaxed);
+            usable
+        }
     }
-    if crate::ocr::engine_name() == crate::ocr::ACCURATE
-        && let Some(text) = crate::ocr::extract_image_ocr(path)
+}
+
+/// True when Tesseract runs *and* has at least one language to read with.
+/// A binary without language data starts fine and then fails on every image.
+fn tesseract_has_language() -> bool {
+    let mut list = tesseract_command();
+    list.arg("--list-langs");
+    if let Some(dir) = private_tessdata(&tessdata_dir()) {
+        list.env("TESSDATA_PREFIX", dir);
+    }
+    match list.output() {
+        Ok(output) if output.status.success() => {
+            !parse_langs(&String::from_utf8_lossy(&output.stdout)).is_empty()
+                || !parse_langs(&String::from_utf8_lossy(&output.stderr)).is_empty()
+        }
+        _ => false,
+    }
+}
+
+/// Forgets the cached Tesseract probe (Settings "re-check", config changes).
+pub fn reset_tesseract_probe() {
+    TESSERACT_PROBE.store(0, Ordering::Relaxed);
+}
+
+/// Reads text from an image file with whichever engine can run.
+///
+/// See [`crate::ocr::OcrOutcome`]: `Unavailable` means no engine could run
+/// and the file should be retried later; `NoText` is a final answer.
+pub fn ocr_image(path: &Path) -> crate::ocr::OcrOutcome {
+    use crate::ocr::{ACCURATE, OcrOutcome, TESSERACT};
+
+    // Opt-in size cap (`ocr_max_image_bytes`, 0 = off). Skipping is a final
+    // answer, not "retry later"; changing the cap re-queues images through
+    // the OCR signature.
+    let cap = ocr_max_image_bytes();
+    if cap > 0
+        && let Ok(meta) = std::fs::metadata(path)
+        && meta.len() > cap
     {
-        return Some(text);
+        return OcrOutcome::NoText;
     }
 
-    // Try tesseract (available on Linux and macOS with Homebrew)
+    match crate::ocr::usable_engine() {
+        ACCURATE => match crate::ocr::extract_image_ocr(path) {
+            // The accurate engine was usable a moment ago; if it just failed
+            // to load, Tesseract is still better than nothing.
+            OcrOutcome::Unavailable if tesseract_usable() => tesseract_ocr(path),
+            outcome => outcome,
+        },
+        TESSERACT => tesseract_ocr(path),
+        _ => OcrOutcome::Unavailable,
+    }
+}
+
+/// Reads text from a decoded image (a scanned PDF page).
+pub fn ocr_decoded_image(image: &DynamicImage) -> crate::ocr::OcrOutcome {
+    use crate::ocr::{ACCURATE, OcrOutcome, TESSERACT};
+
+    let via_tesseract = |image: &DynamicImage| {
+        // Tesseract needs a file. A unique temp PNG, removed right after.
+        let tmp = std::env::temp_dir().join(format!(
+            "kensaku-ocr-{}-{}.png",
+            std::process::id(),
+            THUMB_TMP_SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        if image
+            .save_with_format(&tmp, image::ImageFormat::Png)
+            .is_err()
+        {
+            return OcrOutcome::NoText;
+        }
+        let outcome = tesseract_ocr(&tmp);
+        let _ = std::fs::remove_file(&tmp);
+        outcome
+    };
+    match crate::ocr::usable_engine() {
+        ACCURATE => match crate::ocr::extract_decoded_image(image) {
+            OcrOutcome::Unavailable if tesseract_usable() => via_tesseract(image),
+            outcome => outcome,
+        },
+        TESSERACT => via_tesseract(image),
+        _ => OcrOutcome::Unavailable,
+    }
+}
+
+/// Extracts text from an image via OCR. `None` for no text or no engine;
+/// callers that must tell those apart use [`ocr_image`].
+pub fn extract_image_ocr(path: &Path) -> Option<String> {
+    match ocr_image(path) {
+        crate::ocr::OcrOutcome::Text(text) => Some(text),
+        _ => None,
+    }
+}
+
+/// Runs Tesseract on an image file.
+fn tesseract_ocr(path: &Path) -> crate::ocr::OcrOutcome {
+    use crate::ocr::OcrOutcome;
+    // Try tesseract (available on Linux and macOS with Homebrew).
+    //
+    // On macOS, feed the image bytes through stdin instead of handing
+    // tesseract the original path. An external process reading a file inside
+    // a protected folder (Documents, Desktop, Downloads, Pictures) triggers
+    // its own TCC permission prompt for *every* file, which is what produced
+    // the repeated "allow access" dialogs during a crawl. Reading the bytes
+    // here (in the main process, which already holds the folder grant) keeps
+    // the child process from touching the protected file at all.
+    //
+    // Linux and Windows have no per-process folder grant, so they keep
+    // passing the path: one less full-file copy in memory, and no reliance on
+    // how a particular tesseract build handles binary stdin.
+    let stdin_bytes = if cfg!(target_os = "macos") {
+        match std::fs::read(path) {
+            Ok(bytes) => Some(bytes),
+            Err(_) => return OcrOutcome::NoText,
+        }
+    } else {
+        None
+    };
+
     let mut command = tesseract_command();
-    command.arg(path).arg("stdout").arg("--psm").arg("3"); // Fully automatic page segmentation
+    if stdin_bytes.is_some() {
+        command.arg("stdin").stdin(Stdio::piped());
+    } else {
+        command.arg(path).stdin(Stdio::null());
+    }
+    command
+        .args(["stdout", "--psm", "3"]) // Fully automatic page segmentation
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
 
     // Prefer Kensaku's private language data when it has been downloaded, but
     // never override a working system installation.
@@ -434,14 +573,39 @@ pub fn extract_image_ocr(path: &Path) -> Option<String> {
         command.env("TESSDATA_PREFIX", dir);
     }
 
-    let output = command.output().ok()?;
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            // Installed a moment ago and gone now, or not runnable: forget
+            // the cached probe so the next status check tells the truth.
+            eprintln!("[Kensaku OCR] could not start tesseract: {e}");
+            reset_tesseract_probe();
+            return OcrOutcome::Unavailable;
+        }
+    };
+    if let (Some(bytes), Some(mut stdin)) = (stdin_bytes, child.stdin.take()) {
+        // Writing in a separate thread avoids deadlocking when the input is
+        // larger than the OS pipe buffer. The buffer is moved, not cloned:
+        // large scans can be tens of megabytes. Dropping `stdin` at the end
+        // of the thread closes the pipe, which is tesseract's EOF.
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(&bytes);
+        });
+    }
+    let Ok(output) = child.wait_with_output() else {
+        return OcrOutcome::NoText;
+    };
 
     if !output.status.success() {
-        return None;
+        return OcrOutcome::NoText;
     }
 
     let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if text.is_empty() { None } else { Some(text) }
+    if text.is_empty() {
+        OcrOutcome::NoText
+    } else {
+        OcrOutcome::Text(text)
+    }
 }
 
 /// Reads the image dimensions without decoding the pixel data.

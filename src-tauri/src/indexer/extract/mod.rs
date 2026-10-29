@@ -2,6 +2,7 @@ pub mod external;
 pub mod image;
 pub mod office;
 pub mod pdf;
+pub mod pdf_image;
 pub mod text;
 
 use crate::config::ExternalExtractor;
@@ -37,7 +38,10 @@ static CONTENT_MAX_FILE_SIZE_BYTES: AtomicU64 = AtomicU64::new(20 * 1024 * 1024)
 static CONTENT_MAX_TEXT_BYTES: AtomicUsize = AtomicUsize::new(1_000_000);
 
 pub fn set_content_caps(max_file_size_mb: u64, max_text_bytes: usize) {
-    CONTENT_MAX_FILE_SIZE_BYTES.store(max_file_size_mb * 1024 * 1024, Ordering::SeqCst);
+    CONTENT_MAX_FILE_SIZE_BYTES.store(
+        max_file_size_mb.saturating_mul(1024 * 1024),
+        Ordering::SeqCst,
+    );
     CONTENT_MAX_TEXT_BYTES.store(max_text_bytes.max(1024), Ordering::SeqCst);
     clear_extraction_cache();
 }
@@ -54,6 +58,13 @@ pub fn content_max_text_bytes() -> usize {
 /// a config change is visible immediately.
 pub fn set_external_extractors(extractors: Vec<ExternalExtractor>) {
     external::set_extractors(extractors);
+    clear_extraction_cache();
+}
+
+/// Drops every cached extraction. Called when OCR output may have changed
+/// (engine switch, OCR revision bump), so a re-queued image is really re-read
+/// instead of being served its old text from memory.
+pub fn clear_cache() {
     clear_extraction_cache();
 }
 
@@ -266,7 +277,7 @@ const EXTRACTION_TIMEOUT: Duration = Duration::from_secs(8);
 /// small files keep the snappy default. Capped at 120 s.
 fn extraction_timeout_for(file_size: u64) -> Duration {
     let extra = file_size / (5 * 1024 * 1024) * 2;
-    let secs = (8 + extra).min(120);
+    let secs = (EXTRACTION_TIMEOUT.as_secs() + extra).min(120);
     Duration::from_secs(secs)
 }
 
@@ -372,7 +383,7 @@ fn extraction_pool() -> Option<&'static rayon::ThreadPool> {
 /// document is reported once instead of on every crawl.
 static TIMEOUT_WARNED: std::sync::OnceLock<Mutex<HashSet<PathBuf>>> = std::sync::OnceLock::new();
 
-fn warn_extraction_timeout(path: &Path) {
+fn warn_extraction_timeout(path: &Path, timeout: Duration) {
     let warned = TIMEOUT_WARNED.get_or_init(|| Mutex::new(HashSet::new()));
     let mut warned = warned.lock().unwrap();
     // Keep the bookkeeping bounded on systems with many broken documents.
@@ -382,7 +393,7 @@ fn warn_extraction_timeout(path: &Path) {
     if warned.insert(path.to_path_buf()) {
         eprintln!(
             "[Kensaku] Text extraction timed out after {}s; leaving pending: {}",
-            EXTRACTION_TIMEOUT.as_secs(),
+            timeout.as_secs(),
             path.display()
         );
     }
@@ -425,6 +436,24 @@ fn warn_slot_saturation(path: &Path) {
 }
 
 pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> {
+    extract_document_checked(path, max_bytes).0
+}
+
+/// Like [`extract_document`], plus whether the extraction was *incomplete*:
+/// it timed out, found every slot busy, or needed an OCR engine that could not
+/// run. The indexer keeps such files pending and retries them instead of
+/// recording "no text" for good.
+pub fn extract_document_checked(path: &Path, max_bytes: u64) -> (Option<DocumentExtract>, bool) {
+    let retry = std::sync::Arc::new(AtomicBool::new(false));
+    let document = extract_document_tracked(path, max_bytes, &retry);
+    (document, retry.load(Ordering::SeqCst))
+}
+
+fn extract_document_tracked(
+    path: &Path,
+    max_bytes: u64,
+    retry: &std::sync::Arc<AtomicBool>,
+) -> Option<DocumentExtract> {
     let meta = std::fs::metadata(path).ok()?;
     let file_size = meta.len();
     let mtime = meta
@@ -475,6 +504,7 @@ pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> 
             let (tx, rx) = std::sync::mpsc::channel();
             let worker_path = path.to_path_buf();
             let worker_external = external.clone();
+            let worker_retry = std::sync::Arc::clone(retry);
             pool.spawn(move || {
                 // Keep the slot alive for the real duration of the work, even
                 // if the caller stopped waiting.
@@ -489,6 +519,7 @@ pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> 
                         format,
                         file_size,
                         worker_external,
+                        &worker_retry,
                     )
                 }))
                 .unwrap_or_else(|_| {
@@ -505,10 +536,12 @@ pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> 
             match rx.recv_timeout(extraction_timeout_for(file_size)) {
                 Ok(result) => result,
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    warn_extraction_timeout(path);
+                    warn_extraction_timeout(path, extraction_timeout_for(file_size));
+                    retry.store(true, Ordering::SeqCst);
                     None
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    retry.store(true, Ordering::SeqCst);
                     eprintln!(
                         "[Kensaku] Text extraction worker exited without a result; leaving pending: {}",
                         path.display()
@@ -521,10 +554,11 @@ pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> 
         // rather than adding to an unbounded queue.
         (Some(_), None) => {
             warn_slot_saturation(path);
+            retry.store(true, Ordering::SeqCst);
             None
         }
         // Pool creation failed (rare); fall back to inline extraction.
-        (None, _) => extract_document_inner(path, capped_bytes, format, file_size, external),
+        (None, _) => extract_document_inner(path, capped_bytes, format, file_size, external, retry),
     };
 
     // Cache the result. Very large documents are skipped: the cache exists for
@@ -532,6 +566,7 @@ pub fn extract_document(path: &Path, max_bytes: u64) -> Option<DocumentExtract> 
     // of text per entry.
     if let Some(ref res) = result
         && res.text.len() <= 256 * 1024
+        && !retry.load(Ordering::SeqCst)
     {
         let mut cache = get_extraction_cache().lock().unwrap();
         cache.insert(cache_key, res.clone());
@@ -547,7 +582,18 @@ fn extract_document_inner(
     format: DocumentFormat,
     file_size: u64,
     external: Option<ExternalExtractor>,
+    retry: &AtomicBool,
 ) -> Option<DocumentExtract> {
+    // OCR could not run, but an engine *should* be usable (it was a moment
+    // ago, or is still loading): retry later. When no engine exists at all
+    // the file is done for now; enabling one re-queues every image through
+    // the OCR signature (see `IndexerManager::sync_ocr`).
+    let ocr_retry = || {
+        if crate::ocr::usable_engine() != crate::ocr::NONE {
+            retry.store(true, Ordering::SeqCst);
+        }
+    };
+
     if let Some(extractor) = external {
         return match extractor.run(path, capped_bytes) {
             Ok(document) => Some(document),
@@ -561,6 +607,9 @@ fn extract_document_inner(
     match format {
         DocumentFormat::Pdf => {
             let res = pdf::extract_pdf(path, capped_bytes)?;
+            if res.ocr_unavailable {
+                ocr_retry();
+            }
             Some(DocumentExtract {
                 text: res.text,
                 page_count: Some(res.page_count),
@@ -630,13 +679,22 @@ fn extract_document_inner(
             })
         }
         DocumentFormat::Image => {
-            // OCR via tesseract (Linux) or platform APIs. Check the flag here
-            // as well: the inline fallback path and any direct caller must not
-            // shell out to tesseract when OCR is disabled.
+            // Check the flag here as well: the inline fallback path and any
+            // direct caller must not run OCR when it is disabled.
             if !ocr_enabled() {
                 return None;
             }
-            let text = image::extract_image_ocr(path)?;
+            let text = match image::ocr_image(path) {
+                crate::ocr::OcrOutcome::Text(text) => text,
+                // An empty document is a real answer ("this photo has no
+                // text"): it replaces stale OCR text and lets the indexer
+                // mark the image done.
+                crate::ocr::OcrOutcome::NoText => String::new(),
+                crate::ocr::OcrOutcome::Unavailable => {
+                    ocr_retry();
+                    return None;
+                }
+            };
             Some(DocumentExtract {
                 text,
                 page_count: None,

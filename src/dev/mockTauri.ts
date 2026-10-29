@@ -111,7 +111,7 @@ const handlers: Record<string, (a: any) => unknown> = {
   get_thumbnail_data: (a) => thumb(a.path ?? ""),
   get_suggested_directories: () => ["/Users/mira/Documents", "/Users/mira/Desktop", "/Users/mira/Pictures", "/Users/mira/Code"],
   get_scope_suggestions: () => ["~/Documents", "~/Pictures", "~/Code"],
-  get_ocr_status: () => ({ available: true, engine_present: true, accurate_compiled: true, languages: ["eng"] }),
+  get_ocr_status: () => ({ available: true, engine_present: true, accurate_compiled: true, accurate_available: true, accurate_problem: null, active_engine: "tesseract", engine: "tesseract", languages: ["eng"] }),
   get_ocr_pack_status: () => ({ ready: false, downloading: false }),
   get_models_status: () => ({ ready: true }),
   get_autostart: () => true,

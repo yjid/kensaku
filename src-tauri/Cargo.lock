@@ -2956,11 +2956,12 @@ dependencies = [
 
 [[package]]
 name = "kensaku"
-version = "1.0.8"
+version = "1.0.9"
 dependencies = [
  "auto-launch",
  "base64 0.22.1",
  "dirs 6.0.0",
+ "flate2",
  "fs4",
  "image",
  "interprocess",

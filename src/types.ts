@@ -270,8 +270,13 @@ export interface OcrStatus {
   tessdata_dir: string;
   error: string | null;
   engine?: "tesseract" | "accurate";
+  /** PP-OCR can read: pack + runtime present and its self-test read known text. */
   accurate_available?: boolean;
   accurate_compiled?: boolean;
+  /** Why PP-OCR cannot read right now, or null when it can. */
+  accurate_problem?: string | null;
+  /** The engine actually reading images now; can differ from `engine`. */
+  active_engine?: "tesseract" | "accurate" | "none";
 }
 
 /* ---- SystemStats (get_stats). The backend may not expose this yet; ---- */

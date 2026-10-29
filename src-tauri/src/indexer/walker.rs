@@ -114,13 +114,6 @@ pub fn is_cloud_placeholder_path(path: &std::path::Path) -> bool {
     }
 }
 
-/// Walks `dirs` and returns file entries.
-///
-/// When `include_ignored` is false (the default), `.gitignore` /
-/// `.cursorignore` rules under the roots are honored so agents see the same
-/// tree developers do; see [`crate::indexer::ignore`]. The walk itself still
-/// traverses ignored directories (the cheap default `excluded_dirs` list
-/// handles the heavy hitters); their entries are filtered before returning.
 /// Directories whose entire subtree the crawler must never enter.
 ///
 /// Kensaku's own runtime data (config, SQLite metadata, Tantivy index,
@@ -128,10 +121,10 @@ pub fn is_cloud_placeholder_path(path: &std::path::Path) -> bool {
 /// [`crate::config::KensakuConfig::config_dir`]. On macOS that is
 /// `~/Library/Application Support/kensaku` — *not* a hidden path — so a
 /// home-rooted crawl would otherwise walk its own index while it writes it:
-/// thousands of files, re-processed on every change. On Linux/Homed the config
-/// directory starts with `.` and `skip_hidden` already hides it, but the
-/// explicit prune is correct on every platform and costs one path comparison
-/// per directory listing.
+/// thousands of files, re-processed on every change. On Linux the config
+/// directory starts with `.` and `skip_hidden` already hides it; on Windows it
+/// is `%APPDATA%\kensaku`, also not dot-prefixed. The explicit prune is
+/// correct on every platform and costs one path comparison per entry.
 pub fn runtime_dir_prunes() -> Vec<PathBuf> {
     vec![crate::config::KensakuConfig::config_dir()]
 }
@@ -141,6 +134,13 @@ pub fn starts_with_any(path: &std::path::Path, prune_roots: &[PathBuf]) -> bool 
     prune_roots.iter().any(|root| path.starts_with(root))
 }
 
+/// Walks `dirs` and returns file entries.
+///
+/// When `include_ignored` is false (the default), `.gitignore` /
+/// `.cursorignore` rules under the roots are honored so agents see the same
+/// tree developers do; see [`crate::indexer::ignore`]. The walk itself still
+/// traverses ignored directories (the cheap default `excluded_dirs` list
+/// handles the heavy hitters); their entries are filtered before returning.
 pub fn walk_directories(
     dirs: &[PathBuf],
     excluded_dirs: &[String],
