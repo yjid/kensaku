@@ -166,7 +166,8 @@ mod pool {
         let count = (cores / 2 / THREADS).clamp(1, 3);
         // `ort` can panic instead of erroring when the runtime is broken.
         let loaded = std::panic::catch_unwind(|| {
-            let env = ort::init().build().map_err(|e| e.to_string())?;
+            // One ONNX Runtime environment per process: share PP-OCR's.
+            let env = paddleocr_rs_onnx::shared_environment().map_err(|e| e.to_string())?;
             let dir = super::pack_dir();
             (0..count)
                 .map(|_| Engine::load(&env, &dir, THREADS).map(Mutex::new))
@@ -210,6 +211,17 @@ mod tests {
     fn pack_lives_in_its_own_folder() {
         assert!(pack_dir().ends_with("ocr-indra") || std::env::var_os("KENSAKU_INDRA_PACK_DIR").is_some());
         assert!(PACK_FILES.contains(&"meta.json"));
+    }
+
+    /// PP-OCR and Indra in one process, PP-OCR first, as in the app. `ort`
+    /// allows one environment per process; Indra used to build its own and
+    /// fail to load ("only one environment is allowed per process").
+    #[cfg(feature = "accurate-ocr")]
+    #[test]
+    #[ignore = "requires KENSAKU_OCR_PACK_DIR, KENSAKU_INDRA_PACK_DIR and ORT_DYLIB_PATH"]
+    fn indra_loads_after_pp_ocr_in_the_same_process() {
+        assert_eq!(crate::ocr::self_test(), Ok(()), "PP-OCR self-test");
+        assert_eq!(self_test(), Ok(()), "Indra self-test after PP-OCR");
     }
 
     /// Kensaku's 104-image UI-text fixture through the real port. Run by
