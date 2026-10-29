@@ -77,6 +77,21 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
+      # The `ort` crate is built with `load-dynamic` and expects ONNX Runtime
+      # v1.31+. Windows ships an older v1.17 in System32 that is API-
+      # incompatible, so the accurate OCR engine silently fails unless a
+      # compatible library is placed next to the executable. This step
+      # downloads the official release and stages it for Tauri's resource packaging.
+      - name: Bundle ONNX Runtime (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $url = "https://github.com/microsoft/onnxruntime/releases/download/v1.31.0/onnxruntime-win-x64-1.31.0.zip"
+          $zip = "$env:TEMP\ort.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+          Expand-Archive -Path $zip -DestinationPath "$env:TEMP\ort" -Force
+          Copy-Item "$env:TEMP\ort\onnxruntime-win-x64-1.31.0\lib\onnxruntime.dll" 
+            -Destination "src-tauri\onnxruntime.dll"
       # Unsigned builds: no certificates or notarization secrets are required.
       # To sign later, add the Apple/Windows secrets and the relevant Tauri
       # signing env vars here (macOS: APPLE_CERTIFICATE, APPLE_SIGNING_IDENTITY,

@@ -47,6 +47,13 @@ pub fn accurate_compiled() -> bool {
 /// install. Probing with [`ort::init_from`] only loads the library (it does
 /// not create the process-wide environment), and the result is cached for the
 /// lifetime of the process: installing the library later requires a restart.
+///
+/// On Windows the system ships an older `onnxruntime.dll` in System32 (e.g.
+/// v1.17) that is API-incompatible with the version `ort` was compiled
+/// against (v1.31+). The standard DLL search order finds the system copy
+/// first, so the probe silently fails even when a compatible library sits
+/// right next to the executable. To avoid this, the function checks for an
+/// app-local copy before falling back to the bare library name.
 fn runtime_loadable() -> bool {
     #[cfg(feature = "accurate-ocr")]
     {
@@ -54,13 +61,15 @@ fn runtime_loadable() -> bool {
 
         static LOADABLE: OnceLock<bool> = OnceLock::new();
         *LOADABLE.get_or_init(|| {
+            let dll_name = format!(
+                "{}onnxruntime{}",
+                std::env::consts::DLL_PREFIX,
+                std::env::consts::DLL_SUFFIX
+            );
             let path = match std::env::var("ORT_DYLIB_PATH") {
                 Ok(path) if !path.trim().is_empty() => path,
-                _ => format!(
-                    "{}onnxruntime{}",
-                    std::env::consts::DLL_PREFIX,
-                    std::env::consts::DLL_SUFFIX
-                ),
+                _ => app_local_runtime_path(&dll_name)
+                    .unwrap_or(dll_name),
             };
             // `init_from` returns an error for a missing/incompatible
             // library, but guard against a panic from a broken loader anyway.
@@ -70,6 +79,12 @@ fn runtime_loadable() -> bool {
                 ort::init_from(&path).is_ok()
             }))
             .unwrap_or(false);
+            if !loaded {
+                eprintln!(
+                    "[Kensaku] ONNX Runtime not loadable from {path:?}; \
+                     accurate OCR will fall back to Tesseract"
+                );
+            }
             loaded
                 && std::panic::catch_unwind(|| {
                     let _ = ort::api();
@@ -80,6 +95,20 @@ fn runtime_loadable() -> bool {
     #[cfg(not(feature = "accurate-ocr"))]
     {
         false
+    }
+}
+
+/// Returns the absolute path to `dll_name` next to the running executable, if
+/// the file exists. This ensures the app-bundled library is loaded instead of
+/// an incompatible system-wide copy (e.g. the v1.17 DLL in System32).
+#[cfg(feature = "accurate-ocr")]
+fn app_local_runtime_path(dll_name: &str) -> Option<String> {
+    let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    let candidate = exe_dir.join(dll_name);
+    if candidate.is_file() {
+        Some(candidate.to_string_lossy().into_owned())
+    } else {
+        None
     }
 }
 
