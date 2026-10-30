@@ -627,9 +627,6 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 <p className="text-[12px] leading-[18px] text-muted">
                   Ultra-light background daemon. Opens instantly with your shortcut, hides when you click away or press Esc, and stays quietly in the tray.
                 </p>
-                <p className="text-[11px] leading-[16px] text-subtle">
-                  Closing the window just hides Kensaku — it keeps running. If it seems to disappear, press your shortcut or click the tray icon.
-                </p>
               </div>
             </button>
 
@@ -686,6 +683,11 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 On Linux with Wayland, bind a system shortcut to <code className="font-mono text-[11px]">kensaku --toggle</code> if the key doesn't register.
               </p>
             </div>
+          )}
+          {selectedAppMode === "launcher" && (
+            <p className="text-[13px] font-medium leading-[18px] text-fg">
+              Closing the window just hides Kensaku — it keeps running. If it seems to disappear, press your shortcut or look in the tray.
+            </p>
           )}
         </div>
       )}
