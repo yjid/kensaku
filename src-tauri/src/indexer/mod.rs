@@ -531,6 +531,14 @@ impl IndexerManager {
     }
 
     pub fn start_indexing(&self) {
+        // Never crawl before the setup wizard has run: a fresh or corrupt
+        // config falls back to the default roots (the home directory), and
+        // scanning/watching those before the user has chosen their folders
+        // is exactly the wrong behavior (it once went through `~\AppData`
+        // and network/MTP devices on Windows).
+        if !self.config.read().is_setup_complete {
+            return;
+        }
         if !self
             .content_index
             .read()
@@ -1647,7 +1655,15 @@ impl IndexerManager {
     /// Starts a crawl now, or as soon as the running one finishes. Used when
     /// the OCR pack lands mid-crawl: a plain `start_indexing` would be a
     /// no-op and the newly OCR-able images would wait for the next restart.
+    ///
+    /// Never crawls before the setup wizard is done: a pack download can
+    /// finish while the user has not chosen their folders yet, and the
+    /// config then still holds the default roots (the home directory), so
+    /// the wrong thing gets scanned and watched.
     pub fn start_indexing_when_idle(self: &Arc<Self>) {
+        if !self.config.read().is_setup_complete {
+            return;
+        }
         let manager = Arc::clone(self);
         let _ = thread::Builder::new()
             .name("kensaku-crawl-when-idle".into())
