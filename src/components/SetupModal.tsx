@@ -76,9 +76,8 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     invoke<string[]>("get_suggested_directories")
       .then((dirs) => {
         setSuggestedDirs(dirs);
-        // Start with the usual places selected (Documents, Desktop, Downloads,
-        // Pictures) so most people can just continue; clicking deselects.
-        setSelectedDirs((prev) => (prev.length > 0 ? prev : dirs));
+        // Suggested folders are shown for convenience, but nothing is selected
+        // by default: the user must explicitly choose what to index.
       })
       .catch((err) => console.error("Failed to load suggested dirs:", err));
 
