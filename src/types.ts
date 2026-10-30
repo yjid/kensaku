@@ -178,6 +178,7 @@ export interface KensakuConfig {
   ocr_enabled?: boolean;
   ocr_max_image_bytes?: number;
   ocr_engine?: OcrEngine;
+  app_mode?: "launcher" | "app";
   theme?: "light" | "dark";
   aliases?: Alias[];
   saved_searches?: SavedSearch[];

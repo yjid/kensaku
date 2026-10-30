@@ -988,6 +988,7 @@ pub async fn complete_setup(
     excluded_dirs: Vec<String>,
     shortcut: Option<String>,
     ocr_engine: Option<String>,
+    app_mode: Option<String>,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<(), String> {
@@ -1003,6 +1004,11 @@ pub async fn complete_setup(
         && [crate::ocr::TESSERACT, crate::ocr::ACCURATE, crate::ocr::INDRA].contains(&engine.as_str())
     {
         config.ocr_engine = engine;
+    }
+    if let Some(mode) = app_mode
+        && (mode == "launcher" || mode == "app")
+    {
+        config.app_mode = mode;
     }
     config.is_setup_complete = true;
     config.first_scan_done = false;

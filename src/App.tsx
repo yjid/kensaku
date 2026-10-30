@@ -936,12 +936,13 @@ function App() {
         inputRef.current?.focus();
         return;
       }
+      if (config?.app_mode === "app") return;
       e.preventDefault();
       invoke("hide_window").catch(() => undefined);
     };
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, [isSetupComplete, showSettings, showDuplicates, showHelp, preview, details, saveOpen, slashFilter, scopePrefix, commandOutput, query]);
+  }, [isSetupComplete, showSettings, showDuplicates, showHelp, preview, details, saveOpen, slashFilter, scopePrefix, commandOutput, query, config?.app_mode]);
 
   // Dismiss like a launcher: hide when the window loses focus (clicking away,
   // switching apps), unless a modal overlay is open. The setup wizard and
@@ -950,12 +951,13 @@ function App() {
   useEffect(() => {
     const onBlur = () => {
       if (isSetupComplete !== true) return;
+      if (config?.app_mode === "app") return;
       if (showSettings || showDuplicates || showHelp || preview || details || saveOpen || menu) return;
       invoke("hide_window").catch(() => undefined);
     };
     window.addEventListener("blur", onBlur);
     return () => window.removeEventListener("blur", onBlur);
-  }, [isSetupComplete, showSettings, showDuplicates, showHelp, preview, details, saveOpen, menu]);
+  }, [isSetupComplete, showSettings, showDuplicates, showHelp, preview, details, saveOpen, menu, config?.app_mode]);
 
   /* ---------------- render ---------------- */
 

@@ -137,6 +137,10 @@ pub struct KensakuConfig {
     pub mcp_allow_reindex: bool,
     #[serde(default = "default_true")]
     pub ocr_enabled: bool,
+    /// How the app presents itself: `launcher` (hide on blur/Esc, tray only,
+    /// tiny footprint) or `app` (stays open, appears in the dock/taskbar).
+    #[serde(default = "default_app_mode")]
+    pub app_mode: String,
     /// OCR backend: `tesseract` (fast default), `accurate` (optional
     /// PP-OCRv6 pack) or `indra` (optional Indra OCR pack). Indra falls back
     /// to PP-OCR, PP-OCR to Tesseract, when a pack is absent.
@@ -211,6 +215,10 @@ fn default_true() -> bool {
 /// cannot run (Intel Macs) the engine selection falls back to Tesseract.
 fn default_ocr_engine() -> String {
     "indra".to_string()
+}
+
+fn default_app_mode() -> String {
+    "launcher".to_string()
 }
 
 fn default_semantic_model() -> String {
@@ -391,6 +399,7 @@ impl Default for KensakuConfig {
             ocr_enabled: true,
             ocr_max_image_bytes: 0,
             ocr_engine: default_ocr_engine(),
+            app_mode: default_app_mode(),
             theme: default_theme(),
             aliases: default_aliases(),
             saved_searches: Vec::new(),

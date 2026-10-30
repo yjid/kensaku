@@ -28,6 +28,11 @@ fn existing(app: &AppHandle) -> Option<WebviewWindow> {
 }
 
 fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+    // In "app" mode the window is a normal application window: it shows in
+    // the dock/taskbar. In "launcher" mode (default) it stays off the
+    // taskbar so it behaves like a pop-up palette.
+    let app_mode = crate::config::KensakuConfig::load().app_mode;
+    let skip_taskbar = app_mode != "app";
     let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
         .title("Kensaku")
         .inner_size(920.0, 640.0)
@@ -35,7 +40,7 @@ fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .decorations(false)
         .transparent(true)
         .always_on_top(true)
-        .skip_taskbar(true)
+        .skip_taskbar(skip_taskbar)
         .visible_on_all_workspaces(true)
         .center()
         .shadow(true)

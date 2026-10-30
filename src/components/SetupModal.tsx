@@ -56,6 +56,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const [indraPackStatus, setIndraPackStatus] = useState<ModelsStatus | null>(null);
   const [indraPackBusy, setIndraPackBusy] = useState(false);
   const [selectedOcrEngine, setSelectedOcrEngine] = useState<OcrEngine | null>(null);
+  const [selectedAppMode, setSelectedAppMode] = useState<"launcher" | "app">("launcher");
   const [packError, setPackError] = useState<string | null>(null);
   const [shortcut, setShortcut] = useState("Alt+Space");
   const [capturing, setCapturing] = useState(false);
@@ -248,6 +249,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         // Keep the backend's engine choice when the user did not touch the
         // radios (e.g. status never loaded) instead of resetting to a name.
         ocrEngine: selectedOcrEngine ?? (ocrStatus ? pickEngine(ocrStatus) : "tesseract"),
+        appMode: selectedAppMode,
       });
       // The default text model downloads without asking. Failure is not fatal:
       // keyword search works without it, and Settings can retry.
@@ -472,6 +474,66 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
 
       {step === 1 && (
         <div key="s1" className="section-enter flex min-h-0 flex-1 flex-col gap-10 overflow-y-auto pt-2">
+          <div className="space-y-2">
+            <h1 className="t-title text-fg">How should Kensaku live on your computer?</h1>
+            <p className="t-lead text-muted">Pick the style that fits you. You can change it later in Settings.</p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setSelectedAppMode("launcher")}
+              aria-pressed={selectedAppMode === "launcher"}
+              className={`surface flex flex-col gap-3 p-4 text-left transition ${
+                selectedAppMode === "launcher"
+                  ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]"
+                  : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
+              }`}
+            >
+              <div className="flex h-28 items-end justify-center rounded-control bg-accent-soft p-3">
+                <div className="w-40 rounded-t-control bg-panel shadow-[var(--panel-edge)]">
+                  <div className="h-2 rounded-t-control bg-ink/20" />
+                  <div className="space-y-1 p-2">
+                    <div className="h-1.5 w-2/3 rounded bg-subtle" />
+                    <div className="h-1.5 w-1/2 rounded bg-subtle" />
+                  </div>
+                </div>
+              </div>
+              <div>
+                <p className="text-[14px] font-medium text-fg">Launcher (recommended)</p>
+                <p className="text-[12px] leading-[18px] text-muted">
+                  Ultra-light daemon. Pops up on your shortcut, hides when you click away or press Esc. Lives in the tray.
+                </p>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSelectedAppMode("app")}
+              aria-pressed={selectedAppMode === "app"}
+              className={`surface flex flex-col gap-3 p-4 text-left transition ${
+                selectedAppMode === "app"
+                  ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]"
+                  : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
+              }`}
+            >
+              <div className="flex h-28 items-center justify-center gap-3 rounded-control bg-accent-soft p-3">
+                <div className="h-16 w-24 rounded-control bg-panel shadow-[var(--panel-edge)]" />
+                <div className="flex flex-col gap-1">
+                  <div className="h-2 w-10 rounded bg-ink/30" />
+                  <div className="h-2 w-8 rounded bg-subtle" />
+                  <div className="h-2 w-6 rounded bg-subtle" />
+                </div>
+              </div>
+              <div>
+                <p className="text-[14px] font-medium text-fg">Full app</p>
+                <p className="text-[12px] leading-[18px] text-muted">
+                  Stays open in your dock/taskbar. Window does not hide when you click away.
+                </p>
+              </div>
+            </button>
+          </div>
+
           <div className="space-y-2">
             <h1 className="t-title text-fg">Read the text in your images</h1>
             <p className="t-lead text-muted">Screenshots, scans and photos become searchable. Pick an engine.</p>
