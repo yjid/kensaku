@@ -387,7 +387,15 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     );
   }
 
-  const ocrReady = Boolean(ocrStatus?.available || ocrPackStatus?.ready || indraPackStatus?.ready);
+  const effectiveOcrEngine = selectedOcrEngine ?? (ocrStatus ? pickEngine(ocrStatus) : "tesseract");
+  const ocrReady = (() => {
+    if (effectiveOcrEngine === "tesseract") return Boolean(ocrStatus?.available);
+    if (effectiveOcrEngine === "accurate")
+      return Boolean(ocrStatus?.accurate_available || ocrPackStatus?.ready);
+    if (effectiveOcrEngine === "indra")
+      return Boolean(ocrStatus?.indra_available || indraPackStatus?.ready);
+    return false;
+  })();
 
   return (
     <Shell
@@ -693,7 +701,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             ? `${selectedDirs.length} ${selectedDirs.length === 1 ? "folder" : "folders"}`
             : ocrReady
               ? "Everything stays on this computer."
-              : "Download an engine to continue."}
+              : `Download ${effectiveOcrEngine === "indra" ? "Indra OCR" : effectiveOcrEngine === "accurate" ? "PP-OCRv6" : "Tesseract"} to continue.`}
         </p>
         <div className="flex items-center gap-2">
           {step > 0 && (
