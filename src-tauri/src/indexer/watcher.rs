@@ -921,7 +921,13 @@ mod tests {
         let dir = temp_dir("settle");
         let file = dir.join("note.txt");
         std::fs::write(&file, "hello").unwrap();
-        let cfg = KensakuConfig::default();
+        // Watch the temp root explicitly: on Windows the default watched root
+        // (home) prunes `~\AppData`, which contains this test's temp directory
+        // and would exclude every event here.
+        let cfg = KensakuConfig {
+            watched_dirs: vec![dir.clone()],
+            ..KensakuConfig::default()
+        };
         let metadata = store(&dir);
         let content_index = no_content();
         let mut queue = PendingUpserts::default();
@@ -944,7 +950,12 @@ mod tests {
         let dir = temp_dir("fresh");
         let file = dir.join("download.part");
         std::fs::write(&file, "partial").unwrap();
-        let cfg = KensakuConfig::default();
+        // See `create_event_waits_for_settle_before_indexing`: watch the temp
+        // root so Windows' under-AppData prune does not swallow every event.
+        let cfg = KensakuConfig {
+            watched_dirs: vec![dir.clone()],
+            ..KensakuConfig::default()
+        };
         let metadata = store(&dir);
         let content_index = no_content();
         let now = Instant::now();
@@ -986,7 +997,11 @@ mod tests {
         let old = dir.join("old.txt");
         let new = dir.join("new.txt");
         std::fs::write(&old, "hello").unwrap();
-        let cfg = KensakuConfig::default();
+        // See `create_event_waits_for_settle_before_indexing`.
+        let cfg = KensakuConfig {
+            watched_dirs: vec![dir.clone()],
+            ..KensakuConfig::default()
+        };
         let metadata = store(&dir);
         let content_index = no_content();
 
@@ -1029,6 +1044,8 @@ mod tests {
         std::fs::write(&file, "hello").unwrap();
         let cfg = KensakuConfig {
             pause_indexing: true,
+            // See `create_event_waits_for_settle_before_indexing`.
+            watched_dirs: vec![dir.clone()],
             ..KensakuConfig::default()
         };
         let metadata = store(&dir);
