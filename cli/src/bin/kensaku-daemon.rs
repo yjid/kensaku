@@ -350,6 +350,12 @@ fn handle_client(stream: LocalSocketStream, token: &str, manager: &Arc<IndexerMa
                 // MCP `reindex` tool this is not gated on
                 // `mcp_allow_reindex`: it is the user speaking from the
                 // app's own UI, not an agent.
+                //
+                // Reload the config the GUI just saved (setup completion,
+                // wizard changes): crawling the previous in-memory config
+                // would either use stale watched dirs or, worse, the default
+                // pre-setup roots if setup finished while the daemon was up.
+                let _ = manager.apply_config(KensakuConfig::load());
                 manager.start_indexing();
                 Ok(json!({"started": true}))
             }
