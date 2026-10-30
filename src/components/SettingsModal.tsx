@@ -381,6 +381,28 @@ function GeneralSection({
         </div>
       </Card>
 
+      <Card title="Application type">
+        <Field label="Mode" description="Launcher hides on blur/Esc and lives in the tray; Full app stays open in your dock/taskbar. Restart required for the window behavior to change.">
+          <select
+            value={config.app_mode ?? "launcher"}
+            onChange={(e) =>
+              setConfig((c) =>
+                c ? { ...c, app_mode: e.target.value as "launcher" | "app" } : c,
+              )
+            }
+            className="h-8 rounded-control border border-line bg-[var(--panel)] px-2 text-[11px] text-fg"
+          >
+            <option value="launcher">Launcher (tray, hides on blur)</option>
+            <option value="app">Full app (dock/taskbar)</option>
+          </select>
+        </Field>
+        {config.app_mode === "launcher" && (
+          <p className="px-4 pb-3 text-[12px] leading-[18px] text-subtle">
+            Closing the window just hides Kensaku — it keeps running. If it seems to disappear, press your shortcut or look in the tray.
+          </p>
+        )}
+      </Card>
+
       <Card title="Invocation">
         <Field label="Quick shortcut" description="Press it from anywhere to open search. Click, then press a combo to change it. On Linux Wayland, desktops may block global keys: bind a shortcut to the command kensaku --toggle instead.">
           <button
