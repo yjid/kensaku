@@ -3,6 +3,30 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [1.0.11] — 2026-10-30
+
+### Added
+- Indra OCR (datalab-to/indra-ocr) as a third engine, ported natively to Rust
+  on the same ONNX Runtime as PP-OCR: orientation and deskew, script routing
+  to four CTC recognizers, RTL reordering and Hangul composition. Text matches
+  the Python reference at 97-100% on the sample pages. The ~27 MB model pack
+  (v1.1.0, SHA-256-pinned) downloads only when Indra is selected; Indra falls
+  back to PP-OCR, then Tesseract, and doctor, Settings and setup report it.
+- Setup wizard: launcher-only flow with folder, OCR and shortcut steps.
+  Progression blocks until the selected OCR engine is ready, downloads show
+  download/verify progress, and an application-type step is gone in favor of
+  launcher mode with a close-to-hide note and shortcut capture.
+
+### Changed
+- PP-OCR is the default OCR engine again (`indra` was briefly the default;
+  existing configs are untouched either way).
+- Existing model artifacts are checksum-verified on startup instead of being
+  trusted by name; corrupt files are re-downloaded.
+
+### Fixed
+- Initial indexing shows "Verifying files" instead of a stuck 0%.
+- Setup step counts ("03 / 03") after the flow gained a third step.
+
 ## [1.0.5] — 2026-10-28
 
 ### Fixed

@@ -401,7 +401,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
 
   return (
     <Shell
-      mark={`0${step + 1} / 02`}
+      mark={`0${step + 1} / 03`}
       trailing={<>{themeButton}{minimizeButton}</>}
       brand={<BrandMoment word="検索" gloss="to search." />}
     >
