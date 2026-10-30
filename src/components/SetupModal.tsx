@@ -329,7 +329,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   if (scanning) {
     const st = scanStatus;
     const files = st?.files_indexed ?? 0;
-    const phase = st?.phase ?? "walking";
+    const phase = (st?.phase === "walking" && (st?.files_indexed ?? 0) === 0) ? "verifying" : (st?.phase ?? "walking");
     const extractTotal = st?.extract_total ?? 0;
     const extracting = phase === "extracting" && extractTotal > 0;
     const doneCount = extracting ? (st?.extract_done ?? 0) : files;
@@ -347,6 +347,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
       }
     }
     const phaseLabel: Record<string, string> = {
+      verifying: "Verifying files",
       walking: "Finding files",
       extracting: "Reading inside documents",
       embedding: "Learning what things mean",

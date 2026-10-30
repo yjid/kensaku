@@ -184,7 +184,7 @@ export function StatsForNerds() {
                 }`}
               />
               <span className="font-mono text-[12px] text-fg">
-                {ing.phase}
+                {ing.phase === "walking" && (ing.files_indexed ?? 0) === 0 ? "verifying" : ing.phase}
               </span>
               {!live && <Badge>placeholder</Badge>}
             </div>
@@ -196,8 +196,8 @@ export function StatsForNerds() {
           {/* Indeterminate when no total is known; depth signals backlog. */}
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-accent-soft">
             <div
-              className={`h-full rounded-full bg-accent ${ing.is_indexing && ing.files_per_sec > 0 ? "progress-bar" : ""}`}
-              style={!(ing.is_indexing && ing.files_per_sec > 0) ? { width: "0%" } : undefined}
+              className={`h-full rounded-full bg-accent ${ing.is_indexing ? "progress-bar" : ""}`}
+              style={!ing.is_indexing ? { width: "0%" } : undefined}
             />
           </div>
           <div className="flex gap-6 pt-3">
