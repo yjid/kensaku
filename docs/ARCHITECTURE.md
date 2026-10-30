@@ -1,12 +1,12 @@
-# Kensaku v2 â€” Architecture & Implementation Plan
+# Kensaku v2 — Architecture & Implementation Plan
 
-> **Status:** shipped `v1.0.0`. The daemon topology in Â§3 is shipped: the GUI,
+> **Status:** shipped `v1.0.0`. The daemon topology in §3 is shipped: the GUI,
 > CLI, and MCP are clients of `kensaku-daemon` over a Unix socket or Windows
 > named pipe, with a read-only in-process fallback. The loopback HTTP transport
-> in Â§9.3 is also shipped (`kensaku-cli serve`). This document describes the
+> in §9.3 is also shipped (`kensaku-cli serve`). This document describes the
 > architecture as built; internal planning documents were removed for release.
 
-> **One sentence:** a warm, local, read-only index of your machine that answers in under 15 ms â€” for you, and for every AI agent you use.
+> **One sentence:** a warm, local, read-only index of your machine that answers in under 15 ms — for you, and for every AI agent you use.
 
 ---
 
@@ -14,7 +14,7 @@
 
 | Goal | Concrete meaning |
 |---|---|
-| **Instant** | p50 keystroke â†’ painted results < 15 ms at 1M files. p99 < 60 ms. |
+| **Instant** | p50 keystroke → painted results < 15 ms at 1M files. p99 < 60 ms. |
 | **Correct** | Zero ghost results. Zero silent staleness. Freshness is a visible number. |
 | **Simple** | Zero-config default. One shortcut. One box. One list. No modes, no tabs. |
 | **Smart** | Semantic search that costs ~0.1 ms per query and never needs a GPU. |
@@ -24,11 +24,11 @@
 ### UX invariants (non-negotiable, encode these in tests)
 
 1. Typing never blocks. Ever. Degrade results, not input.
-2. Never blank â†’ spinner â†’ results. Show the previous results until the new ones are ready.
+2. Never blank → spinner → results. Show the previous results until the new ones are ready.
 3. Results never reorder while you're still typing. Stability beats optimality.
-4. Freshness is always visible (`12 ms Â· 1.2M files Â· index 2 s old`).
+4. Freshness is always visible (`12 ms · 1.2M files · index 2 s old`).
 5. Filters are visible chips you can click off. An invisible filter is a bug report.
-6. Every capability is a `filter:` or a `>` command â€” never a new screen.
+6. Every capability is a `filter:` or a `>` command — never a new screen.
 7. First run is one guided flow: folders, preferences, optional packs, first scan, Done.
 
 ---
@@ -39,7 +39,7 @@
 - No bundled LLM. "Ask" uses a local Ollama/LM Studio if present.
 - No graph database, no agent framework, no plugin marketplace.
 - No write operations through the agent API. Read-only, always.
-- No cross-encoder reranker in the hot path (30â€“60 ms; it does not fit).
+- No cross-encoder reranker in the hot path (30–60 ms; it does not fit).
 - No ANN index below 400k semantic units (exact scan is faster and bug-free).
 
 ---
@@ -47,33 +47,33 @@
 ## 3. System topology
 
 ```
-â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ clients â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚  GUI (Tauri 2 / React)      CLI (`kensaku search`)     AI agents     â”‚
-â”‚         â”‚                          â”‚                   (MCP stdio / â”‚
-â”‚         â”‚  IPC (UDS/named pipe)    â”‚                    HTTP)       â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-          â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-                         â–¼
-        â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-        â”‚        kensaku-daemon (one process)        â”‚
-        â”‚  single instance Â· single writer Â· 0600    â”‚
-        â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
-        â”‚  Query planner   â†’   Fusion/RRF   â†’  Snips â”‚
-        â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
-        â”‚ Meta     â”‚ Content      â”‚ Semantic         â”‚
-        â”‚ tier     â”‚ tier         â”‚ tier (optional)  â”‚
-        â”‚ arena +  â”‚ Tantivy BM25 â”‚ model2vec +      â”‚
-        â”‚ tree     â”‚ + fastfields â”‚ i8 vectors       â”‚
-        â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
-        â”‚ Extraction workers (bounded pool, priority) â”‚
-        â”‚ Watcher backends: inotify/FSEvents/USN/Poll â”‚
-        â”‚ Reconciler Â· Embed queue Â· Merger           â”‚
-        â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
-        â”‚ SQLite WAL (durable truth) + mmap snapshots â”‚
-        â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+┌────────────────────────────── clients ──────────────────────────────┐
+│  GUI (Tauri 2 / React)      CLI (`kensaku search`)     AI agents     │
+│         │                          │                   (MCP stdio / │
+│         │  IPC (UDS/named pipe)    │                    HTTP)       │
+└─────────┼──────────────────────────┼───────────────────┼────────────┘
+          └──────────────┬───────────┴───────────────────┘
+                         ▼
+        ┌────────────────────────────────────────────┐
+        │        kensaku-daemon (one process)        │
+        │  single instance · single writer · 0600    │
+        ├────────────────────────────────────────────┤
+        │  Query planner   →   Fusion/RRF   →  Snips │
+        ├──────────┬──────────────┬──────────────────┤
+        │ Meta     │ Content      │ Semantic         │
+        │ tier     │ tier         │ tier (optional)  │
+        │ arena +  │ Tantivy BM25 │ model2vec +      │
+        │ tree     │ + fastfields │ i8 vectors       │
+        ├──────────┴──────────────┴──────────────────┤
+        │ Extraction workers (bounded pool, priority) │
+        │ Watcher backends: inotify/FSEvents/USN/Poll │
+        │ Reconciler · Embed queue · Merger           │
+        ├────────────────────────────────────────────┤
+        │ SQLite WAL (durable truth) + mmap snapshots │
+        └────────────────────────────────────────────┘
 ```
 
-**Why a daemon, not an in-app backend:** the agent surface and the CLI require the index to exist without the GUI. Building it in-process first makes that a rewrite. The GUI becomes a client â€” which also means index work never competes with webview paint.
+**Why a daemon, not an in-app backend:** the agent surface and the CLI require the index to exist without the GUI. Building it in-process first makes that a rewrite. The GUI becomes a client — which also means index work never competes with webview paint.
 
 **Two binaries, one core crate:** `kensaku` (daemon + CLI + MCP) and `kensaku-app` (Tauri GUI). The GUI auto-spawns the daemon if it isn't running.
 
@@ -145,18 +145,18 @@ struct Snapshot {
     names:      Vec<u8>,        // concatenated folded names
     name_off:   Vec<u32>,       // len = n+1
     parent:     Vec<u32>,
-    first_child:Vec<u32>,       // + next_sibling: Vec<u32>  â†’ child lists
+    first_child:Vec<u32>,       // + next_sibling: Vec<u32>  → child lists
     next_sibling: Vec<u32>,
     kind_ext:   Vec<u32>,       // kind bit + ext id
     size:       Vec<u64>,
     mtime:      Vec<u64>,
     char_bloom: Vec<u64>,       // 64-bit letter-bucket mask per name
-    id_map:     HashMap<u32, u32>, // disk id â†” slot, only for mutations
+    id_map:     HashMap<u32, u32>, // disk id ↔ slot, only for mutations
 }
 ```
 
-- ~64 bytes/file â†’ **64 MB per 1M files** (vs several hundred MB with `PathBuf`).
-- `char_bloom` is the cheap prefilter: a query's character set is AND-ed against each entry; one AND rejects 80â€“95% before the matcher runs.
+- ~64 bytes/file → **64 MB per 1M files** (vs several hundred MB with `PathBuf`).
+- `char_bloom` is the cheap prefilter: a query's character set is AND-ed against each entry; one AND rejects 80–95% before the matcher runs.
 - Folder scope = DFS over child lists, cached per `(dir_id, generation)`. Targeted scopes (the common case) visit hundreds of nodes, not millions.
 - Mutations go to a small delta buffer and merge into the arena at idle; a full rebuild takes ~300 ms per 1M and happens only on schema change.
 
@@ -164,13 +164,13 @@ struct Snapshot {
 
 ## 5. Index tiers
 
-### 5.1 Metadata tier (always fresh, in-memory) â€” budget **2â€“4 ms**
+### 5.1 Metadata tier (always fresh, in-memory) — budget **2–4 ms**
 
 - Built from the filesystem journal (USN/FSEvents/inotify), not from crawling.
-- Lookup: `(dev, ino)` and `(parent, name)` â€” O(1).
+- Lookup: `(dev, ino)` and `(parent, name)` — O(1).
 - Used for: filename search, scoping, filters on size/mtime/kind, dedupe, path display.
 
-### 5.2 Content tier (Tantivy, batched) â€” budget **1â€“3 ms**
+### 5.2 Content tier (Tantivy, batched) — budget **1–3 ms**
 
 Schema:
 
@@ -191,26 +191,26 @@ Schema:
 - **Snippets:** never read a file inside the query. Fetch after ranking, in the blocking pool, for the visible rows only, with a small LRU.
 - **Format decision:** the 1M-document benchmark rejected replacing this tier with SQLite FTS5 trigram (918 MB, 258 ms broad BM25) and rejected a sidecar; keep Tantivy and the folded field. See [BENCHMARKS.md](BENCHMARKS.md).
 
-### 5.3 Semantic tier â€” budget **0.5â€“2 ms**
+### 5.3 Semantic tier — budget **0.5–2 ms**
 
-**Default model: `potion-base-8M` (model2vec, static, 256-dim).** The table is stored as i8 with per-row scales (~7.7 MB; the f32 fallback is ~30 MB). No ONNX, no neural graph at query time: tokenize â†’ table lookup â†’ weighted mean â†’ normalize. **~50 Âµs per query.** ~92 % of MiniLM's MTEB average. Embedding the corpus is also cheap (~50k docs/s), so full re-embed after a model change is minutes, not hours.
+**Default model: `potion-base-8M` (model2vec, static, 256-dim).** The table is stored as i8 with per-row scales (~7.7 MB; the f32 fallback is ~30 MB). No ONNX, no neural graph at query time: tokenize → table lookup → weighted mean → normalize. **~50 µs per query.** ~92 % of MiniLM's MTEB average. Embedding the corpus is also cheap (~50k docs/s), so full re-embed after a model change is minutes, not hours.
 
-**Optional "Smart" pack** (downloaded, ~40 MB): `fastembed-rs` + `ort` with **`load-dynamic`** (never static â€” prebuilt static ORT requires AVX2 and SIGILLs on older CPUs; dynamic also fixes macOS codesign and Windows dylib swaps). `bge-small-en-v1.5` or `EmbeddingGemma-Q4` for multilingual quality.
+**Optional "Smart" pack** (downloaded, ~40 MB): `fastembed-rs` + `ort` with **`load-dynamic`** (never static — prebuilt static ORT requires AVX2 and SIGILLs on older CPUs; dynamic also fixes macOS codesign and Windows dylib swaps). `bge-small-en-v1.5` or `EmbeddingGemma-Q4` for multilingual quality.
 
 **Units and chunking:**
 
 ```rust
 struct Unit { node_id, byte_start, byte_end, model_idx }  // 1 vector per unit
 ```
-- Files â‰¤ 240 tokens â†’ one doc-level unit (offset 0).
-- Longer files â†’ 240-token windows, 48 overlap, max 20 units/file.
+- Files ≤ 240 tokens → one doc-level unit (offset 0).
+- Longer files → 240-token windows, 48 overlap, max 20 units/file.
 - Embedding cost is deduped by `content_hash`: identical files share one vector computation (and one vector, referenced twice).
-- Query returns **nodes**, with the best unit's byte range attached â†’ highlight and scroll position.
+- Query returns **nodes**, with the best unit's byte range attached → highlight and scroll position.
 
 **Retrieval:**
-- â‰¤ 400k units: exact scan over memory-mapped `Vec<i8>` (256 B/unit â†’ 100 MB at 400k), 8-way parallel â†’ < 2 ms.
+- ≤ 400k units: exact scan over memory-mapped `Vec<i8>` (256 B/unit → 100 MB at 400k), 8-way parallel → < 2 ms.
 - \> 400k units: build USearch HNSW (`cos`, i8, M=16, efConstruction=200, ef=64) at idle. Deletions via tombstones; rebuild at idle when tombstones > 15 %.
-- **Model identity is per-index:** `units.model_id` + `meta.model_id`. Changing the model never corrupts results â€” the old index keeps serving while the new one fills.
+- **Model identity is per-index:** `units.model_id` + `meta.model_id`. Changing the model never corrupts results — the old index keeps serving while the new one fills.
 
 **Crawl scheduling:** `crawl_mode` selects `full`, `balanced`, or `eco`. Balanced/eco put the crawl thread in the OS idle CPU/I/O class; eco also paces extraction starts on battery. The Settings `pause_indexing` switch gates reads but keeps renames/deletes live. Watcher events settle for 400 ms; files with a fresh mtime are fingerprinted again before their content is trusted.
 
@@ -222,7 +222,7 @@ struct Unit { node_id, byte_start, byte_end, model_idx }  // 1 vector per unit
 - **Parameters & Dimensions:** 33.4M parameters, 384 dimensions (quantized to i8, unit-normalized).
 - **Disk size:** ~34.7 MB total (`model.onnx` 34,014,426 B, `tokenizer.json` 711,396 B, `config.json` 683 B).
 - **Inference & Concurrency:** Loaded through `ort` under the optional `smart-embeddings` feature. Single intra-op thread per session; maximum 2 parallel inference workers in the embed queue; batch size capped at 16 chunks.
-- **Memory overhead:** ~45â€“55 MB peak RSS when active; exactly 0 MB when the feature is off or provider is `static`/`none`.
+- **Memory overhead:** ~45–55 MB peak RSS when active; exactly 0 MB when the feature is off or provider is `static`/`none`.
 - **Model isolation:** Managed with `model_id = 3` (distinct from default hashing `1` and static table `2`), ensuring units are strictly filtered and incompatible vectors never mix. Missing or disabled smart pack falls back to the static table with an explicit fallback reason surfaced in Doctor/stats.
 
 ### 5.4 Folded / substring tier
@@ -234,13 +234,13 @@ tier handles partial words and OCR look-alikes:
   `w/vv`, `d/cl`) into `content_folded`, indexed with Tantivy's 3-gram
   tokenizer. `content_raw` is stored, not indexed, for verification.
 - Verify each folded candidate against the raw text before returning it: one
-  misread letter in a 4â€“7 letter word, two in 8+, none under 4. This prevents
+  misread letter in a 4–7 letter word, two in 8+, none under 4. This prevents
   `email` matching inside `internally` and rejects broad n-gram false positives.
 - Folded hits always rank after every exact hit and carry
   `match_type = ContentFolded`.
 - Budget: the tier only runs when the exact/fuzzy/semantic tiers leave a
   shortfall, so a normal query never pays for it. On the synthetic 500-doc
-  corpus, `p95 = 262 Âµs`; index growth was 1.61x with stored raw text.
+  corpus, `p95 = 262 µs`; index growth was 1.61x with stored raw text.
 - **Filter pushdown (schema v3):** the content index stores the
   lowercase `ext` (indexed `STRING`) and `size` (fast `u64`) for every
   document. Positive `ext:`/`size:` filters are added as `Must` clauses before
@@ -261,7 +261,7 @@ tier handles partial words and OCR look-alikes:
   releases memory after each image (`malloc_trim` / `malloc_zone_pressure_relief`
   / `EmptyWorkingSet`).
 - Budget: no full-resolution decode for hashing; peak indexer RSS target
-  â‰¤ 100 MB for an image-heavy backfill.
+  ≤ 100 MB for an image-heavy backfill.
 - Screenshot bursts: at write time (watcher) or from an already-fresh thumbnail
   during a crawl, compare an image with assigned images in the same directory
   within ten minutes. The pair must share decoded dimensions and either strong
@@ -278,10 +278,10 @@ tier handles partial words and OCR look-alikes:
 ## 6. Query pipeline
 
 ```
-input â”€â”€â–º Lexer â”€â”€â–º AST â”€â”€â–º Router â”€â”€â–º Planner â”€â”€â–º Executors â”€â”€â–º RRF â”€â”€â–º Rank â”€â”€â–º Snip â”€â”€â–º IPC
-         (0.02ms)          (0ms)        (0.05ms)    â”Œ fuzzy  2â€“4ms â”‚  0.1ms   0.2ms   5â€“20ms
-                                                    â”‚ BM25   1â€“3ms â”‚         (visible rows only,
-                                                    â”” vector 0.5â€“2ms          post-paint)
+input ──► Lexer ──► AST ──► Router ──► Planner ──► Executors ──► RRF ──► Rank ──► Snip ──► IPC
+         (0.02ms)          (0ms)        (0.05ms)    ┌ fuzzy  2–4ms │  0.1ms   0.2ms   5–20ms
+                                                    │ BM25   1–3ms │         (visible rows only,
+                                                    └ vector 0.5–2ms          post-paint)
 ```
 
 ### 6.1 AST
@@ -296,7 +296,7 @@ struct Query {
 }
 ```
 
-### 6.2 Grammar (all optional â€” plain typing always works)
+### 6.2 Grammar (all optional — plain typing always works)
 
 ```
 type:pdf ext:rs in:~/Projects/kensaku path:src-tauri
@@ -310,36 +310,36 @@ Rules: quoted strings support spaces; `-` negates; unknown `key:` is treated as 
 
 | Signal | Route |
 |---|---|
-| â‰¤ 2 tokens, no spaces, has `camelCase`/`_`/`.` | name-heavy + code tokenizer |
+| ≤ 2 tokens, no spaces, has `camelCase`/`_`/`.` | name-heavy + code tokenizer |
 | quoted or `re:` | content + phrase/regex |
 | `type:`/`in:` present | filtered, scope-first |
-| â‰¥ 4 tokens or contains NL stopwords | semantic weight â†‘, BM25 â†“ |
+| ≥ 4 tokens or contains NL stopwords | semantic weight ↑, BM25 ↓ |
 | ends with `/` | pure scope navigation (list the folder) |
 
 ### 6.4 Scope resolution
 
-`in:` and leading directory-looking tokens resolve against a **directory name trie** (folded). Exact > prefix > fuzzy. Ambiguous match â†’ keep as a search term *and* show a "did you mean ðŸ“ kensaku?" chip. A resolved scope uses cached DFS ranges, so scoped queries are O(subtree), not O(corpus).
+`in:` and leading directory-looking tokens resolve against a **directory name trie** (folded). Exact > prefix > fuzzy. Ambiguous match → keep as a search term *and* show a "did you mean 📁 kensaku?" chip. A resolved scope uses cached DFS ranges, so scoped queries are O(subtree), not O(corpus).
 
 ### 6.5 Fusion and ranking
 
 ```
-score(doc) = Î£_tier  w_tier Â· 1/(60 + rank_tier)      // RRF
-           + 0.20 Â· exact_substring_in_name
-           + 0.15 Â· prefix_in_name
-           + 0.10 Â· exp(-age_days / 7)                 // recency, smooth
-           + 0.08 Â· log1p(opens) Â· exp(-last_open_days/14)  // frecency
-           - 0.02 Â· depth
+score(doc) = Σ_tier  w_tier · 1/(60 + rank_tier)      // RRF
+           + 0.20 · exact_substring_in_name
+           + 0.15 · prefix_in_name
+           + 0.10 · exp(-age_days / 7)                 // recency, smooth
+           + 0.08 · log1p(opens) · exp(-last_open_days/14)  // frecency
+           - 0.02 · depth
 ```
 
-Weights live in config; RRF is chosen because BM25 scores are corpus-dependent and unbounded. Ties break on path (deterministic â€” no `HashMap` iteration order).
+Weights live in config; RRF is chosen because BM25 scores are corpus-dependent and unbounded. Ties break on path (deterministic — no `HashMap` iteration order).
 
 ### 6.6 Execution rules
 
 - All work happens on a bounded blocking pool; the async layer only routes and serializes.
-- One `Arc<Snapshot>` + one Tantivy `Searcher` per query â†’ consistent snapshot, no write locks.
+- One `Arc<Snapshot>` + one Tantivy `Searcher` per query → consistent snapshot, no write locks.
 - Per-stage time budget; if the semantic stage blows its budget, return lexical results and mark the response `partial: true`.
 - Requests carry a monotonic `seq`. A new request cancels the previous scan (`AtomicBool` checked every 1k iterations) and the client drops stale responses.
-- `mode: exhaustive` streams results in pages with a total count â€” for agents and regex-style enumeration.
+- `mode: exhaustive` streams results in pages with a total count — for agents and regex-style enumeration.
 
 ---
 
@@ -349,12 +349,12 @@ This is the section that makes the speed claims true.
 
 1. **Identity, not paths.** Every node is keyed by `(dev, ino)` / `file_id`. A rename updates one row. Content is never re-extracted on a move.
 2. **Three generations.** `meta_gen` (metadata changes), `content_gen` (BM25), `vector_gen`. Every response carries all three plus `as_of` timestamps.
-3. **Search first, reconcile after.** Startup loads the durable snapshot and is searchable in < 400 ms. A background **stat-only** reconcile then diffs the tree (`jwalk` without reads: 1M files â‰ˆ 20â€“40 s warm) and patches gaps. Until it finishes, the UI shows `index Ns old`.
+3. **Search first, reconcile after.** Startup loads the durable snapshot and is searchable in < 400 ms. A background **stat-only** reconcile then diffs the tree (`jwalk` without reads: 1M files ≈ 20–40 s warm) and patches gaps. Until it finishes, the UI shows `index Ns old`.
 4. **Watcher is a hint, not the truth.** Events are coalesced per path with a 150 ms debounce. Any of `IN_Q_OVERFLOW`, FSEvents `MustScanSubDirs`, or Windows buffer overflow schedules a scoped rescan. A watch failure downgrades to polling with a visible banner.
 5. **Reconcile-on-resume.** After sleep, replay from the last event cursor; if the cursor is invalid (USN journal rolled over), full rescan.
-6. **Repair pass** every 6 h or on boot: verify a random 1 % sample by `(size, mtime)`; mismatch â†’ re-extract. Full integrity check is a manual command.
+6. **Repair pass** every 6 h or on boot: verify a random 1 % sample by `(size, mtime)`; mismatch → re-extract. Full integrity check is a manual command.
 7. **Content diff rule:** re-extract only if `(size, mtime_ns, ino)` changed, or `content_hash` mismatches after a settle re-read. `chmod`/`atime`-only events never trigger content work.
-8. **Junk filter:** `.swp`, `4913`, `~$*.docx`, `.git/index.lock`, `*.tmp`, `.DS_Store`, `.goutputstream-*` â€” filtered before any work.
+8. **Junk filter:** `.swp`, `4913`, `~$*.docx`, `.git/index.lock`, `*.tmp`, `.DS_Store`, `.goutputstream-*` — filtered before any work.
 9. **Deletes** are tombstoned, then purged in batches at idle (Tantivy delete-by-term, vector tombstone, SQLite delete), so the interactive path never pays for them.
 10. **Crash safety:** SQLite WAL + Tantivy's own crash recovery. A `kill -9` mid-crawl leaves a resumable state; unfinished content is marked `pending`, never presented as indexed.
 
@@ -363,28 +363,28 @@ This is the section that makes the speed claims true.
 ## 8. Extraction
 
 ```
-magic-byte sniff â”€â–º dispatcher â”€â–º built-in or opt-in external extractor
-                                      (isolated worker, timeout) â”€â–º state machine
+magic-byte sniff ─► dispatcher ─► built-in or opt-in external extractor
+                                      (isolated worker, timeout) ─► state machine
 ```
 
 | Format | Path | Notes |
 |---|---|---|
-| text/code/config | encoding detect â†’ UTF-8 | UTF-16 BOM, Latin-1 fallback; strict-UTF-8 rejection is a bug |
+| text/code/config | encoding detect → UTF-8 | UTF-16 BOM, Latin-1 fallback; strict-UTF-8 rejection is a bug |
 | DOCX/PPTX/XLSX/EPUB | ZIP + quick-xml | shared strings, speaker notes, hidden sheets; **DTDs disabled** (billion-laughs) |
-| PDF | `pdf-extract` first; `pdfium` feature flag if quality fails | page-level offsets â†’ "jump to page"; encrypted/scanned â†’ explicit state |
-| Images | PP-OCRv6 tiny by default; optional Indra pack (higher quality) â†’ text units | OCR before CLIP; screenshots prioritized |
+| PDF | `pdf-extract` first; `pdfium` feature flag if quality fails | page-level offsets → "jump to page"; encrypted/scanned → explicit state |
+| Images | PP-OCRv6 tiny by default; optional Indra pack (higher quality) → text units | OCR before CLIP; screenshots prioritized |
 | Archives | metadata only (v2) | no recursive indexing |
-| External | config-defined executable, extension/MIME allowlist | no shell, cleared env, 100â€“7000 ms timeout, bounded stdout, process-group kill; zero plugins by default |
+| External | config-defined executable, extension/MIME allowlist | no shell, cleared env, 100–7000 ms timeout, bounded stdout, process-group kill; zero plugins by default |
 
-State machine: `pending â†’ ok | skipped(reason) | failed(reason)`, max 3 attempts with backoff. Counts are surfaced ("38 files could not be read"), never silently dropped. Each extractor runs with a timeout and a panic boundary in its own worker â€” a malformed PDF must never take down the daemon. External extractors are opt-in, never shell-interpreted, and bounded by timeout/output/process-group limits; failures are logged and surfaced in Doctor, and a disabled entry never runs. See [EXTRACTORS.md](EXTRACTORS.md).
+State machine: `pending → ok | skipped(reason) | failed(reason)`, max 3 attempts with backoff. Counts are surfaced ("38 files could not be read"), never silently dropped. Each extractor runs with a timeout and a panic boundary in its own worker — a malformed PDF must never take down the daemon. External extractors are opt-in, never shell-interpreted, and bounded by timeout/output/process-group limits; failures are logged and surfaced in Doctor, and a disabled entry never runs. See [EXTRACTORS.md](EXTRACTORS.md).
 
 ---
 
 ## 9. The three surfaces
 
-### 9.1 GUI â€” "super simple" is a spec, not a vibe
+### 9.1 GUI — "super simple" is a spec, not a vibe
 
-- **First run (shipped):** guided flow â€” welcome, folders, exclusions, preferences, optional packs, first scan, Done. The first scan finishes with counts and a Done summary before the main window opens; setup markers are gated by `first_scan_done`. Settings â†’ About offers **Run setup again**.
+- **First run (shipped):** guided flow — welcome, folders, exclusions, preferences, optional packs, first scan, Done. The first scan finishes with counts and a Done summary before the main window opens; setup markers are gated by `first_scan_done`. Settings → About offers **Run setup again**.
 - **Default screen:** input + list + right-side preview. No tabs, no sidebar, no modes.
 - **Chips** under the input appear only when a filter/scope is active; click to remove.
 - **`/`** in the search box: command menu (filters, `/dupes`, `/reindex`, `/doctor`, `/settings`). **`@`** opens a directory scope picker and inserts `in:"<path>"`. No global palette shortcut.
@@ -392,10 +392,10 @@ State machine: `pending â†’ ok | skipped(reason) | failed(reason)`, max 3 a
 - **Plain language** is compiled by deterministic rules (`query/intent.rs`) into the existing grammar + sort; every inference is returned as a removable chip. Explicit grammar bypasses the compiler. Personal aliases expand to a case-insensitive OR.
 - **Facets** (`SearchResponse.facets`) are computed server-side over the full matched set before the display limit.
 - **`>`** in the input switches to commands: `/reindex`, `/add folder`, `/model`, `/doctor`.
-- **Bottom bar:** `12 ms Â· 1,204,553 files Â· 2 s old Â· semantic âœ“`.
+- **Bottom bar:** `12 ms · 1,204,553 files · 2 s old · semantic ✓`.
 - **Preview:** monospace text with highlighted matches for code/text; page render for PDF; thumbnail for images. Virtualized list, fixed row height, no layout shift.
-- **Semantic badge:** a subtle `â‰ˆ` on results that only the vector tier found. No mode switch â€” semantics are part of the one box.
-- **Settings:** progressive disclosure. Watched folders, exclusions preset, shortcut, and AI toggle stay visible. Downloads live in setup; Settings shows installed status and **Run setup again** (Â§18.8). Everything else is a config file, documented, not a UI.
+- **Semantic badge:** a subtle `≈` on results that only the vector tier found. No mode switch — semantics are part of the one box.
+- **Settings:** progressive disclosure. Watched folders, exclusions preset, shortcut, and AI toggle stay visible. Downloads live in setup; Settings shows installed status and **Run setup again** (§18.8). Everything else is a config file, documented, not a UI.
 
 > This is the **shipped `v1.0.0`** surface: plain-language intent, `/`
 > commands, `@` scopes, interpretation chips, facet counts, and grouped
@@ -415,7 +415,7 @@ kensaku mcp            # stdio MCP server
 ```
 
 Same AST and index as the GUI. CLI, MCP, and the GUI prefer the warm daemon
-(Â§18.4), so queries do not re-open SQLite or Tantivy; without a daemon they fall
+(§18.4), so queries do not re-open SQLite or Tantivy; without a daemon they fall
 back to a read-only in-process open. The GUI keeps a read-only manager only for
 that fallback.
 
@@ -428,19 +428,19 @@ read-only. `/ask` runs in the CLI/GUI, not on the HTTP transport.
 
 | Tool | Contract |
 |---|---|
-| `health_check` | daemon/db/index/model state, pid, watcher, phase â†’ `ok` or a reason (never a tool error) |
-| `search` | `query`, `mode: ranked\|exhaustive`, `path?`, `ext?`, `modified_after?`, `page_sizeâ‰¤50`, `cursor` â†’ path, score, bounded `snippet`, `snippet_truncated`, `next_cursor`, `total`, `as_of` |
-| `read_snippet` | `path`, `query?`, `max_tokensâ‰¤1024` â†’ window + `truncated`, **never whole files** |
+| `health_check` | daemon/db/index/model state, pid, watcher, phase → `ok` or a reason (never a tool error) |
+| `search` | `query`, `mode: ranked\|exhaustive`, `path?`, `ext?`, `modified_after?`, `page_size≤50`, `cursor` → path, score, bounded `snippet`, `snippet_truncated`, `next_cursor`, `total`, `as_of` |
+| `read_snippet` | `path`, `query?`, `max_tokens≤1024` → window + `truncated`, **never whole files** |
 | `index_state` | counts, content docs, semantic units, model ids, phase/progress, roots, queue freshness |
-| `regex_search` | bounded `patternâ‰¤512`, filters, `page_size`, `cursor` |
+| `regex_search` | bounded `pattern≤512`, filters, `page_size`, `cursor` |
 | `find_related` | planned |
-| `find_symbol` | tree-sitter definitions (Rust, Python, JavaScript, TypeScript); `query`, `language?`, `path?`, `page_sizeâ‰¤50` |
+| `find_symbol` | tree-sitter definitions (Rust, Python, JavaScript, TypeScript); `query`, `language?`, `path?`, `page_size≤50` |
 | `reindex` | opt-in write; only listed when `mcp_allow_reindex=true` and the daemon is running |
 
 Design rules:
 - **Ranked vs exhaustive is the key distinction.** Agents need completeness (exhaustive, cursor-paginated); humans need relevance. Conflating them produces bad tools.
-- Responses are token-budgeted (search: ~1,500 tokens, 100-char snippets; `read_snippet`: 32â€“1,024 tokens) and delimited so file content reads as data, never instructions.
-- `.gitignore` / `.cursorignore` parity ships by default (`include_ignored` opts out) â€” agents assume parity and produce garbage context otherwise.
+- Responses are token-budgeted (search: ~1,500 tokens, 100-char snippets; `read_snippet`: 32–1,024 tokens) and delimited so file content reads as data, never instructions.
+- `.gitignore` / `.cursorignore` parity ships by default (`include_ignored` opts out) — agents assume parity and produce garbage context otherwise.
 - Read-only by default. No shell and no deletion; `reindex` is the only write tool and requires an explicit config opt-in plus the daemon.
 - `agent_scoped_roots` restricts results and single-path reads; comparisons resolve the path (including symlinks and `..`) before accepting it.
 - Ship ready-to-paste config for Cursor, Claude Code, and Claude Desktop in the docs and in Settings.
@@ -453,20 +453,20 @@ Design rules:
 |---|---|
 | parse + route + plan | 0.1 ms |
 | scope resolve (cached) | 0.02 ms |
-| filename prefilter + match (parallel) | 2â€“4 ms |
-| BM25 | 1â€“3 ms |
-| static-embedding query + exact scan (â‰¤400k units) | 0.5â€“2 ms |
+| filename prefilter + match (parallel) | 2–4 ms |
+| BM25 | 1–3 ms |
+| static-embedding query + exact scan (≤400k units) | 0.5–2 ms |
 | fusion + rank | 0.2 ms |
 | IPC serialize (50 results) | 0.5 ms |
-| React render (virtualized) | 3â€“8 ms |
+| React render (virtualized) | 3–8 ms |
 | facets (100k / 1M matched, release) | 3.1 / 17.3 ms |
-| **first paint** | **â‰ˆ 8â€“18 ms** |
-| snippet fetch (post-paint, top 20) | 5â€“20 ms |
+| **first paint** | **≈ 8–18 ms** |
+| snippet fetch (post-paint, top 20) | 5–20 ms |
 
 Gates: p50 < 15 ms, p95 < 40 ms, p99 < 60 ms. The 1M facet pass is now
 within its measured budget, but the full 1M query path still materializes the
 metadata arena per query (~207 ms p50 in `mem_probe`, down from 675 ms); that gap is tracked as
-the arena-backed query path remains the next optimization. **Daemon idle RSS at 1M files:** â‰¤ 150 MB interim (compact arena); â‰¤ 60 MB target once the daemon + mmap'd index land. **Indexer peak RSS:** â‰¤ 100 MB for an image-heavy backfill; the current measured peak is ~73 MB for a mixed 700-file crawl. Indexing throughput > 2,000 files/s metadata, > 150 files/s text content (OCR-bound image content is limited by tesseract; see [BENCHMARKS.md](BENCHMARKS.md#indexing-and-extraction-reference)). Semantic embedding > 2,000 docs/s.
+the arena-backed query path remains the next optimization. **Daemon idle RSS at 1M files:** ≤ 150 MB interim (compact arena); ≤ 60 MB target once the daemon + mmap'd index land. **Indexer peak RSS:** ≤ 100 MB for an image-heavy backfill; the current measured peak is ~73 MB for a mixed 700-file crawl. Indexing throughput > 2,000 files/s metadata, > 150 files/s text content (OCR-bound image content is limited by tesseract; see [BENCHMARKS.md](BENCHMARKS.md#indexing-and-extraction-reference)). Semantic embedding > 2,000 docs/s.
 
 ---
 
@@ -485,7 +485,7 @@ the arena-backed query path remains the next optimization. **Daemon idle RSS at 
 | Disk full | pause writers, banner, keep serving reads |
 | Extract worker panic/hang | per-file timeout, mark failed, continue |
 | Second instance | focuses the first, exits |
-| Sleep/resume | replay cursor; invalid â†’ scoped rescan |
+| Sleep/resume | replay cursor; invalid → scoped rescan |
 
 ---
 
@@ -502,7 +502,7 @@ crates/
   kensaku-daemon/    server, scheduler, lifecycle, MCP, HTTP
   kensaku-cli/       kensaku binary
   kensaku-bench/     corpus generator, golden queries, criterion benches
-src-tauri/ + src/    GUI (client only â€” no indexing logic)
+src-tauri/ + src/    GUI (client only — no indexing logic)
 ```
 
 Rule: **`kensaku-core` must not depend on Tauri.** The GUI must not depend on index internals. That boundary is what makes the CLI and MCP possible.
@@ -518,36 +518,36 @@ connect, and the search-quality pass are implemented. The GUI, CLI, and MCP
 are daemon clients with a read-only fallback. Signing/notarization and the
 auto-updater remain packaging follow-ups.
 
-### Phase 0 â€” Trustworthy foundation Â· ~2 weeks
-Workspace split Â· SQLite schema + snapshot warm-load Â· `(dev, ino)` identity Â· mtime/size diffing Â· rename & subtree delete Â· watcher rewrite (overflow â†’ rescan, single owned watcher, events during crawl) Â· search-first/reconcile-after startup Â· `spawn_blocking` + snapshot queries + cancellation Â· single instance Â· atomic config Â· schema versioning Â· `kensaku doctor`.
-**Gate:** all Â§10 gates; 1,000 random renames/deletes â†’ zero ghosts; `kill -9` Ã— 20 â†’ no corruption.
+### Phase 0 — Trustworthy foundation · ~2 weeks
+Workspace split · SQLite schema + snapshot warm-load · `(dev, ino)` identity · mtime/size diffing · rename & subtree delete · watcher rewrite (overflow → rescan, single owned watcher, events during crawl) · search-first/reconcile-after startup · `spawn_blocking` + snapshot queries + cancellation · single instance · atomic config · schema versioning · `kensaku doctor`.
+**Gate:** all §10 gates; 1,000 random renames/deletes → zero ghosts; `kill -9` × 20 → no corruption.
 
-### Phase 1 â€” The query layer Â· ~1.5 weeks
-Lexer/AST/parser Â· filters (`type/ext/in/path/modified/size/is/lang/-`) Â· directory trie + DFS scope cache Â· router Â· RRF fusion Â· deterministic ranking Â· frecency Â· char-bloom + top-k heap Â· snippets post-rank Â· chips, preview pane, actions, `>` commands Â· events instead of polling Â· request sequence guard.
-**Gate:** recall@5 â‰¥ 0.90 on the golden set; `type:pdf invoice` on 800k files < 5 ms; filters never produce silent zero-results.
+### Phase 1 — The query layer · ~1.5 weeks
+Lexer/AST/parser · filters (`type/ext/in/path/modified/size/is/lang/-`) · directory trie + DFS scope cache · router · RRF fusion · deterministic ranking · frecency · char-bloom + top-k heap · snippets post-rank · chips, preview pane, actions, `>` commands · events instead of polling · request sequence guard.
+**Gate:** recall@5 ≥ 0.90 on the golden set; `type:pdf invoice` on 800k files < 5 ms; filters never produce silent zero-results.
 
-### Phase 2 â€” Semantic, default-on Â· ~1 week
-`model2vec` static embeddings bundled Â· unit chunking + dedupe by hash Â· i8 exact scan Â· query path wiring Â· `â‰ˆ` badge Â· embed queue with battery/idle policy Â· model registry + per-index `model_id`.
-**Gate:** semantic query p50 < 2 ms; NDCG@10 â‰¥ 0.85 of a MiniLM baseline on the golden set; model swap re-embeds without breaking search.
+### Phase 2 — Semantic, default-on · ~1 week
+`model2vec` static embeddings bundled · unit chunking + dedupe by hash · i8 exact scan · query path wiring · `≈` badge · embed queue with battery/idle policy · model registry + per-index `model_id`.
+**Gate:** semantic query p50 < 2 ms; NDCG@10 ≥ 0.85 of a MiniLM baseline on the golden set; model swap re-embeds without breaking search.
 
-### Phase 3 â€” Documents Â· ~1.5 weeks
-Magic sniffing Â· encoding detection Â· DOCX/PPTX/XLSX/EPUB Â· PDF text layer + page offsets Â· extract state machine + surfacing failures Â· 1 MB/20 MB content policy.
+### Phase 3 — Documents · ~1.5 weeks
+Magic sniffing · encoding detection · DOCX/PPTX/XLSX/EPUB · PDF text layer + page offsets · extract state machine + surfacing failures · 1 MB/20 MB content policy.
 **Gate:** 50-page PDF < 50 ms; malformed/encrypted/scanned handled without daemon crash; zero panics on a 500-file fuzz corpus.
 
-### Phase 4 â€” Agent surface Â· ~1 week
-Daemon socket + protocol (shipped) Â· CLI commands (shipped) Â· MCP stdio (shipped) + loopback HTTP/SSE with token auth (shipped) Â· `search` / `read_snippet` / `index_state` / `find_symbol` (shipped) Â· keyset pagination past the 10k cap (shipped) Â· `.gitignore` / `.cursorignore` parity (shipped) Â· `agent_scoped_roots` read-only scoping with resolved-path containment (shipped) Â· token budgets (shipped) Â· one-click connect for Claude Desktop/Code and Cursor (shipped) Â· `find_related` (planned).
+### Phase 4 — Agent surface · ~1 week
+Daemon socket + protocol (shipped) · CLI commands (shipped) · MCP stdio (shipped) + loopback HTTP/SSE with token auth (shipped) · `search` / `read_snippet` / `index_state` / `find_symbol` (shipped) · keyset pagination past the 10k cap (shipped) · `.gitignore` / `.cursorignore` parity (shipped) · `agent_scoped_roots` read-only scoping with resolved-path containment (shipped) · token budgets (shipped) · one-click connect for Claude Desktop/Code and Cursor (shipped) · `find_related` (planned).
 **Gate:** `search` p95 < 50 ms; MCP client round-trip works from Cursor and Claude Code; exhaustive mode paginates 100k matches without OOM.
 
-### Phase 5 â€” Vision & OCR Â· ~1.5 weeks
-Screenshot OCR (PP-OCRv6 default, optional Indra pack) â†’ text units Â· image embeddings (SigLIP or CLIP ViT-B/32 int8, **not** MobileCLIP on x86) Â· EXIF orientation Â· megapixel/size caps Â· perceptual-hash dedupe Â· thumbnails.
+### Phase 5 — Vision & OCR · ~1.5 weeks
+Screenshot OCR (PP-OCRv6 default, optional Indra pack) → text units · image embeddings (SigLIP or CLIP ViT-B/32 int8, **not** MobileCLIP on x86) · EXIF orientation · megapixel/size caps · perceptual-hash dedupe · thumbnails.
 **Gate:** "screenshot of docker error" returns the right image in top 5; 50k-image scan < 10 ms.
 
-### Phase 6 â€” Ask & act Â· ~1 week
-Ollama/LM Studio detection â†’ "Ask about this folder" with path+line citations Â· summarize/explain actions Â· duplicate detection Â· near-duplicate file cleanup view.
+### Phase 6 — Ask & act · ~1 week
+Ollama/LM Studio detection → "Ask about this folder" with path+line citations · summarize/explain actions · duplicate detection · near-duplicate file cleanup view.
 **Gate:** answers cite real paths; no network when no local model is configured.
 
-### Phase 7 â€” Launch Â· ~1 week
-GitHub Actions (AppImage/deb/AUR, dmg universal, msi/exe) Â· benchmark harness + published numbers Â· 15-second demo Â· docs Â· crash reporting (local, opt-in).
+### Phase 7 — Launch · ~1 week
+GitHub Actions (AppImage/deb/AUR, dmg universal, msi/exe) · benchmark harness + published numbers · 15-second demo · docs · crash reporting (local, opt-in).
 
 **Sequencing rationale:** foundation before features (or every feature multiplies divergence bugs), query layer before semantics (filters + RRF beat embeddings for perceived quality), agent surface before vision (it's the differentiator and cheap once the AST exists), "ask" last (it's a garnish on a working index, and it needs Ollama anyway).
 
@@ -569,7 +569,7 @@ GitHub Actions (AppImage/deb/AUR, dmg universal, msi/exe) Â· benchmark harness
 | Risk | Mitigation |
 |---|---|
 | Daemon lifecycle scares users | GUI auto-spawns; autostart optional but default-on; `kensaku status` explains everything |
-| Windows USN journal effort | Ship `ReadDirectoryChangesW` + overflow rescan first; USN as a 2Ã— indexing speedup in Phase 5 |
+| Windows USN journal effort | Ship `ReadDirectoryChangesW` + overflow rescan first; USN as a 2× indexing speedup in Phase 5 |
 | Portable model quality below expectations | Ship the static tier as default, the ORT "smart pack" as a one-click upgrade; measure on the golden set |
 | Tantivy memory/segment growth | Batched commits, idle merges, weekly force-merge, RSS gate in CI |
 | Agent API scope creep | Read-only, five tools, versioned schema; refuse writes by design |
@@ -583,7 +583,7 @@ GitHub Actions (AppImage/deb/AUR, dmg universal, msi/exe) Â· benchmark harness
 1. **Daemon-first, GUI-as-client.** Enables CLI + agents without a rewrite; isolates indexing from paint.
 2. **SQLite as truth, arena as hot path.** Durability without per-file `PathBuf` memory.
 3. **Identity by inode/file_id, never by path.** Makes renames cheap and ghosts impossible.
-4. **Static embeddings by default, ONNX optional.** Semantic search at ~50 Âµs/query, a ~7.7 MB i8 table (~30 MB in the f32 fallback), zero runtime deps; honest about the quality/size trade.
+4. **Static embeddings by default, ONNX optional.** Semantic search at ~50 µs/query, a ~7.7 MB i8 table (~30 MB in the f32 fallback), zero runtime deps; honest about the quality/size trade.
 5. **No ANN until 400k units.** Exact scan is faster, exact, and dependency-free at desktop scale.
 6. **RRF over weighted score fusion.** No calibration data, robust to corpus-dependent BM25.
 7. **Search-first, reconcile-after startup.** The only way "instant on boot" coexists with correctness.
@@ -594,14 +594,14 @@ GitHub Actions (AppImage/deb/AUR, dmg universal, msi/exe) Â· benchmark harness
 12. **Compact arena inside the daemon.** The daemon owns the name/attribute arenas; clients never receive the full metadata payload.
 13. **Thumbnail hashing, not full-image hashing.** A 480 px thumbnail is the source for dHash; full decodes never happen just to compute a duplicate key.
 14. **PP-OCRv6 by default, Tesseract as fallback** (since 1.0.10). PP-OCRv6 tiny runs in-process on a bundled ONNX Runtime at ~0.15 s/page and reads UI text better; Tesseract is used where it cannot run (Intel Macs). Native platform OCR is not implemented. 1.0.11 adds Indra as an optional higher-quality engine sharing the same bundled ONNX Runtime process.
-15. **Exact â†’ folded â†’ semantic.** Never let tolerant matching run when exact results already fill the limit; verify folded candidates against the raw text.
+15. **Exact → folded → semantic.** Never let tolerant matching run when exact results already fill the limit; verify folded candidates against the raw text.
 
 ---
 
 ## 17. First three PRs
 
-1. **Workspace + durable metadata + snapshot.** Split crates, add SQLite schema, build the arena, warm-load at startup, keep current search working on top of it. *No new features â€” just a foundation you can measure.*
-2. **Identity + incremental reconcile + watcher rewrite.** `(dev, ino)` keys, mtime/size diffing, rename/subtree-delete, single owned watcher, overflow â†’ rescan, search-first startup.
+1. **Workspace + durable metadata + snapshot.** Split crates, add SQLite schema, build the arena, warm-load at startup, keep current search working on top of it. *No new features — just a foundation you can measure.*
+2. **Identity + incremental reconcile + watcher rewrite.** `(dev, ino)` keys, mtime/size diffing, rename/subtree-delete, single owned watcher, overflow → rescan, search-first startup.
 3. **Query layer skeleton.** AST + lexer + `type:`/`in:`/`modified:`/`-` filters + scope trie + RRF fusion + deterministic tiebreak. Ship behind the existing UI; add chips.
 
 After those three, the remaining phases are additive rather than corrective.
@@ -633,11 +633,11 @@ Pipeline:
 
 ```
 raw input
-  â”œâ”€ grammar parse (existing) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–º AST
-  â”œâ”€ alias expansion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–º terms
-  â”œâ”€ deterministic intent rules â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–º filters + sort + scope
-  â””â”€ optional local LLM compiler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–º canonical JSON, schema-validated
-        â””â”€ on failure/timeout: keep the deterministic result
+  ├─ grammar parse (existing) ──────────────► AST
+  ├─ alias expansion ───────────────────────► terms
+  ├─ deterministic intent rules ─────────────► filters + sort + scope
+  └─ optional local LLM compiler ───────────► canonical JSON, schema-validated
+        └─ on failure/timeout: keep the deterministic result
 ```
 
 Rules:
@@ -684,7 +684,7 @@ Response additions:
   `BooleanQuery`; stop scoring documents that cannot match.
 - Compute metadata-only facets from the snapshot where possible; content facets
   from fast fields. Cache by `(query, generation)` and invalidate on write.
-- Budget: facet computation â‰¤ 3 ms at 100k, â‰¤ 10 ms at 1M.
+- Budget: facet computation ≤ 3 ms at 100k, ≤ 10 ms at 1M.
 - Multi-select is OR within a dimension, AND across dimensions; negation is a
   `MustNot`. An empty facet selection is never sent as a filter.
 
@@ -697,7 +697,7 @@ Add a fourth retrieval tier alongside fuzzy name, BM25, and static vectors.
 - **Storage:** `visual_units(node_id, model_id, vec_id)`; vectors in the existing
   i8 store with `model_id` so a model swap never corrupts results. Reuse the
   thumbnail and dHash already stored per image.
-- **Query:** text â†’ visual embedding, or selected image â†’ embedding. Fuse the
+- **Query:** text → visual embedding, or selected image → embedding. Fuse the
   visual rank with the other tiers through RRF; apply the same semantic floor
   and the same metadata filters first. A visual-only hit is marked as such.
 - **Captions:** optional idle-time VLM captions enter the BM25 tier as text
@@ -705,9 +705,9 @@ Add a fourth retrieval tier alongside fuzzy name, BM25, and static vectors.
 - **Face identity:** separate, opt-in table of 512-d face embeddings, clustered
   at idle; the user labels a cluster as "me"; search is cosine-to-centroid
   intersected with visual attributes. Explain the match
-  (`face 0.82 Â· red cap 0.91`). Never upload, never export, delete-all must be
+  (`face 0.82 · red cap 0.91`). Never upload, never export, delete-all must be
   verifiable.
-- **Cost:** ~20 ms/image on 2 low-priority threads; 50k photos â‰ˆ 17 min at idle.
+- **Cost:** ~20 ms/image on 2 low-priority threads; 50k photos ≈ 17 min at idle.
   Honor battery/fullscreen/query-in-flight pauses; resume from a cursor.
 
 ### 18.4 Daemon migration
@@ -715,11 +715,11 @@ Add a fourth retrieval tier alongside fuzzy name, BM25, and static vectors.
 Shipped: one warm process, three clients.
 
 ```
-GUI â”€â”
-CLI â”€â”¼â”€â–º kensaku-daemon (Unix socket / Windows named pipe, 0600 token)
-MCP â”€â”˜        â”‚
-              â”œâ”€ indexer + watcher + embed queue
-              â””â”€ query planner + snippets
+GUI ─┐
+CLI ─┼─► kensaku-daemon (Unix socket / Windows named pipe, 0600 token)
+MCP ─┘        │
+              ├─ indexer + watcher + embed queue
+              └─ query planner + snippets
 ```
 
 - **Dual mode remains:** if the daemon is absent, the GUI falls back to a
@@ -741,7 +741,7 @@ All local, all inspectable, all deletable.
 
 - **Aliases:** config-backed `alias -> [terms]`, seeded by onboarding preset
   (developer, designer, student, office) and user-editable.
-- **Usage:** extend the existing frecency with queryâ†’result opens, refinements,
+- **Usage:** extend the existing frecency with query→result opens, refinements,
   and pins. Never upload; expose a "clear history" action.
 - **Saved searches:** a named `Interpretation` + chips. User-created first;
   auto-suggestions require explicit acceptance.
@@ -765,7 +765,7 @@ a field is added. The CLI default output stays `path<TAB>score<TAB>snippet`.
 
 ### 18.7 Testing these layers
 
-- **Intent golden set:** 40â€“50 labelled queries, including `latest resume`,
+- **Intent golden set:** 40–50 labelled queries, including `latest resume`,
   `screenshots from last week`, `docker error in Projects`, `my biggest videos`,
   `the invoice from March`. Gate on top-1/top-3 and one-shot success.
 - **Facet tests:** count accuracy with multi-select and negation; latency at
@@ -787,18 +787,18 @@ acquired as optional packs in setup; Settings shows status and links to
 **State machine**
 
 ```text
-Welcome â†’ Folders â†’ Preferences â†’ Optional packs â†’ Scanning â†’ Done
-                                        â”‚             â”‚
-                                        â””â”€ skipped â”€â”€â”€â”˜
-Scanning â”€â”€ interrupted â†’ resume on next launch
-Scanning â”€â”€ failed â†’ actionable error + retry, never Done
+Welcome → Folders → Preferences → Optional packs → Scanning → Done
+                                        │             │
+                                        └─ skipped ───┘
+Scanning ── interrupted → resume on next launch
+Scanning ── failed → actionable error + retry, never Done
 ```
 
 **Rules**
 
 - **Setup offers downloads.** `download_ocr_language` and `download_models` are
   offered as optional packs during setup and remain available in Settings.
-  Settings â†’ About offers a "Run setup again" entry point.
+  Settings → About offers a "Run setup again" entry point.
 - **Setup owns initial configuration.** Watched folders, exclusion preset,
   theme, shortcut, and optional packs are asked in context. `complete_setup`
   persists them atomically; changing them later means re-running setup.
