@@ -56,7 +56,6 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const [indraPackStatus, setIndraPackStatus] = useState<ModelsStatus | null>(null);
   const [indraPackBusy, setIndraPackBusy] = useState(false);
   const [selectedOcrEngine, setSelectedOcrEngine] = useState<OcrEngine | null>(null);
-  const [selectedAppMode, setSelectedAppMode] = useState<"launcher" | "app">("launcher");
   const [packError, setPackError] = useState<string | null>(null);
   const [shortcut, setShortcut] = useState("Alt+Space");
   const [capturing, setCapturing] = useState(false);
@@ -248,7 +247,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         // Keep the backend's engine choice when the user did not touch the
         // radios (e.g. status never loaded) instead of resetting to a name.
         ocrEngine: selectedOcrEngine ?? (ocrStatus ? pickEngine(ocrStatus) : "tesseract"),
-        appMode: selectedAppMode,
+        appMode: "launcher",
       });
       // The default text model downloads without asking. Failure is not fatal:
       // keyword search works without it, and Settings can retry.
@@ -311,11 +310,9 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             <p className="t-lead rise-in max-w-sm text-muted" style={{ ["--stagger-delay" as string]: "60ms" }}>
               Press <span className="kbd align-middle">{shortcut}</span> from anywhere to search.
             </p>
-            {selectedAppMode === "launcher" && (
-              <p className="rise-in max-w-sm text-[12px] leading-[18px] text-blue" style={{ ["--stagger-delay" as string]: "90ms" }}>
-                Closing the window just hides Kensaku, it keeps running in the background. If it seems to disappear, press your shortcut or look in the tray.
-              </p>
-            )}
+            <p className="rise-in max-w-sm text-[12px] leading-[18px] text-blue" style={{ ["--stagger-delay" as string]: "90ms" }}>
+              Closing the window just hides Kensaku, it keeps running in the background. If it seems to disappear, press your shortcut or look in the tray.
+            </p>
           </div>
           <dl className="rise-in grid grid-cols-2 gap-8" style={{ ["--stagger-delay" as string]: "120ms" }}>
             <Stat value={files} label="Files" />
@@ -598,69 +595,12 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
       {step === 2 && (
         <div key="s2" className="section-enter flex min-h-0 flex-1 flex-col gap-10 overflow-y-auto pt-2">
           <div className="space-y-2">
-            <h1 className="t-title text-fg">How should Kensaku live on your computer?</h1>
-            <p className="t-lead text-muted">Pick the style that fits you. You can change it later in Settings.</p>
+            <h1 className="t-title text-fg">Summon it from anywhere</h1>
+            <p className="t-lead text-muted">Kensaku runs as an ultra-light background daemon. It opens with your shortcut, hides when you click away or press Esc, and stays in the tray.</p>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => setSelectedAppMode("launcher")}
-              aria-pressed={selectedAppMode === "launcher"}
-              className={`surface flex flex-col gap-3 p-4 text-left transition ${
-                selectedAppMode === "launcher"
-                  ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]"
-                  : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
-              }`}
-            >
-              <div className="flex h-28 items-end justify-center rounded-control bg-accent-soft p-3">
-                <div className="w-40 rounded-t-control bg-panel shadow-[var(--panel-edge)]">
-                  <div className="h-2 rounded-t-control bg-ink/20" />
-                  <div className="space-y-1 p-2">
-                    <div className="h-1.5 w-2/3 rounded bg-subtle" />
-                    <div className="h-1.5 w-1/2 rounded bg-subtle" />
-                  </div>
-                </div>
-              </div>
-              <div>
-                <p className="text-[14px] font-medium text-fg">Launcher (recommended)</p>
-                <p className="text-[12px] leading-[18px] text-muted">
-                  Ultra-light background daemon. Opens instantly with your shortcut, hides when you click away or press Esc, and stays quietly in the tray.
-                </p>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setSelectedAppMode("app")}
-              aria-pressed={selectedAppMode === "app"}
-              className={`surface flex flex-col gap-3 p-4 text-left transition ${
-                selectedAppMode === "app"
-                  ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]"
-                  : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
-              }`}
-            >
-              <div className="flex h-28 items-center justify-center gap-3 rounded-control bg-accent-soft p-3">
-                <div className="h-16 w-24 rounded-control bg-panel shadow-[var(--panel-edge)]" />
-                <div className="flex flex-col gap-1">
-                  <div className="h-2 w-10 rounded bg-ink/30" />
-                  <div className="h-2 w-8 rounded bg-subtle" />
-                  <div className="h-2 w-6 rounded bg-subtle" />
-                </div>
-              </div>
-              <div>
-                <p className="text-[14px] font-medium text-fg">Full app</p>
-                <p className="text-[12px] leading-[18px] text-muted">
-                  Runs like a normal desktop app: stays in your dock/taskbar and keeps its window open until you close it.
-                </p>
-              </div>
-            </button>
-          </div>
-
-          {selectedAppMode === "launcher" && (
-            <div className="space-y-4">
+          <div className="space-y-4">
               <div className="space-y-1">
-                <h2 className="text-[15px] font-semibold tracking-[-0.015em] text-fg">Summon it from anywhere</h2>
                 <p className="text-[13px] text-muted">Esc hides it again. Kensaku keeps running quietly.</p>
               </div>
               <button
@@ -683,12 +623,9 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 On Linux with Wayland, bind a system shortcut to <code className="font-mono text-[11px]">kensaku --toggle</code> if the key doesn't register.
               </p>
             </div>
-          )}
-          {selectedAppMode === "launcher" && (
-            <p className="text-[13px] font-medium leading-[18px] text-fg">
-              Closing the window just hides Kensaku, it keeps running. If it seems to disappear, press your shortcut or look in the tray.
-            </p>
-          )}
+          <p className="text-[13px] font-medium leading-[18px] text-blue">
+            Closing the window just hides Kensaku, it keeps running. If it seems to disappear, press your shortcut or look in the tray.
+          </p>
         </div>
       )}
 
