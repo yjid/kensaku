@@ -313,7 +313,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             </p>
             {selectedAppMode === "launcher" && (
               <p className="rise-in max-w-sm text-[12px] leading-[18px] text-subtle" style={{ ["--stagger-delay" as string]: "90ms" }}>
-                Closing the window just hides Kensaku — it keeps running in the background. If it seems to disappear, press your shortcut or look in the tray.
+                Closing the window just hides Kensaku, it keeps running in the background. If it seems to disappear, press your shortcut or look in the tray.
               </p>
             )}
           </div>
@@ -686,7 +686,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
           )}
           {selectedAppMode === "launcher" && (
             <p className="text-[13px] font-medium leading-[18px] text-fg">
-              Closing the window just hides Kensaku — it keeps running. If it seems to disappear, press your shortcut or look in the tray.
+              Closing the window just hides Kensaku, it keeps running. If it seems to disappear, press your shortcut or look in the tray.
             </p>
           )}
         </div>
