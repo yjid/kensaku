@@ -31,7 +31,11 @@
 </p>
 
 <p align="center">
-  <img src="assets/hero.png" width="100%" alt="Kensaku — find anything on your computer" />
+  <img src="assets/demo.gif" width="100%" alt="Typing 'cuda out of memory' into Kensaku. Fifteen files match, and a quick look on the first one shows the error text sitting inside a screenshot." />
+</p>
+
+<p align="center">
+  <sub>Searching for text that only exists inside a screenshot. 10 seconds, no cuts.</sub>
 </p>
 
 ---
@@ -103,7 +107,7 @@ Filename tools are everywhere. Reading *inside* your files — locally, instantl
 - Right-click for open, show in folder, copy path, and details.
 
 <p align="center">
-  <img src="assets/search-dashboard.png" width="100%" alt="Kensaku search results" />
+  <img src="assets/search-light.png" width="100%" alt="The same search in the light theme" />
 </p>
 
 ### The query language

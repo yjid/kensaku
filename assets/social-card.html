@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Kensaku social card</title>
+<!--
+  Source for assets/social-preview.png (1280x640, GitHub's social preview size).
+  Render:  chromium --headless --window-size=1280,640 \
+             --screenshot=assets/social-preview.png assets/social-card.html
+  Colours and spacing are Kensaku tokens from src/App.css:
+  --bg #0b0b0c · --fg #f5f5f7 · --fg-muted #98989d · --fg-subtle #636366.
+  Gaps are steps on the 4px scale (48 between mark and text, 24 above the
+  tagline). The tagline is the README's own opening line, verbatim.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Noto+Sans+JP:wght@700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 640px; }
+  body {
+    background: #0b0b0c;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Inter", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .lockup { display: flex; align-items: center; gap: 48px; }
+  .mark { width: 240px; height: 240px; flex: none; }
+  .wordmark { font-size: 96px; font-weight: 700; color: #f5f5f7; letter-spacing: -0.022em; line-height: 1; }
+  .jp { font-family: "Noto Sans JP", sans-serif; font-weight: 700; font-size: 76px; color: #636366; margin-left: 24px; letter-spacing: 0.02em; }
+  .tagline { margin-top: 24px; font-size: 36px; font-weight: 400; color: #98989d; letter-spacing: -0.011em; line-height: 1.35; }
+</style>
+</head>
+<body>
+  <div class="lockup">
+    <svg class="mark" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+      <rect width="1024" height="1024" rx="225" fill="#2F7D6D"/>
+      <line x1="376" y1="624" x2="733" y2="732" stroke="#FAFAF8" stroke-width="146"/>
+      <line x1="376" y1="572" x2="661" y2="377" stroke="#FAFAF8" stroke-width="146"/>
+      <rect x="224" y="262" width="160" height="540" fill="#FAFAF8"/>
+      <circle cx="700" cy="346" r="126" fill="#111110"/>
+    </svg>
+    <div>
+      <div class="wordmark">Kensaku<span class="jp">検索</span></div>
+      <div class="tagline">Fast, light, and efficient.<br/>Find anything on your computer.</div>
+    </div>
+  </div>
+</body>
+</html>

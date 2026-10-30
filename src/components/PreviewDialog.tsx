@@ -80,7 +80,7 @@ export function PreviewDialog({
 
   return (
     <div
-      className="fade-in fixed inset-0 z-[80] flex items-center justify-center bg-scrim p-10 backdrop-blur-[6px]"
+      className="scrim-full fade-in fixed inset-0 z-[80] flex items-center justify-center bg-scrim p-10 backdrop-blur-[6px]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

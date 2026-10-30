@@ -55,7 +55,8 @@ extension point (docs/EXTRACTORS.md) if you want to teach it a new format.
 
 ### Attach
 
-`assets/search-at-full-speed.png` to every Reddit post (visual ≈ 2× engagement).
+`assets/demo.gif` to every post that accepts one, `assets/hero.png`
+where it does not (visual ≈ 2× engagement; a clip beats a still).
 
 ### Per-sub first comment (post it yourself immediately after submitting)
 
@@ -315,12 +316,19 @@ MIT. github.com/yjid/kensaku
 This is the highest-ROI 30 minutes of the whole launch. Posts with a short
 demo clip outperform text-only posts by a wide margin on every platform.
 
-- [ ] **10–15s screen recording, no audio:** Alt+Space → type "cuda out of
-      memory" → results appear → Enter opens the screenshot. One take.
-      Save as `demo.gif` (≤8 MB for GitHub) and an MP4 for PH/X.
-- [ ] **Static hero screenshot:** home screen with real recents + a search
-      in progress. Replace `assets/search-at-full-speed.png` if you can
-      (the current one is from before 1.0.6).
+- [x] **10–15s clip, no audio:** `assets/demo.gif` (0.9 MB) and
+      `assets/demo.mp4` (0.3 MB). 10.3s, 920x640, the real window size.
+      Types "cuda out of memory", 15 files match, quick look on the first
+      one shows the error text sitting inside a screenshot. Regenerate it
+      after any UI change with `scripts/demo/` — see that README.
+      **It is the browser preview with example data, not a capture of the
+      packaged desktop build.** A real screen recording off your own
+      machine is still better if you have ten minutes for it; this is here
+      so the repo is never without a current clip.
+- [x] **Static hero screenshot:** `assets/hero.png`, a real 920x640
+      capture of 1.0.8 searching "invoice", matching inside a PDF, a
+      screenshot, a spreadsheet and a note. Light twin in
+      `assets/search-light.png`.
 - [ ] **Social preview:** upload `assets/social-preview.png` in repo
       Settings → Social preview (GitHub doesn't allow this via API).
 - [ ] **One-liner for bios:** "I build Kensaku — local search that reads
