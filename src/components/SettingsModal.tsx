@@ -397,7 +397,7 @@ function GeneralSection({
           </select>
         </Field>
         {config.app_mode === "launcher" && (
-          <p className="px-4 pb-3 text-[12px] leading-[18px] text-accent">
+          <p className="px-4 pb-3 text-[12px] leading-[18px] text-blue">
             Closing the window just hides Kensaku, it keeps running. If it seems to disappear, press your shortcut or look in the tray.
           </p>
         )}
