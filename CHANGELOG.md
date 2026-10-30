@@ -24,6 +24,21 @@ versioning: [SemVer](https://semver.org/).
   trusted by name; corrupt files are re-downloaded.
 
 ### Fixed
+- The wizard's OCR pack download no longer triggers a scan before the user
+  has picked their folders: a fresh or corrupt config falls back to watching
+  the home directory, and the pack-ready callback used to crawl those
+  defaults mid-setup (walking `~\AppData`, MTP and network devices).
+  `start_indexing` and `start_indexing_when_idle` now refuse to run before
+  the setup wizard completes, which also protects the daemon's startup crawl.
+- Watcher live updates are covered again on Windows: the config-v6 prune of
+  `~\AppData` made every event under `AppData\Local\Temp` (the test
+  environment) look excluded, so four watcher tests had been failing since
+  1.0.10 on Windows. The tests now watch their temp root explicitly.
+- The agent CLI compiles again: since the vendored `paddleocr_rs_onnx`
+  (`shared_environment`) landed, the separately-workspaced CLI built the
+  plain crates.io crate and failed (`[patch.crates-io]` is per-workspace and
+  had to be repeated). The daemon `rescan` RPC now also reloads the config
+  the GUI just saved instead of crawling stale in-memory folders.
 - Initial indexing shows "Verifying files" instead of a stuck 0%.
 - Setup step counts ("03 / 03") after the flow gained a third step.
 
