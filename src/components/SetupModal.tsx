@@ -40,7 +40,7 @@ function pickEngine(status: OcrStatus): OcrEngine {
 }
 
 export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void }) {
-  const [step, setStep] = useState<0 | 1>(0);
+  const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
   // Start at sign-in is on by default, so the app is one shortcut away after a restart.
   const startAtLogin = true;
   const [suggestedDirs, setSuggestedDirs] = useState<string[]>([]);
@@ -474,66 +474,6 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
       {step === 1 && (
         <div key="s1" className="section-enter flex min-h-0 flex-1 flex-col gap-10 overflow-y-auto pt-2">
           <div className="space-y-2">
-            <h1 className="t-title text-fg">How should Kensaku live on your computer?</h1>
-            <p className="t-lead text-muted">Pick the style that fits you. You can change it later in Settings.</p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => setSelectedAppMode("launcher")}
-              aria-pressed={selectedAppMode === "launcher"}
-              className={`surface flex flex-col gap-3 p-4 text-left transition ${
-                selectedAppMode === "launcher"
-                  ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]"
-                  : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
-              }`}
-            >
-              <div className="flex h-28 items-end justify-center rounded-control bg-accent-soft p-3">
-                <div className="w-40 rounded-t-control bg-panel shadow-[var(--panel-edge)]">
-                  <div className="h-2 rounded-t-control bg-ink/20" />
-                  <div className="space-y-1 p-2">
-                    <div className="h-1.5 w-2/3 rounded bg-subtle" />
-                    <div className="h-1.5 w-1/2 rounded bg-subtle" />
-                  </div>
-                </div>
-              </div>
-              <div>
-                <p className="text-[14px] font-medium text-fg">Launcher (recommended)</p>
-                <p className="text-[12px] leading-[18px] text-muted">
-                  Ultra-light daemon. Pops up on your shortcut, hides when you click away or press Esc. Lives in the tray.
-                </p>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setSelectedAppMode("app")}
-              aria-pressed={selectedAppMode === "app"}
-              className={`surface flex flex-col gap-3 p-4 text-left transition ${
-                selectedAppMode === "app"
-                  ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]"
-                  : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
-              }`}
-            >
-              <div className="flex h-28 items-center justify-center gap-3 rounded-control bg-accent-soft p-3">
-                <div className="h-16 w-24 rounded-control bg-panel shadow-[var(--panel-edge)]" />
-                <div className="flex flex-col gap-1">
-                  <div className="h-2 w-10 rounded bg-ink/30" />
-                  <div className="h-2 w-8 rounded bg-subtle" />
-                  <div className="h-2 w-6 rounded bg-subtle" />
-                </div>
-              </div>
-              <div>
-                <p className="text-[14px] font-medium text-fg">Full app</p>
-                <p className="text-[12px] leading-[18px] text-muted">
-                  Stays open in your dock/taskbar. Window does not hide when you click away.
-                </p>
-              </div>
-            </button>
-          </div>
-
-          <div className="space-y-2">
             <h1 className="t-title text-fg">Read the text in your images</h1>
             <p className="t-lead text-muted">Screenshots, scans and photos become searchable. Pick an engine.</p>
           </div>
@@ -639,31 +579,111 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             )}
           </div>
 
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <h2 className="text-[15px] font-semibold tracking-[-0.015em] text-fg">Summon it from anywhere</h2>
-              <p className="text-[13px] text-muted">Esc hides it again. Kensaku keeps running quietly.</p>
-            </div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div key="s2" className="section-enter flex min-h-0 flex-1 flex-col gap-10 overflow-y-auto pt-2">
+          <div className="space-y-2">
+            <h1 className="t-title text-fg">How should Kensaku live on your computer?</h1>
+            <p className="t-lead text-muted">Pick the style that fits you. You can change it later in Settings.</p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <button
               type="button"
-              onClick={() => setCapturing(true)}
-              className={`surface flex h-14 w-full items-center justify-between px-4 text-left transition-shadow ${capturing ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]" : ""}`}
+              onClick={() => setSelectedAppMode("launcher")}
+              aria-pressed={selectedAppMode === "launcher"}
+              className={`surface flex flex-col gap-3 p-4 text-left transition ${
+                selectedAppMode === "launcher"
+                  ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]"
+                  : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
+              }`}
             >
-              <span className="flex items-center gap-1.5">
-                {capturing ? (
-                  <span className="text-[13px] text-fg">Press a new shortcut…</span>
-                ) : (
-                  shortcut.split("+").map((k, i) => (
-                    <span key={i} className="kbd !h-7 !min-w-7 !px-2 !text-[12px] text-fg">{k}</span>
-                  ))
-                )}
-              </span>
-              <span className="text-[12px] text-subtle">{capturing ? "Esc to cancel" : "Change"}</span>
+              <div className="flex h-28 items-end justify-center rounded-control bg-accent-soft p-3">
+                <div className="w-40 rounded-t-control bg-panel shadow-[var(--panel-edge)]">
+                  <div className="h-2 rounded-t-control bg-ink/20" />
+                  <div className="space-y-1 p-2">
+                    <div className="h-1.5 w-2/3 rounded bg-subtle" />
+                    <div className="h-1.5 w-1/2 rounded bg-subtle" />
+                  </div>
+                </div>
+              </div>
+              <div>
+                <p className="text-[14px] font-medium text-fg">Launcher (recommended)</p>
+                <p className="text-[12px] leading-[18px] text-muted">
+                  Ultra-light daemon. Pops up on your shortcut, hides when you click away or press Esc. Lives in the tray.
+                </p>
+              </div>
             </button>
-            <p className="text-[12px] text-subtle">
-              On Linux with Wayland, bind a system shortcut to <code className="font-mono text-[11px]">kensaku --toggle</code> if the key doesn't register.
-            </p>
+
+            <button
+              type="button"
+              onClick={() => setSelectedAppMode("app")}
+              aria-pressed={selectedAppMode === "app"}
+              className={`surface flex flex-col gap-3 p-4 text-left transition ${
+                selectedAppMode === "app"
+                  ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]"
+                  : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
+              }`}
+            >
+              <div className="flex h-28 items-center justify-center gap-3 rounded-control bg-accent-soft p-3">
+                <div className="h-16 w-24 rounded-control bg-panel shadow-[var(--panel-edge)]" />
+                <div className="flex flex-col gap-1">
+                  <div className="h-2 w-10 rounded bg-ink/30" />
+                  <div className="h-2 w-8 rounded bg-subtle" />
+                  <div className="h-2 w-6 rounded bg-subtle" />
+                </div>
+              </div>
+              <div>
+                <p className="text-[14px] font-medium text-fg">Full app</p>
+                <p className="text-[12px] leading-[18px] text-muted">
+                  Stays open in your dock/taskbar. Window does not hide when you click away.
+                </p>
+              </div>
+            </button>
           </div>
+        </div>
+      )}
+
+      {step === 3 && (
+        <div key="s3" className="section-enter flex min-h-0 flex-1 flex-col gap-10 overflow-y-auto pt-2">
+          {selectedAppMode === "launcher" ? (
+            <>
+              <div className="space-y-2">
+                <h1 className="t-title text-fg">Summon it from anywhere</h1>
+                <p className="t-lead text-muted">Esc hides it again. Kensaku keeps running quietly.</p>
+              </div>
+              <div className="space-y-4">
+                <button
+                  type="button"
+                  onClick={() => setCapturing(true)}
+                  className={`surface flex h-14 w-full items-center justify-between px-4 text-left transition-shadow ${capturing ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]" : ""}`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    {capturing ? (
+                      <span className="text-[13px] text-fg">Press a new shortcut…</span>
+                    ) : (
+                      shortcut.split("+").map((k, i) => (
+                        <span key={i} className="kbd !h-7 !min-w-7 !px-2 !text-[12px] text-fg">{k}</span>
+                      ))
+                    )}
+                  </span>
+                  <span className="text-[12px] text-subtle">{capturing ? "Esc to cancel" : "Change"}</span>
+                </button>
+                <p className="text-[12px] text-subtle">
+                  On Linux with Wayland, bind a system shortcut to <code className="font-mono text-[11px]">kensaku --toggle</code> if the key doesn't register.
+                </p>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-2">
+              <h1 className="t-title text-fg">Full app mode</h1>
+              <p className="t-lead text-muted">
+                Summon shortcut is only available in Launcher mode. Kensaku will stay open in your dock/taskbar.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -677,19 +697,39 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         </p>
         <div className="flex items-center gap-2">
           {step > 0 && (
-            <button type="button" onClick={() => setStep(0)} className="btn btn-ghost h-10">
+            <button type="button" onClick={() => setStep((s) => (s > 0 ? ((s - 1) as 0 | 1 | 2 | 3) : 0))} className="btn btn-ghost h-10">
               <ArrowLeft className="h-4 w-4" strokeWidth={1.75} /> Back
             </button>
           )}
-          {step === 0 ? (
+          {step === 0 && (
             <button type="button" onClick={() => setStep(1)} disabled={selectedDirs.length === 0} className="btn btn-primary h-10 px-5">
               Continue <ArrowRight className="h-4 w-4" strokeWidth={1.75} />
             </button>
-          ) : (
+          )}
+          {step === 1 && (
+            <button
+              type="button"
+              onClick={() => setStep(2)}
+              disabled={selectedDirs.length === 0 || !ocrReady}
+              className="btn btn-primary h-10 px-5"
+            >
+              Continue <ArrowRight className="h-4 w-4" strokeWidth={1.75} />
+            </button>
+          )}
+          {step === 2 && (
+            <button
+              type="button"
+              onClick={() => setStep(3)}
+              className="btn btn-primary h-10 px-5"
+            >
+              Continue <ArrowRight className="h-4 w-4" strokeWidth={1.75} />
+            </button>
+          )}
+          {step === 3 && (
             <button
               type="button"
               onClick={handleFinish}
-              disabled={isSubmitting || selectedDirs.length === 0 || !ocrReady}
+              disabled={isSubmitting || selectedDirs.length === 0}
               className="btn btn-primary h-10 px-5"
             >
               {isSubmitting && <LoaderCircle className="h-4 w-4 animate-spin" />}
