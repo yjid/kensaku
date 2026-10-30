@@ -183,18 +183,22 @@ but no language data (points to setup), engine missing (platform install command
 or unknown. The OCR switch is disabled until OCR can actually work. Doctor repeats
 the same check.
 
-### PP-OCRv6 pack (default OCR engine)
+### OCR packs
 
 Normal app builds compile the PP-OCRv6 tiny engine via the default
 `accurate-ocr` feature. In **Setup → Optional packs** and Settings → Search you
-pick **one** OCR engine: PP-OCRv6 (default, recommended) or Tesseract. Only the selected engine's download is offered. PP-OCRv6
-is ~6.1 MB (detector 1.7 MB, recognizer 4.3 MB, dictionary 27 KB) and is verified
+pick **one** OCR engine: PP-OCRv6 (default, recommended), Indra (higher
+quality: deskew, orientation and multi-script recognition) or Tesseract. Only
+the selected engine's download is offered. PP-OCRv6
+is ~6.1 MB (detector 1.7 MB, recognizer 4.3 MB, dictionary 27 KB); the Indra
+pack is ~27 MB — both are verified
 against pinned SHA-256 checksums. Release installers bundle ONNX Runtime 1.31 (Windows, Apple silicon, Linux x64). If the pack is
 missing, or the build uses `--no-default-features`, Kensaku falls back to
 Tesseract. Native macOS/Windows OCR is not implemented yet and the Settings
 option is disabled.
 
-Models: PaddleOCR PP-OCRv6 tiny (Apache-2.0), published by PaddlePaddle. The Rust
+Models: PaddleOCR PP-OCRv6 tiny (Apache-2.0), published by PaddlePaddle; Indra
+weights by Datalab (indra-ocr), under a modified OpenRAIL-M license. The Rust
 ONNX wrapper is `paddleocr_rs_onnx` (MIT).
 
 ---

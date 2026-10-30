@@ -79,7 +79,9 @@ Filename tools are everywhere. Reading *inside* your files — locally, instantl
 **Finds more**
 - Names, full text, fuzzy matches that tolerate typos, and meaning, in one search.
 - Documents: PDF, DOCX, PPTX, XLSX, EPUB, ODT/ODS/ODP, RTF, plain text, code, and logs, including CJK text.
-- Images: text is read with Tesseract. An optional, more accurate PP-OCRv6 engine is available in Settings.
+- Images: text is read with PP-OCRv6 by default (no system install needed). An optional
+  higher-quality Indra engine (deskew, multi-script recognition, ~27 MB pack downloaded on
+  demand) and classic Tesseract are both selectable in Setup/Settings.
 
 **Precise**
 - Filters and sort: Best match, Newest, Oldest, Largest, Name.
@@ -225,7 +227,9 @@ Full threat model: [SECURITY.md](SECURITY.md).
 **Known limitations**
 
 - Builds are not yet code-signed, and the auto-updater is not wired up yet.
-- OCR: PP-OCRv6 by default (bundled runtime, ~6 MB model pack downloaded on first run). Intel Macs fall back to Tesseract. JPEG 2000, fax and JBIG2 scans are not decoded yet.
+- OCR: PP-OCRv6 by default (bundled runtime, ~6 MB model pack downloaded on first run); optional Indra engine with
+  deskew and multi-script recognition (~27 MB pack, downloaded on demand). Intel Macs fall back to Tesseract.
+  JPEG 2000, fax and JBIG2 scans are not decoded yet.
 - Thumbnails cover image files only. Documents and code show type icons.
 - Visual search is a beta model download and is not part of search results yet.
 - Windows gets the most real-world testing today. macOS and Linux builds ship from CI and would benefit from more hands on them — see below.

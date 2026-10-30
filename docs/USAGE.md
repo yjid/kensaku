@@ -185,11 +185,12 @@ Results are deterministic: score, then path.
 - **Unavailable roots** (unplugged drive, unmounted share) are preserved, not pruned.
 - **Documents** — PDF, DOCX/PPTX/XLSX, EPUB/ODT, RTF; malformed files are skipped
   after an 8-second timeout.
-- **Images** — OCR via `tesseract` when the engine and language data are present.
-  When `tesseract` is not installed, Kensaku switches to the accurate PP-OCRv6
-  engine on its own and downloads that pack in the background. The setup flow
-  offers `eng.traineddata` as an optional pack; Settings → Search
-  shows status and links to **Run setup again**. The toggle controls whether image
+- **Images** — OCR runs with PP-OCRv6 by default, on a bundled ONNX Runtime;
+  the optional Indra engine (higher quality, ~27 MB pack) can be picked in
+  setup or Settings, and Tesseract with language data is the fallback where
+  ONNX cannot run (Intel Macs, or a `--no-default-features` build). The setup
+  flow offers `eng.traineddata` as an optional pack; Settings → Search
+  shows engine status and links to **Run setup again**. The toggle controls whether image
   text is indexed, and saving re-scans existing images. Thumbnails and dimensions
   are cached; near-duplicates use a perceptual hash, and screenshot bursts also
   compare OCR line overlap so a shared sidebar does not merge distinct pages.

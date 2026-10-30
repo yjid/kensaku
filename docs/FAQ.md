@@ -30,7 +30,9 @@ flagged, not indexed.
 
 **Does it search images?**
 By filename, and by OCR text: PP-OCRv6 by default (runs inside Kensaku, ~0.15 s
-a page), or Tesseract where PP-OCRv6 cannot run (Intel Macs) or if you pick it.
+a page), or the optional higher-quality Indra engine (~27 MB pack, deskew and
+multi-script recognition), or Tesseract where neither can run (Intel Macs) or
+if you pick it.
 Scanned PDFs are OCR'd too. Also by perceptual near-duplicate. Natural-language visual search ("red cap",
 "system design diagram"), similar-image lookup, and an
 optional local "this is me" identity are not part of 1.0.
@@ -45,8 +47,9 @@ chip. `/` opens the command menu and `@` inserts a directory scope. The explicit
 **OCR is on but no image text is indexed.**
 Open Settings → Search → OCR: it shows which engine is actually reading
 images and, if PP-OCRv6 cannot run, why (pack still downloading, Intel Mac).
-"Verified" means PP-OCRv6 read a test image correctly. With Tesseract, make sure
-language data is installed (`tesseract-ocr-eng`) or download it in setup.
+"Verified" means the selected engine read a test image correctly. With
+Tesseract, make sure language data is installed (`tesseract-ocr-eng`) or
+download it in setup.
 Existing images are re-scanned. Doctor repeats the check. The setup pack button
 shows download state, success, or the backend error.
 
