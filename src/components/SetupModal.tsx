@@ -312,7 +312,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               Press <span className="kbd align-middle">{shortcut}</span> from anywhere to search.
             </p>
             {selectedAppMode === "launcher" && (
-              <p className="rise-in max-w-sm text-[12px] leading-[18px] text-warning" style={{ ["--stagger-delay" as string]: "90ms" }}>
+              <p className="rise-in max-w-sm text-[12px] leading-[18px] text-accent" style={{ ["--stagger-delay" as string]: "90ms" }}>
                 Closing the window just hides Kensaku, it keeps running in the background. If it seems to disappear, press your shortcut or look in the tray.
               </p>
             )}
