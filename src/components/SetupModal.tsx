@@ -620,7 +620,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               <div>
                 <p className="text-[14px] font-medium text-fg">Launcher (recommended)</p>
                 <p className="text-[12px] leading-[18px] text-muted">
-                  Ultra-light daemon. Pops up on your shortcut, hides when you click away or press Esc. Lives in the tray.
+                  Ultra-light background daemon. Opens instantly with your shortcut, hides when you click away or press Esc, and stays quietly in the tray.
                 </p>
               </div>
             </button>
@@ -646,7 +646,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               <div>
                 <p className="text-[14px] font-medium text-fg">Full app</p>
                 <p className="text-[12px] leading-[18px] text-muted">
-                  Stays open in your dock/taskbar. Window does not hide when you click away.
+                  Runs like a normal desktop app: stays in your dock/taskbar and keeps its window open until you close it.
                 </p>
               </div>
             </button>
