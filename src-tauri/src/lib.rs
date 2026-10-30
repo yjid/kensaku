@@ -394,16 +394,19 @@ pub fn run() {
                     .set_app_handle(app.handle().clone());
             }
 
-            // 1. Register global shortcut (e.g. Alt+Space)
-            if let Ok(shortcut) = Shortcut::from_str(&shortcut_str) {
-                if let Err(e) = app.global_shortcut().register(shortcut) {
-                    eprintln!("[Kensaku] Could not register global shortcut '{}': {}", shortcut_str, e);
+            // 1. Register global shortcut (e.g. Alt+Space). The summon shortcut
+            // only makes sense in launcher mode; full-app mode stays open.
+            if config.app_mode == "launcher" {
+                if let Ok(shortcut) = Shortcut::from_str(&shortcut_str) {
+                    if let Err(e) = app.global_shortcut().register(shortcut) {
+                        eprintln!("[Kensaku] Could not register global shortcut '{}': {}", shortcut_str, e);
+                    }
+                } else {
+                    eprintln!(
+                        "[Kensaku] Could not parse global shortcut: {}",
+                        shortcut_str
+                    );
                 }
-            } else {
-                eprintln!(
-                    "[Kensaku] Could not parse global shortcut: {}",
-                    shortcut_str
-                );
             }
 
             // 2. Setup System Tray

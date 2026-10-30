@@ -48,11 +48,15 @@ fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .visible(false)
         .build()?;
 
-    // The close button hides, the same as Esc: the window goes away and the
-    // app keeps running in the background.
+    // Launcher mode: close hides the window and the app keeps running in the
+    // tray. App mode: close exits the application like a normal desktop app.
     let app_handle = app.clone();
+    let app_mode = crate::config::KensakuConfig::load().app_mode;
     window.on_window_event(move |event| {
         if let WindowEvent::CloseRequested { api, .. } = event {
+            if app_mode == "app" {
+                return;
+            }
             api.prevent_close();
             hide(&app_handle);
         }

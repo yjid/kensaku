@@ -491,7 +491,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               selected={selectedOcrEngine === "tesseract"}
               onSelect={() => setSelectedOcrEngine("tesseract")}
               name="Tesseract"
-              note="Fast and small. Good for most people."
+              note="Fast, clean ASCII text; no download needed. Fallback engine."
               ready={Boolean(ocrStatus?.available)}
               busy={ocrBusy}
               disabled={ocrBusy || !ocrStatus?.engine_present}
@@ -512,7 +512,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               selected={selectedOcrEngine === "accurate"}
               onSelect={() => setSelectedOcrEngine("accurate")}
               name="PP-OCRv6"
-              note="Recommended. Built in, reads small interface text well."
+              note="Recommended. ~6 MB, highest recall on dense UI screenshots, fastest batch throughput."
               ready={Boolean(ocrPackStatus?.ready)}
               busy={Boolean(ocrPackStatus?.downloading || ocrPackBusy)}
               disabled={Boolean(ocrPackStatus?.downloading) || !ocrStatus?.accurate_compiled}
@@ -544,7 +544,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               selected={selectedOcrEngine === "indra"}
               onSelect={() => setSelectedOcrEngine("indra")}
               name="Indra OCR"
-              note="80+ languages, reads scans and tilted pages."
+              note="~27 MB, 80+ languages, rotated/skewed scans; comparable recall, slightly slower."
               ready={Boolean(indraPackStatus?.ready)}
               busy={Boolean(indraPackStatus?.downloading || indraPackBusy)}
               disabled={Boolean(indraPackStatus?.downloading) || !ocrStatus?.accurate_compiled}

@@ -17,7 +17,7 @@ import { Switch } from "./kit";
    reserved so resolving the status never shifts the row. */
 
 const OCR_DESCRIPTION =
-  "Read text from screenshots, scans and photos. PP-OCRv6 is built in and used by default; Indra OCR is an optional download; Tesseract is the fallback where neither can run. Existing images are re-scanned after saving.";
+  "Read text from screenshots, scans and photos. PP-OCRv6 is the default (best recall on dense UI, fastest batch); Indra OCR is the multilingual/rotated-scan option; Tesseract is the clean-text fallback where neither can run. Existing images are re-scanned after saving.";
 
 /* Engines that run from a downloaded model pack inside Kensaku. */
 const PACKS = {
@@ -25,14 +25,15 @@ const PACKS = {
     name: "PP-OCRv6",
     statusCommand: "get_ocr_pack_status",
     downloadCommand: "download_ocr_pack",
-    blurb: "About 6 MB · runs inside Kensaku · reads small UI text well.",
+    blurb:
+      "About 6 MB · runs inside Kensaku · highest token recall on dense UI screenshots, fastest batch throughput; best default for screenshot search.",
   },
   indra: {
     name: "Indra OCR",
     statusCommand: "get_indra_pack_status",
     downloadCommand: "download_indra_pack",
     blurb:
-      "About 27 MB · runs inside Kensaku · 80+ languages, scans, tilted and turned pages. Model weights under a modified OpenRAIL-M license.",
+      "About 27 MB · runs inside Kensaku · 80+ languages, rotated/skewed scans and tilted pages; comparable recall to PP-OCR, slightly slower on simple images. Model weights under a modified OpenRAIL-M license.",
   },
 } as const;
 
@@ -230,12 +231,12 @@ export function OcrField({
           }
           className="h-8 rounded-control border border-line bg-[var(--panel)] px-2 text-[11px] text-fg"
         >
-          <option value="tesseract">Tesseract (needs a separate install)</option>
+          <option value="tesseract">Tesseract (clean ASCII, separate install)</option>
           <option value="accurate" disabled={!status?.accurate_compiled}>
-            PP-OCRv6 (recommended)
+            PP-OCRv6 (recommended · dense UI, fast)
           </option>
           <option value="indra" disabled={!status?.accurate_compiled}>
-            Indra OCR (multilingual, scans)
+            Indra OCR (multilingual, rotated scans)
           </option>
         </select>
       </div>
