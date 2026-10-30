@@ -311,6 +311,11 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             <p className="t-lead rise-in max-w-sm text-muted" style={{ ["--stagger-delay" as string]: "60ms" }}>
               Press <span className="kbd align-middle">{shortcut}</span> from anywhere to search.
             </p>
+            {selectedAppMode === "launcher" && (
+              <p className="rise-in max-w-sm text-[12px] leading-[18px] text-subtle" style={{ ["--stagger-delay" as string]: "90ms" }}>
+                Closing the window just hides Kensaku — it keeps running in the background. If it seems to disappear, press your shortcut or look in the tray.
+              </p>
+            )}
           </div>
           <dl className="rise-in grid grid-cols-2 gap-8" style={{ ["--stagger-delay" as string]: "120ms" }}>
             <Stat value={files} label="Files" />
@@ -621,6 +626,9 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 <p className="text-[14px] font-medium text-fg">Launcher (recommended)</p>
                 <p className="text-[12px] leading-[18px] text-muted">
                   Ultra-light background daemon. Opens instantly with your shortcut, hides when you click away or press Esc, and stays quietly in the tray.
+                </p>
+                <p className="text-[11px] leading-[16px] text-subtle">
+                  Closing the window just hides Kensaku — it keeps running. If it seems to disappear, press your shortcut or click the tray icon.
                 </p>
               </div>
             </button>
