@@ -214,7 +214,7 @@ fn default_true() -> bool {
 /// PP-OCR ships with every installer and is verified at runtime; where it
 /// cannot run (Intel Macs) the engine selection falls back to Tesseract.
 fn default_ocr_engine() -> String {
-    "indra".to_string()
+    "accurate".to_string()
 }
 
 fn default_app_mode() -> String {
@@ -753,7 +753,7 @@ mod tests {
     #[test]
     fn fresh_defaults_are_the_1_0_10_defaults() {
         let cfg = KensakuConfig::default();
-        assert_eq!(cfg.ocr_engine, "indra");
+        assert_eq!(cfg.ocr_engine, "accurate");
         assert!(!cfg.excluded_extensions.iter().any(|e| e == "mp4" || e == "zip"));
         assert!(cfg.excluded_extensions.iter().any(|e| e == "exe"));
         assert!(!cfg.excluded_dirs.iter().any(|d| d.contains('*')));

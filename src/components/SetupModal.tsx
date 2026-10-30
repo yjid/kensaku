@@ -35,7 +35,7 @@ function pickEngine(status: OcrStatus): OcrEngine {
   const accurateCompilable = status.accurate_compiled !== false;
   if (status.engine === "indra" && accurateCompilable) return "indra";
   if (status.engine === "accurate" && accurateCompilable) return "accurate";
-  if (!status.engine_present && accurateCompilable) return "indra";
+  if (!status.engine_present && accurateCompilable) return "accurate";
   return "tesseract";
 }
 
