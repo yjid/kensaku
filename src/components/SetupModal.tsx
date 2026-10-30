@@ -509,11 +509,13 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               installHint={!ocrStatus?.accurate_compiled ? "Not in this build" : null}
               busyLabel={
                 ocrPackStatus?.downloading && ocrPackStatus.progress
-                  ? `Downloading ${Math.round(
-                      ((ocrPackStatus.progress.downloaded ?? 0) /
-                        Math.max(1, ocrPackStatus.progress.total ?? 1)) *
-                        100,
-                    )}%`
+                  ? ocrPackStatus.progress.phase === "verifying"
+                    ? `Verifying ${ocrPackStatus.progress.file}…`
+                    : `Downloading ${Math.round(
+                        ((ocrPackStatus.progress.downloaded ?? 0) /
+                          Math.max(1, ocrPackStatus.progress.total ?? 1)) *
+                          100,
+                      )}%`
                   : undefined
               }
               onDownload={async () => {
@@ -539,11 +541,13 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               installHint={!ocrStatus?.accurate_compiled ? "Not in this build" : null}
               busyLabel={
                 indraPackStatus?.downloading && indraPackStatus.progress
-                  ? `Downloading ${Math.round(
-                      ((indraPackStatus.progress.downloaded ?? 0) /
-                        Math.max(1, indraPackStatus.progress.total ?? 1)) *
-                        100,
-                    )}%`
+                  ? indraPackStatus.progress.phase === "verifying"
+                    ? `Verifying ${indraPackStatus.progress.file}…`
+                    : `Downloading ${Math.round(
+                        ((indraPackStatus.progress.downloaded ?? 0) /
+                          Math.max(1, indraPackStatus.progress.total ?? 1)) *
+                          100,
+                      )}%`
                   : undefined
               }
               onDownload={async () => {

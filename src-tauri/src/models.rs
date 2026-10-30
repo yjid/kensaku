@@ -249,6 +249,9 @@ pub struct ModelProgress {
     pub file: String,
     pub downloaded: u64,
     pub total: u64,
+    /// "verifying" while an existing artifact's checksum is being checked,
+    /// "downloading" while bytes are being fetched.
+    pub phase: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -542,10 +545,13 @@ fn download_missing_for(dir: &Path, artifacts: &[Artifact], label: &str) -> Resu
         ));
     }
 
+    let total_bytes: u64 = artifacts.iter().map(|a| a.bytes_expected).sum();
+    let mut completed_bytes: u64 = 0;
     // Always verify an existing artifact. A truncated or corrupt final file is
     // removed and downloaded again instead of being trusted by name alone.
     for artifact in artifacts {
-        download_one(dir, artifact)?;
+        download_one(dir, artifact, total_bytes, completed_bytes)?;
+        completed_bytes = completed_bytes.saturating_add(artifact.bytes_expected);
     }
 
     Ok(())
@@ -569,12 +575,31 @@ fn free_bytes(_path: &Path) -> Option<u64> {
     None
 }
 
-fn download_one(dir: &Path, artifact: &Artifact) -> Result<(), String> {
+fn download_one(
+    dir: &Path,
+    artifact: &Artifact,
+    total_bytes: u64,
+    completed_before: u64,
+) -> Result<(), String> {
     let final_path = dir.join(artifact.name);
-    if final_path.is_file() && sha256_matches(&final_path, artifact.sha256)? {
-        return Ok(());
-    }
     if final_path.is_file() {
+        // Show "verifying" instead of a misleading 0% while the existing
+        // file's checksum is being read.
+        set_progress(Some(ModelProgress {
+            file: artifact.name.to_string(),
+            downloaded: completed_before,
+            total: total_bytes,
+            phase: "verifying".to_string(),
+        }));
+        if sha256_matches(&final_path, artifact.sha256)? {
+            set_progress(Some(ModelProgress {
+                file: artifact.name.to_string(),
+                downloaded: completed_before.saturating_add(artifact.bytes_expected),
+                total: total_bytes,
+                phase: "downloading".to_string(),
+            }));
+            return Ok(());
+        }
         let _ = std::fs::remove_file(&final_path);
     }
 
@@ -587,13 +612,21 @@ fn download_one(dir: &Path, artifact: &Artifact) -> Result<(), String> {
 
     set_progress(Some(ModelProgress {
         file: artifact.name.to_string(),
-        downloaded,
-        total: artifact.bytes_expected,
+        downloaded: completed_before.saturating_add(downloaded),
+        total: total_bytes,
+        phase: "downloading".to_string(),
     }));
 
     let mut last_error = None;
     for url in artifact.urls {
-        match download_url(url, artifact, &part_path, &mut downloaded) {
+        match download_url(
+            url,
+            artifact,
+            &part_path,
+            &mut downloaded,
+            completed_before,
+            total_bytes,
+        ) {
             Ok(()) => {
                 if sha256_matches(&part_path, artifact.sha256)? {
                     std::fs::rename(&part_path, &final_path).map_err(|e| {
@@ -601,8 +634,9 @@ fn download_one(dir: &Path, artifact: &Artifact) -> Result<(), String> {
                     })?;
                     set_progress(Some(ModelProgress {
                         file: artifact.name.to_string(),
-                        downloaded: artifact.bytes_expected,
-                        total: artifact.bytes_expected,
+                        downloaded: completed_before.saturating_add(artifact.bytes_expected),
+                        total: total_bytes,
+                        phase: "downloading".to_string(),
                     }));
                     return Ok(());
                 }
@@ -624,6 +658,8 @@ fn download_url(
     artifact: &Artifact,
     part_path: &Path,
     downloaded: &mut u64,
+    completed_before: u64,
+    total_bytes: u64,
 ) -> Result<(), String> {
     let mut request = ureq::get(url).timeout(Duration::from_secs(600));
     if *downloaded > 0 {
@@ -690,8 +726,9 @@ fn download_url(
         *downloaded = downloaded.saturating_add(read as u64);
         set_progress(Some(ModelProgress {
             file: artifact.name.to_string(),
-            downloaded: *downloaded,
-            total,
+            downloaded: completed_before.saturating_add(*downloaded),
+            total: total_bytes,
+            phase: "downloading".to_string(),
         }));
     }
     if total > 0 && *downloaded < total {
@@ -866,7 +903,7 @@ mod download_tests {
             bytes_expected: full.len() as u64,
             sha256: None,
         };
-        download_one(&dir, &artifact).unwrap();
+        download_one(&dir, &artifact, artifact.bytes_expected, 0).unwrap();
         assert_eq!(std::fs::read(dir.join("artifact.bin")).unwrap(), full);
         assert!(!part.exists());
         let _ = std::fs::remove_dir_all(&dir);
@@ -904,7 +941,7 @@ mod download_tests {
             bytes_expected: full.len() as u64,
             sha256: None,
         };
-        download_one(&dir, &artifact).unwrap();
+        download_one(&dir, &artifact, artifact.bytes_expected, 0).unwrap();
         assert_eq!(std::fs::read(dir.join("artifact.bin")).unwrap(), full);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -933,7 +970,7 @@ mod download_tests {
             bytes_expected: full.len() as u64,
             sha256: None,
         };
-        let result = download_one(&dir, &artifact);
+        let result = download_one(&dir, &artifact, artifact.bytes_expected, 0);
         assert!(result.is_err());
         assert!(dir.join("artifact.bin.part").exists());
         let _ = std::fs::remove_dir_all(&dir);

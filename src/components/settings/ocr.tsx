@@ -248,9 +248,11 @@ export function OcrField({
               <p className="text-[12px] leading-[18px] text-muted">{packInfo.blurb}</p>
               <p className="mt-0.5 font-mono text-[11px] text-subtle">
                 {pack?.downloading
-                  ? `Downloading ${Math.round(
-                      ((pack.progress?.downloaded ?? 0) / Math.max(1, pack.progress?.total ?? 1)) * 100,
-                    )}%`
+                  ? pack.progress?.phase === "verifying"
+                    ? `Verifying ${pack.progress.file}…`
+                    : `Downloading ${Math.round(
+                        ((pack.progress?.downloaded ?? 0) / Math.max(1, pack.progress?.total ?? 1)) * 100,
+                      )}%`
                   : pack?.ready
                     ? ppocrReady
                       ? "Installed · verified"

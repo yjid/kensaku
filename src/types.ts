@@ -356,6 +356,7 @@ export interface ModelProgress {
   file: string;
   downloaded: number;
   total: number;
+  phase: "verifying" | "downloading" | string;
 }
 
 export interface ModelsStatus {
