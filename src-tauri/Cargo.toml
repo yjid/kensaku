@@ -33,7 +33,7 @@ auto-launch = "0.5"
 parking_lot = "0.12"
 libc = "0.2"
 open = "5"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 regex = "1"
 sha2 = "0.10"
 rayon = "1.10"
