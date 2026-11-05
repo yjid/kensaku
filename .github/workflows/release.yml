@@ -160,6 +160,11 @@ jobs:
           $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
           New-Item -ItemType Directory -Force -Path "dist\portable" | Out-Null
           Copy-Item "src-tauri\target\release\kensaku.exe" "dist\portable\kensaku.exe"
+          # The portable zip is all a portable user gets: unlike the MSI/NSIS
+          # bundles it ships no resource manifest, so the exe's OCR runtime
+          # must be zipped beside it or OCR can never load (#94).
+          if (-not (Test-Path "src-tauri\target\release\onnxruntime.dll")) { throw "onnxruntime.dll missing from target\release; the portable build would ship without OCR" }
+          Copy-Item "src-tauri\target\release\onnxruntime.dll" "dist\portable\onnxruntime.dll"
           Set-Content -Path "dist\portable\portable" -Value "" -NoNewline -Encoding ascii
           @'
           Kensaku portable
