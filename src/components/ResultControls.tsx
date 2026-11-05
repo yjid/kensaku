@@ -1,8 +1,14 @@
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Bookmark, ChevronDown, LayoutGrid, Rows3 } from "lucide-react";
+import { Bookmark, Check, ChevronDown, LayoutGrid, Rows3 } from "lucide-react";
 
 /* Right side of the toolbar: sort, layout, save. Same capsule material as
    the category segments. */
+
+/* The sort control is an in-app listbox, not a native <select>. On Linux a
+   <select> opens its option list as a separate GTK popup that steals focus
+   from the webview, which the launcher read as "user left" and hid the
+   palette (#95). It also renders differently per OS; this does not. */
 
 export function ResultControls({
   sort,
@@ -20,6 +26,10 @@ export function ResultControls({
   canSave: boolean;
 }) {
   const { t } = useTranslation("search");
+  const [sortOpen, setSortOpen] = useState(false);
+  const sortRef = useRef<HTMLDivElement>(null);
+  const sortButtonRef = useRef<HTMLButtonElement>(null);
+
   const SORT_OPTIONS = [
     { value: "best", label: t("sort.best") },
     { value: "newest", label: t("sort.newest") },
@@ -27,25 +37,88 @@ export function ResultControls({
     { value: "largest", label: t("sort.largest") },
     { value: "name", label: t("sort.name") },
   ];
+  const currentLabel = SORT_OPTIONS.find((o) => o.value === sort)?.label ?? sort;
+
+  useEffect(() => {
+    if (!sortOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!sortRef.current?.contains(e.target as Node)) setSortOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSortOpen(false);
+        sortButtonRef.current?.focus();
+      }
+    };
+    const onOpen = () => {
+      sortRef.current
+        ?.querySelector<HTMLButtonElement>('[role="option"][aria-selected="true"]')
+        ?.focus();
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    const raf = requestAnimationFrame(onOpen);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+      cancelAnimationFrame(raf);
+    };
+  }, [sortOpen]);
+
+  const pickSort = (value: string) => {
+    setSortOpen(false);
+    sortButtonRef.current?.focus();
+    if (value !== sort) onSort(value);
+  };
 
   return (
     <div className="flex shrink-0 items-center gap-2">
-      <label className="control relative flex h-[38px] items-center rounded-control" title={t("sort.label")}>
-        <span className="sr-only">{t("sort.label")}</span>
-        <select
-          value={sort}
-          onChange={(e) => onSort(e.target.value)}
+      <div ref={sortRef} className="relative">
+        <button
+          type="button"
+          ref={sortButtonRef}
+          aria-haspopup="listbox"
+          aria-expanded={sortOpen}
           aria-label={t("sort.label")}
-          className="h-full cursor-pointer appearance-none rounded-control bg-transparent pl-3.5 pr-8 text-[13px] font-medium text-fg outline-none"
+          title={t("sort.label")}
+          onClick={() => setSortOpen((v) => !v)}
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+            e.preventDefault();
+            setSortOpen(true);
+          }}
+          className="control flex h-[38px] cursor-pointer items-center gap-2 rounded-control pl-3.5 pr-2.5 text-[13px] font-medium text-fg outline-none"
         >
-          {SORT_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-3 h-3.5 w-3.5 text-subtle" strokeWidth={2} />
-      </label>
+          <span>{currentLabel}</span>
+          <ChevronDown
+            className={`h-3.5 w-3.5 text-subtle transition-transform ${sortOpen ? "rotate-180" : ""}`}
+            strokeWidth={2}
+          />
+        </button>
+
+        {sortOpen && (
+          <div
+            role="listbox"
+            aria-label={t("sort.label")}
+            className="menu-pop elevated absolute right-0 top-[calc(100%+6px)] z-[70] min-w-[160px] overflow-hidden p-1"
+          >
+            {SORT_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                role="option"
+                aria-selected={o.value === sort}
+                onClick={() => pickSort(o.value)}
+                className="menu-row flex w-full items-center justify-between text-left"
+              >
+                <span>{o.label}</span>
+                {o.value === sort && <Check className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div role="radiogroup" aria-label={t("view.layout")} className="control flex items-center gap-0.5 rounded-control p-1">
         <button type="button" role="radio" aria-checked={view === "grid"} aria-label={t("view.gridShort")} title={t("view.gridShort")} onClick={() => onView("grid")} className="seg !px-2.5">

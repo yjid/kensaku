@@ -38,6 +38,7 @@ import { PreviewDialog } from "./components/PreviewDialog";
 import { classify } from "./lib/categories";
 import { interpretationLabel } from "./lib/interpretation";
 import { inFilter } from "./lib/query";
+import { shouldHideOnBlur } from "./lib/launcherFocus";
 import { isNewerVersion } from "./lib/version";
 import { checkForUpdates } from "./lib/updater";
 import { getVersion } from "@tauri-apps/api/app";
@@ -193,6 +194,9 @@ function App() {
   const showThumbs = config?.show_thumbnails !== false;
   const view: ResultView = config?.results_view === "list" ? "list" : "grid";
   const [menu, setMenu] = useState<{ x: number; y: number; result: SearchResult } | null>(null);
+  // Timestamp of the last pointerdown anywhere in the window. A blur right
+  // after one is a transient popup taking focus, not the user leaving (#95).
+  const lastPointerDownRef = useRef(0);
   const [details, setDetails] = useState<SearchResult | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [preview, setPreview] = useState<SearchResult | null>(null);
@@ -987,17 +991,31 @@ function App() {
     return () => window.removeEventListener("keydown", onEsc);
   }, [isSetupComplete, showSettings, showDuplicates, showHelp, preview, details, saveOpen, slashFilter, scopePrefix, commandOutput, query, config?.app_mode]);
 
+  // Track pointerdowns inside the window so the blur handler can tell a
+  // transient popup taking focus (#95) from the user genuinely leaving.
+  useEffect(() => {
+    const onPointerDown = () => {
+      lastPointerDownRef.current = Date.now();
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, []);
+
   // Dismiss like a launcher: hide when the window loses focus (clicking away,
   // switching apps), unless a modal overlay is open. The setup wizard and
-  // native dialogs (folder picker, shortcut capture) also take focus away —
-  // hiding there would destroy the window mid-decision.
+  // native dialogs (folder picker, shortcut capture) also take focus away;
+  // hiding there would destroy the window mid-decision. A blur right after a
+  // pointerdown inside the window is a popup that was just opened (sort
+  // list, IME) and must not hide the palette.
   useEffect(() => {
     const onBlur = () => {
-      if (isSetupComplete !== true) return;
-      // The config may not have arrived yet on a fresh window; never treat an
-      // app-mode window as a launcher in that gap.
-      if (!config || config.app_mode === "app") return;
-      if (showSettings || showDuplicates || showHelp || preview || details || saveOpen || menu) return;
+      const decision = shouldHideOnBlur({
+        setupComplete: isSetupComplete,
+        appMode: config?.app_mode,
+        modalOpen: showSettings || showDuplicates || showHelp || preview !== null || details !== null || saveOpen || menu !== null,
+        msSincePointerDown: Date.now() - lastPointerDownRef.current,
+      });
+      if (!decision) return;
       invoke("hide_window").catch(() => undefined);
     };
     window.addEventListener("blur", onBlur);
@@ -1019,6 +1037,11 @@ function App() {
   return (
     <div
       className="relative flex h-screen w-screen select-none flex-col overflow-hidden bg-bg text-fg"
+      // Suppress the webview's native context menu (#95): on Linux/WebKitGTK
+      // it opens a native popup that steals focus and the blur handler hid
+      // the palette. Result rows keep their in-app menu via their own
+      // onContextMenu handlers.
+      onContextMenu={(e) => e.preventDefault()}
     >
       {isSetupComplete === false && (
         <SetupModal
