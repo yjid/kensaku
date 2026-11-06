@@ -502,9 +502,9 @@ fn parse_safetensors<R: Read + Seek>(reader: &mut R) -> Option<(Vec<f32>, usize,
     }
     let vocab_size = shape[0];
     let dim = shape[1];
-    if dim != EMBEDDING_DIM {
-        return None;
-    }
+    // Width policy lives with the caller: rejecting here would collapse a
+    // wrong-width matrix into "not a readable safetensors matrix" and hide
+    // the actual problem from whoever is debugging.
     let item_size: u64 = match dtype.as_str() {
         "F32" => 4,
         "F16" => 2,
@@ -702,11 +702,16 @@ mod tests {
     }
 
     #[test]
-    fn rejects_wrong_embedding_width() {
+    fn parse_returns_the_declared_width_and_the_loader_rejects_it() {
+        // parse_safetensors parses; the loader owns width policy and reports
+        // the mismatch with the width this build expects.
         let data = vec![0u8; 3 * 4];
         let bytes = safetensors_bytes("F32", &[1, 3], &data);
         let mut reader = Cursor::new(bytes);
-        assert!(parse_safetensors(&mut reader).is_none());
+        let (embeddings, vocab_size, dim) = parse_safetensors(&mut reader).expect("parse");
+        assert_eq!(vocab_size, 1);
+        assert_eq!(dim, 3);
+        assert_eq!(embeddings.len(), 3);
     }
 
     #[test]
