@@ -1823,6 +1823,7 @@ impl IndexerManager {
     ///   index. On a change (an engine became usable, the user switched, an
     ///   OCR fix shipped) every image and PDF is re-queued and the extraction
     ///   cache dropped. Returns true when it re-queued.
+    ///
     /// Returns how many images/PDFs were queued for a re-read. Zero is a
     /// meaningful answer: the signature changed but nothing was left to
     /// re-read, and a crawl reason must not blame OCR for work it did not
