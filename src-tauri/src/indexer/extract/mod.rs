@@ -1,6 +1,7 @@
 pub mod delimited;
 pub mod external;
 pub mod image;
+pub mod markdown;
 pub mod office;
 pub mod pdf;
 pub mod pdf_image;
@@ -118,6 +119,7 @@ pub enum DocumentFormat {
     Rtf,
     /// CSV and TSV: one line of text per row.
     Delimited,
+    Markdown,
     PlainText,
     Image,
     Unknown,
@@ -189,9 +191,10 @@ pub fn sniff_format(path: &Path) -> DocumentFormat {
             DocumentFormat::Image
         }
         "csv" | "tsv" => DocumentFormat::Delimited,
-        "txt" | "md" | "markdown" | "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "json"
-        | "toml" | "yaml" | "yml" | "xml" | "html" | "htm" | "css" | "c" | "cpp" | "h" | "java"
-        | "sh" | "log" | "sql" => DocumentFormat::PlainText,
+        "md" | "markdown" => DocumentFormat::Markdown,
+        "txt" | "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "json" | "toml" | "yaml"
+        | "yml" | "xml" | "html" | "htm" | "css" | "c" | "cpp" | "h" | "java" | "sh" | "log"
+        | "sql" => DocumentFormat::PlainText,
         _ => DocumentFormat::Unknown,
     }
 }
@@ -739,6 +742,13 @@ fn extract_document_inner(
                 format_name: "Delimited text".to_string(),
             })
         }
+        DocumentFormat::Markdown => Some(DocumentExtract {
+            text: markdown::extract_sampled(path, capped_bytes)?,
+            page_count: None,
+            is_encrypted: false,
+            is_scanned: false,
+            format_name: "Markdown".to_string(),
+        }),
         DocumentFormat::PlainText | DocumentFormat::Unknown => {
             // Large plain text: read a head and a tail within the configured
             // content budget.
@@ -857,6 +867,89 @@ mod tests {
         let started = Instant::now();
         let result = extract_document(path, 1_000_000);
         (result, started.elapsed())
+    }
+
+    #[test]
+    fn markdown_dispatch_keeps_metadata_and_cleans_body() {
+        let source = include_bytes!("../../../tests/fixtures/markdown/note.md");
+        for extension in ["md", "markdown", "MD"] {
+            let file = TempFile::new(extension, source);
+            assert_eq!(sniff_format(&file.path), DocumentFormat::Markdown);
+            let document = extract(&file.path).0.expect("Markdown document");
+            assert_eq!(document.format_name, "Markdown");
+            assert!(document.text.contains("Searchable title"));
+            assert!(document.text.contains("let answer = 42;"));
+            assert!(document.text.contains("Diagram label"));
+            assert!(!document.text.contains("https://example.com"));
+            assert!(!document.text.contains("```"));
+        }
+    }
+
+    #[test]
+    fn markdown_reads_are_bounded_and_decode_utf16() {
+        let source = "---\ntitle: 検索\n---\n[hello](hidden)\n";
+        let bytes: Vec<u8> = [0xff, 0xfe]
+            .into_iter()
+            .chain(source.encode_utf16().flat_map(u16::to_le_bytes))
+            .collect();
+        let file = TempFile::new("md", &bytes);
+        let document = extract(&file.path).0.expect("UTF-16 Markdown");
+        assert!(document.text.contains("検索"));
+        assert!(document.text.contains("hello"));
+        assert!(!document.text.contains("hidden"));
+
+        let large = TempFile::new("md", "検索 word\n".repeat(10_000).as_bytes());
+        let text = markdown::extract_markdown(&large.path, 101).expect("bounded text");
+        assert!(text.len() <= 101);
+        assert!(text.contains("検索"));
+        assert_eq!(markdown::extract_markdown(&large.path, 0), None);
+        let binary = TempFile::new("md", b"not\0text");
+        assert_eq!(markdown::extract_markdown(&binary.path, 100), None);
+    }
+
+    #[test]
+    fn markdown_samples_do_not_share_unfinished_syntax() {
+        for prefix in ["```rust\n", "[unfinished]("] {
+            let source = format!(
+                "{prefix}{}\n[Tail term](hidden-url)\n",
+                "padding\n".repeat(2000)
+            );
+            let file = TempFile::new("md", source.as_bytes());
+            let document = extract_document_inner(
+                &file.path,
+                1024,
+                DocumentFormat::Markdown,
+                source.len() as u64,
+                None,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+            assert!(document.text.contains("Tail term"));
+            assert!(!document.text.contains("hidden-url"));
+            assert!(document.text.len() <= 1024);
+        }
+    }
+
+    #[test]
+    fn large_markdown_keeps_head_and_tail_searchable() {
+        let source = format!(
+            "# Head term\n{}\n[Tail term](hidden-url)\n",
+            "padding\n".repeat(2000)
+        );
+        let file = TempFile::new("md", source.as_bytes());
+        let document = extract_document_inner(
+            &file.path,
+            1024,
+            DocumentFormat::Markdown,
+            source.len() as u64,
+            None,
+            &AtomicBool::new(false),
+        )
+        .expect("large Markdown document");
+        assert!(document.text.contains("Head term"));
+        assert!(document.text.contains("Tail term"));
+        assert!(!document.text.contains("hidden-url"));
+        assert!(document.text.len() <= 1024);
     }
 
     #[test]

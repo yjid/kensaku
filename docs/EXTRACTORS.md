@@ -1,5 +1,24 @@
 # External extractors
 
+## Built-in Markdown extraction
+
+`.md` and `.markdown` files use a built-in, dependency-free text extractor.
+It retains frontmatter (including titles, tags and aliases), keeps code while
+removing fenced-code delimiters, and keeps link labels and image alt text while
+omitting destinations. Inline and reference links are supported. Fenced and
+indented code remain literal. Search snippets and text previews use the same
+cleanup as indexing.
+
+This is best-effort cleanup, not a complete CommonMark renderer or YAML parser:
+frontmatter keys and values are retained as text, and malformed or unresolved
+links are preserved. Large files retain the text extractor's bounded head/tail
+sampling; each sample is parsed independently so unfinished head syntax cannot
+consume the tail. Sampled tails lack preceding Markdown context. Fast snippets
+read the first 64 KiB and cannot resolve reference definitions beyond that window. Existing indexed files
+need a rebuild to pick up the new extraction without a change on disk.
+
+## External plugins
+
 Kensaku ships **zero plugins** by default. Every external extractor is opt-in,
 lives in `config.json`, and only runs when a path matches its extension or MIME
 selector. A new format does not require recompiling Kensaku.

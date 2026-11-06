@@ -1320,6 +1320,11 @@ fn delimited_row_snippet<'a>(mut rows: impl Iterator<Item = &'a str>, query: &st
 /// Plain text is read directly; everything else only reads the extraction
 /// cache. See [`ContentIndex::get_snippet_fast`].
 pub fn snippet_for_path(path: &Path, query: &str) -> Option<String> {
+    if crate::indexer::extract::markdown::is_markdown(path) {
+        let text =
+            crate::indexer::extract::markdown::extract_markdown(path, SNIPPET_READ_LIMIT as usize)?;
+        return ContentIndex::extract_snippet_from_text(&text, query);
+    }
     if is_delimited_extension(path.extension().and_then(|ext| ext.to_str())) {
         let file = fs::File::open(path).ok()?;
         let truncated = file.metadata().ok()?.len() > SNIPPET_READ_LIMIT;
@@ -2084,6 +2089,51 @@ mod tests {
             started.elapsed()
         );
         let _ = fs::remove_file(&pdf_path);
+    }
+
+    #[test]
+    fn markdown_content_search_uses_cleaned_text() {
+        let temp = temp_index("markdown");
+        let index = temp.index.as_ref().unwrap();
+        let text = crate::indexer::extract::markdown::clean_text(
+            include_str!("../../tests/fixtures/markdown/note.md"),
+            10000,
+        );
+        add(index, "/synthetic/note.md", "note.md", &text);
+        index.commit().unwrap();
+        for query in ["Searchable", "Alternate", "answer", "Project", "Diagram"] {
+            assert_eq!(index.search(query, 10, None).len(), 1, "{query}");
+        }
+        for query in ["https", "png"] {
+            assert!(index.search(query, 10, None).is_empty(), "{query}");
+        }
+    }
+
+    #[test]
+    fn markdown_snippets_share_indexed_text_cleanup() {
+        let nanos = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "kensaku-markdown-snippet-{}-{nanos}.md",
+            std::process::id()
+        ));
+        let source = include_bytes!("../../tests/fixtures/markdown/note.md");
+        fs::write(&path, source).unwrap();
+        let text = crate::indexer::extract::markdown::extract_markdown(&path, 64 * 1024)
+            .expect("Markdown text");
+        for query in ["Searchable", "Project", "answer", "Diagram"] {
+            let snippet = snippet_for_path(&path, query).expect("Markdown snippet");
+            assert_eq!(
+                Some(snippet.clone()),
+                ContentIndex::extract_snippet_from_text(&text, query)
+            );
+            assert!(!snippet.contains("https://example.com"));
+            assert!(!snippet.contains("images/diagram.png"));
+            assert!(!snippet.contains("```"));
+        }
+        let _ = fs::remove_file(path);
     }
 
     #[test]

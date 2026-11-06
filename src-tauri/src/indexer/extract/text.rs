@@ -64,6 +64,77 @@ pub fn extract_text(path: &Path, max_bytes: usize) -> Option<String> {
     Some(clean_text(&cleaned))
 }
 
+/// Decode a bounded UTF-16 sample using the document BOM. Incomplete edge
+/// surrogates are omitted; internal malformed units use replacement characters.
+pub(crate) fn decode_utf16_sample(bytes: &[u8], header: &[u8], tail: bool) -> Option<String> {
+    let be = match header.get(..2)? {
+        [0xff, 0xfe] => false,
+        [0xfe, 0xff] => true,
+        _ => return None,
+    };
+    let body = if !tail {
+        bytes.get(2..).unwrap_or_default()
+    } else {
+        bytes
+    };
+    let mut units: Vec<u16> = body
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| {
+            if be {
+                u16::from_be_bytes([c[0], c[1]])
+            } else {
+                u16::from_le_bytes([c[0], c[1]])
+            }
+        })
+        .collect();
+    if tail && units.first().is_some_and(|u| (0xdc00..=0xdfff).contains(u)) {
+        units.remove(0);
+    }
+    if units.last().is_some_and(|u| (0xd800..=0xdbff).contains(u)) {
+        units.pop();
+    }
+    Some(
+        char::decode_utf16(units)
+            .map(|r| r.unwrap_or(char::REPLACEMENT_CHARACTER))
+            .collect(),
+    )
+}
+
+/// Bounded text decoding shared with markup extractors, without stripping metadata.
+pub(crate) fn read_text(path: &Path, max_bytes: usize) -> Option<String> {
+    let mut file = File::open(path).ok()?;
+    let mut buffer = Vec::new();
+    let mut handle = (&mut file).take(max_bytes as u64);
+    handle.read_to_end(&mut buffer).ok()?;
+
+    if buffer.is_empty() {
+        return None;
+    }
+
+    // 1. UTF-16 with a byte-order mark (BOM)
+    if let Some(s) = decode_utf16_sample(&buffer, &buffer, false) {
+        return Some(s.replace('\0', ""));
+    }
+
+    // 2. Reject binary files (null bytes in first 1024 bytes)
+    if buffer.iter().take(1024).any(|&b| b == 0) {
+        return None;
+    }
+
+    // 3. UTF-8 decoding
+    let raw_text = match String::from_utf8(buffer.clone()) {
+        Ok(s) => s,
+        Err(_) => {
+            // Lossy fallback if mostly text
+            String::from_utf8_lossy(&buffer).to_string()
+        }
+    };
+
+    Some(raw_text.trim_start_matches('\u{feff}').replace('\0', ""))
+}
+
 pub fn extract_rtf(path: &Path, max_bytes: usize) -> Option<String> {
     let mut file = File::open(path).ok()?;
     let mut buffer = Vec::new();
