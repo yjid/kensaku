@@ -1,0 +1,721 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 56ca166..9bcf39b 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -3,6 +3,16 @@
+ All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
+ versioning: [SemVer](https://semver.org/).
+ 
++## [Unreleased]
++
++### Added
++- **Per-directory indexing mode: names only, or names and content.** New `name_only_dirs`
++  setting (and a "Names only" switch next to each folder in Settings → Folders). Files below a
++  listed directory stay searchable by name and path but are never read, OCR'd or embedded,
++  which keeps media libraries, archives and network shares cheap to index. Switching a
++  directory over drops its content documents and semantic units; switching it back queues its
++  files for extraction. An empty list keeps today's behavior.
++
+ ## [1.0.16] — 2026-11-05
+ 
+ ### Fixed
+diff --git a/docs/CONFIG.md b/docs/CONFIG.md
+index bb4b1f3..eaaec95 100644
+--- a/docs/CONFIG.md
++++ b/docs/CONFIG.md
+@@ -51,6 +51,7 @@ index, OCR state, everything else under the data directory):
+ | `content_max_semantic_units` | number | `48` | Maximum embedding chunks per document. |
+ | `agent_scoped_roots` | string[] | `[]` | MCP/CLI read-only scope roots. Empty means the whole index. |
+ | `include_ignored` | bool | `false` | Include files matched by `.gitignore` / `.cursorignore`. |
++| `name_only_dirs` | string[] | `[]` | Directories (a watched root or any folder below it) indexed by file name and path only: no text extraction, OCR or semantic units. Everything else is indexed by name and content. Changing the list reconciles the index on the next scan. |
+ | `theme` | string | `dark` | `light` or `dark`. Fresh installs follow the OS theme before falling back to dark. |
+ | `language` | string\|null | `null` | UI language code (`en`, `zh`); `null` auto-detects the system. |
+ | `aliases` | object[] | `resume → cv, curriculum vitae`; `invoice → receipt, bill`; `screenshot → screen shot, capture`; plus receipt, contract, photo | Personal vocabulary for plain-language queries. |
+diff --git a/src-tauri/src/agent/mod.rs b/src-tauri/src/agent/mod.rs
+index 476265c..19882fc 100644
+--- a/src-tauri/src/agent/mod.rs
++++ b/src-tauri/src/agent/mod.rs
+@@ -73,6 +73,7 @@ impl HeadlessIndex {
+         crate::embed::set_max_semantic_units(config.content_max_semantic_units);
+         crate::ocr::set_engine(&config.ocr_engine);
+         crate::indexer::extract::set_external_extractors(config.extractors.clone());
++        crate::indexer::extract::set_name_only_dirs(config.name_only_dirs.clone());
+ 
+         // Read-write is fine: WAL lets the GUI writer and this connection
+         // coexist. Nothing on the headless path writes.
+diff --git a/src-tauri/src/commands.rs b/src-tauri/src/commands.rs
+index e20f98b..2e481c2 100644
+--- a/src-tauri/src/commands.rs
++++ b/src-tauri/src/commands.rs
+@@ -1006,6 +1006,7 @@ pub async fn run_setup_again() -> Result<(), String> {
+ #[tauri::command]
+ pub async fn complete_setup(
+     watched_dirs: Vec<String>,
++    name_only_dirs: Option<Vec<String>>,
+     excluded_dirs: Vec<String>,
+     shortcut: Option<String>,
+     ocr_engine: Option<String>,
+@@ -1015,6 +1016,9 @@ pub async fn complete_setup(
+ ) -> Result<(), String> {
+     let mut config = KensakuConfig::load();
+     config.watched_dirs = watched_dirs.into_iter().map(PathBuf::from).collect();
++    if let Some(dirs) = name_only_dirs {
++        config.name_only_dirs = dirs.into_iter().map(PathBuf::from).collect();
++    }
+     config.excluded_dirs = excluded_dirs;
+     if let Some(sc) = shortcut
+         && !sc.trim().is_empty()
+@@ -1042,6 +1046,7 @@ pub async fn complete_setup(
+     crate::embed::set_max_semantic_units(config.content_max_semantic_units);
+     crate::ocr::set_engine(&config.ocr_engine);
+     crate::indexer::extract::set_external_extractors(config.extractors.clone());
++    crate::indexer::extract::set_name_only_dirs(config.name_only_dirs.clone());
+     *state.indexer.config.write() = config.clone();
+     if let Some(daemon) = state.daemon.as_ref() {
+         // In daemon mode this window cannot write the stores; ask the daemon
+diff --git a/src-tauri/src/config.rs b/src-tauri/src/config.rs
+index 924b041..7ba45b0 100644
+--- a/src-tauri/src/config.rs
++++ b/src-tauri/src/config.rs
+@@ -200,6 +200,12 @@ pub struct KensakuConfig {
+     /// developers do ("ignore parity").
+     #[serde(default)]
+     pub include_ignored: bool,
++    /// Directories (watched roots or any folder below them) indexed by file
++    /// name and path only: no text extraction, OCR or embeddings. Everything
++    /// else keeps the default "name + content" behavior, so an empty list
++    /// leaves existing setups unchanged.
++    #[serde(default)]
++    pub name_only_dirs: Vec<PathBuf>,
+     /// Persisted UI theme ("light" or "dark"). Legacy "paper" / "void"
+     /// configs are migrated at load (v5).
+     #[serde(default = "default_theme")]
+@@ -467,6 +473,7 @@ impl Default for KensakuConfig {
+             content_max_semantic_units: default_content_max_semantic_units(),
+             agent_scoped_roots: Vec::new(),
+             include_ignored: false,
++            name_only_dirs: Vec::new(),
+             extractors: Vec::new(),
+             ocr_enabled: true,
+             ocr_max_image_bytes: 0,
+@@ -975,6 +982,26 @@ mod tests {
+         assert!(!migrated);
+     }
+ 
++    #[test]
++    fn name_only_dirs_default_empty_and_round_trip() {
++        assert!(KensakuConfig::default().name_only_dirs.is_empty());
++
++        let cfg = KensakuConfig {
++            name_only_dirs: vec![PathBuf::from("/media")],
++            ..KensakuConfig::default()
++        };
++        let json = serde_json::to_string(&cfg).unwrap();
++        let (parsed, migrated) = KensakuConfig::parse_and_migrate(&json).unwrap();
++        assert!(!migrated);
++        assert_eq!(parsed.name_only_dirs, vec![PathBuf::from("/media")]);
++
++        // A config written before the field existed still loads, unchanged.
++        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
++        value.as_object_mut().unwrap().remove("name_only_dirs");
++        let (legacy, _) = KensakuConfig::parse_and_migrate(&value.to_string()).unwrap();
++        assert!(legacy.name_only_dirs.is_empty());
++    }
++
+     #[test]
+     fn crawl_mode_and_pause_parse_from_config() {
+         let cfg = KensakuConfig::default();
+diff --git a/src-tauri/src/indexer/extract/mod.rs b/src-tauri/src/indexer/extract/mod.rs
+index f7062e1..016a0bc 100644
+--- a/src-tauri/src/indexer/extract/mod.rs
++++ b/src-tauri/src/indexer/extract/mod.rs
+@@ -51,6 +51,27 @@ pub fn ocr_enabled() -> bool {
+     OCR_ENABLED.load(Ordering::SeqCst)
+ }
+ 
++/// Directories indexed by name only, mirroring
++/// [`crate::config::KensakuConfig::name_only_dirs`]. A process-wide copy keeps
++/// the crawl, the watcher and the extraction pipeline independent of the
++/// config `RwLock`, like the OCR and content-cap settings above.
++static NAME_ONLY_DIRS: std::sync::RwLock<Vec<PathBuf>> = std::sync::RwLock::new(Vec::new());
++
++pub fn set_name_only_dirs(dirs: Vec<PathBuf>) {
++    if let Ok(mut slot) = NAME_ONLY_DIRS.write() {
++        *slot = dirs;
++    }
++}
++
++/// True when `path` lives at or below a directory configured as name-only,
++/// i.e. its content must not be extracted or indexed.
++pub fn is_name_only_path(path: &Path) -> bool {
++    NAME_ONLY_DIRS
++        .read()
++        .map(|dirs| dirs.iter().any(|dir| path.starts_with(dir)))
++        .unwrap_or(false)
++}
++
+ /// Process-wide content caps, mirroring KensakuConfig so the extraction
+ /// pipeline (which runs outside the config RwLock) sees updates immediately.
+ static CONTENT_MAX_FILE_SIZE_BYTES: AtomicU64 = AtomicU64::new(20 * 1024 * 1024);
+diff --git a/src-tauri/src/indexer/metadata.rs b/src-tauri/src/indexer/metadata.rs
+index d5eb8f2..a2fbd33 100644
+--- a/src-tauri/src/indexer/metadata.rs
++++ b/src-tauri/src/indexer/metadata.rs
+@@ -439,6 +439,38 @@ impl MetadataStore {
+         marked
+     }
+ 
++    /// Flags every file below any of `dirs` for a content re-read. Used when a
++    /// directory leaves name-only mode: its files are unchanged on disk, so
++    /// without the flag the crawl would never extract them.
++    pub fn mark_dirs_pending(&mut self, dirs: &[PathBuf]) -> usize {
++        if dirs.is_empty() {
++            return 0;
++        }
++        let mut marked = 0;
++        for i in 0..self.arena.len() {
++            let idx = i as u32;
++            if self.arena.node(idx).is_dir() {
++                continue;
++            }
++            let path = self.arena.path(idx);
++            if dirs.iter().any(|dir| path.starts_with(dir)) {
++                self.arena.node_mut(idx).set_content_pending(true);
++                marked += 1;
++            }
++        }
++        if marked > 0 {
++            self.generation.fetch_add(1, Ordering::SeqCst);
++        }
++        if let Some(db) = self.db.as_ref() {
++            for dir in dirs {
++                if let Err(e) = db.mark_dir_content_pending(dir) {
++                    eprintln!("[Kensaku] Failed to mark directory pending: {}", e);
++                }
++            }
++        }
++        marked
++    }
++
+     /// Forces a content re-read for every file (used after a content-index
+     /// schema migration). Directories keep their metadata.
+     pub fn mark_all_content_pending(&mut self) -> usize {
+@@ -1018,6 +1050,26 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn mark_dirs_pending_flags_only_files_below_the_directory() {
++        let mut temp = TempStore::new("mark-dirs");
++        let media = temp.dir.join("media");
++        let inside = media.join("clip.txt");
++        let outside = temp.dir.join("media-notes.txt");
++        let elsewhere = temp.dir.join("docs").join("a.txt");
++
++        let store = temp.store();
++        store.add(entry(&inside, false));
++        store.add(entry(&outside, false));
++        store.add(entry(&elsewhere, false));
++
++        assert_eq!(store.mark_dirs_pending(std::slice::from_ref(&media)), 1);
++        assert!(store.get(&inside).expect("inside").content_pending);
++        // A sibling whose name merely starts with the same text is not below it.
++        assert!(!store.get(&outside).expect("outside").content_pending);
++        assert!(!store.get(&elsewhere).expect("elsewhere").content_pending);
++    }
++
+     #[test]
+     fn mark_all_content_pending_skips_directories() {
+         let mut temp = TempStore::new("mark-all");
+diff --git a/src-tauri/src/indexer/metadata_db.rs b/src-tauri/src/indexer/metadata_db.rs
+index 7192d99..8725551 100644
+--- a/src-tauri/src/indexer/metadata_db.rs
++++ b/src-tauri/src/indexer/metadata_db.rs
+@@ -1298,6 +1298,21 @@ impl MetadataDb {
+         Ok(marked)
+     }
+ 
++    /// Marks every file below `dir` as needing a content re-read.
++    pub fn mark_dir_content_pending(&self, dir: &Path) -> Result<usize, String> {
++        let mut prefix = dir.to_string_lossy().into_owned();
++        if !prefix.ends_with(std::path::MAIN_SEPARATOR) {
++            prefix.push(std::path::MAIN_SEPARATOR);
++        }
++        let conn = self.conn.lock();
++        conn.execute(
++            "UPDATE nodes SET content_pending = 1, retry_count = 0
++             WHERE is_dir = 0 AND substr(path, 1, length(?1)) = ?1",
++            params![prefix],
++        )
++        .map_err(|e| format!("Failed to mark '{}' pending: {}", dir.display(), e))
++    }
++
+     /// Marks every file as needing a content re-read.
+     pub fn mark_all_content_pending(&self) -> Result<usize, String> {
+         let conn = self.conn.lock();
+diff --git a/src-tauri/src/indexer/mod.rs b/src-tauri/src/indexer/mod.rs
+index 40d78f3..2620ed4 100644
+--- a/src-tauri/src/indexer/mod.rs
++++ b/src-tauri/src/indexer/mod.rs
+@@ -295,6 +295,7 @@ impl IndexerManager {
+     pub fn new(config: KensakuConfig) -> Self {
+         // Apply the opt-in external extractor registry before any crawl starts.
+         crate::indexer::extract::set_external_extractors(config.extractors.clone());
++        crate::indexer::extract::set_name_only_dirs(config.name_only_dirs.clone());
+         crate::indexer::extract::image::set_ocr_max_image_bytes(config.ocr_max_image_bytes);
+         crate::indexer::extract::set_content_caps(config.content_max_file_size_mb, config.content_max_text_bytes);
+         crate::embed::set_max_semantic_units(config.content_max_semantic_units);
+@@ -417,6 +418,7 @@ impl IndexerManager {
+     /// starting a watcher, so it can coexist with the daemon.
+     pub fn new_readonly(config: KensakuConfig) -> Self {
+         crate::indexer::extract::set_external_extractors(config.extractors.clone());
++        crate::indexer::extract::set_name_only_dirs(config.name_only_dirs.clone());
+         crate::indexer::extract::image::set_ocr_max_image_bytes(config.ocr_max_image_bytes);
+         crate::indexer::extract::set_content_caps(config.content_max_file_size_mb, config.content_max_text_bytes);
+         crate::embed::set_max_semantic_units(config.content_max_semantic_units);
+@@ -659,6 +661,16 @@ impl IndexerManager {
+             // re-reads the file afterwards always shows "no change".
+             let ocr_signature_before = read_ocr_signature();
+             let ocr_queued = Self::sync_ocr_state(&config_arc, &metadata);
++            // Reconcile name-only directories before the walk, so files that
++            // left name-only mode are flagged pending in time for the
++            // incremental check below.
++            let name_only_queued = Self::sync_name_only_state(
++                &config_arc,
++                &metadata,
++                &content_index,
++                &unit_store,
++                &visual_store,
++            );
+ 
+             let (watched_dirs, excluded_dirs, excluded_exts, crawl_mode, include_ignored) = {
+                 let cfg = config_arc.read();
+@@ -787,6 +799,25 @@ impl IndexerManager {
+                     pending_images.insert(entry.path.clone());
+                 }
+ 
++                // Name-only directories keep their metadata but never reach
++                // extraction. A pending flag (OCR toggle, cap change, a
++                // directory leaving name-only mode) is cleared here, or the
++                // file would be retried on every crawl for nothing.
++                if !entry.is_dir && crate::indexer::extract::is_name_only_path(&entry.path) {
++                    if was_pending {
++                        metadata.write().clear_content_pending(&entry.path);
++                        pending_images.remove(&entry.path);
++                    }
++                    if files_count.is_multiple_of(500) {
++                        let mut st = status.write();
++                        st.files_indexed = files_count;
++                        st.content_indexed = content_count;
++                        st.current_status = format!("Indexed {} items", files_count);
++                        Self::emit_status(&app_handle, &st);
++                    }
++                    continue;
++                }
++
+                 // Queue indexable files for parallel content extraction.
+                 // Cloud placeholders stay metadata-only so indexing does not
+                 // hydrate (download) them.
+@@ -1294,6 +1325,11 @@ impl IndexerManager {
+                         "OCR settings changed, {ocr_queued} image/PDF queued"
+                     ));
+                 }
++                if name_only_queued > 0 {
++                    causes.push(format!(
++                        "name-only directories changed, {name_only_queued} file(s) queued"
++                    ));
++                }
+                 if pending_files > 0 || given_up > 0 || !retry_paths.is_empty() {
+                     causes.push(format!(
+                         "{pending_files} left pending by an earlier scan, {} retried, {given_up} given up on",
+@@ -1828,6 +1864,92 @@ impl IndexerManager {
+     /// meaningful answer: the signature changed but nothing was left to
+     /// re-read, and a crawl reason must not blame OCR for work it did not
+     /// cause.
++    /// Brings the stored index in line with `name_only_dirs`.
++    ///
++    /// The directories applied by the previous crawl are recorded in
++    /// `name-only-state`; comparing against the configuration covers every way
++    /// the list can change (settings UI, daemon, a hand-edited config.json).
++    /// - A directory that became name-only loses its content documents and
++    ///   semantic units; its file names stay searchable.
++    /// - A directory that stopped being name-only has its files flagged
++    ///   pending, so the crawl extracts them even though they are unchanged.
++    ///
++    /// Returns how many files were flagged for extraction.
++    fn sync_name_only_state(
++        config_arc: &Arc<RwLock<KensakuConfig>>,
++        metadata: &Arc<RwLock<MetadataStore>>,
++        content_index: &Arc<RwLock<Option<ContentIndex>>>,
++        unit_store: &Arc<RwLock<UnitStore>>,
++        visual_store: &Arc<RwLock<crate::embed::visual::VisualStore>>,
++    ) -> usize {
++        let current: Vec<PathBuf> = config_arc.read().name_only_dirs.clone();
++        let previous = read_name_only_state();
++        if previous.as_ref() == Some(&current) {
++            return 0;
++        }
++        let previous = previous.unwrap_or_default();
++
++        let added: Vec<PathBuf> = current
++            .iter()
++            .filter(|dir| !previous.iter().any(|old| dir.starts_with(old)))
++            .cloned()
++            .collect();
++        let removed: Vec<PathBuf> = previous
++            .iter()
++            .filter(|dir| !current.iter().any(|new| dir.starts_with(new)))
++            .cloned()
++            .collect();
++
++        if !added.is_empty() {
++            let (paths, ids): (Vec<PathBuf>, HashSet<u64>) = {
++                let store = metadata.read();
++                let mut paths = Vec::new();
++                let mut ids = HashSet::new();
++                for i in 0..store.len() {
++                    let entry = store.materialize(i as u32);
++                    if !entry.is_dir && added.iter().any(|dir| entry.path.starts_with(dir)) {
++                        if entry.id > 0 {
++                            ids.insert(entry.id);
++                        }
++                        paths.push(entry.path);
++                    }
++                }
++                (paths, ids)
++            };
++            if !paths.is_empty() {
++                if let Some(c_index) = content_index.read().as_ref() {
++                    let _ = c_index.remove_many(&paths);
++                    let _ = c_index.commit();
++                }
++                if !ids.is_empty() {
++                    let id_vec: Vec<u64> = ids.iter().copied().collect();
++                    if let Some(db) = metadata.read().db() {
++                        let _ = db.delete_units_for_nodes(&id_vec);
++                        let _ = db.delete_visual_units_for_nodes(&id_vec);
++                    }
++                    unit_store.write().remove_units_for_nodes(&ids);
++                    for id in &ids {
++                        visual_store.write().remove_node(*id);
++                    }
++                }
++                crate::say_err!(
++                    "[Kensaku] Name-only directories: dropped content of {} file(s)",
++                    paths.len()
++                );
++            }
++        }
++
++        let marked = metadata.write().mark_dirs_pending(&removed);
++        if marked > 0 {
++            crate::say_err!(
++                "[Kensaku] Directories left name-only mode: {marked} file(s) queued for extraction"
++            );
++        }
++
++        write_name_only_state(&current);
++        marked
++    }
++
+     fn sync_ocr_state(
+         config_arc: &Arc<RwLock<KensakuConfig>>,
+         metadata: &Arc<RwLock<MetadataStore>>,
+@@ -1963,6 +2085,7 @@ impl IndexerManager {
+         let ocr_changed =
+             previous.ocr_enabled != config.ocr_enabled || previous.ocr_engine != config.ocr_engine;
+         let extractors_changed = previous.extractors != config.extractors;
++        let name_only_changed = previous.name_only_dirs != config.name_only_dirs;
+         // Raising a content cap only helps files that were cut off before, and
+         // those are unchanged on disk, so they need an explicit re-read.
+         let caps_raised = config.content_max_file_size_mb > previous.content_max_file_size_mb
+@@ -1977,6 +2100,12 @@ impl IndexerManager {
+         crate::embed::set_max_semantic_units(config.content_max_semantic_units);
+ 
+         let mut reindex = false;
++        if name_only_changed {
++            // The crawl reconciles the stored index (see `sync_name_only_state`).
++            crate::indexer::extract::set_name_only_dirs(config.name_only_dirs.clone());
++            crate::indexer::extract::clear_cache();
++            reindex = true;
++        }
+         if caps_raised {
+             crate::indexer::extract::clear_cache();
+             let marked = self.metadata.write().mark_all_content_pending();
+@@ -2106,6 +2235,28 @@ fn ocr_signature_path() -> PathBuf {
+     KensakuConfig::config_dir().join("ocr-state")
+ }
+ 
++fn name_only_state_path() -> PathBuf {
++    KensakuConfig::config_dir().join("name-only-state")
++}
++
++/// The name-only directories the index was last reconciled with, or `None`
++/// when nothing was ever recorded.
++fn read_name_only_state() -> Option<Vec<PathBuf>> {
++    let raw = std::fs::read_to_string(name_only_state_path()).ok()?;
++    serde_json::from_str(&raw).ok()
++}
++
++fn write_name_only_state(dirs: &[PathBuf]) {
++    match serde_json::to_string(dirs) {
++        Ok(raw) => {
++            if let Err(e) = std::fs::write(name_only_state_path(), raw) {
++                crate::say_err!("[Kensaku] could not record name-only state: {e}");
++            }
++        }
++        Err(e) => crate::say_err!("[Kensaku] could not encode name-only state: {e}"),
++    }
++}
++
+ fn read_ocr_signature() -> Option<String> {
+     std::fs::read_to_string(ocr_signature_path())
+         .ok()
+diff --git a/src-tauri/src/indexer/watcher.rs b/src-tauri/src/indexer/watcher.rs
+index 17defc3..39328bd 100644
+--- a/src-tauri/src/indexer/watcher.rs
++++ b/src-tauri/src/indexer/watcher.rs
+@@ -675,6 +675,7 @@ fn handle_directory_rename(
+ 
+         for entry in entries {
+             let is_indexable = !entry.is_dir
++                && !crate::indexer::extract::is_name_only_path(&entry.path)
+                 && (is_indexable_extension(entry.extension)
+                     || is_indexable_file_name(&entry.name)
+                     || crate::indexer::extract::external::handles(&entry.path));
+@@ -834,6 +835,7 @@ fn handle_file_upsert(
+     }
+ 
+     let content = if !is_dir
++        && !crate::indexer::extract::is_name_only_path(path)
+         && (is_indexable_extension(extension.as_deref())
+             || is_indexable_file_name(&name)
+             || crate::indexer::extract::external::handles(path))
+diff --git a/src/components/SettingsModal.tsx b/src/components/SettingsModal.tsx
+index c465201..00953fa 100644
+--- a/src/components/SettingsModal.tsx
++++ b/src/components/SettingsModal.tsx
+@@ -549,6 +549,19 @@ function FoldersSection({
+     }
+   };
+ 
++  const nameOnlyDirs = config.name_only_dirs ?? [];
++  const toggleNameOnly = (dir: string) =>
++    setConfig((c) => {
++      if (!c) return c;
++      const current = c.name_only_dirs ?? [];
++      return {
++        ...c,
++        name_only_dirs: current.includes(dir)
++          ? current.filter((d) => d !== dir)
++          : [...current, dir],
++      };
++    });
++
+   const addDropped = (paths: string[]) =>
+     setConfig((c) => {
+       if (!c) return c;
+@@ -567,24 +580,46 @@ function FoldersSection({
+             key={dir}
+             className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5 last:border-b-0"
+           >
+-            <div className="min-w-0">
++            <div className="min-w-0 flex-1">
+               <p className="truncate text-[12px] text-fg">
+                 {dir.split("/").filter(Boolean).pop() || dir}
+               </p>
+               <p className="truncate font-mono text-[11px] text-subtle">{dir}</p>
+             </div>
++            <div className="ml-auto flex shrink-0 items-center gap-2">
++            <button
++              type="button"
++              role="switch"
++              aria-checked={nameOnlyDirs.includes(dir)}
++              title={t("folders.nameOnlyHint", { dir })}
++              onClick={() => toggleNameOnly(dir)}
++              className={`shrink-0 rounded-control border px-2 py-1 text-[11px] transition-colors ${
++                nameOnlyDirs.includes(dir)
++                  ? "border-accent bg-accent-soft text-fg"
++                  : "border-line text-subtle hover:text-fg"
++              }`}
++            >
++              {t("folders.nameOnly")}
++            </button>
+             <button
+               type="button"
+               title={t("folders.stopWatching", { dir })}
+               onClick={() =>
+                 setConfig((c) =>
+-                  c ? { ...c, watched_dirs: c.watched_dirs.filter((d) => d !== dir) } : c,
++                  c
++                    ? {
++                        ...c,
++                        watched_dirs: c.watched_dirs.filter((d) => d !== dir),
++                        name_only_dirs: (c.name_only_dirs ?? []).filter((d) => d !== dir),
++                      }
++                    : c,
+                 )
+               }
+               className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-accent-soft hover:text-danger"
+             >
+               <X className="h-3.5 w-3.5" />
+             </button>
++            </div>
+           </div>
+         ))}
+ 
+diff --git a/src/components/SetupModal.tsx b/src/components/SetupModal.tsx
+index 61d484f..ddbe926 100644
+--- a/src/components/SetupModal.tsx
++++ b/src/components/SetupModal.tsx
+@@ -61,6 +61,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void
+   const startAtLogin = true;
+   const [suggestedDirs, setSuggestedDirs] = useState<string[]>([]);
+   const [selectedDirs, setSelectedDirs] = useState<string[]>([]);
++  const [nameOnlyDirs, setNameOnlyDirs] = useState<string[]>([]);
+   const [customDirInput, setCustomDirInput] = useState("");
+   const [dirError, setDirError] = useState<string | null>(null);
+   const [dirBusy, setDirBusy] = useState(false);
+@@ -277,6 +278,11 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void
+   const addDirs = (paths: string[]) =>
+     setSelectedDirs((prev) => [...prev, ...paths.filter((p) => !prev.includes(p))]);
+ 
++  const toggleNameOnly = (dir: string) =>
++    setNameOnlyDirs((prev) =>
++      prev.includes(dir) ? prev.filter((d) => d !== dir) : [...prev, dir],
++    );
++
+   const toggleDir = (dir: string) =>
+     setSelectedDirs((prev) =>
+       prev.includes(dir) ? prev.filter((d) => d !== dir) : [...prev, dir],
+@@ -329,6 +335,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void
+     try {
+       await invoke("complete_setup", {
+         watchedDirs: selectedDirs,
++        nameOnlyDirs: nameOnlyDirs.filter((d) => selectedDirs.includes(d)),
+         excludedDirs: excludedDirs,
+         shortcut: shortcut,
+         // Keep the backend's engine choice when the user did not touch the
+@@ -540,28 +547,48 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void
+               const selected = selectedDirs.includes(dir);
+               const name = dir.split(/[\\/]/).filter(Boolean).pop() || dir;
+               return (
+-                <button
++                <div
+                   key={dir}
+-                  type="button"
+-                  onClick={() => toggleDir(dir)}
+-                  aria-pressed={selected}
+                   style={{ ["--stagger-delay" as string]: `${i * 40}ms` }}
+-                  className={`surface rise-in group flex h-14 items-center gap-4 px-4 text-left transition-[box-shadow,transform] duration-200 active:scale-[0.99] ${
++                  className={`surface rise-in group flex h-14 items-center gap-3 pr-4 text-left transition-[box-shadow,transform] duration-200 active:scale-[0.99] ${
+                     selected ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]" : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
+                   }`}
+                 >
+-                  <span className="min-w-0 flex-1">
++                  <button
++                    type="button"
++                    onClick={() => toggleDir(dir)}
++                    aria-pressed={selected}
++                    className="h-full min-w-0 flex-1 pl-4 text-left"
++                  >
+                     <span className="block truncate text-[14px] font-medium text-fg">{name}</span>
+                     <span className="block truncate text-[12px] text-subtle">{dir.replace(/^[/\\]+Users[/\\][^/\\]+/, "~")}</span>
+-                  </span>
++                  </button>
++                  {selected && (
++                    <button
++                      type="button"
++                      role="switch"
++                      aria-checked={nameOnlyDirs.includes(dir)}
++                      title={t("folders.nameOnlyHint")}
++                      onClick={() => toggleNameOnly(dir)}
++                      className={`ml-auto shrink-0 rounded-control border px-2 py-1 text-[11px] transition-colors ${
++                        nameOnlyDirs.includes(dir)
++                          ? "border-accent bg-accent-soft text-fg"
++                          : "border-line text-subtle hover:text-fg"
++                      }`}
++                    >
++                      {t("folders.nameOnly")}
++                    </button>
++                  )}
+                   <span
+-                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors duration-200 ${
++                    aria-hidden="true"
++                    onClick={() => toggleDir(dir)}
++                    className={`flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-200 ${
+                       selected ? "bg-ink text-bg" : "shadow-[inset_0_0_0_1.5px_var(--border-strong)]"
+                     }`}
+                   >
+                     {selected && <Check className="h-3 w-3" strokeWidth={2.5} />}
+                   </span>
+-                </button>
++                </div>
+               );
+             })}
+           </div>
+diff --git a/src/locales/en/settings.json b/src/locales/en/settings.json
+index 682d881..ab61ed5 100644
+--- a/src/locales/en/settings.json
++++ b/src/locales/en/settings.json
+@@ -98,6 +98,8 @@
+     "title": "Watched directories",
+     "empty": "Nothing watched yet.",
+     "stopWatching": "Stop watching {{dir}}",
++    "nameOnly": "Names only",
++    "nameOnlyHint": "Index only file names and paths for {{dir}}: no text extraction, OCR or semantic search. Off means names and contents.",
+     "drop": "Drop folders here to add them for watching",
+     "placeholder": "/absolute/path/to/directory",
+     "add": "Add",
+diff --git a/src/locales/en/setup.json b/src/locales/en/setup.json
+index 908e99d..ee33623 100644
+--- a/src/locales/en/setup.json
++++ b/src/locales/en/setup.json
+@@ -49,6 +49,8 @@
+     "browse": "Browse for folder…",
+     "browseTitle": "Choose folders to search",
+     "pickMany": "pick as many as you like",
++    "nameOnly": "Names only",
++    "nameOnlyHint": "Index only file names and paths for this folder: no text extraction, OCR or semantic search. Off means names and contents.",
+     "pathPlaceholder": "Or type a path — ~ works, commas separate several",
+     "addFolder": "Add folder",
+     "pickerUnavailable": "Folder picker unavailable here — type a path below instead. ({{error}})"
+diff --git a/src/locales/zh/settings.json b/src/locales/zh/settings.json
+index 1a120d0..dbe24dc 100644
+--- a/src/locales/zh/settings.json
++++ b/src/locales/zh/settings.json
+@@ -98,6 +98,8 @@
+     "title": "监视的目录",
+     "empty": "尚未监视任何目录。",
+     "stopWatching": "停止监视 {{dir}}",
++    "nameOnly": "仅文件名",
++    "nameOnlyHint": "仅为 {{dir}} 索引文件名和路径：不提取文本、不进行 OCR 或语义搜索。关闭则同时索引名称和内容。",
+     "drop": "将文件夹拖放到此处以添加监视",
+     "placeholder": "/absolute/path/to/directory",
+     "add": "添加",
+diff --git a/src/locales/zh/setup.json b/src/locales/zh/setup.json
+index dcd6be5..1c64ded 100644
+--- a/src/locales/zh/setup.json
++++ b/src/locales/zh/setup.json
+@@ -49,6 +49,8 @@
+     "browse": "浏览文件夹…",
+     "browseTitle": "选择要搜索的文件夹",
+     "pickMany": "可多选",
++    "nameOnly": "仅文件名",
++    "nameOnlyHint": "仅为此文件夹索引文件名和路径：不提取文本、不进行 OCR 或语义搜索。关闭则同时索引名称和内容。",
+     "pathPlaceholder": "或输入路径——支持 ~，多个路径用逗号分隔",
+     "addFolder": "添加文件夹",
+     "pickerUnavailable": "此环境无法使用文件夹选择器——请在下方输入路径。（{{error}}）"
+diff --git a/src/types.ts b/src/types.ts
+index e395ae2..5f39eb0 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -193,6 +193,8 @@ export interface KensakuConfig {
+   agent_scoped_roots?: string[];
+   /** Include .gitignore/.cursorignore-matched files in the index. */
+   include_ignored?: boolean;
++  /** Directories indexed by file name only (no content extraction). */
++  name_only_dirs?: string[];
+   /** Show generated thumbnails on result cards (default on). */
+   show_thumbnails?: boolean;
+   /** Result layout. */

@@ -1004,6 +1004,7 @@ pub async fn run_setup_again() -> Result<(), String> {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn complete_setup(
     watched_dirs: Vec<String>,
     name_only_dirs: Option<Vec<String>>,
