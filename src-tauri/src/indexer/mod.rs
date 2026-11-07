@@ -295,6 +295,7 @@ impl IndexerManager {
     pub fn new(config: KensakuConfig) -> Self {
         // Apply the opt-in external extractor registry before any crawl starts.
         crate::indexer::extract::set_external_extractors(config.extractors.clone());
+        crate::indexer::extract::set_name_only_dirs(config.name_only_dirs.clone());
         crate::indexer::extract::image::set_ocr_max_image_bytes(config.ocr_max_image_bytes);
         crate::indexer::extract::set_content_caps(config.content_max_file_size_mb, config.content_max_text_bytes);
         crate::embed::set_max_semantic_units(config.content_max_semantic_units);
@@ -417,6 +418,7 @@ impl IndexerManager {
     /// starting a watcher, so it can coexist with the daemon.
     pub fn new_readonly(config: KensakuConfig) -> Self {
         crate::indexer::extract::set_external_extractors(config.extractors.clone());
+        crate::indexer::extract::set_name_only_dirs(config.name_only_dirs.clone());
         crate::indexer::extract::image::set_ocr_max_image_bytes(config.ocr_max_image_bytes);
         crate::indexer::extract::set_content_caps(config.content_max_file_size_mb, config.content_max_text_bytes);
         crate::embed::set_max_semantic_units(config.content_max_semantic_units);
@@ -659,6 +661,16 @@ impl IndexerManager {
             // re-reads the file afterwards always shows "no change".
             let ocr_signature_before = read_ocr_signature();
             let ocr_queued = Self::sync_ocr_state(&config_arc, &metadata);
+            // Reconcile name-only directories before the walk, so files that
+            // left name-only mode are flagged pending in time for the
+            // incremental check below.
+            let name_only_queued = Self::sync_name_only_state(
+                &config_arc,
+                &metadata,
+                &content_index,
+                &unit_store,
+                &visual_store,
+            );
 
             let (watched_dirs, excluded_dirs, excluded_exts, crawl_mode, include_ignored) = {
                 let cfg = config_arc.read();
@@ -785,6 +797,25 @@ impl IndexerManager {
                 let node_id = metadata.write().add(entry.clone());
                 if was_pending {
                     pending_images.insert(entry.path.clone());
+                }
+
+                // Name-only directories keep their metadata but never reach
+                // extraction. A pending flag (OCR toggle, cap change, a
+                // directory leaving name-only mode) is cleared here, or the
+                // file would be retried on every crawl for nothing.
+                if !entry.is_dir && crate::indexer::extract::is_name_only_path(&entry.path) {
+                    if was_pending {
+                        metadata.write().clear_content_pending(&entry.path);
+                        pending_images.remove(&entry.path);
+                    }
+                    if files_count.is_multiple_of(500) {
+                        let mut st = status.write();
+                        st.files_indexed = files_count;
+                        st.content_indexed = content_count;
+                        st.current_status = format!("Indexed {} items", files_count);
+                        Self::emit_status(&app_handle, &st);
+                    }
+                    continue;
                 }
 
                 // Queue indexable files for parallel content extraction.
@@ -1292,6 +1323,11 @@ impl IndexerManager {
                 if ocr_queued > 0 {
                     causes.push(format!(
                         "OCR settings changed, {ocr_queued} image/PDF queued"
+                    ));
+                }
+                if name_only_queued > 0 {
+                    causes.push(format!(
+                        "name-only directories changed, {name_only_queued} file(s) queued"
                     ));
                 }
                 if pending_files > 0 || given_up > 0 || !retry_paths.is_empty() {
@@ -1828,6 +1864,92 @@ impl IndexerManager {
     /// meaningful answer: the signature changed but nothing was left to
     /// re-read, and a crawl reason must not blame OCR for work it did not
     /// cause.
+    /// Brings the stored index in line with `name_only_dirs`.
+    ///
+    /// The directories applied by the previous crawl are recorded in
+    /// `name-only-state`; comparing against the configuration covers every way
+    /// the list can change (settings UI, daemon, a hand-edited config.json).
+    /// - A directory that became name-only loses its content documents and
+    ///   semantic units; its file names stay searchable.
+    /// - A directory that stopped being name-only has its files flagged
+    ///   pending, so the crawl extracts them even though they are unchanged.
+    ///
+    /// Returns how many files were flagged for extraction.
+    fn sync_name_only_state(
+        config_arc: &Arc<RwLock<KensakuConfig>>,
+        metadata: &Arc<RwLock<MetadataStore>>,
+        content_index: &Arc<RwLock<Option<ContentIndex>>>,
+        unit_store: &Arc<RwLock<UnitStore>>,
+        visual_store: &Arc<RwLock<crate::embed::visual::VisualStore>>,
+    ) -> usize {
+        let current: Vec<PathBuf> = config_arc.read().name_only_dirs.clone();
+        let previous = read_name_only_state();
+        if previous.as_ref() == Some(&current) {
+            return 0;
+        }
+        let previous = previous.unwrap_or_default();
+
+        let added: Vec<PathBuf> = current
+            .iter()
+            .filter(|dir| !previous.iter().any(|old| dir.starts_with(old)))
+            .cloned()
+            .collect();
+        let removed: Vec<PathBuf> = previous
+            .iter()
+            .filter(|dir| !current.iter().any(|new| dir.starts_with(new)))
+            .cloned()
+            .collect();
+
+        if !added.is_empty() {
+            let (paths, ids): (Vec<PathBuf>, HashSet<u64>) = {
+                let store = metadata.read();
+                let mut paths = Vec::new();
+                let mut ids = HashSet::new();
+                for i in 0..store.len() {
+                    let entry = store.materialize(i as u32);
+                    if !entry.is_dir && added.iter().any(|dir| entry.path.starts_with(dir)) {
+                        if entry.id > 0 {
+                            ids.insert(entry.id);
+                        }
+                        paths.push(entry.path);
+                    }
+                }
+                (paths, ids)
+            };
+            if !paths.is_empty() {
+                if let Some(c_index) = content_index.read().as_ref() {
+                    let _ = c_index.remove_many(&paths);
+                    let _ = c_index.commit();
+                }
+                if !ids.is_empty() {
+                    let id_vec: Vec<u64> = ids.iter().copied().collect();
+                    if let Some(db) = metadata.read().db() {
+                        let _ = db.delete_units_for_nodes(&id_vec);
+                        let _ = db.delete_visual_units_for_nodes(&id_vec);
+                    }
+                    unit_store.write().remove_units_for_nodes(&ids);
+                    for id in &ids {
+                        visual_store.write().remove_node(*id);
+                    }
+                }
+                crate::say_err!(
+                    "[Kensaku] Name-only directories: dropped content of {} file(s)",
+                    paths.len()
+                );
+            }
+        }
+
+        let marked = metadata.write().mark_dirs_pending(&removed);
+        if marked > 0 {
+            crate::say_err!(
+                "[Kensaku] Directories left name-only mode: {marked} file(s) queued for extraction"
+            );
+        }
+
+        write_name_only_state(&current);
+        marked
+    }
+
     fn sync_ocr_state(
         config_arc: &Arc<RwLock<KensakuConfig>>,
         metadata: &Arc<RwLock<MetadataStore>>,
@@ -1963,6 +2085,7 @@ impl IndexerManager {
         let ocr_changed =
             previous.ocr_enabled != config.ocr_enabled || previous.ocr_engine != config.ocr_engine;
         let extractors_changed = previous.extractors != config.extractors;
+        let name_only_changed = previous.name_only_dirs != config.name_only_dirs;
         // Raising a content cap only helps files that were cut off before, and
         // those are unchanged on disk, so they need an explicit re-read.
         let caps_raised = config.content_max_file_size_mb > previous.content_max_file_size_mb
@@ -1977,6 +2100,12 @@ impl IndexerManager {
         crate::embed::set_max_semantic_units(config.content_max_semantic_units);
 
         let mut reindex = false;
+        if name_only_changed {
+            // The crawl reconciles the stored index (see `sync_name_only_state`).
+            crate::indexer::extract::set_name_only_dirs(config.name_only_dirs.clone());
+            crate::indexer::extract::clear_cache();
+            reindex = true;
+        }
         if caps_raised {
             crate::indexer::extract::clear_cache();
             let marked = self.metadata.write().mark_all_content_pending();
@@ -2104,6 +2233,28 @@ pub fn last_crawl_report() -> Option<CrawlReport> {
 
 fn ocr_signature_path() -> PathBuf {
     KensakuConfig::config_dir().join("ocr-state")
+}
+
+fn name_only_state_path() -> PathBuf {
+    KensakuConfig::config_dir().join("name-only-state")
+}
+
+/// The name-only directories the index was last reconciled with, or `None`
+/// when nothing was ever recorded.
+fn read_name_only_state() -> Option<Vec<PathBuf>> {
+    let raw = std::fs::read_to_string(name_only_state_path()).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+fn write_name_only_state(dirs: &[PathBuf]) {
+    match serde_json::to_string(dirs) {
+        Ok(raw) => {
+            if let Err(e) = std::fs::write(name_only_state_path(), raw) {
+                crate::say_err!("[Kensaku] could not record name-only state: {e}");
+            }
+        }
+        Err(e) => crate::say_err!("[Kensaku] could not encode name-only state: {e}"),
+    }
 }
 
 fn read_ocr_signature() -> Option<String> {

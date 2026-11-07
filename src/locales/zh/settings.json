@@ -98,6 +98,8 @@
     "title": "监视的目录",
     "empty": "尚未监视任何目录。",
     "stopWatching": "停止监视 {{dir}}",
+    "nameOnly": "仅文件名",
+    "nameOnlyHint": "仅为 {{dir}} 索引文件名和路径：不提取文本、不进行 OCR 或语义搜索。关闭则同时索引名称和内容。",
     "drop": "将文件夹拖放到此处以添加监视",
     "placeholder": "/absolute/path/to/directory",
     "add": "添加",

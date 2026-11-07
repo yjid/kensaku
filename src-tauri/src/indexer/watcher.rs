@@ -675,6 +675,7 @@ fn handle_directory_rename(
 
         for entry in entries {
             let is_indexable = !entry.is_dir
+                && !crate::indexer::extract::is_name_only_path(&entry.path)
                 && (is_indexable_extension(entry.extension)
                     || is_indexable_file_name(&entry.name)
                     || crate::indexer::extract::external::handles(&entry.path));
@@ -834,6 +835,7 @@ fn handle_file_upsert(
     }
 
     let content = if !is_dir
+        && !crate::indexer::extract::is_name_only_path(path)
         && (is_indexable_extension(extension.as_deref())
             || is_indexable_file_name(&name)
             || crate::indexer::extract::external::handles(path))

@@ -439,6 +439,38 @@ impl MetadataStore {
         marked
     }
 
+    /// Flags every file below any of `dirs` for a content re-read. Used when a
+    /// directory leaves name-only mode: its files are unchanged on disk, so
+    /// without the flag the crawl would never extract them.
+    pub fn mark_dirs_pending(&mut self, dirs: &[PathBuf]) -> usize {
+        if dirs.is_empty() {
+            return 0;
+        }
+        let mut marked = 0;
+        for i in 0..self.arena.len() {
+            let idx = i as u32;
+            if self.arena.node(idx).is_dir() {
+                continue;
+            }
+            let path = self.arena.path(idx);
+            if dirs.iter().any(|dir| path.starts_with(dir)) {
+                self.arena.node_mut(idx).set_content_pending(true);
+                marked += 1;
+            }
+        }
+        if marked > 0 {
+            self.generation.fetch_add(1, Ordering::SeqCst);
+        }
+        if let Some(db) = self.db.as_ref() {
+            for dir in dirs {
+                if let Err(e) = db.mark_dir_content_pending(dir) {
+                    eprintln!("[Kensaku] Failed to mark directory pending: {}", e);
+                }
+            }
+        }
+        marked
+    }
+
     /// Forces a content re-read for every file (used after a content-index
     /// schema migration). Directories keep their metadata.
     pub fn mark_all_content_pending(&mut self) -> usize {
@@ -1016,6 +1048,26 @@ mod tests {
             char_bloom: 0,
             content_pending: false,
         }
+    }
+
+    #[test]
+    fn mark_dirs_pending_flags_only_files_below_the_directory() {
+        let mut temp = TempStore::new("mark-dirs");
+        let media = temp.dir.join("media");
+        let inside = media.join("clip.txt");
+        let outside = temp.dir.join("media-notes.txt");
+        let elsewhere = temp.dir.join("docs").join("a.txt");
+
+        let store = temp.store();
+        store.add(entry(&inside, false));
+        store.add(entry(&outside, false));
+        store.add(entry(&elsewhere, false));
+
+        assert_eq!(store.mark_dirs_pending(std::slice::from_ref(&media)), 1);
+        assert!(store.get(&inside).expect("inside").content_pending);
+        // A sibling whose name merely starts with the same text is not below it.
+        assert!(!store.get(&outside).expect("outside").content_pending);
+        assert!(!store.get(&elsewhere).expect("elsewhere").content_pending);
     }
 
     #[test]

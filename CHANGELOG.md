@@ -3,6 +3,16 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Per-directory indexing mode: names only, or names and content.** New `name_only_dirs`
+  setting (and a "Names only" switch next to each folder in Settings → Folders). Files below a
+  listed directory stay searchable by name and path but are never read, OCR'd or embedded,
+  which keeps media libraries, archives and network shares cheap to index. Switching a
+  directory over drops its content documents and semantic units; switching it back queues its
+  files for extraction. An empty list keeps today's behavior.
+
 ## [1.0.16] — 2026-11-05
 
 ### Fixed

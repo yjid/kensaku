@@ -1006,6 +1006,7 @@ pub async fn run_setup_again() -> Result<(), String> {
 #[tauri::command]
 pub async fn complete_setup(
     watched_dirs: Vec<String>,
+    name_only_dirs: Option<Vec<String>>,
     excluded_dirs: Vec<String>,
     shortcut: Option<String>,
     ocr_engine: Option<String>,
@@ -1015,6 +1016,9 @@ pub async fn complete_setup(
 ) -> Result<(), String> {
     let mut config = KensakuConfig::load();
     config.watched_dirs = watched_dirs.into_iter().map(PathBuf::from).collect();
+    if let Some(dirs) = name_only_dirs {
+        config.name_only_dirs = dirs.into_iter().map(PathBuf::from).collect();
+    }
     config.excluded_dirs = excluded_dirs;
     if let Some(sc) = shortcut
         && !sc.trim().is_empty()
@@ -1042,6 +1046,7 @@ pub async fn complete_setup(
     crate::embed::set_max_semantic_units(config.content_max_semantic_units);
     crate::ocr::set_engine(&config.ocr_engine);
     crate::indexer::extract::set_external_extractors(config.extractors.clone());
+    crate::indexer::extract::set_name_only_dirs(config.name_only_dirs.clone());
     *state.indexer.config.write() = config.clone();
     if let Some(daemon) = state.daemon.as_ref() {
         // In daemon mode this window cannot write the stores; ask the daemon
