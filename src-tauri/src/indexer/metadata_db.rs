@@ -1298,6 +1298,21 @@ impl MetadataDb {
         Ok(marked)
     }
 
+    /// Marks every file below `dir` as needing a content re-read.
+    pub fn mark_dir_content_pending(&self, dir: &Path) -> Result<usize, String> {
+        let mut prefix = dir.to_string_lossy().into_owned();
+        if !prefix.ends_with(std::path::MAIN_SEPARATOR) {
+            prefix.push(std::path::MAIN_SEPARATOR);
+        }
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE nodes SET content_pending = 1, retry_count = 0
+             WHERE is_dir = 0 AND substr(path, 1, length(?1)) = ?1",
+            params![prefix],
+        )
+        .map_err(|e| format!("Failed to mark '{}' pending: {}", dir.display(), e))
+    }
+
     /// Marks every file as needing a content re-read.
     pub fn mark_all_content_pending(&self) -> Result<usize, String> {
         let conn = self.conn.lock();

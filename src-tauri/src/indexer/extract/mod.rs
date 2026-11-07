@@ -51,6 +51,27 @@ pub fn ocr_enabled() -> bool {
     OCR_ENABLED.load(Ordering::SeqCst)
 }
 
+/// Directories indexed by name only, mirroring
+/// [`crate::config::KensakuConfig::name_only_dirs`]. A process-wide copy keeps
+/// the crawl, the watcher and the extraction pipeline independent of the
+/// config `RwLock`, like the OCR and content-cap settings above.
+static NAME_ONLY_DIRS: std::sync::RwLock<Vec<PathBuf>> = std::sync::RwLock::new(Vec::new());
+
+pub fn set_name_only_dirs(dirs: Vec<PathBuf>) {
+    if let Ok(mut slot) = NAME_ONLY_DIRS.write() {
+        *slot = dirs;
+    }
+}
+
+/// True when `path` lives at or below a directory configured as name-only,
+/// i.e. its content must not be extracted or indexed.
+pub fn is_name_only_path(path: &Path) -> bool {
+    NAME_ONLY_DIRS
+        .read()
+        .map(|dirs| dirs.iter().any(|dir| path.starts_with(dir)))
+        .unwrap_or(false)
+}
+
 /// Process-wide content caps, mirroring KensakuConfig so the extraction
 /// pipeline (which runs outside the config RwLock) sees updates immediately.
 static CONTENT_MAX_FILE_SIZE_BYTES: AtomicU64 = AtomicU64::new(20 * 1024 * 1024);

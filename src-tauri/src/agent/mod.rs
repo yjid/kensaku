@@ -73,6 +73,7 @@ impl HeadlessIndex {
         crate::embed::set_max_semantic_units(config.content_max_semantic_units);
         crate::ocr::set_engine(&config.ocr_engine);
         crate::indexer::extract::set_external_extractors(config.extractors.clone());
+        crate::indexer::extract::set_name_only_dirs(config.name_only_dirs.clone());
 
         // Read-write is fine: WAL lets the GUI writer and this connection
         // coexist. Nothing on the headless path writes.

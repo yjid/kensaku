@@ -61,6 +61,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const startAtLogin = true;
   const [suggestedDirs, setSuggestedDirs] = useState<string[]>([]);
   const [selectedDirs, setSelectedDirs] = useState<string[]>([]);
+  const [nameOnlyDirs, setNameOnlyDirs] = useState<string[]>([]);
   const [customDirInput, setCustomDirInput] = useState("");
   const [dirError, setDirError] = useState<string | null>(null);
   const [dirBusy, setDirBusy] = useState(false);
@@ -277,6 +278,11 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const addDirs = (paths: string[]) =>
     setSelectedDirs((prev) => [...prev, ...paths.filter((p) => !prev.includes(p))]);
 
+  const toggleNameOnly = (dir: string) =>
+    setNameOnlyDirs((prev) =>
+      prev.includes(dir) ? prev.filter((d) => d !== dir) : [...prev, dir],
+    );
+
   const toggleDir = (dir: string) =>
     setSelectedDirs((prev) =>
       prev.includes(dir) ? prev.filter((d) => d !== dir) : [...prev, dir],
@@ -329,6 +335,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
     try {
       await invoke("complete_setup", {
         watchedDirs: selectedDirs,
+        nameOnlyDirs: nameOnlyDirs.filter((d) => selectedDirs.includes(d)),
         excludedDirs: excludedDirs,
         shortcut: shortcut,
         // Keep the backend's engine choice when the user did not touch the
@@ -540,28 +547,48 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               const selected = selectedDirs.includes(dir);
               const name = dir.split(/[\\/]/).filter(Boolean).pop() || dir;
               return (
-                <button
+                <div
                   key={dir}
-                  type="button"
-                  onClick={() => toggleDir(dir)}
-                  aria-pressed={selected}
                   style={{ ["--stagger-delay" as string]: `${i * 40}ms` }}
-                  className={`surface rise-in group flex h-14 items-center gap-4 px-4 text-left transition-[box-shadow,transform] duration-200 active:scale-[0.99] ${
+                  className={`surface rise-in group flex h-14 items-center gap-3 pr-4 text-left transition-[box-shadow,transform] duration-200 active:scale-[0.99] ${
                     selected ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]" : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
                   }`}
                 >
-                  <span className="min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={() => toggleDir(dir)}
+                    aria-pressed={selected}
+                    className="h-full min-w-0 flex-1 pl-4 text-left"
+                  >
                     <span className="block truncate text-[14px] font-medium text-fg">{name}</span>
                     <span className="block truncate text-[12px] text-subtle">{dir.replace(/^[/\\]+Users[/\\][^/\\]+/, "~")}</span>
-                  </span>
+                  </button>
+                  {selected && (
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={nameOnlyDirs.includes(dir)}
+                      title={t("folders.nameOnlyHint")}
+                      onClick={() => toggleNameOnly(dir)}
+                      className={`ml-auto shrink-0 rounded-control border px-2 py-1 text-[11px] transition-colors ${
+                        nameOnlyDirs.includes(dir)
+                          ? "border-accent bg-accent-soft text-fg"
+                          : "border-line text-subtle hover:text-fg"
+                      }`}
+                    >
+                      {t("folders.nameOnly")}
+                    </button>
+                  )}
                   <span
-                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors duration-200 ${
+                    aria-hidden="true"
+                    onClick={() => toggleDir(dir)}
+                    className={`flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-200 ${
                       selected ? "bg-ink text-bg" : "shadow-[inset_0_0_0_1.5px_var(--border-strong)]"
                     }`}
                   >
                     {selected && <Check className="h-3 w-3" strokeWidth={2.5} />}
                   </span>
-                </button>
+                </div>
               );
             })}
           </div>
