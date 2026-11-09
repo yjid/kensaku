@@ -62,11 +62,17 @@ parquet = { version = "60.1.0", default-features = false, features = ["snap", "f
 mail-parser = "0.11.9"
 # Parses Outlook .msg (OLE/MAPI) for email content indexing.
 msg_parser = "0.3.6"
+# Undoes msg_parser's hex rendering of binary MAPI properties (the HTML body).
+# Already in the tree via msg_parser; no new download.
+hex = "0.4"
 
 [dev-dependencies]
 # Builds Flate-compressed image streams for the scanned-PDF decoder tests.
 # Already in the tree via zip/png; no new download.
 flate2 = "1"
+# Builds minimal Outlook .msg (OLE compound) files for the email extractor
+# tests. Already in the tree via infer; no new download.
+cfb = "0.14"
 
 [target.'cfg(windows)'.dependencies]
 # Direct process enumeration for the webview cleanup: taskkill rejects a

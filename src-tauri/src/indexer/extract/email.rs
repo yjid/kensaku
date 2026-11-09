@@ -1,3 +1,4 @@
+use mail_parser::decoders::html::html_to_text;
 use mail_parser::MimeHeaders;
 use std::path::Path;
 
@@ -30,9 +31,23 @@ pub fn extract_msg(path: &Path, max_bytes: usize) -> Option<String> {
     push_msg_people(&mut out, "Cc:", &outlook.cc);
     push_msg_people(&mut out, "Bcc:", &outlook.bcc);
 
-    if !outlook.body.is_empty() {
+    // Many messages have no plain-text body (PidTagBody), only HTML
+    // (PidTagHtml) or compressed RTF (PidTagRtfCompressed). The RTF only
+    // yields text when Outlook generated it from HTML (`\fromhtml1`); a native
+    // rich-text body has no embedded HTML and is still missed.
+    let body = if !outlook.body.trim().is_empty() {
+        outlook.body.clone()
+    } else if !outlook.html.trim().is_empty() {
+        html_to_text(&msg_html(&outlook.html))
+    } else {
+        outlook
+            .html_from_rtf()
+            .map(|h| html_to_text(&h))
+            .unwrap_or_default()
+    };
+    if !body.trim().is_empty() {
         out.push('\n');
-        out.push_str(outlook.body.trim());
+        out.push_str(body.trim());
         out.push('\n');
     }
 
@@ -49,6 +64,19 @@ pub fn extract_msg(path: &Path, max_bytes: usize) -> Option<String> {
     }
 
     Some(cap(out, max_bytes))
+}
+
+/// The HTML body as text. msg_parser renders binary MAPI properties as hex,
+/// and `PidTagHtml` is binary in Outlook's own files, so the field usually
+/// holds hex; writers that store it as a string property give the HTML as-is.
+/// Real HTML contains `<`, which is not a hex digit, so a successful decode
+/// identifies the binary form. The bytes are in the message's code page;
+/// UTF-8 is assumed, so other code pages lose their non-ASCII characters.
+fn msg_html(html: &str) -> String {
+    match hex::decode(html) {
+        Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+        Err(_) => html.to_string(),
+    }
 }
 
 /// One labelled line for `.msg` people. Exchange-internal sender IDs
@@ -286,6 +314,116 @@ mod tests {
                     .to_string()
             )
         );
+    }
+
+    /// Builds a minimal `.msg`: an OLE compound file whose root storage holds
+    /// one `__substg1.0_<prop id><prop type>` stream per MAPI property.
+    fn msg_bytes(props: &[(&str, &[u8])]) -> Vec<u8> {
+        use std::io::Write;
+        let mut file = cfb::CompoundFile::create_with_version(
+            cfb::Version::V3,
+            std::io::Cursor::new(Vec::new()),
+        )
+        .unwrap();
+        for (prop, data) in props {
+            let mut stream = file.create_stream(format!("/__substg1.0_{prop}")).unwrap();
+            stream.write_all(data).unwrap();
+        }
+        file.flush().unwrap();
+        file.into_inner().into_inner()
+    }
+
+    /// A `PT_UNICODE` property value: UTF-16LE, as Outlook writes strings.
+    fn utf16(s: &str) -> Vec<u8> {
+        s.encode_utf16().flat_map(u16::to_le_bytes).collect()
+    }
+
+    /// A `PidTagRtfCompressed` value in the uncompressed ("MELA") variant of
+    /// MS-OXRTFCP. Outlook normally writes the LZ77 ("LZFu") variant; msg_parser
+    /// decompresses both to the same RTF.
+    fn rtf_uncompressed(rtf: &str) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&(rtf.len() as u32 + 12).to_le_bytes()); // CompSize
+        out.extend_from_slice(&(rtf.len() as u32).to_le_bytes()); // RawSize
+        out.extend_from_slice(b"MELA"); // CompType
+        out.extend_from_slice(&0u32.to_le_bytes()); // CRC, unused when uncompressed
+        out.extend_from_slice(rtf.as_bytes());
+        out
+    }
+
+    const SUBJECT: &str = "0037001F";
+    const BODY: &str = "1000001F";
+    const RTF_COMPRESSED: &str = "10090102";
+
+    #[test]
+    fn msg_html_only_body_is_indexed_as_text() {
+        let html =
+            "<html><body><p>Revenue grew <b>twelve percent</b> this quarter.</p></body></html>";
+        // PidTagHtml is PT_BINARY in Outlook's own files; some writers use PT_UNICODE.
+        for (prop, value) in [
+            ("10130102", html.as_bytes().to_vec()),
+            ("1013001F", utf16(html)),
+        ] {
+            let fx = bytes_fixture(
+                "html-msg",
+                &msg_bytes(&[(SUBJECT, &utf16("Quarterly numbers")), (prop, &value)]),
+            );
+            let text = extract_msg(&fx.0, 10_000).unwrap();
+            assert!(
+                text.starts_with("Subject: Quarterly numbers\n"),
+                "{prop}: {text:?}"
+            );
+            assert!(
+                text.contains("Revenue grew twelve percent this quarter."),
+                "{prop}: {text:?}"
+            );
+            assert!(
+                !text.contains('<') && !text.contains('>'),
+                "{prop}: {text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn msg_rtf_only_body_is_recovered_from_embedded_html() {
+        // RTF that Outlook generated from HTML (`\fromhtml1`): the original
+        // tags sit in `\*\htmltag` groups, the text in `\htmlrtf0` regions.
+        let rtf = r"{\rtf1\ansi\ansicpg1252\fromhtml1 \deff0{\fonttbl{\f0\fswiss Arial;}}
+{\*\htmltag19 <html>}{\*\htmltag50 <body>}{\*\htmltag64 <p>}\htmlrtf {\htmlrtf0 Lunch moved to Thursday.\htmlrtf }\htmlrtf0 {\*\htmltag72 </p>}{\*\htmltag58 </body>}{\*\htmltag27 </html>}}";
+        let fx = bytes_fixture(
+            "rtf-msg",
+            &msg_bytes(&[
+                (SUBJECT, &utf16("Team lunch")),
+                (RTF_COMPRESSED, &rtf_uncompressed(rtf)),
+            ]),
+        );
+        let text = extract_msg(&fx.0, 10_000).unwrap();
+        assert!(text.starts_with("Subject: Team lunch\n"), "{text:?}");
+        assert!(text.contains("Lunch moved to Thursday."), "{text:?}");
+        assert!(!text.contains('<') && !text.contains('>'), "{text:?}");
+    }
+
+    #[test]
+    fn msg_without_recoverable_body_keeps_headers_only() {
+        // Native rich text, not converted from HTML: no `\fromhtml1`, so there
+        // is no embedded HTML to recover. Known limitation.
+        let native_rtf = rtf_uncompressed(r"{\rtf1\ansi\deff0 Only in rich text.\par}");
+        let cases: [&[(&str, &[u8])]; 3] = [
+            &[],
+            &[(BODY, &utf16(" \r\n"))],
+            &[(RTF_COMPRESSED, &native_rtf)],
+        ];
+        for (i, extra) in cases.into_iter().enumerate() {
+            let subject = utf16("Status");
+            let mut props = vec![(SUBJECT, subject.as_slice())];
+            props.extend_from_slice(extra);
+            let fx = bytes_fixture("nobody-msg", &msg_bytes(&props));
+            assert_eq!(
+                extract_msg(&fx.0, 10_000),
+                Some("Subject: Status\n".to_string()),
+                "case {i}"
+            );
+        }
     }
 
     #[test]
