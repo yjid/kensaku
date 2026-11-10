@@ -106,7 +106,7 @@ fn classify_extension(ext: &str) -> (usize, Option<usize>) {
         "swift" => (3, Some(10)),
         "kt" => (3, Some(11)),
         "sh" | "bash" | "fish" => (3, Some(12)),
-        "md" => (2, Some(13)),
+        "md" | "markdown" => (2, Some(13)),
         "json" | "yaml" | "yml" | "toml" => (3, Some(14)),
 
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" | "ico" | "tiff" | "tif"
@@ -1903,7 +1903,9 @@ fn matches_type_category(typ: &str, ext_opt: Option<&str>, is_dir: bool) -> bool
     if ext_is(typ, &["doc", "document"]) {
         return ext_is(
             ext,
-            &["doc", "docx", "odt", "rtf", "eml", "msg", "pdf", "txt", "md", "pages", "epub"],
+            &[
+                "doc", "docx", "odt", "rtf", "eml", "msg", "pdf", "txt", "md", "markdown", "pages", "epub",
+            ],
         );
     }
     if ext_is(typ, &["sheet", "spreadsheet", "table"]) {
@@ -2762,6 +2764,8 @@ mod tests {
         assert_eq!(classify_extension("rs"), (3, Some(0)));
         assert_eq!(LANGUAGE_BUCKETS[0], "rust");
         assert_eq!(classify_extension("md"), (2, Some(13)));
+        assert_eq!(classify_extension("markdown"), (2, Some(13)));
+        assert!(matches_type_category("doc", Some("MARKDOWN"), false));
         assert_eq!(LANGUAGE_BUCKETS[13], "markdown");
         assert_eq!(classify_extension("json"), (3, Some(14)));
         assert_eq!(classify_extension("png"), (1, None));

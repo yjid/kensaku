@@ -1,5 +1,25 @@
 # External extractors
 
+## Markdown search cleanup
+
+`.md` and `.markdown` stay on the plain-text extraction path. A small shared
+stripper removes top-level backtick/tilde fence markers and common single-line
+inline link/image destinations, retaining labels, alt text and fenced code.
+Frontmatter remains searchable as ordinary text; it is not parsed or removed.
+Snippets and Quick Look use the same cleanup, and both extensions appear in
+Docs filters.
+
+This is deliberately limited cleanup, not a Markdown renderer. Reference links,
+nested destinations, multiline links and quote/list-contained fences are not
+interpreted. Lines with inline backticks or escapes are kept verbatim to avoid
+altering code or escaped text. Other unsupported syntax may remain in results.
+The existing decoder and head/tail sampling policy are reused; sampled pieces
+are cleaned independently, without reconstructing missing context. Fast snippets
+still read only the first 64 KiB. Existing indexed notes need a rebuild or a
+file change to refresh their text.
+
+## External plugins
+
 Kensaku ships **zero plugins** by default. Every external extractor is opt-in,
 lives in `config.json`, and only runs when a path matches its extension or MIME
 selector. A new format does not require recompiling Kensaku.

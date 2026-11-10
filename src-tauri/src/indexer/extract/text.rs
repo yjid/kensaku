@@ -30,6 +30,18 @@ pub(crate) fn decode_utf16_bom(buffer: &[u8]) -> Option<String> {
 }
 
 pub fn extract_text(path: &Path, max_bytes: usize) -> Option<String> {
+    let markdown = super::markdown::is_markdown(path);
+    let text = read_text(path, max_bytes, !markdown)?;
+    Some(if markdown {
+        super::markdown::strip(&text)
+    } else {
+        text
+    })
+}
+
+/// Reuse the existing bounded decoder; markup cleanup needs source indentation
+/// and metadata intact. Ordinary text retains its historical cleanup.
+fn read_text(path: &Path, max_bytes: usize, plain: bool) -> Option<String> {
     let mut file = File::open(path).ok()?;
     let mut buffer = Vec::new();
     let mut handle = (&mut file).take(max_bytes as u64);
@@ -41,7 +53,7 @@ pub fn extract_text(path: &Path, max_bytes: usize) -> Option<String> {
 
     // 1. UTF-16 with a byte-order mark (BOM)
     if let Some(s) = decode_utf16_bom(&buffer) {
-        return Some(clean_text(&s));
+        return Some(if plain { clean_text(&s) } else { s });
     }
 
     // 2. Reject binary files (null bytes in first 1024 bytes)
@@ -59,9 +71,11 @@ pub fn extract_text(path: &Path, max_bytes: usize) -> Option<String> {
     };
 
     // 4. Markdown frontmatter stripping
-    let cleaned = strip_markdown_frontmatter(&raw_text);
-
-    Some(clean_text(&cleaned))
+    if plain {
+        Some(clean_text(&strip_markdown_frontmatter(&raw_text)))
+    } else {
+        Some(raw_text.trim_start_matches('\u{feff}').replace('\0', ""))
+    }
 }
 
 pub fn extract_rtf(path: &Path, max_bytes: usize) -> Option<String> {

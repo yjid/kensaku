@@ -12,7 +12,7 @@ import type { SearchResult } from "../types";
    a click outside closes it. */
 
 const TEXT_EXTS = new Set([
-  "txt", "md", "log", "csv", "json", "toml", "yaml", "yml", "xml", "html", "css",
+  "txt", "md", "markdown", "log", "csv", "json", "toml", "yaml", "yml", "xml", "html", "css",
   "js", "jsx", "ts", "tsx", "rs", "py", "go", "sh", "sql", "conf", "ini", "env",
 ]);
 

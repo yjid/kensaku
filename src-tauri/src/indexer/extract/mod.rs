@@ -2,6 +2,7 @@ pub mod delimited;
 pub mod email;
 pub mod external;
 pub mod image;
+pub mod markdown;
 pub mod office;
 pub mod pdf;
 pub mod parquet;
@@ -214,6 +215,7 @@ pub fn sniff_format(path: &Path) -> DocumentFormat {
         "txt" | "md" | "markdown" | "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "json"
         | "toml" | "yaml" | "yml" | "xml" | "html" | "htm" | "css" | "c" | "cpp" | "h" | "java"
         | "sh" | "log" | "sql" => DocumentFormat::PlainText,
+
         _ => DocumentFormat::Unknown,
     }
 }
@@ -845,6 +847,17 @@ fn extract_document_inner(
                     head_str, tail_str
                 );
 
+                let combined = if markdown::is_markdown(path) {
+                    // Keep the existing sampling policy; do not carry fence state
+                    // across content omitted between the two samples.
+                    format!(
+                        "{}\n\n... [content omitted] ...\n\n{}",
+                        markdown::strip(&head_str),
+                        markdown::strip(&tail_str)
+                    )
+                } else {
+                    combined
+                };
                 Some(DocumentExtract {
                     text: combined,
                     page_count: None,
@@ -915,6 +928,65 @@ mod tests {
         let started = Instant::now();
         let result = extract_document(path, 1_000_000);
         (result, started.elapsed())
+    }
+
+    #[test]
+    fn markdown_cleanup_uses_plain_text_dispatch() {
+        let source = include_bytes!("../../../tests/fixtures/markdown/note.md");
+        for extension in ["md", "markdown", "MD"] {
+            let file = TempFile::new(extension, source);
+            assert_eq!(sniff_format(&file.path), DocumentFormat::PlainText);
+            let document = extract(&file.path).0.unwrap();
+            for value in [
+                "Searchable title",
+                "Alternate name",
+                "let answer = 42;",
+                "Diagram label",
+            ] {
+                assert!(document.text.contains(value));
+            }
+            assert!(!document.text.contains("https://example.com"));
+            assert!(!document.text.contains("```"));
+        }
+    }
+
+    #[test]
+    fn markdown_reuses_bounded_text_decoding() {
+        let source = "---\ntitle: 検索\n---\n[Label](hidden)\n";
+        let bytes: Vec<u8> = [0xff, 0xfe]
+            .into_iter()
+            .chain(source.encode_utf16().flat_map(u16::to_le_bytes))
+            .collect();
+        let file = TempFile::new("markdown", &bytes);
+        let text = text::extract_text(&file.path, 1000).unwrap();
+        assert!(text.contains("検索"));
+        assert!(text.contains("Label"));
+        assert!(!text.contains("hidden"));
+        let text_file = TempFile::new("md", b"[Label](hidden) trailing");
+        assert_eq!(
+            text::extract_text(&text_file.path, 7).as_deref(),
+            Some("[Label]")
+        );
+        let binary = TempFile::new("md", b"not\0text");
+        assert!(text::extract_text(&binary.path, 100).is_none());
+        let source = format!(
+            "[HeadLabel](head-url)\n{}\n[TailLabel](tail-url)",
+            "padding\n".repeat(1000)
+        );
+        let file = TempFile::new("md", source.as_bytes());
+        let document = extract_document_inner(
+            &file.path,
+            1024,
+            DocumentFormat::PlainText,
+            source.len() as u64,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert!(document.text.contains("HeadLabel"));
+        assert!(document.text.contains("TailLabel"));
+        assert!(!document.text.contains("head-url"));
+        assert!(!document.text.contains("tail-url"));
     }
 
     #[test]

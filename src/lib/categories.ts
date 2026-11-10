@@ -13,7 +13,7 @@ export type Category =
 
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "tiff", "heic", "avif"]);
 const DOC_EXT = new Set([
-  "pdf", "md", "txt", "doc", "docx", "ppt", "pptx", "odp", "key", /* docs+slides */
+  "pdf", "md", "markdown", "txt", "doc", "docx", "ppt", "pptx", "odp", "key", /* docs+slides */
   "xls", "xlsx", "csv", "tsv", "ods", "numbers" /* sheets */,
   "rtf", "eml", "msg", "odt", "pages", "epub", "log",
 ]);
