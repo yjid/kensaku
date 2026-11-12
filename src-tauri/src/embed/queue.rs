@@ -171,6 +171,19 @@ impl EmbeddingQueue {
                             continue;
                         }
 
+                        // Names-only paths must never be read for content, not
+                        // even here: the crawl and watcher already skip them,
+                        // but every new row reaches this worker with
+                        // indexed_gen = 0. Mark it done and drop any units left
+                        // by a previous mode.
+                        if crate::indexer::extract::is_name_only_path(&path) {
+                            let _ = db.update_node_indexed_gen(node_id, 1, None);
+                            let _ = db.delete_units_for_nodes(&[node_id]);
+                            let ids = std::collections::HashSet::from([node_id]);
+                            unit_store.write().remove_units_for_nodes(&ids);
+                            continue;
+                        }
+
                         let content = match read_text_content(&path, 1_048_576) {
                             Some(c) => c,
                             None => {

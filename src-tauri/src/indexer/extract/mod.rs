@@ -53,6 +53,114 @@ pub fn ocr_enabled() -> bool {
     OCR_ENABLED.load(Ordering::SeqCst)
 }
 
+/// How the indexer treats a path's content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexMode {
+    /// Names and paths only: never read or index file content.
+    NamesOnly,
+    /// Names, paths and content (the default).
+    NameAndContent,
+}
+
+/// Process-wide copy of the directory-mode rules, mirroring
+/// [`crate::config::KensakuConfig::watched_dirs`] and
+/// [`crate::config::KensakuConfig::name_only_dirs`]. Normalized keys keep the
+/// crawl, watcher, embedding worker and extraction pipeline independent of the
+/// config `RwLock`, like the OCR and content-cap settings above.
+struct ModeRules {
+    watched: Vec<String>,
+    names_only: Vec<String>,
+}
+
+static MODE_RULES: std::sync::RwLock<ModeRules> =
+    std::sync::RwLock::new(ModeRules { watched: Vec::new(), names_only: Vec::new() });
+
+/// Canonical comparison key for a rule path: no trailing separator, forward
+/// slashes everywhere, and case-insensitive on Windows like the filesystem.
+pub fn rule_key(path: &Path) -> String {
+    let raw = path.to_string_lossy();
+    let trimmed = raw.trim_end_matches(['/', '\\']);
+    let unified = trimmed.replace('\\', "/");
+    if cfg!(windows) {
+        unified.to_lowercase()
+    } else {
+        unified
+    }
+}
+
+/// True when `rule` is `path` itself or one of its ancestor directories.
+/// The separator check keeps `/media-notes` out of `/media`.
+fn rule_covers(rule: &str, path: &str) -> bool {
+    path == rule || path.strip_prefix(rule).is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// Resolves the effective mode from an explicit rule set. The deepest (most
+/// specific) matching rule wins, so a watched folder whose "names only" switch
+/// is off overrides a names-only ancestor.
+///
+/// Pure on purpose: the reconcile step uses it to compare the persisted rule
+/// set with the current one, file by file.
+pub fn mode_from_rules(watched: &[String], names_only: &[String], path: &Path) -> IndexMode {
+    let key = rule_key(path);
+    let mut best: Option<(usize, IndexMode)> = None;
+    for rule in watched {
+        if rule_covers(rule, &key) && best.is_none_or(|(len, _)| rule.len() > len) {
+            let mode = if names_only.contains(rule) {
+                IndexMode::NamesOnly
+            } else {
+                IndexMode::NameAndContent
+            };
+            best = Some((rule.len(), mode));
+        }
+    }
+    // A hand-edited config can mark a directory that is not a watched root.
+    for rule in names_only {
+        if !watched.contains(rule)
+            && rule_covers(rule, &key)
+            && best.is_none_or(|(len, _)| rule.len() > len)
+        {
+            best = Some((rule.len(), IndexMode::NamesOnly));
+        }
+    }
+    best
+        .map(|(_, mode)| mode)
+        .unwrap_or(IndexMode::NameAndContent)
+}
+
+/// Replaces the process-wide rules from the current configuration.
+pub fn set_path_modes(watched: &[PathBuf], names_only: &[PathBuf]) {
+    if let Ok(mut slot) = MODE_RULES.write() {
+        slot.watched = watched.iter().map(|p| rule_key(p)).collect();
+        slot.names_only = names_only.iter().map(|p| rule_key(p)).collect();
+    }
+}
+
+/// Backwards-compatible setter for callers that only have the names-only list.
+/// It preserves the watched roots already installed by [`set_path_modes`].
+pub fn set_name_only_dirs(dirs: Vec<PathBuf>) {
+    let watched = MODE_RULES
+        .read()
+        .map(|rules| rules.watched.clone())
+        .unwrap_or_default();
+    if let Ok(mut slot) = MODE_RULES.write() {
+        slot.watched = watched;
+        slot.names_only = dirs.iter().map(|p| rule_key(p)).collect();
+    }
+}
+
+/// The effective mode for `path` under the current configuration.
+pub fn mode_for_path(path: &Path) -> IndexMode {
+    MODE_RULES
+        .read()
+        .map(|rules| mode_from_rules(&rules.watched, &rules.names_only, path))
+        .unwrap_or(IndexMode::NameAndContent)
+}
+
+/// True when `path`'s content must not be read or indexed.
+pub fn is_name_only_path(path: &Path) -> bool {
+    mode_for_path(path) == IndexMode::NamesOnly
+}
+
 /// Process-wide content caps, mirroring KensakuConfig so the extraction
 /// pipeline (which runs outside the config RwLock) sees updates immediately.
 static CONTENT_MAX_FILE_SIZE_BYTES: AtomicU64 = AtomicU64::new(20 * 1024 * 1024);
@@ -1022,6 +1130,77 @@ mod tests {
         assert!(
             result.is_none(),
             "an image must not produce content while OCR is disabled: {result:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod mode_tests {
+    use super::{IndexMode, mode_from_rules, rule_key};
+    use std::path::{Path, PathBuf};
+
+    fn mode(watched: &[&str], names_only: &[&str], path: &str) -> IndexMode {
+        let watched: Vec<String> = watched.iter().map(|p| rule_key(Path::new(*p))).collect();
+        let names_only: Vec<String> = names_only.iter().map(|p| rule_key(Path::new(*p))).collect();
+        mode_from_rules(&watched, &names_only, &PathBuf::from(path))
+    }
+
+    #[test]
+    fn nested_watched_root_overrides_names_only_parent() {
+        assert_eq!(
+            mode(&["/media", "/media/work"], &["/media"], "/media/work/report.pdf"),
+            IndexMode::NameAndContent
+        );
+        assert_eq!(
+            mode(&["/media", "/media/work"], &["/media"], "/media/other/report.pdf"),
+            IndexMode::NamesOnly
+        );
+        assert_eq!(
+            mode(&["/media", "/media/work"], &["/media"], "/media/work"),
+            IndexMode::NameAndContent
+        );
+    }
+
+    #[test]
+    fn names_only_subdirectory_overrides_content_root() {
+        assert_eq!(
+            mode(&["/home"], &["/home/photos"], "/home/photos/a.jpg"),
+            IndexMode::NamesOnly
+        );
+        assert_eq!(
+            mode(&["/home"], &["/home/photos"], "/home/docs/a.txt"),
+            IndexMode::NameAndContent
+        );
+    }
+
+    #[test]
+    fn sibling_with_shared_prefix_is_not_covered() {
+        assert_eq!(
+            mode(&["/media"], &["/media"], "/media-notes.txt"),
+            IndexMode::NameAndContent
+        );
+    }
+
+    #[test]
+    fn trailing_separators_and_legacy_names_only_rules() {
+        assert_eq!(rule_key(Path::new("/media/")), rule_key(Path::new("/media")));
+        assert_eq!(mode(&[], &["/media"], "/media/a.pdf"), IndexMode::NamesOnly);
+        assert_eq!(mode(&[], &["/media"], "/other/a.pdf"), IndexMode::NameAndContent);
+    }
+
+    #[test]
+    fn toggling_the_child_on_keeps_it_names_only() {
+        assert_eq!(
+            mode(
+                &["/media", "/media/work"],
+                &["/media", "/media/work"],
+                "/media/work/a.pdf"
+            ),
+            IndexMode::NamesOnly
+        );
+        assert_eq!(
+            mode(&["/media", "/media/work"], &["/media"], "/media/work/a.pdf"),
+            IndexMode::NameAndContent
         );
     }
 }

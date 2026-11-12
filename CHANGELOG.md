@@ -18,6 +18,12 @@ versioning: [SemVer](https://semver.org/).
   files. History is deduplicated case-insensitively and an extended query
   replaces its shorter prefix. It lives in memory, so it is cleared when
   Kensaku quits or from the row's Clear action.
+- **Per-directory indexing mode: names only, or names and content.** New `name_only_dirs`
+  setting (and a "Names only" switch next to each folder in Settings → Folders). Files below a
+  listed directory stay searchable by name and path but are never read, OCR'd or embedded,
+  which keeps media libraries, archives and network shares cheap to index. Switching a
+  directory over drops its content documents and semantic units; switching it back queues its
+  files for extraction. An empty list keeps today's behavior.
 
 ### Fixed
 - **Every first scan reported itself as a health warning** (#142, #146). The

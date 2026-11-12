@@ -1309,6 +1309,21 @@ impl MetadataDb {
         Ok(marked)
     }
 
+    /// Marks every file below `dir` as needing a content re-read.
+    pub fn mark_dir_content_pending(&self, dir: &Path) -> Result<usize, String> {
+        let mut prefix = dir.to_string_lossy().into_owned();
+        if !prefix.ends_with(std::path::MAIN_SEPARATOR) {
+            prefix.push(std::path::MAIN_SEPARATOR);
+        }
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE nodes SET content_pending = 1, retry_count = 0
+             WHERE is_dir = 0 AND substr(path, 1, length(?1)) = ?1",
+            params![prefix],
+        )
+        .map_err(|e| format!("Failed to mark '{}' pending: {}", dir.display(), e))
+    }
+
     /// Marks every file as needing a content re-read.
     pub fn mark_all_content_pending(&self) -> Result<usize, String> {
         let conn = self.conn.lock();
@@ -1328,6 +1343,32 @@ impl MetadataDb {
         )
         .map_err(|e| format!("Failed to mark '{}' pending: {}", path.display(), e))?;
         Ok(())
+    }
+
+    /// Flags exactly these files for a content re-read and a re-embedding.
+    ///
+    /// `indexed_gen` has to go back to 0 as well: a file that was embedded
+    /// before it became names-only still has `indexed_gen = 1`, so resetting
+    /// only `content_pending` would restore its full-text document but never
+    /// its semantic units.
+    pub fn mark_paths_content_pending(&self, paths: &[PathBuf]) -> Result<usize, String> {
+        if paths.is_empty() {
+            return Ok(0);
+        }
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare(
+                "UPDATE nodes SET content_pending = 1, retry_count = 0, indexed_gen = 0
+                 WHERE path = ?1",
+            )
+            .map_err(|e| format!("Failed to prepare pending-path update: {e}"))?;
+        let mut total = 0;
+        for path in paths {
+            total += stmt
+                .execute(params![path.to_string_lossy().to_string()])
+                .map_err(|e| format!("Failed to mark '{}' pending: {}", path.display(), e))?;
+        }
+        Ok(total)
     }
 
     /// How many times extraction has been attempted and left pending, and

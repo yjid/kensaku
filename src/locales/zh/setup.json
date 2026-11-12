@@ -49,6 +49,8 @@
     "browse": "浏览文件夹…",
     "browseTitle": "选择要搜索的文件夹",
     "pickMany": "可多选",
+    "nameOnly": "仅文件名",
+    "nameOnlyHint": "仅为此文件夹索引文件名和路径：不提取文本、不进行 OCR 或语义搜索。关闭则同时索引名称和内容；子文件夹关闭此项可覆盖上级的仅文件名设置。",
     "pathPlaceholder": "或输入路径——支持 ~，多个路径用逗号分隔",
     "addFolder": "添加文件夹",
     "pickerUnavailable": "此环境无法使用文件夹选择器——请在下方输入路径。（{{error}}）"

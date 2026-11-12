@@ -49,6 +49,8 @@
     "browse": "Browse for folder…",
     "browseTitle": "Choose folders to search",
     "pickMany": "pick as many as you like",
+    "nameOnly": "Names only",
+    "nameOnlyHint": "Index only file names and paths for this folder: no text extraction, OCR or semantic search. Off means names and contents. A nested folder with this off overrides a names-only parent.",
     "pathPlaceholder": "Or type a path — ~ works, commas separate several",
     "addFolder": "Add folder",
     "pickerUnavailable": "Folder picker unavailable here — type a path below instead. ({{error}})"

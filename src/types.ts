@@ -201,6 +201,8 @@ export interface KensakuConfig {
   agent_scoped_roots?: string[];
   /** Include .gitignore/.cursorignore-matched files in the index. */
   include_ignored?: boolean;
+  /** Directories indexed by file name only (no content extraction). */
+  name_only_dirs?: string[];
   /** Show generated thumbnails on result cards (default on). */
   show_thumbnails?: boolean;
   /** Result layout. */

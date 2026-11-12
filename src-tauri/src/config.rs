@@ -204,6 +204,12 @@ pub struct KensakuConfig {
     /// developers do ("ignore parity").
     #[serde(default)]
     pub include_ignored: bool,
+    /// Directories (watched roots or any folder below them) indexed by file
+    /// name and path only: no text extraction, OCR or embeddings. Everything
+    /// else keeps the default "name + content" behavior, so an empty list
+    /// leaves existing setups unchanged.
+    #[serde(default)]
+    pub name_only_dirs: Vec<PathBuf>,
     /// Persisted UI theme ("light" or "dark"). Legacy "paper" / "void"
     /// configs are migrated at load (v5).
     #[serde(default = "default_theme")]
@@ -478,6 +484,7 @@ impl Default for KensakuConfig {
             content_max_semantic_units: default_content_max_semantic_units(),
             agent_scoped_roots: Vec::new(),
             include_ignored: false,
+            name_only_dirs: Vec::new(),
             extractors: Vec::new(),
             ocr_enabled: true,
             ocr_max_image_bytes: 0,
@@ -984,6 +991,26 @@ mod tests {
         let json = serde_json::to_string(&cfg).unwrap();
         let (_, migrated) = KensakuConfig::parse_and_migrate(&json).unwrap();
         assert!(!migrated);
+    }
+
+    #[test]
+    fn name_only_dirs_default_empty_and_round_trip() {
+        assert!(KensakuConfig::default().name_only_dirs.is_empty());
+
+        let cfg = KensakuConfig {
+            name_only_dirs: vec![PathBuf::from("/media")],
+            ..KensakuConfig::default()
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        let (parsed, migrated) = KensakuConfig::parse_and_migrate(&json).unwrap();
+        assert!(!migrated);
+        assert_eq!(parsed.name_only_dirs, vec![PathBuf::from("/media")]);
+
+        // A config written before the field existed still loads, unchanged.
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value.as_object_mut().unwrap().remove("name_only_dirs");
+        let (legacy, _) = KensakuConfig::parse_and_migrate(&value.to_string()).unwrap();
+        assert!(legacy.name_only_dirs.is_empty());
     }
 
     #[test]
