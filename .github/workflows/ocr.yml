@@ -130,33 +130,50 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           cargo test --manifest-path src-tauri/Cargo.toml --release --lib --no-run
+          & rustc -vV
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,BuildNumber | Format-List | Out-String | Write-Host
           $exe = Get-ChildItem 'src-tauri/target/release/build/kensaku' -Recurse -Filter 'kensaku_lib-*.exe' | Select-Object -First 1
           if (-not $exe) { Write-Host 'no test exe found'; exit 0 }
           Write-Host "EXE: $($exe.FullName) size=$($exe.Length)"
-          Write-Host '--- PATH entries mentioning target/onnx/webview/Edge ---'
-          ($env:PATH -split ';') | Where-Object { $_ -match 'target|onnx|webview|Edge' } | ForEach-Object { Write-Host "  $_" }
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vs = & $vswhere -latest -property installationPath
-          Write-Host "VS: $vs"
           $dumpbin = Get-ChildItem -Path (Join-Path $vs 'VC\Tools\MSVC') -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
-          if ($dumpbin) {
-            Write-Host "--- DEPENDENTS ($($dumpbin.FullName)) ---"
-            & $dumpbin.FullName /nologo /DEPENDENTS $exe.FullName
-          } else {
-            Write-Host 'dumpbin not found'
+          Write-Host '--- IMPORTS ---'
+          $imports = & $dumpbin.FullName /nologo /IMPORTS $exe.FullName
+          $imports | Write-Host
+          $current = $null
+          $byDll = [ordered]@{}
+          foreach ($line in $imports) {
+            if ($line -match '^\s{1,8}([A-Za-z0-9_.\-]+\.dll)\s*$') {
+              $current = $Matches[1]
+              if (-not $byDll.Contains($current)) { $byDll[$current] = New-Object System.Collections.Generic.List[string] }
+              continue
+            }
+            if ($current -and $line -match '^\s+([0-9A-Fa-f]+)\s+([A-Za-z_?$@][^\s]*)\s*$') {
+              $byDll[$current].Add($Matches[2])
+            }
           }
-          Write-Host '--- exe directory contents ---'
-          Get-ChildItem $exe.Directory | Select-Object Name,Length | Format-Table -AutoSize | Out-String | Write-Host
-          Write-Host '--- resolving each non-system dependent ---'
-          Get-ChildItem 'C:\Windows\System32' -Filter '*.dll' -ErrorAction SilentlyContinue | Select-Object -First 0
+          Write-Host '--- import verification (does the loader find every imported name?) ---'
+          foreach ($dll in $byDll.Keys) {
+            $h = [IntPtr]::Zero
+            $loaded = $false
+            try { $loaded = [System.Runtime.InteropServices.NativeLibrary]::TryLoad($dll, [ref]$h) } catch { Write-Host "LOAD EXCEPTION $dll : $($_.Exception.Message)" }
+            if (-not $loaded) { Write-Host "CANNOT LOAD: $dll"; continue }
+            $missing = New-Object System.Collections.Generic.List[string]
+            foreach ($fn in $byDll[$dll]) {
+              $p = [IntPtr]::Zero
+              if (-not [System.Runtime.InteropServices.NativeLibrary]::TryGetExport($h, $fn, [ref]$p)) { $missing.Add($fn) }
+            }
+            if ($missing.Count -gt 0) { Write-Host "MISSING from ${dll}: $($missing -join ', ')" } else { Write-Host "ok ${dll} ($($byDll[$dll].Count) imports)" }
+            [System.Runtime.InteropServices.NativeLibrary]::Free($h) | Out-Null
+          }
+          Write-Host '--- ucrtbase ---'
+          (Get-Item 'C:\Windows\System32\ucrtbase.dll').VersionInfo | Format-List FileVersion,ProductVersion | Out-String | Write-Host
+          Write-Host '--- HEADERS ---'
+          & $dumpbin.FullName /nologo /HEADERS $exe.FullName | Select-String -Pattern 'subsystem version|machine \(|size of stack' | ForEach-Object { Write-Host $_.Line }
           Write-Host '--- running the exe with --list ---'
           & $exe.FullName --list
           Write-Host "exit=$LASTEXITCODE"
-          Write-Host '--- Application event log (last 30m) ---'
-          Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-30)} -ErrorAction SilentlyContinue |
-            Where-Object { $_.Message -match 'kensaku|0xc0000139' } |
-            Select-Object -First 5 |
-            ForEach-Object { $_.TimeCreated.ToString('o') + ' ' + $_.Id + ' ' + $_.Message }
 
       # Single-threaded: the OCR engine choice is process-wide state.
       - name: Run the real-model PP-OCR tests
