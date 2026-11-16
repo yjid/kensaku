@@ -72,7 +72,7 @@ hex = "0.4"
 flate2 = "1"
 # Builds minimal Outlook .msg (OLE compound) files for the email extractor
 # tests. Already in the tree via infer; no new download.
-cfb = "0.14"
+cfb = "0.16"
 
 [target.'cfg(windows)'.dependencies]
 # Direct process enumeration for the webview cleanup: taskkill rejects a
