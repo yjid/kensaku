@@ -122,6 +122,42 @@ jobs:
           echo "KENSAKU_INDRA_PACK_DIR=$indra" >> "$GITHUB_ENV"
           echo "ORT_DYLIB_PATH=$RUNNER_TEMP/$dir/${{ matrix.lib }}" >> "$GITHUB_ENV"
 
+      # TEMPORARY diagnostic for the Windows test-binary load failure.
+      - name: Diagnose the Windows test binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $ErrorActionPreference = 'Continue'
+          cargo test --manifest-path src-tauri/Cargo.toml --release --lib --no-run
+          $exe = Get-ChildItem 'src-tauri/target/release/build/kensaku' -Recurse -Filter 'kensaku_lib-*.exe' | Select-Object -First 1
+          if (-not $exe) { Write-Host 'no test exe found'; exit 0 }
+          Write-Host "EXE: $($exe.FullName) size=$($exe.Length)"
+          Write-Host '--- PATH entries mentioning target/onnx/webview/Edge ---'
+          ($env:PATH -split ';') | Where-Object { $_ -match 'target|onnx|webview|Edge' } | ForEach-Object { Write-Host "  $_" }
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -property installationPath
+          Write-Host "VS: $vs"
+          $dumpbin = Get-ChildItem -Path (Join-Path $vs 'VC\Tools\MSVC') -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+          if ($dumpbin) {
+            Write-Host "--- DEPENDENTS ($($dumpbin.FullName)) ---"
+            & $dumpbin.FullName /nologo /DEPENDENTS $exe.FullName
+          } else {
+            Write-Host 'dumpbin not found'
+          }
+          Write-Host '--- exe directory contents ---'
+          Get-ChildItem $exe.Directory | Select-Object Name,Length | Format-Table -AutoSize | Out-String | Write-Host
+          Write-Host '--- resolving each non-system dependent ---'
+          Get-ChildItem 'C:\Windows\System32' -Filter '*.dll' -ErrorAction SilentlyContinue | Select-Object -First 0
+          Write-Host '--- running the exe with --list ---'
+          & $exe.FullName --list
+          Write-Host "exit=$LASTEXITCODE"
+          Write-Host '--- Application event log (last 30m) ---'
+          Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-30)} -ErrorAction SilentlyContinue |
+            Where-Object { $_.Message -match 'kensaku|0xc0000139' } |
+            Select-Object -First 5 |
+            ForEach-Object { $_.TimeCreated.ToString('o') + ' ' + $_.Id + ' ' + $_.Message }
+
       # Single-threaded: the OCR engine choice is process-wide state.
       - name: Run the real-model PP-OCR tests
         shell: bash
