@@ -1,5 +1,4 @@
 use mail_parser::decoders::html::html_to_text;
-use mail_parser::MimeHeaders;
 use std::path::Path;
 
 /// Trims extracted text to `max_bytes` without splitting a character.
@@ -141,20 +140,44 @@ pub fn extract_eml(path: &Path, max_bytes: usize) -> Option<String> {
     Some(cap(out, max_bytes))
 }
 
-fn push_people(out: &mut String, label: &str, people: Option<&mail_parser::Address>) {
-    if let Some(list) = people {
-        out.push_str(label);
-        for person in list.iter() {
-            if let Some(name) = person.name() {
-                out.push(' ');
-                out.push_str(name);
-            }
-            if let Some(address) = person.address() {
-                out.push(' ');
-                out.push_str(address);
+/// One labelled line for `.eml` people.
+///
+/// Groups are kept both as a name (`Team:`) and as their members: the index
+/// should match a search for the group and for an individual sender inside it.
+fn push_people(out: &mut String, label: &str, people: Option<mail_parser::AddressList<'_>>) {
+    let Some(list) = people else {
+        return;
+    };
+    if list.is_empty() {
+        return;
+    }
+    out.push_str(label);
+    for entry in list.iter() {
+        match entry {
+            mail_parser::Address::Mailbox(person) => push_mailbox(out, &person),
+            mail_parser::Address::Group(group) => {
+                if let Some(name) = group.name() {
+                    out.push(' ');
+                    out.push_str(name);
+                    out.push(':');
+                }
+                for person in group.mailboxes() {
+                    push_mailbox(out, &person);
+                }
             }
         }
-        out.push('\n');
+    }
+    out.push('\n');
+}
+
+fn push_mailbox(out: &mut String, person: &mail_parser::Mailbox<'_>) {
+    if let Some(name) = person.name() {
+        out.push(' ');
+        out.push_str(name);
+    }
+    if let Some(address) = person.address() {
+        out.push(' ');
+        out.push_str(address);
     }
 }
 
@@ -241,6 +264,20 @@ mod tests {
                 "From: a@x.com\nTo: Bob b@x.com c@x.com\nCc: Dana d@x.com\nBcc: e@x.com\n\nbody\n"
                     .to_string()
             )
+        );
+    }
+
+    #[test]
+    fn extracts_group_name_and_members() {
+        let fx = bytes_fixture(
+            "group",
+            b"From: a@x.com\r\n\
+              To: Team: bob@x.com, Cy <cy@x.com>;\r\n\
+              \r\nbody\r\n",
+        );
+        assert_eq!(
+            extract_eml(&fx.0, 10_000),
+            Some("From: a@x.com\nTo: Team: bob@x.com Cy cy@x.com\n\nbody\n".to_string())
         );
     }
 
