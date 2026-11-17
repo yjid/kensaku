@@ -59,9 +59,25 @@ pub fn dict_path() -> PathBuf {
     pack_dir().join("dict.txt")
 }
 
-/// True when all three pack files exist.
+/// True when all three pack files exist at their expected sizes.
 pub fn pack_present() -> bool {
-    det_path().is_file() && rec_path().is_file() && dict_path().is_file()
+    // Size-checked, not merely present: a stale pack from an older version or
+    // a truncated download loads and then reads nothing, which is how #174 was
+    // reported. Reporting it as missing lets Download verify and replace it.
+    crate::models::ocr_pack_present()
+}
+
+/// Cached self-test result. Reset after a pack download so a failure against
+/// the old files does not outlive the download that fixed them (#174).
+#[cfg(feature = "accurate-ocr")]
+static SELF_TEST: parking_lot::Mutex<Option<Result<(), String>>> = parking_lot::Mutex::new(None);
+
+/// Drops the cached PP-OCR self-test so the next status check runs it again.
+pub fn reset_self_test() {
+    #[cfg(feature = "accurate-ocr")]
+    {
+        *SELF_TEST.lock() = None;
+    }
 }
 
 /// True when the compiled binary has the accurate engine.
@@ -471,15 +487,13 @@ pub(crate) const SELF_TEST_EXPECTED: &str = "open settings";
 /// Runs the accurate engine once on a known image and checks the words come
 /// back, spaces included. Cached once it has run against a present pack, so
 /// status checks stay cheap. This is what "ready" means in the UI: files on
-/// disk prove nothing, a correct read does.
+/// disk prove nothing, a correct read does. [`reset_self_test`] clears the
+/// cache after a download, so a retry does not need a restart.
 pub fn self_test() -> Result<(), String> {
     #[cfg(feature = "accurate-ocr")]
     {
-        use std::sync::OnceLock;
-
-        static RESULT: OnceLock<Result<(), String>> = OnceLock::new();
-        if let Some(result) = RESULT.get() {
-            return result.clone();
+        if let Some(result) = SELF_TEST.lock().clone() {
+            return result;
         }
         if !pack_present() {
             // Not cached: the pack may be downloaded later in this process.
@@ -507,7 +521,8 @@ pub fn self_test() -> Result<(), String> {
         if let Err(reason) = &result {
             eprintln!("[Kensaku OCR] {reason}");
         }
-        RESULT.get_or_init(|| result).clone()
+        *SELF_TEST.lock() = Some(result.clone());
+        result
     }
     #[cfg(not(feature = "accurate-ocr"))]
     {

@@ -9,6 +9,7 @@ on:
   pull_request:
     paths:
       - "src-tauri/src/ocr.rs"
+      - "src-tauri/src/ocr_indra/**"
       - "src-tauri/vendor/paddleocr_rs_onnx/**"
       - "src-tauri/src/models.rs"
       - "src-tauri/src/indexer/extract/**"
@@ -18,6 +19,9 @@ on:
       - "src-tauri/tests/fixtures/ocr-ui-text/**"
       - ".github/workflows/ocr.yml"
   push:
+    # Post-merge verification: the real-model jobs are the only place a
+    # platform-specific OCR failure (like #174 on Fedora) can show up.
+    branches: ["master"]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -68,7 +72,7 @@ jobs:
           key: ocr-${{ matrix.os }}
           cache-on-failure: true
 
-      - name: Download the PP-OCR pack and ONNX Runtime
+      - name: Download the PP-OCR and Indra packs and ONNX Runtime
         shell: bash
         run: |
           set -euo pipefail
@@ -87,6 +91,24 @@ jobs:
           check "$pack/rec.onnx" 9ef676d6ed3c88256a2d92c640c44f25b0c40947e111b14b8be8f594091563e6
           check "$pack/dict.txt" c5cbe34ef40c29c4df07ed012bf96569cb69a2d2a01a07027e9f13cb832bd9cd
 
+          # Indra pack, same v1.1.0 artifacts and hashes as models.rs. The
+          # detector/recognizer split matters here: #174 was "Indra read
+          # nothing", which only a real pack can reproduce.
+          indra="$RUNNER_TEMP/indra-pack"
+          mkdir -p "$indra"
+          base=https://huggingface.co/datalab-to/indra-ocr/resolve/v1.1.0
+          for name in det.onnx rec.onnx rec_cjk.onnx rec_rtl.onnx rec_world.onnx script.onnx orient.onnx meta.json; do
+            fetch "$base/$name" "$indra/$name"
+          done
+          check "$indra/det.onnx" f2bd4cba23e9c328cf7ec824634e423e191a2c6aacbbf35c62bd79dd70f62f59
+          check "$indra/rec.onnx" 475972a2710be4a3cbfeb2bc7f3624ffd563de07de42476fc7a290d4e1ece484
+          check "$indra/rec_cjk.onnx" 4a035516a17e62cdf33a4fe2d88077654cb8841cff024685cdef4e351694ef50
+          check "$indra/rec_rtl.onnx" 468796bd684486a8388c30c8b4ed2a26e3eeb1f8ff02831c24c2e12c79a2a834
+          check "$indra/rec_world.onnx" c8d1e59f21b04966f179d2d2d8e22b230d22110b3f89855bbbf2624a58c40043
+          check "$indra/script.onnx" b6ce4e926e19c243faaf37bd46880398bf2cb4ae56a29e1177a3b017c1280e36
+          check "$indra/orient.onnx" 20eaf670f55a7cf9facfe1bdd6c7b8e40be75bbf4d48a3df43f66aa3bbd874fd
+          check "$indra/meta.json" 4ce4c94b46f5d644033c02e718322014ff4081270f385038c571912b56696339
+
           archive="$RUNNER_TEMP/${{ matrix.ort }}"
           fetch "https://github.com/microsoft/onnxruntime/releases/download/v1.31.0/${{ matrix.ort }}" "$archive"
           check "$archive" ${{ matrix.ort_sha256 }}
@@ -97,12 +119,21 @@ jobs:
           esac
           dir="${{ matrix.ort }}"; dir="${dir%.tgz}"; dir="${dir%.zip}"
           echo "KENSAKU_OCR_PACK_DIR=$pack" >> "$GITHUB_ENV"
+          echo "KENSAKU_INDRA_PACK_DIR=$indra" >> "$GITHUB_ENV"
           echo "ORT_DYLIB_PATH=$RUNNER_TEMP/$dir/${{ matrix.lib }}" >> "$GITHUB_ENV"
 
       # Single-threaded: the OCR engine choice is process-wide state.
-      - name: Run the real-model OCR tests
+      - name: Run the real-model PP-OCR tests
         shell: bash
         run: >
           cargo test --manifest-path src-tauri/Cargo.toml --release --lib
           ocr::tests::real -- --include-ignored --test-threads=1 --nocapture
           --skip real_pack_reads_text
+
+      # Both engines in one process, which is where the ONNX Runtime session
+      # interaction between PP-OCR and Indra shows up.
+      - name: Run the real-model Indra tests
+        shell: bash
+        run: >
+          cargo test --manifest-path src-tauri/Cargo.toml --release --lib
+          ocr_indra::tests:: -- --include-ignored --test-threads=1 --nocapture

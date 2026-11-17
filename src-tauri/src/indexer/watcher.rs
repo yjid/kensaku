@@ -63,6 +63,10 @@ struct PendingUpsert {
     /// `(size, mtime_secs)` from the previous settle attempt. A changing
     /// fingerprint means the writer is still active, so keep waiting.
     fingerprint: Option<(u64, u64)>,
+    /// Walk everything below the path once it settles. Set for a directory
+    /// that arrives without child events (a rename on Windows/macOS, or a
+    /// folder moved into a watched root), never for ordinary metadata churn.
+    subtree: bool,
 }
 
 /// Coalesces create/modify events per path and delays them until they settle.
@@ -72,15 +76,26 @@ struct PendingUpserts {
 }
 
 impl PendingUpserts {
-    fn note(&mut self, path: PathBuf, now: Instant) {
+    fn note(&mut self, path: PathBuf, now: Instant, subtree: bool) {
         self.paths
             .entry(path)
-            .and_modify(|pending| pending.deadline = now + SETTLE)
+            .and_modify(|pending| {
+                pending.deadline = now + SETTLE;
+                pending.subtree |= subtree;
+            })
             .or_insert(PendingUpsert {
                 deadline: now + SETTLE,
                 first_seen: now,
                 fingerprint: None,
+                subtree,
             });
+    }
+
+    /// Drops a queued path, so a backend that reports the two halves of a
+    /// rename separately does not walk a subtree a second time once the
+    /// paired event has already repaired it.
+    fn remove(&mut self, path: &Path) {
+        self.paths.remove(path);
     }
 
     fn due(&mut self, now: Instant) -> Vec<(PathBuf, PendingUpsert)> {
@@ -146,6 +161,7 @@ fn apply_settled(
                 deadline: now + FRESH_RETRY,
                 first_seen: pending.first_seen,
                 fingerprint: Some(fingerprint),
+                subtree: false,
             },
         );
         return;
@@ -154,6 +170,19 @@ fn apply_settled(
     if is_path_excluded(&path, cfg) || !path.exists() {
         if !path.exists() {
             handle_path_remove(&path, metadata, content_index);
+        }
+        return;
+    }
+
+    if meta.is_dir() {
+        // Children of a moved/created directory are not reported by the
+        // platform, so a single-path upsert would leave them unindexed.
+        // Only paths queued as a subtree repair take this branch; ordinary
+        // directory metadata changes still just refresh the row.
+        if pending.subtree {
+            let _ = reindex_subtree(path, cfg, metadata, content_index);
+        } else {
+            handle_file_upsert(&path, metadata, content_index);
         }
         return;
     }
@@ -556,6 +585,10 @@ fn handle_event(
                     // (and its content re-indexed) instead of being dropped.
                     if !new_excluded {
                         handle_directory_rename(old_path, new_path, cfg, metadata, content_index);
+                        // Linux reports `To` before the paired `Both`, which
+                        // queued a subtree walk for this path. The rename
+                        // already re-indexed it; do not walk it twice.
+                        pending.remove(new_path);
                         changes += 1;
                     } else {
                         // Moved into an excluded location: drop the subtree.
@@ -571,7 +604,7 @@ fn handle_event(
                     handle_path_remove(old_path, metadata, content_index);
                     changes += 1;
                     if !new_excluded {
-                        pending.note(new_path.clone(), now);
+                        pending.note(new_path.clone(), now, false);
                         changes += 1;
                     }
                 }
@@ -589,7 +622,10 @@ fn handle_event(
         EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
             for path in &event.paths {
                 if !is_path_excluded(path, cfg) {
-                    pending.note(path.clone(), now);
+                    // Windows reports a folder rename as `From` then `To`,
+                    // with no paired event and no events for the children.
+                    // Queue the subtree, not just the directory row (#187).
+                    pending.note(path.clone(), now, path.is_dir());
                     changes += 1;
                 }
             }
@@ -600,7 +636,10 @@ fn handle_event(
                 if !path.exists() || is_path_excluded(path, cfg) {
                     handle_path_remove(path, metadata, content_index);
                 } else {
-                    pending.note(path.clone(), now);
+                    // macOS/FSEvents cannot pair the two sides of a rename,
+                    // so a directory that appears here still needs its
+                    // children re-indexed (#187).
+                    pending.note(path.clone(), now, path.is_dir());
                 }
                 changes += 1;
             }
@@ -613,10 +652,22 @@ fn handle_event(
                 changes += 1;
             }
         }
-        EventKind::Create(_) | EventKind::Modify(_) => {
+        EventKind::Create(_) => {
             for path in &event.paths {
                 if !is_path_excluded(path, cfg) {
-                    pending.note(path.clone(), now);
+                    // A folder moved into a watched root is reported as a
+                    // create with no events for its contents.
+                    pending.note(path.clone(), now, path.is_dir());
+                    changes += 1;
+                }
+            }
+        }
+        EventKind::Modify(_) => {
+            for path in &event.paths {
+                if !is_path_excluded(path, cfg) {
+                    // Ordinary metadata/content churn: a directory here is
+                    // not a move, so do not walk its whole subtree.
+                    pending.note(path.clone(), now, false);
                     changes += 1;
                 }
             }
@@ -674,7 +725,21 @@ fn handle_directory_rename(
         let _ = c_index.commit();
     }
 
-    let new_dir = new_path.to_path_buf();
+    let _ = reindex_subtree(new_path.to_path_buf(), cfg, metadata, content_index);
+}
+
+/// Re-adds every path below `dir` to metadata and the content index.
+///
+/// A directory that moves carries no events for its children: `notify` walks
+/// the tree for a paired rename (`RenameMode::Both`), but Windows emits
+/// `From`/`To` separately and macOS/FSEvents has no pairing at all, so the
+/// only way to keep the subtree searchable is to walk it explicitly (#187).
+fn reindex_subtree(
+    dir: PathBuf,
+    cfg: &KensakuConfig,
+    metadata: &Arc<RwLock<MetadataStore>>,
+    content_index: &Arc<RwLock<Option<ContentIndex>>>,
+) -> thread::JoinHandle<()> {
     let excluded_dirs = cfg.excluded_dirs.clone();
     let excluded_extensions = cfg.excluded_extensions.clone();
     let include_ignored = cfg.include_ignored;
@@ -686,7 +751,7 @@ fn handle_directory_rename(
     // thread so event draining is not blocked.
     thread::spawn(move || {
         let entries = walk_directories(
-            std::slice::from_ref(&new_dir),
+            std::slice::from_ref(&dir),
             &excluded_dirs,
             include_ignored,
             skip_hidden,
@@ -775,7 +840,7 @@ fn handle_directory_rename(
         if let Some(c_index) = content_index.read().as_ref() {
             let _ = c_index.commit();
         }
-    });
+    })
 }
 
 fn handle_file_upsert(
@@ -962,7 +1027,7 @@ fn handle_path_remove(
 mod tests {
     use super::*;
     use crate::indexer::metadata_db::MetadataDb;
-    use notify::event::{CreateKind, RemoveKind};
+    use notify::event::{CreateKind, ModifyKind, RemoveKind, RenameMode};
 
     fn temp_dir(tag: &str) -> PathBuf {
         let nanos = SystemTime::now()
@@ -1007,6 +1072,7 @@ mod tests {
             deadline: now,
             first_seen: now - FRESH_WINDOW - Duration::from_secs(1),
             fingerprint: None,
+            subtree: false,
         };
         let mut queue = PendingUpserts::default();
         apply_settled(path, pending, now, cfg, metadata, content_index, &mut queue);
@@ -1058,8 +1124,12 @@ mod tests {
     fn events_are_coalesced_until_the_settle_deadline() {
         let now = Instant::now();
         let mut queue = PendingUpserts::default();
-        queue.note(PathBuf::from("/tmp/a"), now);
-        queue.note(PathBuf::from("/tmp/a"), now + Duration::from_millis(100));
+        queue.note(PathBuf::from("/tmp/a"), now, false);
+        queue.note(
+            PathBuf::from("/tmp/a"),
+            now + Duration::from_millis(100),
+            false,
+        );
 
         assert_eq!(queue.len(), 1);
         assert!(queue.due(now + Duration::from_millis(499)).is_empty());
@@ -1118,6 +1188,7 @@ mod tests {
                 deadline: now,
                 first_seen: now,
                 fingerprint: None,
+                subtree: false,
             },
             now,
             &cfg,
@@ -1383,5 +1454,159 @@ mod tests {
             rescan_watched_dirs(std::slice::from_ref(&root), &cfg, &metadata, &content_index);
         assert_eq!(second, 0, "an unchanged tree must not be re-indexed");
         assert_eq!(metadata.read().len(), entries);
+    }
+
+    /// Polls until a background re-index has finished, so the assertion does
+    /// not race the repair thread.
+    fn wait_until(mut done: impl FnMut() -> bool) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            if done() {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        false
+    }
+
+    fn indexed(metadata: &Arc<RwLock<MetadataStore>>, path: &Path) -> bool {
+        metadata.read().get(path).is_some()
+    }
+
+    #[test]
+    fn windows_shaped_directory_rename_reindexes_its_children() {
+        let root = temp_dir("rename-windows");
+        // Keep the database outside the watched root: writing to it would
+        // generate events for the tree under test.
+        let data = temp_dir("rename-windows-store");
+        let old = root.join("2026-13-11");
+        let new = root.join("2026-11-13");
+        std::fs::create_dir_all(&old).unwrap();
+        let child = old.join("invoice.txt");
+        std::fs::write(&child, "total 42").unwrap();
+
+        let cfg = KensakuConfig {
+            watched_dirs: vec![root.clone()],
+            ..KensakuConfig::default()
+        };
+        let metadata = store(&data);
+        let content_index = no_content();
+        reindex_subtree(old.clone(), &cfg, &metadata, &content_index)
+            .join()
+            .unwrap();
+        assert!(indexed(&metadata, &child), "the original tree is indexed");
+
+        let mut queue = PendingUpserts::default();
+        let now = Instant::now();
+
+        // Windows reports a rename as two independent events, with no events
+        // for the children and no paired `Both` (#187).
+        handle_event(
+            &event(
+                EventKind::Modify(ModifyKind::Name(RenameMode::From)),
+                &[&old],
+            ),
+            &cfg,
+            &metadata,
+            &content_index,
+            &mut queue,
+            now,
+        );
+        assert!(!indexed(&metadata, &child), "From drops the old subtree");
+
+        std::fs::rename(&old, &new).unwrap();
+        let changes = handle_event(
+            &event(EventKind::Modify(ModifyKind::Name(RenameMode::To)), &[&new]),
+            &cfg,
+            &metadata,
+            &content_index,
+            &mut queue,
+            now,
+        );
+        assert_eq!(changes, 1);
+        assert_eq!(queue.len(), 1, "To must queue a subtree repair, not a row");
+
+        let settle = now + SETTLE + Duration::from_millis(1);
+        let (path, pending) = queue.due(settle).pop().unwrap();
+        assert!(pending.subtree, "the queued work is a subtree walk");
+        apply_settled(
+            path,
+            pending,
+            settle,
+            &cfg,
+            &metadata,
+            &content_index,
+            &mut queue,
+        );
+
+        let moved = new.join("invoice.txt");
+        assert!(
+            wait_until(|| indexed(&metadata, &moved)),
+            "the child must be restored under the new path"
+        );
+    }
+
+    #[test]
+    fn paired_rename_cancels_the_queued_subtree_walk() {
+        let root = temp_dir("rename-linux");
+        let data = temp_dir("rename-linux-store");
+        let old = root.join("draft");
+        let new = root.join("final");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("notes.txt"), "hello").unwrap();
+
+        let cfg = KensakuConfig {
+            watched_dirs: vec![root.clone()],
+            ..KensakuConfig::default()
+        };
+        let metadata = store(&data);
+        let content_index = no_content();
+        reindex_subtree(old.clone(), &cfg, &metadata, &content_index)
+            .join()
+            .unwrap();
+
+        let mut queue = PendingUpserts::default();
+        let now = Instant::now();
+        handle_event(
+            &event(
+                EventKind::Modify(ModifyKind::Name(RenameMode::From)),
+                &[&old],
+            ),
+            &cfg,
+            &metadata,
+            &content_index,
+            &mut queue,
+            now,
+        );
+        std::fs::rename(&old, &new).unwrap();
+        // inotify order: From, To, then the cookie-paired Both.
+        handle_event(
+            &event(EventKind::Modify(ModifyKind::Name(RenameMode::To)), &[&new]),
+            &cfg,
+            &metadata,
+            &content_index,
+            &mut queue,
+            now,
+        );
+        assert_eq!(queue.len(), 1);
+        handle_event(
+            &event(
+                EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+                &[&old, &new],
+            ),
+            &cfg,
+            &metadata,
+            &content_index,
+            &mut queue,
+            now,
+        );
+        assert_eq!(
+            queue.len(),
+            0,
+            "the paired rename already repaired the subtree"
+        );
+
+        let moved = new.join("notes.txt");
+        assert!(wait_until(|| indexed(&metadata, &moved)));
     }
 }

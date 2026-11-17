@@ -76,6 +76,32 @@ fn existing(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window(LABEL)
 }
 
+/// `true` when the error is WebView2's `ERROR_BUSY` (`0x800700AA`).
+///
+/// WebView2 raises this while another process still holds its user-data
+/// folder: usually a previous Kensaku instance whose `msedgewebview2.exe`
+/// children outlived a crash or a fast hide/show cycle. It clears by itself
+/// once those processes exit, so the caller retries instead of calling it a
+/// crash (#176).
+pub(crate) fn is_webview_busy(error: &str) -> bool {
+    error.to_ascii_lowercase().contains("0x800700aa")
+}
+
+/// Delays before each retry of a busy window creation. Short at first (a
+/// hide/show cycle clears in well under a second), longer for the rare case
+/// where a crashed instance's WebView2 processes take a moment to exit.
+const BUSY_RETRY_DELAYS: [std::time::Duration; 3] = [
+    std::time::Duration::from_millis(300),
+    std::time::Duration::from_millis(900),
+    std::time::Duration::from_millis(2000),
+];
+
+fn present(window: &WebviewWindow) {
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+}
+
 fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     // In "app" mode the window is a normal application window: decorated,
     // opaque, in the dock/taskbar, and not pinned above other windows. In
@@ -164,7 +190,11 @@ fn report_creation_failure(app: &AppHandle, error: &str) {
 
     use tauri_plugin_dialog::DialogExt;
     let hint = if cfg!(windows) {
-        "\n\nThis usually means the Microsoft Edge WebView2 runtime is missing or broken. Install it from Microsoft, then try again."
+        if is_webview_busy(error) {
+            "\n\nAnother copy of Kensaku, or a WebView2 helper left behind by a previous run, is still holding Kensaku's WebView2 profile. Quit Kensaku from the tray, wait a few seconds, then start it again. If this keeps happening, end any remaining \"Microsoft Edge WebView2\" processes in Task Manager."
+        } else {
+            "\n\nThis usually means the Microsoft Edge WebView2 runtime is missing or broken. Install it from Microsoft, then try again."
+        }
     } else {
         ""
     };
@@ -182,19 +212,66 @@ fn report_creation_failure(app: &AppHandle, error: &str) {
 
 /// Shows the search window, creating it if it was hidden (destroyed).
 pub fn show(app: &AppHandle) {
-    let window = match existing(app) {
-        Some(w) => w,
-        None => match create(app) {
-            Ok(w) => w,
-            Err(e) => {
-                report_creation_failure(app, &e.to_string());
-                return;
+    if let Some(window) = existing(app) {
+        present(&window);
+        return;
+    }
+    match create(app) {
+        Ok(window) => present(&window),
+        Err(e) => {
+            let error = e.to_string();
+            if is_webview_busy(&error) {
+                // Transient: the previous WebView2 profile owner is exiting.
+                retry_create_when_idle(app, error);
+            } else {
+                report_creation_failure(app, &error);
             }
-        },
-    };
-    let _ = window.show();
-    let _ = window.unminimize();
-    let _ = window.set_focus();
+        }
+    }
+}
+
+/// Retries window creation while WebView2 reports `ERROR_BUSY`, without
+/// blocking the caller (setup or a tray handler). Creation has to happen on
+/// the main thread, so each attempt is posted there and the worker waits for
+/// its result.
+fn retry_create_when_idle(app: &AppHandle, first_error: String) {
+    let app_for_thread = app.clone();
+    let first = first_error.clone();
+    let spawned = std::thread::Builder::new()
+        .name("window-retry".to_string())
+        .spawn(move || {
+            let mut last = first;
+            for delay in BUSY_RETRY_DELAYS {
+                std::thread::sleep(delay);
+                let (tx, rx) = std::sync::mpsc::channel();
+                let handle = app_for_thread.clone();
+                let main = handle.clone();
+                let queued = handle.run_on_main_thread(move || {
+                    let result = match existing(&main) {
+                        Some(window) => {
+                            present(&window);
+                            Ok(())
+                        }
+                        None => create(&main).map(|window| present(&window)),
+                    };
+                    let _ = tx.send(result.map_err(|e| e.to_string()));
+                });
+                if queued.is_err() {
+                    break;
+                }
+                match rx.recv_timeout(std::time::Duration::from_secs(30)) {
+                    Ok(Ok(())) => return,
+                    Ok(Err(e)) => last = e,
+                    // The main thread never answered; stop rather than retry
+                    // blind while the user is left without a window.
+                    Err(_) => break,
+                }
+            }
+            report_creation_failure(&app_for_thread, &last);
+        });
+    if spawned.is_err() {
+        report_creation_failure(app, &first_error);
+    }
 }
 
 /// Hides the search window by destroying it, then returns freed memory.
@@ -240,6 +317,20 @@ pub fn release_free_memory() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn webview_busy_is_recognised_in_the_tauri_error_text() {
+        // The exact shape `create()` produced in #176, including the localized
+        // message from the reporter's system.
+        let reported = "runtime error: failed to create webview: WebView2 error: \
+                        WindowsError(Error { code: HRESULT(0x800700AA), message: \
+                        \"Требуемый ресурс занят.\" })";
+        assert!(is_webview_busy(reported));
+        assert!(is_webview_busy("hrresult(0x800700aa)"));
+        assert!(!is_webview_busy(
+            "WebView2 runtime is missing or broken (0x8007007E)"
+        ));
+    }
 
     #[test]
     fn recent_queries_records_deduplicates_and_caps_at_five() {
