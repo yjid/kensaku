@@ -41,8 +41,23 @@ pub fn pack_dir() -> PathBuf {
 }
 
 pub fn pack_present() -> bool {
-    let dir = pack_dir();
-    PACK_FILES.iter().all(|f| dir.join(f).is_file())
+    // Size-checked, not merely present: a stale pack from an older version or
+    // a truncated download loads and then reads nothing, which is how #174 was
+    // reported. Reporting it as missing lets Download verify and replace it.
+    crate::models::indra_pack_present()
+}
+
+/// Cached self-test result. Reset after a pack download so a failure against
+/// the old files does not outlive the download that fixed them (#174).
+#[cfg(feature = "accurate-ocr")]
+static SELF_TEST: parking_lot::Mutex<Option<Result<(), String>>> = parking_lot::Mutex::new(None);
+
+/// Drops the cached Indra self-test so the next status check runs it again.
+pub fn reset_self_test() {
+    #[cfg(feature = "accurate-ocr")]
+    {
+        *SELF_TEST.lock() = None;
+    }
 }
 
 /// Why Indra cannot run, in words a user can act on, or `None` when it can.
@@ -90,7 +105,7 @@ pub fn extract_decoded(image: &image::DynamicImage) -> OcrOutcome {
         let page = imageops::Gray::from_image(image);
         match pool::read(&page) {
             None => OcrOutcome::Unavailable,
-            Some(Ok(text)) if !text.trim().is_empty() => OcrOutcome::Text(text),
+            Some(Ok(result)) if !result.text.trim().is_empty() => OcrOutcome::Text(result.text),
             Some(Ok(_)) => OcrOutcome::NoText,
             Some(Err(e)) => {
                 eprintln!("[Kensaku OCR] Indra failed on an image: {e}");
@@ -107,47 +122,64 @@ pub fn extract_decoded(image: &image::DynamicImage) -> OcrOutcome {
 
 /// Runs Indra once on a known image and checks the words come back. Cached
 /// once it has run against a present pack: "ready" in the UI means a correct
-/// read, not files on disk.
+/// read, not files on disk. [`reset_self_test`] clears the cache after a
+/// download, so a retry does not need a restart.
 pub fn self_test() -> Result<(), String> {
-    use std::sync::OnceLock;
-
-    static RESULT: OnceLock<Result<(), String>> = OnceLock::new();
-    if let Some(result) = RESULT.get() {
-        return result.clone();
-    }
-    if !crate::ocr::accurate_compiled() {
-        return Err("Indra OCR is not part of this build".into());
-    }
-    if !pack_present() {
-        // Not cached: the pack may be downloaded later in this process.
-        return Err("Indra OCR models are not downloaded yet".into());
-    }
-    if !crate::ocr::runtime_loadable() {
-        return Err("ONNX Runtime could not be loaded".into());
-    }
-    let result = image::load_from_memory(crate::ocr::SELF_TEST_IMAGE)
-        .map_err(|e| format!("self-test image is unreadable: {e}"))
-        .and_then(|image| {
-            let page = imageops::Gray::from_image(&image);
-            match pool::read(&page) {
-                None => Err("Indra models failed to load".into()),
-                Some(Err(e)) => Err(format!("Indra engine failed during self-test: {e}")),
-                Some(Ok(text)) => {
-                    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
-                    if normalized.to_lowercase().contains(crate::ocr::SELF_TEST_EXPECTED) {
-                        Ok(())
-                    } else if normalized.is_empty() {
-                        Err("Indra read nothing in its self-test".into())
-                    } else {
-                        Err(format!("Indra misread its self-test: {normalized:?}"))
+    #[cfg(feature = "accurate-ocr")]
+    {
+        if let Some(result) = SELF_TEST.lock().clone() {
+            return result;
+        }
+        if !pack_present() {
+            // Not cached: the pack may be downloaded later in this process.
+            return Err("Indra OCR models are not downloaded yet".into());
+        }
+        if !crate::ocr::runtime_loadable() {
+            return Err("ONNX Runtime could not be loaded".into());
+        }
+        let result = image::load_from_memory(crate::ocr::SELF_TEST_IMAGE)
+            .map_err(|e| format!("self-test image is unreadable: {e}"))
+            .and_then(|image| {
+                let page = imageops::Gray::from_image(&image);
+                match pool::read(&page) {
+                    None => Err("Indra models failed to load".into()),
+                    Some(Err(e)) => Err(format!("Indra engine failed during self-test: {e}")),
+                    Some(Ok(result)) => {
+                        let normalized =
+                            result.text.split_whitespace().collect::<Vec<_>>().join(" ");
+                        if normalized.to_lowercase().contains(crate::ocr::SELF_TEST_EXPECTED) {
+                            Ok(())
+                        } else if result.detected == 0 {
+                            Err(
+                                "Indra detected no text lines in its self-test image; \
+                                 the model pack may be wrong or incomplete (re-download it)"
+                                    .into(),
+                            )
+                        } else if result.read == 0 {
+                            Err(format!(
+                                "Indra detected {} lines but recognised none of them in its \
+                                 self-test (recognition returned no text)",
+                                result.detected
+                            ))
+                        } else {
+                            Err(format!(
+                                "Indra misread its self-test ({} of {} lines read): {normalized:?}",
+                                result.read, result.detected
+                            ))
+                        }
                     }
                 }
-            }
-        });
-    if let Err(reason) = &result {
-        eprintln!("[Kensaku OCR] {reason}");
+            });
+        if let Err(reason) = &result {
+            eprintln!("[Kensaku OCR] {reason}");
+        }
+        *SELF_TEST.lock() = Some(result.clone());
+        result
     }
-    RESULT.get_or_init(|| result).clone()
+    #[cfg(not(feature = "accurate-ocr"))]
+    {
+        Err("Indra OCR is not part of this build".into())
+    }
 }
 
 /// A few engines, loaded on first use, so several extraction workers can OCR
@@ -193,7 +225,7 @@ mod pool {
     }
 
     /// `None` when no engine could load.
-    pub fn read(page: &Gray) -> Option<Result<String, String>> {
+    pub fn read(page: &Gray) -> Option<Result<super::engine::ReadResult, String>> {
         let engines = ENGINES.get_or_init(load).as_ref()?;
         let start = NEXT.fetch_add(1, Ordering::Relaxed);
         let mut attempts = 0;

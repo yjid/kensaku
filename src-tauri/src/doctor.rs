@@ -242,6 +242,21 @@ fn check_crash_log() -> DoctorCheck {
     // healthy install could show a warning whose text was the app's own
     // "config loaded" line.
     match crate::crashlog::last_failure() {
+        Some(line) if crate::main_window::is_webview_busy(&line) => with_action(
+            // Not a crash: WebView2 refused to start while another process
+            // still held its profile, which clears on its own. Reporting it
+            // as an unexplained crash sent users looking for a fault that
+            // was never there (#176).
+            warn(
+                ID,
+                LABEL,
+                "A previous launch could not open its window because Kensaku's WebView2 profile was still in use by another process.".to_string(),
+                Some(
+                    "Quit Kensaku from the tray, wait a few seconds, then start it again. If this keeps happening, end any remaining \"Microsoft Edge WebView2\" processes in Task Manager.".to_string(),
+                ),
+            ),
+            DoctorAction::new("open-crash-log", "Open log"),
+        ),
         Some(line) => with_action(
             warn(
                 ID,
