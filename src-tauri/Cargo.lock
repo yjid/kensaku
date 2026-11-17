@@ -2994,6 +2994,7 @@ dependencies = [
  "base64 0.23.1",
  "cfb",
  "dirs 7.0.0",
+ "embed-resource",
  "flate2",
  "fs4 1.1.0",
  "hex",
