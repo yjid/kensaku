@@ -74,6 +74,26 @@ fn session(env: &ort::environment::Environment, path: &Path, threads: usize) -> 
 /// One reading of a line: text, mean peak probability.
 type Reading = (String, f32);
 
+/// What one page produced: the text plus enough counters to tell a detector
+/// that found nothing from a recognizer that read nothing.
+pub struct ReadResult {
+    pub text: String,
+    /// Line boxes the detector returned.
+    pub detected: usize,
+    /// Lines that produced kept text after confidence and leader filtering.
+    pub read: usize,
+}
+
+impl ReadResult {
+    fn empty() -> Self {
+        Self {
+            text: String::new(),
+            detected: 0,
+            read: 0,
+        }
+    }
+}
+
 impl Engine {
     pub fn load(env: &ort::environment::Environment, dir: &Path, threads: usize) -> Result<Self, String> {
         let meta: serde_json::Value = serde_json::from_slice(
@@ -119,9 +139,9 @@ impl Engine {
     }
 
     /// The page's text, one detected line per line, in reading order.
-    pub fn read(&mut self, page: &Gray) -> Result<String, String> {
+    pub fn read(&mut self, page: &Gray) -> Result<ReadResult, String> {
         if page.w < 2 || page.h < 2 {
-            return Ok(String::new());
+            return Ok(ReadResult::empty());
         }
         // The orientation model reads the preview straightened by its row
         // angle (a tilted page could read as turned).
@@ -146,7 +166,7 @@ impl Engine {
         }
         let boxes = self.detect(&upright)?;
         if boxes.is_empty() {
-            return Ok(String::new());
+            return Ok(ReadResult::empty());
         }
         let readings = self.recognize(&upright, &boxes, turn == VERTICAL)?;
         let rtl = page_is_rtl(readings.iter().map(|r| r.0.as_str()));
@@ -167,7 +187,16 @@ impl Engine {
             }
         }
         let order = reading_order(&kept);
-        Ok(order.iter().map(|&i| texts[i].as_str()).collect::<Vec<_>>().join("\n"))
+        let read = order.len();
+        Ok(ReadResult {
+            text: order
+                .iter()
+                .map(|&i| texts[i].as_str())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            detected: boxes.len(),
+            read,
+        })
     }
 
     /// Quarter turns clockwise that make the page upright, or VERTICAL, from

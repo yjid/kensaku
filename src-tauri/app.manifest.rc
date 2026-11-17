@@ -1,0 +1,3 @@
+// The application manifest for every artifact of this crate. See build.rs:
+// the test binaries import Common Controls v6 too, so they need it as well.
+1 24 "windows-app-manifest.xml"

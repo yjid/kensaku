@@ -391,6 +391,32 @@ pub fn indra_status() -> ModelsStatus {
     status_for(&crate::ocr_indra::pack_dir(), &INDRA_ARTIFACTS)
 }
 
+/// Every artifact of `list` exists at its expected size.
+///
+/// The engine modules use this instead of a bare `is_file()` check so a stale
+/// or truncated pack is reported as not downloaded, and the Download action
+/// replaces it, rather than loading it and reading nothing.
+fn artifacts_present(dir: &Path, list: &[Artifact]) -> bool {
+    list.iter().all(|artifact| {
+        std::fs::metadata(dir.join(artifact.name))
+            .map(|meta| {
+                meta.is_file()
+                    && (artifact.bytes_expected == 0 || meta.len() == artifact.bytes_expected)
+            })
+            .unwrap_or(false)
+    })
+}
+
+/// True when the PP-OCR pack files are present at their expected sizes.
+pub fn ocr_pack_present() -> bool {
+    artifacts_present(&crate::ocr::pack_dir(), &OCR_ARTIFACTS)
+}
+
+/// True when the Indra pack files are present at their expected sizes.
+pub fn indra_pack_present() -> bool {
+    artifacts_present(&crate::ocr_indra::pack_dir(), &INDRA_ARTIFACTS)
+}
+
 pub fn smart_dir() -> PathBuf {
     models_dir().join("smart")
 }
@@ -436,6 +462,13 @@ fn status_for(dir: &Path, artifacts_list: &[Artifact]) -> ModelsStatus {
         } else {
             0
         };
+        // A file at the wrong size is not usable: it is a stale pack from an
+        // older version, a truncated download, or a copy someone interrupted.
+        // Reporting it as present (`ready: true`) made the app run the engine
+        // against it and then say the engine "read nothing" (#174). Treating it
+        // as missing routes the user to Download, which verifies and replaces it.
+        let present =
+            is_file && (artifact.bytes_expected == 0 || bytes_on_disk == artifact.bytes_expected);
 
         total_bytes = total_bytes.saturating_add(artifact.bytes_expected);
         total_present_bytes = total_present_bytes.saturating_add(bytes_on_disk);
@@ -445,7 +478,7 @@ fn status_for(dir: &Path, artifacts_list: &[Artifact]) -> ModelsStatus {
             url: artifact.urls.first().copied().unwrap_or("").to_string(),
             bytes_expected: artifact.bytes_expected,
             bytes_on_disk,
-            present: is_file,
+            present,
         });
     }
 
@@ -581,6 +614,14 @@ fn run_download(dir: PathBuf, artifacts: &'static [Artifact], pack: Pack, label:
         Ok(()) => {
             set_progress(pack, None);
             set_error(pack, None);
+            // A self-test that failed against an older or truncated pack must
+            // not outlive the download that fixed it: without this the engine
+            // stayed "broken" until the app restarted (#174).
+            match pack {
+                Pack::Ocr => crate::ocr::reset_self_test(),
+                Pack::Indra => crate::ocr_indra::reset_self_test(),
+                _ => {}
+            }
             if matches!(pack, Pack::Ocr | Pack::Indra)
                 && let Some(callback) = OCR_PACK_READY.get()
             {

@@ -387,6 +387,40 @@ fn write_schema_marker(path: &std::path::Path) {
 
 pub const SCHEMA_MARKER_FILE: &str = "content.schema";
 
+/// How often opening the index writer is retried before giving up. Tantivy
+/// allows exactly one writer per index directory, and on Windows the previous
+/// writer's lock can outlive the handle for a few milliseconds: an index
+/// rebuild drops the old `IndexWriter` and reopens the directory right away,
+/// and the OCR job hit `LockBusy` there (`schema_v3_index_rebuilds_once_then_stays_put`).
+/// Twenty attempts at 100 ms is two seconds, which only costs time when the
+/// lock really is held by another process.
+const WRITER_OPEN_ATTEMPTS: u32 = 20;
+const WRITER_OPEN_BACKOFF: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// Opens the single Tantivy writer for `index`, waiting out a transient
+/// `LockBusy`. Any other failure (permissions, corruption, a lock we cannot
+/// see) is reported immediately instead of being retried.
+fn open_content_writer(index: &Index) -> Result<IndexWriter, String> {
+    // A desktop daemon should not reserve a large indexing arena. Tantivy
+    // requires ~15 MB per writer thread; one thread with a 16 MB arena keeps
+    // the resident footprint small. Indexing is I/O-bound for a personal
+    // corpus and extraction, not document insertion, is the real cost.
+    let mut attempt = 1;
+    loop {
+        match index.writer_with_num_threads(1, 16_000_000) {
+            Ok(writer) => return Ok(writer),
+            Err(tantivy::TantivyError::LockFailure(
+                tantivy::directory::error::LockError::LockBusy,
+                _,
+            )) if attempt < WRITER_OPEN_ATTEMPTS => {
+                std::thread::sleep(WRITER_OPEN_BACKOFF);
+                attempt += 1;
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+}
+
 impl ContentIndex {
     pub fn new(index_dir: &Path) -> Result<Self, String> {
         fs::create_dir_all(index_dir).map_err(|e| e.to_string())?;
@@ -488,13 +522,7 @@ impl ContentIndex {
             NgramTokenizer::new(3, 3, false).map_err(|e| e.to_string())?,
         );
 
-        // A desktop daemon should not reserve a large indexing arena. Tantivy
-        // requires ~15 MB per writer thread; one thread with a 16 MB arena keeps
-        // the resident footprint small. Indexing is I/O-bound for a personal
-        // corpus and extraction, not document insertion, is the real cost.
-        let writer = index
-            .writer_with_num_threads(1, 16_000_000)
-            .map_err(|e| e.to_string())?;
+        let writer = open_content_writer(&index)?;
 
         let reader = index
             .reader_builder()
@@ -1882,6 +1910,51 @@ mod tests {
         drop(reopened);
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn opening_a_busy_writer_lock_is_retried() {
+        // Windows keeps a just-dropped writer's lock file busy for a moment,
+        // which made the rebuild path fail with `LockBusy` in OCR CI. The
+        // reopen has to wait the lock out instead of surfacing an error.
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let index_dir = std::env::temp_dir().join(format!(
+            "kensaku-content-busy-lock-{}-{}",
+            std::process::id(),
+            nanos
+        ));
+
+        let initial = ContentIndex::new(&index_dir).expect("fresh index");
+        drop(initial);
+
+        let index = Index::open_in_dir(&index_dir).expect("open index directory");
+        let held: IndexWriter = index
+            .writer_with_num_threads(1, 16_000_000)
+            .expect("hold the only writer");
+        let releaser = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(350));
+            drop(held);
+        });
+
+        let reopened = ContentIndex::new(&index_dir).expect("reopen waits for the busy lock");
+        releaser.join().unwrap();
+        reopened
+            .add_or_update(
+                Path::new("/tmp/kensaku/busy/note.txt"),
+                "note.txt",
+                "the lock cleared",
+                0,
+                0,
+                Some("txt"),
+            )
+            .unwrap();
+        reopened.commit().unwrap();
+        drop(reopened);
+
+        let _ = fs::remove_dir_all(&index_dir);
     }
 
     #[test]
