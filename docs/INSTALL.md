@@ -85,6 +85,11 @@ xcode-select --install
   with **Desktop development with C++**
 - WebView2 runtime (preinstalled on Windows 10/11)
 
+### Android (experimental)
+
+Android development prerequisites and the current shell-only scope are in
+[ANDROID.md](ANDROID.md). Kensaku does not yet support Android search or indexing.
+
 ---
 
 ## Build
