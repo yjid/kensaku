@@ -143,12 +143,12 @@ Download the bundle for your system from the [latest release](https://github.com
 | Linux | `kensaku_<version>_amd64.AppImage`, `.deb`, or `.rpm` |
 | Agent CLI | `kensaku-cli-{linux,macos,windows}-*` |
 
-Every release also ships `SHA256SUMS` so you can verify what you downloaded. The 1.0.16 Windows x64 downloads are a **14.3 MB** NSIS setup and a **20.1 MB** MSI; the installed app binary is about **36 MB**.
+Every release also ships `SHA256SUMS` so you can verify what you downloaded. The 1.0.18 Windows x64 downloads are a **14.3 MB** NSIS setup and a **20.2 MB** MSI; the installed app binary is about **38 MB**.
 
 Windows builds are Authenticode-signed through [SignPath Foundation](https://signpath.org/), so the publisher is named and SmartScreen reputation can build. macOS builds are not signed or notarised yet, so Gatekeeper blocks them the first time.
 
 - **Windows:** the installer and app are signed. If SmartScreen still shows a reputation warning for a brand-new release, click **More info** → **Run anyway**.
-- **macOS:** open the app, then go to System Settings → Privacy & Security and click **Open Anyway**.
+- **macOS:** open the app, then go to System Settings → Privacy & Security and click **Open Anyway**. Unsigned builds also re-prompt for folder access after each upgrade — see [Troubleshooting](docs/TROUBLESHOOTING.md#macos-keeps-asking-for-folder-access).
 
 [docs/INSTALL.md](docs/INSTALL.md) has the full steps.
 
@@ -226,19 +226,19 @@ The two rows aren't a perfect match: Kensaku's search is fuzzy and runs inside a
 
 Indexing is a single pass: each file is read once and feeds both the name and text indexes. Work is queued in bounded batches, so memory stays flat on large folders.
 
-## What's new in 1.0.16
+## What's new in 1.0.18
 
-- **Launcher fix:** right-click and the sort control no longer make the launcher hide itself; the context menu is suppressed and sort is an in-app listbox.
-- **Clean installs no longer report a crash** on startup; milestones go to `kensaku.log` and only real failures reach the crash log.
-- **Windows portable OCR works** — `onnxruntime.dll` now ships in the zip and the build fails if it is missing.
-- **Tesseract reads the languages you have** — `-l` is passed, and Settings → Search has a language picker.
-- **Folder renames and unreadable folders are handled correctly** instead of leaving stale documents or deleting a subtree.
-- **`.gitignore` / `.cursorignore` are honored by the watcher**, not just the crawl.
-- **Indexing recovers from a panic**, excluded extensions are removed from the existing index, and files over 1 MB honor the deep-content setting.
-- **Updates are bounded and verified**: timeout, expected size, and `SHA256SUMS` check before install; truncated downloads are rejected.
-- **MCP `read_snippet` can no longer read arbitrary files** outside the index; credential files and excluded extensions are refused.
-- **IME Enter no longer opens files**, Tab no longer traps focus, and actions no longer apply to the previous query's rows.
-- Frontend unit tests (`vitest`) and an indexing progress bar in Settings.
+- **Per-folder indexing modes.** Any watched folder — or a folder inside one — can be set to **Names only** from Settings → Folders or during setup. Files below it stay searchable by name and path but are never read, OCR'd or embedded, which makes media libraries, archives and network shares cheap to index. The list is empty by default; changing it reconciles the index on the next scan. ([#145](https://github.com/yjid/kensaku/pull/145), [#140](https://github.com/yjid/kensaku/issues/140))
+- **Setup can be cancelled**, and folders can be changed while the first scan is running. ([#188](https://github.com/yjid/kensaku/pull/188))
+- **Cleaner Markdown search text and previews** — link and image destinations and fence markers are stripped from what is indexed and shown; link labels, alt text, frontmatter and code inside fences stay searchable. ([#139](https://github.com/yjid/kensaku/pull/139))
+- **Email bodies stored only as HTML or RTF are indexed** — some `.msg` files keep no plain-text body and were matched by subject only. ([#167](https://github.com/yjid/kensaku/pull/167))
+- **A stale or truncated Indra OCR pack is detected** instead of being treated as installed, a failed self-test is no longer cached for the life of the process, and the error now says whether the detector or the recognizer failed. ([#174](https://github.com/yjid/kensaku/issues/174))
+- **Custom CA bundles and the system trust store are honoured** for model, OCR and update downloads. ([#171](https://github.com/yjid/kensaku/pull/171))
+- **The semantic tier no longer returns letter-soup matches** for short or unusual queries. ([#177](https://github.com/yjid/kensaku/issues/177))
+- **Windows folder renames no longer lose their indexed files**, and dot-folders are indexed again when "Skip hidden files" is off. ([#187](https://github.com/yjid/kensaku/issues/187), [#179](https://github.com/yjid/kensaku/pull/179))
+- **The headless Linux daemon no longer deadlocks** on a one-CPU quota and tries every candidate socket path before giving up. ([#180](https://github.com/yjid/kensaku/issues/180))
+- **OCR no longer oversubscribes every core** — inference threads are bounded and UI-priority work is isolated from background OCR. ([#172](https://github.com/yjid/kensaku/pull/172))
+- **Updates are verified end to end**: bounded download, expected size, and `SHA256SUMS` checked before the installer runs.
 
 ## Privacy and security
 
@@ -252,7 +252,7 @@ Full threat model: [SECURITY.md](SECURITY.md).
 
 ## Status
 
-**Shipping now (1.0.16)**
+**Shipping now (1.0.18)**
 
 - Desktop app for Windows, macOS, and Linux: light and dark themes, grid and list results, infinite scroll, thumbnails, hover details, right-click actions
 - Two window modes: a tray launcher with a global summon keystroke (setup default) or a normal desktop app; closing either keeps the index warm
@@ -260,6 +260,7 @@ Full threat model: [SECURITY.md](SECURITY.md).
 - Recents ranked by what you actually opened, persisted across restarts
 - Search by name, content, meaning, and typo-tolerant matches
 - Documents, code, and images (with OCR), CJK-aware
+- Per-folder **Names only** mode, so media libraries, archives and network shares stay searchable without being read
 - Incremental indexing that tracks renames and deletes
 - Agent access over MCP and loopback HTTP, with one-click setup for Claude and Cursor
 - `.gitignore` and `.cursorignore` respected by default

@@ -55,3 +55,30 @@ jobs:
           cache-on-failure: true
       - run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+  rust-windows:
+    name: Rust (Windows)
+    # Compile-only check for the Windows-gated paths. Linux stays authoritative
+    # for tests and clippy; this exists because the Windows-specific breakages
+    # (the Common Controls manifest, the WebView2 profile race) are invisible to
+    # a Linux build and previously reached the release matrix before anyone saw
+    # them. `cargo check` keeps it to a few minutes, with no bundling.
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      # `generate_context!` embeds `frontendDist`, so the web build must exist
+      # before cargo compiles the lib.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Cache Cargo target directory
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: windows
+          cache-on-failure: true
+      - run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets
