@@ -3,7 +3,7 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
-## [1.0.18] — unreleased
+## [1.0.18] — 2026-11-17
 
 ### Added
 - **Cleaner Markdown search text and previews** (#139, #44). `.md` and

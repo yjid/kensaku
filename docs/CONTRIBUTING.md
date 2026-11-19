@@ -37,6 +37,14 @@ bun run build
 All five must pass. The Rust suite has 500+ tests; the frontend has a `vitest`
 suite. Do not add `#[allow]` to silence a lint without a comment explaining why.
 
+CI also runs a compile-only `cargo check --all-targets` on `windows-latest`, so
+Windows-gated code has to build before it reaches the release matrix. It is not a
+substitute for the Linux test and clippy jobs — those remain authoritative.
+
+**First-time contributors:** GitHub holds workflow runs from forks for approval,
+so a new pull request can sit with no checks for a while. That is expected, not
+a broken pipeline — the maintainer approves the run and CI starts.
+
 ## Tests
 
 The suite is hermetic: temp directories, no network, no user data. When you touch:

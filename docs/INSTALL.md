@@ -31,8 +31,13 @@ Get-AuthenticodeSignature .\kensaku_<ver>_x64-setup.exe | Format-List Status, Si
 Either right-click the app → **Open** → **Open**, or clear the quarantine flag:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/Kensaku.app
+xattr -dr com.apple.quarantine /Applications/kensaku.app
 ```
+
+The bundle is `kensaku.app` — the product name is lowercase. If macOS keeps
+asking for folder access after you grant it, that has a separate cause and a
+workaround; see
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md#macos-keeps-asking-for-folder-access).
 
 **Linux.** No signing step; the AppImage may need `--no-sandbox` on hardened
 distros.
