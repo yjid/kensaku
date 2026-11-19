@@ -109,7 +109,7 @@
   --traffic-zoom: #28c840;
 }
 
-/* Frost and Liquid Glass keep the same readable text hierarchy as light and
+/* Frost and Graphite keep the same readable text hierarchy as light and
    dark, but give panels a translucent material over a quiet color field. */
 [data-theme="frost"] {
   color-scheme: light;
@@ -146,31 +146,31 @@
   --icon-tint-opacity: 0.12;
 }
 
-[data-theme="liquid-glass"] {
+[data-theme="graphite"] {
   color-scheme: dark;
-  --bg: #111821;
-  --bg-elevated: #202a35;
-  --bg-sunken: #171f28;
-  --fg: #f3f7fa;
-  --fg-muted: #aab8c4;
-  --fg-subtle: #788894;
-  --border: rgba(225, 241, 255, 0.13);
-  --border-strong: rgba(225, 241, 255, 0.24);
-  --accent: #e8f4ff;
-  --accent-fg: #172330;
-  --accent-soft: rgba(225, 241, 255, 0.08);
-  --ink: #e8f4ff;
-  --ink-soft: rgba(225, 241, 255, 0.13);
-  --panel: rgba(32, 44, 57, 0.62);
+  --bg: #171717;
+  --bg-elevated: #292929;
+  --bg-sunken: #1e1e1e;
+  --fg: #f4f4f4;
+  --fg-muted: #b0b0b0;
+  --fg-subtle: #858585;
+  --border: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.22);
+  --accent: #e4e4e4;
+  --accent-fg: #1c1c1c;
+  --accent-soft: rgba(255, 255, 255, 0.07);
+  --ink: #e4e4e4;
+  --ink-soft: rgba(255, 255, 255, 0.12);
+  --panel: rgba(38, 38, 38, 0.62);
   --panel-blur: 34px;
-  --panel-edge: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 0 0 1px rgba(209, 232, 250, 0.1), 0 8px 28px rgba(0, 0, 0, 0.16);
+  --panel-edge: inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 8px 28px rgba(0, 0, 0, 0.18);
   --shadow-float: 0 18px 48px -14px rgba(0, 0, 0, 0.62);
-  --control: rgba(244, 249, 255, 0.1);
-  --control-edge: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 0 0 1px rgba(209, 232, 250, 0.1);
+  --control: rgba(255, 255, 255, 0.09);
+  --control-edge: inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
   --control-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.45);
-  --control-active: rgba(244, 249, 255, 0.18);
-  --control-active-edge: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 0 0 1px rgba(209, 232, 250, 0.16);
-  --bar: rgba(17, 25, 34, 0.66);
+  --control-active: rgba(255, 255, 255, 0.16);
+  --control-active-edge: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  --bar: rgba(23, 23, 23, 0.66);
   --blue: #69b7ff;
   --pink: #f09aaa;
   --olive: #c2bd85;
@@ -186,17 +186,17 @@ html[data-theme="frost"] body {
     radial-gradient(ellipse at 92% 100%, rgba(153, 187, 211, 0.48), transparent 54%), var(--bg);
 }
 
-html[data-theme="liquid-glass"] body {
-  background: radial-gradient(ellipse at 15% 5%, rgba(75, 121, 157, 0.28), transparent 48%),
-    radial-gradient(ellipse at 88% 96%, rgba(93, 79, 139, 0.22), transparent 52%), var(--bg);
+html[data-theme="graphite"] body {
+  background: radial-gradient(ellipse at 15% 5%, rgba(255, 255, 255, 0.055), transparent 48%),
+    radial-gradient(ellipse at 88% 96%, rgba(255, 255, 255, 0.035), transparent 52%), var(--bg);
 }
 
-html:is([data-theme="frost"], [data-theme="liquid-glass"]) .glass-window-bg {
+html:is([data-theme="frost"], [data-theme="graphite"]) .glass-window-bg {
   background: transparent;
 }
 /* Feature detection chooses a fully opaque material.
    Content remains legible if blur is unavailable. */
-html[data-glass-supported="false"]:is([data-theme="frost"], [data-theme="liquid-glass"]) {
+html[data-glass-supported="false"]:is([data-theme="frost"], [data-theme="graphite"]) {
   --panel-blur: 0px;
   --panel: var(--bg-elevated);
   --control: var(--bg-elevated);
@@ -204,11 +204,11 @@ html[data-glass-supported="false"]:is([data-theme="frost"], [data-theme="liquid-
 }
 
 html[data-glass-supported="false"][data-theme="frost"] body,
-html[data-glass-supported="false"][data-theme="liquid-glass"] body {
+html[data-glass-supported="false"][data-theme="graphite"] body {
   background: var(--bg);
 }
 
-html[data-glass-supported="false"]:is([data-theme="frost"], [data-theme="liquid-glass"]) .glass-window-bg {
+html[data-glass-supported="false"]:is([data-theme="frost"], [data-theme="graphite"]) .glass-window-bg {
   background: var(--bg);
 }
 

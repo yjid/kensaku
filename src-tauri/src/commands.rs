@@ -490,10 +490,10 @@ pub async fn set_theme(
         "light" | "paper" => "light",
         "dark" | "void" => "dark",
         "frost" => "frost",
-        "liquid-glass" => "liquid-glass",
+        "graphite" | "liquid-glass" => "graphite",
         _ => {
             return Err(format!(
-                "Unsupported theme '{}'. Expected 'light', 'dark', 'frost' or 'liquid-glass'.",
+                "Unsupported theme '{}'. Expected 'light', 'dark', 'frost' or 'graphite'.",
                 theme
             ));
         }

@@ -8,7 +8,8 @@ describe("normalizeTheme", () => {
     ["paper", "light"],
     ["void", "dark"],
     ["frost", "frost"],
-    ["liquid-glass", "liquid-glass"],
+    ["graphite", "graphite"],
+    ["liquid-glass", "graphite"],
   ] as const)("keeps %s as %s", (input, expected) => {
     expect(normalizeTheme(input)).toBe(expected);
   });

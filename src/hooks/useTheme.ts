@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-export type Theme = "light" | "dark" | "frost" | "liquid-glass";
+export type Theme = "light" | "dark" | "frost" | "graphite";
 
 const STORAGE_KEY = "kensaku.theme";
 
@@ -9,7 +9,8 @@ const STORAGE_KEY = "kensaku.theme";
 export function normalizeTheme(raw: string | null | undefined): Theme {
   if (raw === "light" || raw === "paper") return "light";
   if (raw === "dark" || raw === "void") return "dark";
-  if (raw === "frost" || raw === "liquid-glass") return raw;
+  if (raw === "frost") return "frost";
+  if (raw === "graphite" || raw === "liquid-glass") return "graphite";
   return "dark";
 }
 

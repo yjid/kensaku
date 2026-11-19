@@ -38,7 +38,7 @@ static TRAY_LIGHT_PNG: &[u8] = include_bytes!("../icons/tray-light.png");
 /// without a running Tauri application.
 pub fn tray_icon_bytes(theme: &str) -> &'static [u8] {
     match crate::config::normalize_theme(theme).as_str() {
-        "dark" | "liquid-glass" => TRAY_LIGHT_PNG,
+        "dark" | "graphite" => TRAY_LIGHT_PNG,
         _ => TRAY_DARK_PNG,
     }
 }
@@ -104,10 +104,10 @@ mod tests {
     }
 
     #[test]
-    fn glass_finishes_use_dark_taskbar_icon() {
+    fn graphite_and_frost_use_dark_taskbar_icon() {
         assert!(std::ptr::eq(tray_icon_bytes("frost"), TRAY_DARK_PNG));
         assert!(std::ptr::eq(
-            tray_icon_bytes("liquid-glass"),
+            tray_icon_bytes("graphite"),
             TRAY_LIGHT_PNG
         ));
     }

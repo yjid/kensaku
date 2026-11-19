@@ -12,7 +12,7 @@
       var paintTheme = null;
       try {
         var stored = localStorage.getItem("kensaku.theme");
-        var map = { paper: "light", light: "light", void: "dark", dark: "dark", frost: "frost", "liquid-glass": "liquid-glass" };
+        var map = { paper: "light", light: "light", void: "dark", dark: "dark", frost: "frost", graphite: "graphite", "liquid-glass": "graphite" };
         // A stored but unrecognized value is "dark", exactly like
         // normalizeTheme() in useTheme.ts (never the OS).
         if (stored) paintTheme = map[stored] || "dark";
