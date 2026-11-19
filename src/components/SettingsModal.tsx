@@ -399,7 +399,7 @@ function GeneralSection({
     <>
       <Card title={t("appearance.title")}>
         <div className="grid grid-cols-2 gap-4 p-4">
-          {(["light", "dark"] as const).map((value) => (
+          {(["light", "dark", "frost", "liquid-glass"] as const).map((value) => (
             <ThemeSwatch
               key={value}
               value={value}
@@ -2036,9 +2036,14 @@ function DiscardDialog({
 
 /* A tiny rendering of the app in each finish: field, rule, three tiles.
    Colors are the real tokens, scoped by data-theme on the swatch. */
-function ThemeSwatch({ value, active, onSelect }: { value: "light" | "dark"; active: boolean; onSelect: () => void }) {
+function ThemeSwatch({ value, active, onSelect }: { value: "light" | "dark" | "frost" | "liquid-glass"; active: boolean; onSelect: () => void }) {
   const { t } = useTranslation("settings");
-  const label = { light: t("appearance.light"), dark: t("appearance.dark") }[value];
+  const label = {
+    light: t("appearance.light"),
+    dark: t("appearance.dark"),
+    frost: t("appearance.frost"),
+    "liquid-glass": t("appearance.liquidGlass"),
+  }[value];
   return (
     <button type="button" onClick={onSelect} aria-pressed={active} className="group flex flex-col gap-2.5 text-left outline-none">
       <span

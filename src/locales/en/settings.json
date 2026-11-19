@@ -66,7 +66,9 @@
     "language": "Language",
     "auto": "Auto (system)",
     "light": "Light",
-    "dark": "Dark"
+    "dark": "Dark",
+    "frost": "Frost",
+    "liquidGlass": "Liquid Glass"
   },
   "window": {
     "title": "Window",

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-export type Theme = "light" | "dark";
+export type Theme = "light" | "dark" | "frost" | "liquid-glass";
 
 const STORAGE_KEY = "kensaku.theme";
 
@@ -9,6 +9,7 @@ const STORAGE_KEY = "kensaku.theme";
 export function normalizeTheme(raw: string | null | undefined): Theme {
   if (raw === "light" || raw === "paper") return "light";
   if (raw === "dark" || raw === "void") return "dark";
+  if (raw === "frost" || raw === "liquid-glass") return raw;
   return "dark";
 }
 
@@ -41,6 +42,11 @@ function readStored(): Theme {
 
 function apply(t: Theme) {
   document.documentElement.dataset.theme = t;
+  document.documentElement.dataset.glassSupported =
+    typeof CSS !== "undefined" &&
+    (CSS.supports("backdrop-filter", "blur(1px)") || CSS.supports("-webkit-backdrop-filter", "blur(1px)"))
+      ? "true"
+      : "false";
 }
 
 /**
@@ -111,7 +117,7 @@ export function useTheme() {
   }, []);
 
   const toggle = useCallback(() => {
-    setTheme(theme === "light" ? "dark" : "light");
+    setTheme(theme === "light" || theme === "frost" ? "dark" : "light");
   }, [theme, setTheme]);
 
   return { theme, setTheme, toggle };

@@ -109,7 +109,7 @@ Filename tools are everywhere. Reading *inside* your files — locally, instantl
 - No account, no telemetry, no cloud search. Your index stays in your OS config directory.
 
 **Pleasant to use**
-- Light and dark themes. Continuous-corner cards, a borderless search field, and hover details — a calm, native-feeling interface.
+- Light, dark, Frost, and Liquid Glass themes. Continuous-corner cards, a borderless search field, and hover details — a calm, native-feeling interface.
 - English, Simplified Chinese, and Russian interface, auto-detected from the system or chosen in Settings.
 - Right-click for open, show in folder, copy path, and details.
 
@@ -254,7 +254,7 @@ Full threat model: [SECURITY.md](SECURITY.md).
 
 **Shipping now (1.0.16)**
 
-- Desktop app for Windows, macOS, and Linux: light and dark themes, grid and list results, infinite scroll, thumbnails, hover details, right-click actions
+- Desktop app for Windows, macOS, and Linux: light, dark, Frost, and Liquid Glass themes, grid and list results, infinite scroll, thumbnails, hover details, right-click actions
 - Two window modes: a tray launcher with a global summon keystroke (setup default) or a normal desktop app; closing either keeps the index warm
 - English, Simplified Chinese, and Russian interface, auto-detected from the system or chosen in Settings
 - Recents ranked by what you actually opened, persisted across restarts
@@ -277,7 +277,7 @@ Full threat model: [SECURITY.md](SECURITY.md).
 
 Kensaku is actively built, and the roadmap bends toward what people ask for. Some directions being explored:
 
-- **A glass theme — and more customization.** A translucent, vibrancy-style finish, with adjustable density, accents, and per-surface control. The current light/dark pair is the floor, not the ceiling. → [vote & discuss](https://github.com/yjid/kensaku/discussions/36)
+- **More customization.** Adjustable density, accents, and per-surface control. → [vote & discuss](https://github.com/yjid/kensaku/discussions/36)
 - **App search and launch.** Type "term", open Terminal. Installed applications join the same instant index, so the launcher stops where your files end and your tools begin. → [vote & discuss](https://github.com/yjid/kensaku/discussions/37)
 - **Internet quick search.** For the things your files can't answer — opt-in, off by default, clearly separated from local results so the local-first promise stays intact. → [vote & discuss](https://github.com/yjid/kensaku/discussions/38)
 - **macOS signing and notarization.** Windows installers are Authenticode-signed now; an Apple Developer ID is the missing piece for a warning-free first launch on macOS. → [vote & discuss](https://github.com/yjid/kensaku/discussions/40)

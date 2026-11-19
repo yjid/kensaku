@@ -1227,7 +1227,7 @@ function App() {
 
   return (
     <div
-      className="relative flex h-screen w-screen select-none flex-col overflow-hidden bg-bg text-fg"
+      className="glass-window-bg relative flex h-screen w-screen select-none flex-col overflow-hidden bg-bg text-fg"
       onContextMenu={(e) => e.preventDefault()}
     >
       {isSetupComplete === false && (

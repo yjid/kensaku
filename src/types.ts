@@ -191,7 +191,7 @@ export interface KensakuConfig {
   app_mode?: "launcher" | "app";
   /** Closing the window hides to the tray instead of quitting. */
   close_to_background?: boolean;
-  theme?: "light" | "dark";
+  theme?: "light" | "dark" | "frost" | "liquid-glass";
   language?: string | null;
   aliases?: Alias[];
   saved_searches?: SavedSearch[];

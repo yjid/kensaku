@@ -210,8 +210,8 @@ pub struct KensakuConfig {
     /// leaves existing setups unchanged.
     #[serde(default)]
     pub name_only_dirs: Vec<PathBuf>,
-    /// Persisted UI theme ("light" or "dark"). Legacy "paper" / "void"
-    /// configs are migrated at load (v5).
+    /// Persisted UI finish. Legacy "paper" / "void" configs are migrated at
+    /// load (v5).
     #[serde(default = "default_theme")]
     pub theme: String,
     /// UI language code ("en", "zh", …) or None for auto-detect from the
@@ -335,7 +335,7 @@ fn default_theme() -> String {
     "dark".to_string()
 }
 
-/// Canonicalizes a theme name to "light" or "dark".
+/// Canonicalizes a theme name to one of the supported finishes.
 ///
 /// Accepts the current names and the pre-1.1 names ("paper" / "void").
 /// Anything unrecognized falls back to the default, which keeps a
@@ -344,6 +344,8 @@ pub fn normalize_theme(raw: &str) -> String {
     match raw.trim().to_ascii_lowercase().as_str() {
         "light" | "paper" => "light".to_string(),
         "dark" | "void" => "dark".to_string(),
+        "frost" => "frost".to_string(),
+        "liquid-glass" => "liquid-glass".to_string(),
         _ => default_theme(),
     }
 }
@@ -1133,6 +1135,8 @@ mod tests {
         assert_eq!(normalize_theme("light"), "light");
         assert_eq!(normalize_theme("DARK"), "dark");
         assert_eq!(normalize_theme("  Void "), "dark");
+        assert_eq!(normalize_theme("Frost"), "frost");
+        assert_eq!(normalize_theme("Liquid-Glass"), "liquid-glass");
         assert_eq!(normalize_theme("solarized"), default_theme());
     }
 

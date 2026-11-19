@@ -12,7 +12,7 @@
       var paintTheme = null;
       try {
         var stored = localStorage.getItem("kensaku.theme");
-        var map = { paper: "light", light: "light", void: "dark", dark: "dark" };
+        var map = { paper: "light", light: "light", void: "dark", dark: "dark", frost: "frost", "liquid-glass": "liquid-glass" };
         // A stored but unrecognized value is "dark", exactly like
         // normalizeTheme() in useTheme.ts (never the OS).
         if (stored) paintTheme = map[stored] || "dark";
@@ -26,6 +26,14 @@
         } catch (e) { /* no matchMedia; keep the hardcoded default */ }
       }
       if (paintTheme) document.documentElement.dataset.theme = paintTheme;
+      try {
+        var css = window.CSS;
+        document.documentElement.dataset.glassSupported = css &&
+          (css.supports("backdrop-filter", "blur(1px)") ||
+            css.supports("-webkit-backdrop-filter", "blur(1px)"))
+          ? "true"
+          : "false";
+      } catch (e) { document.documentElement.dataset.glassSupported = "false"; }
     </script>
   </head>
 

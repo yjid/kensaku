@@ -14,7 +14,7 @@
 /*           34 query · 64 hero. Nothing in between.                   */
 /* Color     Apple neutrals only. Selection and focus are graphite;  */
 /*           the one hue is the system-blue keyboard focus ring.        */
-/*           No gradients or glows behind content.                     */
+/*           Solid light/dark; optional glass finishes add a quiet tint. */
 /* Space     4px base: 4 8 12 16 24 32 48 64.                          */
 /* Radius    6 (kbd, small) · 10 (controls) · 16 (tiles, panels) ·     */
 /*           24 (sheets) · full (status dots only).                    */
@@ -107,6 +107,109 @@
   --traffic-close: #ff5f57;
   --traffic-minimize: #febc2e;
   --traffic-zoom: #28c840;
+}
+
+/* Frost and Liquid Glass keep the same readable text hierarchy as light and
+   dark, but give panels a translucent material over a quiet color field. */
+[data-theme="frost"] {
+  color-scheme: light;
+  --bg: #e8edf2;
+  --bg-elevated: #f7f9fb;
+  --bg-sunken: #e1e7ed;
+  --fg: #17212b;
+  --fg-muted: #52616e;
+  --fg-subtle: #84919c;
+  --border: rgba(41, 62, 79, 0.13);
+  --border-strong: rgba(41, 62, 79, 0.22);
+  --accent: #263b4d;
+  --accent-fg: #f7fbff;
+  --accent-soft: rgba(38, 59, 77, 0.07);
+  --ink: #263b4d;
+  --ink-soft: rgba(38, 59, 77, 0.1);
+  --panel: rgba(249, 252, 255, 0.66);
+  --panel-blur: 22px;
+  --panel-edge: inset 0 0 0 1px rgba(255, 255, 255, 0.68), 0 1px 3px rgba(43, 62, 78, 0.08);
+  --shadow-float: 0 12px 36px -14px rgba(35, 57, 75, 0.28);
+  --control: rgba(255, 255, 255, 0.72);
+  --control-edge: inset 0 0 0 1px rgba(255, 255, 255, 0.76);
+  --control-shadow: 0 5px 18px -8px rgba(43, 62, 78, 0.2);
+  --control-active: rgba(255, 255, 255, 0.9);
+  --control-active-edge: 0 1px 3px rgba(43, 62, 78, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.8);
+  --bar: rgba(236, 242, 247, 0.62);
+  --blue: #006bd6;
+  --pink: #bd5366;
+  --olive: #716b3d;
+  --danger: #c92c37;
+  --warning: #a94d00;
+  --success: #247a3b;
+  --scrim: rgba(24, 39, 52, 0.22);
+  --icon-tint-opacity: 0.12;
+}
+
+[data-theme="liquid-glass"] {
+  color-scheme: dark;
+  --bg: #111821;
+  --bg-elevated: #202a35;
+  --bg-sunken: #171f28;
+  --fg: #f3f7fa;
+  --fg-muted: #aab8c4;
+  --fg-subtle: #788894;
+  --border: rgba(225, 241, 255, 0.13);
+  --border-strong: rgba(225, 241, 255, 0.24);
+  --accent: #e8f4ff;
+  --accent-fg: #172330;
+  --accent-soft: rgba(225, 241, 255, 0.08);
+  --ink: #e8f4ff;
+  --ink-soft: rgba(225, 241, 255, 0.13);
+  --panel: rgba(32, 44, 57, 0.62);
+  --panel-blur: 34px;
+  --panel-edge: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 0 0 1px rgba(209, 232, 250, 0.1), 0 8px 28px rgba(0, 0, 0, 0.16);
+  --shadow-float: 0 18px 48px -14px rgba(0, 0, 0, 0.62);
+  --control: rgba(244, 249, 255, 0.1);
+  --control-edge: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 0 0 1px rgba(209, 232, 250, 0.1);
+  --control-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.45);
+  --control-active: rgba(244, 249, 255, 0.18);
+  --control-active-edge: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 0 0 1px rgba(209, 232, 250, 0.16);
+  --bar: rgba(17, 25, 34, 0.66);
+  --blue: #69b7ff;
+  --pink: #f09aaa;
+  --olive: #c2bd85;
+  --danger: #ff6961;
+  --warning: #ffb454;
+  --success: #55d982;
+  --scrim: rgba(0, 0, 0, 0.58);
+  --icon-tint-opacity: 0.14;
+}
+
+html[data-theme="frost"] body {
+  background: radial-gradient(ellipse at 12% 0%, rgba(255, 255, 255, 0.86), transparent 50%),
+    radial-gradient(ellipse at 92% 100%, rgba(153, 187, 211, 0.48), transparent 54%), var(--bg);
+}
+
+html[data-theme="liquid-glass"] body {
+  background: radial-gradient(ellipse at 15% 5%, rgba(75, 121, 157, 0.28), transparent 48%),
+    radial-gradient(ellipse at 88% 96%, rgba(93, 79, 139, 0.22), transparent 52%), var(--bg);
+}
+
+html:is([data-theme="frost"], [data-theme="liquid-glass"]) .glass-window-bg {
+  background: transparent;
+}
+/* Feature detection chooses a fully opaque material.
+   Content remains legible if blur is unavailable. */
+html[data-glass-supported="false"]:is([data-theme="frost"], [data-theme="liquid-glass"]) {
+  --panel-blur: 0px;
+  --panel: var(--bg-elevated);
+  --control: var(--bg-elevated);
+  --bar: var(--bg);
+}
+
+html[data-glass-supported="false"][data-theme="frost"] body,
+html[data-glass-supported="false"][data-theme="liquid-glass"] body {
+  background: var(--bg);
+}
+
+html[data-glass-supported="false"]:is([data-theme="frost"], [data-theme="liquid-glass"]) .glass-window-bg {
+  background: var(--bg);
 }
 
 @theme inline {

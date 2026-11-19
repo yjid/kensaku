@@ -62,7 +62,7 @@ The suite is hermetic: temp directories, no network, no user data. When you touc
 
 ## Design changes
 
-The UI is intentionally quiet: hairlines, no shadows, two themes, no emoji icons.
+The UI is intentionally quiet: hairlines, restrained shadows, four themes, no emoji icons.
 If you change layout or interaction, include a screenshot in both themes and check
 760px and 1200px widths. Respect `prefers-reduced-motion`.
 

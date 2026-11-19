@@ -489,9 +489,11 @@ pub async fn set_theme(
     let normalized = match lowered.as_str() {
         "light" | "paper" => "light",
         "dark" | "void" => "dark",
+        "frost" => "frost",
+        "liquid-glass" => "liquid-glass",
         _ => {
             return Err(format!(
-                "Unsupported theme '{}'. Expected 'light' or 'dark'.",
+                "Unsupported theme '{}'. Expected 'light', 'dark', 'frost' or 'liquid-glass'.",
                 theme
             ));
         }

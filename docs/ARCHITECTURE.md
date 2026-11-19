@@ -286,7 +286,7 @@ commands, which forward to the daemon or the in-process indexer.
   **Run setup again**.
 - **Languages**: English, Simplified Chinese, and Russian, auto-detected or
   chosen in Settings. Query grammar stays English.
-- **Themes**: light and dark. The first frame resolves the OS theme before
+- **Themes**: light, dark, Frost, and graphite. The first frame resolves the OS theme before
   paint; `dark` is the fallback when both storage and `matchMedia` fail.
 
 ## 10. Updates
