@@ -192,6 +192,12 @@ mod tests {
             vec![config.join("kensaku.sock")]
         );
     }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_app_never_routes_indexing_through_a_helper_daemon() {
+        assert!(!DaemonClient::ensure());
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -200,27 +206,41 @@ pub struct DaemonClient;
 impl DaemonClient {
     #[cfg(unix)]
     pub fn ensure() -> bool {
-        if request("ping", serde_json::json!({})).is_ok() {
-            return true;
-        }
-        let Some(exe) = daemon_binary_path() else {
-            return false;
-        };
-        let mut command = std::process::Command::new(exe);
-        command
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-        if command.spawn().is_err() {
+        // macOS treats TCC folder grants as process/bundle identity. The GUI
+        // app receives the grant from the folder picker, while a separately
+        // launched daemon process can arrive at the same protected files with
+        // a different identity and trigger another access prompt. Keep indexing
+        // in the GUI process on macOS so all reads use the one process whose
+        // TCC grant was established by the native picker.
+        #[cfg(target_os = "macos")]
+        {
             return false;
         }
-        for _ in 0..40 {
-            std::thread::sleep(std::time::Duration::from_millis(50));
+
+        #[cfg(not(target_os = "macos"))]
+        {
             if request("ping", serde_json::json!({})).is_ok() {
                 return true;
             }
+            let Some(exe) = daemon_binary_path() else {
+                return false;
+            };
+            let mut command = std::process::Command::new(exe);
+            command
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+            if command.spawn().is_err() {
+                return false;
+            }
+            for _ in 0..40 {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                if request("ping", serde_json::json!({})).is_ok() {
+                    return true;
+                }
+            }
+            false
         }
-        false
     }
 
     #[cfg(not(unix))]
@@ -393,7 +413,7 @@ impl DaemonClient {
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 fn daemon_binary_path() -> Option<std::path::PathBuf> {
     let name = "kensaku-daemon";
     let mut candidates = Vec::new();
