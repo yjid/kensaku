@@ -1,0 +1,78 @@
+name: CodeQL (scheduled)
+
+# Daily security analysis. PRs do not pay for CodeQL: the Rust analysis alone
+# takes ~15-20 minutes on a hosted runner. This replaces GitHub's default
+# setup, which ran on every PR and push.
+on:
+  schedule:
+    # 03:23 UTC daily.
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+            os: ubuntu-24.04
+          - language: javascript-typescript
+            build-mode: none
+            os: ubuntu-24.04
+          - language: python
+            build-mode: none
+            os: ubuntu-24.04
+          # Rust needs a real build, which needs the frontend dist and the
+          # GTK/WebKit development packages.
+          - language: rust
+            build-mode: manual
+            os: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux dependencies
+        if: matrix.language == 'rust'
+        uses: ./.github/actions/linux-deps
+      - name: Rust toolchain
+        if: matrix.language == 'rust'
+        uses: dtolnay/rust-toolchain@stable
+      - name: Frontend toolchain
+        if: matrix.language == 'rust'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      # `generate_context!` embeds the frontend, so it must exist before the
+      # Rust build CodeQL observes.
+      - name: Build the frontend
+        if: matrix.language == 'rust'
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Build for analysis
+        if: matrix.language == 'rust'
+        run: cargo build --locked --manifest-path src-tauri/Cargo.toml
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
