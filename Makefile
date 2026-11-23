@@ -19,7 +19,7 @@ CARGO_TARGET := src-tauri/target
 CLI_BIN := cli/target/release/kensaku-cli
 BENCH_DIR ?= $(HOME)/Projects
 
-.PHONY: help install dev build cli test check fmt bench clean reset reset-index data-dir
+.PHONY: help install dev build cli test check ort fmt bench clean reset reset-index data-dir
 
 help: ## Show this help
 	@printf '\nKensaku tasks:\n\n'
@@ -46,6 +46,13 @@ test: ## Run the Rust test suite
 check: ## TypeScript typecheck + Rust check
 	@command -v bun >/dev/null 2>&1 && bunx tsc --noEmit || npx tsc --noEmit
 	cargo check --manifest-path src-tauri/Cargo.toml
+
+ort: ## Stage the ONNX Runtime for local OCR development
+ifeq ($(OS),Windows_NT)
+	powershell -ExecutionPolicy Bypass -File tools/stage-ort.ps1
+else
+	./tools/stage-ort.sh
+endif
 
 fmt: ## Format Rust code
 	cargo fmt --manifest-path src-tauri/Cargo.toml

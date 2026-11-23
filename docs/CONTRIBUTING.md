@@ -21,6 +21,22 @@ bun run tauri dev
 
 System prerequisites: [`INSTALL.md`](INSTALL.md#build-prerequisites).
 
+### Local OCR runtime
+
+Release builds bundle ONNX Runtime 1.31.0; a plain `cargo run`/`tauri dev` does
+not. Doctor will warn that PP-OCR and Indra cannot load, which is expected. Stage
+the same library the release uses:
+
+```bash
+make ort
+# then launch with the printed path, e.g.
+ORT_DYLIB_PATH="$PWD/src-tauri/libonnxruntime.so" bun run tauri dev
+```
+
+On Windows: `make ort` or `powershell -File tools/stage-ort.ps1`, then set
+`$env:ORT_DYLIB_PATH` to the printed `src-tauri\onnxruntime.dll`. Do not commit
+the staged library.
+
 ## The checks CI runs
 
 ```bash
