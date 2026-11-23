@@ -3,7 +3,7 @@ import { X, Terminal, Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 /* Search capsule. One floating control, Spotlight-style: glyph, 22px query,
-   result count, clear, settings. Solid surface,
+   result count, clear, settings. Uses the active platform material when available,
    14px corners. A hairline runs along its base while a search is live. */
 
 interface SearchBarProps {
@@ -56,7 +56,7 @@ export function SearchBar({
 
   return (
     <div data-tauri-drag-region className="px-3.5 pb-1.5 pt-2.5">
-      <div className="relative flex h-11 items-center gap-2.5 pl-3.5 pr-1.5">
+      <div className="control relative flex h-11 items-center gap-2.5 rounded-field pl-3.5 pr-1.5">
         <Glyph className="h-5 w-5 shrink-0 text-muted" strokeWidth={1.75} />
         <input
           ref={inputRef}

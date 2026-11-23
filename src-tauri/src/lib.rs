@@ -17,6 +17,7 @@ pub mod query;
 pub mod search;
 pub mod tray_icon;
 pub mod updater;
+pub mod window_material;
 pub mod util;
 
 use config::KensakuConfig;
@@ -482,6 +483,7 @@ pub fn run() {
             commands::get_indexing_status,
             commands::get_stats,
             commands::set_theme,
+            commands::apply_window_material,
             commands::open_file,
             commands::open_folder,
             commands::copy_files,

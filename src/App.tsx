@@ -147,12 +147,52 @@ function App() {
   useEffect(() => {
     if (config?.theme === undefined || config?.theme === null) return;
     const normalized = normalizeTheme(config.theme);
-    document.documentElement.dataset.theme = normalized;
+    const root = document.documentElement;
+    root.dataset.theme = normalized;
+    root.dataset.materialActive = "false";
     try {
       localStorage.setItem("kensaku.theme", normalized);
     } catch {
       /* ignore */
     }
+
+    let cancelled = false;
+    let media: MediaQueryList | null = null;
+    try {
+      media = window.matchMedia("(prefers-reduced-transparency: reduce)");
+    } catch {
+      /* the WebView may not expose matchMedia */
+    }
+    const applyMaterial = () => {
+      const reduceTransparency = media?.matches ?? false;
+      const selectedTheme = normalizeTheme(root.dataset.theme);
+      root.dataset.reducedTransparency = reduceTransparency ? "true" : "false";
+      invoke<{ active: boolean; reason: string | null }>("apply_window_material", {
+        theme: selectedTheme,
+        reduceTransparency,
+      })
+        .then((status) => {
+          if (!cancelled && root.dataset.theme === selectedTheme) {
+            if (status.reason === "reduced-transparency") {
+              root.dataset.reducedTransparency = "true";
+            }
+            root.dataset.materialActive = status.active ? "true" : "false";
+          }
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          console.warn("Native window material unavailable:", error);
+          root.dataset.materialActive = "false";
+        });
+    };
+    applyMaterial();
+    media?.addEventListener?.("change", applyMaterial);
+    window.addEventListener("focus", applyMaterial);
+    return () => {
+      cancelled = true;
+      media?.removeEventListener?.("change", applyMaterial);
+      window.removeEventListener("focus", applyMaterial);
+    };
   }, [config?.theme]);
   useEffect(() => {
     if (isSetupComplete !== true) return;
@@ -1227,7 +1267,7 @@ function App() {
 
   return (
     <div
-      className="glass-window-bg relative flex h-screen w-screen select-none flex-col overflow-hidden bg-bg text-fg"
+      className="glass-window-bg relative flex h-screen w-screen select-none flex-col overflow-hidden text-fg"
       onContextMenu={(e) => e.preventDefault()}
     >
       {isSetupComplete === false && (

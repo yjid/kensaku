@@ -345,7 +345,7 @@ pub fn normalize_theme(raw: &str) -> String {
         "light" | "paper" => "light".to_string(),
         "dark" | "void" => "dark".to_string(),
         "frost" => "frost".to_string(),
-        "graphite" | "liquid-glass" => "graphite".to_string(),
+        "graphite" | "liquid-glass" => "liquid-glass".to_string(),
         _ => default_theme(),
     }
 }
@@ -1136,8 +1136,8 @@ mod tests {
         assert_eq!(normalize_theme("DARK"), "dark");
         assert_eq!(normalize_theme("  Void "), "dark");
         assert_eq!(normalize_theme("Frost"), "frost");
-        assert_eq!(normalize_theme("Liquid-Glass"), "graphite");
-        assert_eq!(normalize_theme("Graphite"), "graphite");
+        assert_eq!(normalize_theme("Liquid-Glass"), "liquid-glass");
+        assert_eq!(normalize_theme("Graphite"), "liquid-glass");
         assert_eq!(normalize_theme("solarized"), default_theme());
     }
 

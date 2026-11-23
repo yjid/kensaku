@@ -286,8 +286,13 @@ commands, which forward to the daemon or the in-process indexer.
   **Run setup again**.
 - **Languages**: English, Simplified Chinese, and Russian, auto-detected or
   chosen in Settings. Query grammar stays English.
-- **Themes**: light, dark, Frost, and graphite. The first frame resolves the OS theme before
-  paint; `dark` is the fallback when both storage and `matchMedia` fail.
+- **Themes**: light and dark are opaque. Frost and Liquid Glass request a native
+  window material. Liquid Glass also has an app-wide artwork backdrop and a
+  WebView blur fallback that does not sample the desktop; reduced-transparency
+  settings disable it and use opaque surfaces. The launcher and app window
+  share the same material lifecycle. See [THEMES.md](THEMES.md) for the
+  platform matrix and limitations. The first frame resolves the OS theme
+  before paint; `dark` is the fallback when storage and `matchMedia` fail.
 
 ## 10. Updates
 

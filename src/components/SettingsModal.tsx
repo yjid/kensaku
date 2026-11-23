@@ -168,7 +168,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
   };
 
   return (
-    <div className="fade-in absolute inset-0 z-40 flex bg-bg">
+    <div className="glass-overlay fade-in absolute inset-0 z-40 flex bg-bg">
       <nav data-tauri-drag-region className="relative z-10 flex w-[200px] shrink-0 flex-col overflow-y-auto px-3 pb-3 pt-5">
         <p data-tauri-drag-region className="t-title px-3 pb-4 text-fg">{t("title")}</p>
         <div className="flex flex-col gap-0.5">
@@ -318,7 +318,7 @@ function GeneralSection({
 }) {
   const { t } = useTranslation("settings");
   const { t: te } = useTranslation("errors");
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, materialStatus } = useTheme();
   const { language, setLanguage, supportedLanguages } = useLanguage();
   const [capturing, setCapturing] = useState(false);
 
@@ -399,7 +399,7 @@ function GeneralSection({
     <>
       <Card title={t("appearance.title")}>
         <div className="grid grid-cols-2 gap-4 p-4">
-          {(["light", "dark", "frost", "graphite"] as const).map((value) => (
+          {(["light", "dark", "frost", "liquid-glass"] as const).map((value) => (
             <ThemeSwatch
               key={value}
               value={value}
@@ -413,6 +413,19 @@ function GeneralSection({
             />
           ))}
         </div>
+        {(theme === "frost" || theme === "liquid-glass") && (
+          <p role="status" aria-live="polite" className="px-4 pb-3 text-[11px] leading-4 text-muted">
+            {materialStatus.active
+              ? materialStatus.reason === "legacy-liquid-glass"
+                ? t("appearance.materialLegacyLiquidGlass")
+                : t("appearance.materialActive", { effect: materialStatus.effect })
+              : materialStatus.reason === "reduced-transparency"
+                ? t("appearance.materialReduced")
+                : theme === "liquid-glass"
+                  ? t("appearance.materialGlassFallback")
+                  : t("appearance.materialFallback")}
+          </p>
+        )}
         <div className="flex items-center justify-between border-t border-line px-4 py-3">
           <div className="text-[13px] text-fg">{t("appearance.language")}</div>
           <select
@@ -2036,38 +2049,42 @@ function DiscardDialog({
 
 /* A tiny rendering of the app in each finish: field, rule, three tiles.
    Colors are the real tokens, scoped by data-theme on the swatch. */
-function ThemeSwatch({ value, active, onSelect }: { value: "light" | "dark" | "frost" | "graphite"; active: boolean; onSelect: () => void }) {
+function ThemeSwatch({ value, active, onSelect }: { value: "light" | "dark" | "frost" | "liquid-glass"; active: boolean; onSelect: () => void }) {
   const { t } = useTranslation("settings");
   const label = {
     light: t("appearance.light"),
     dark: t("appearance.dark"),
     frost: t("appearance.frost"),
-    graphite: t("appearance.graphite"),
+    "liquid-glass": t("appearance.liquidGlass"),
   }[value];
   return (
     <button type="button" onClick={onSelect} aria-pressed={active} className="group flex flex-col gap-2.5 text-left outline-none">
       <span
         data-theme={value}
-        className={`relative block aspect-[16/10] w-full overflow-hidden rounded-panel bg-bg transition-[outline-color,transform] duration-200 group-hover:-translate-y-0.5 ${
+        className={`theme-preview relative block aspect-[16/10] w-full overflow-hidden rounded-panel transition-[outline-color,transform] duration-200 group-hover:-translate-y-0.5 ${
           active ? "outline-2 outline-offset-[3px] outline-ink" : "outline-0"
         }`}
         style={{ outlineStyle: active ? "solid" : "none", boxShadow: "inset 0 0 0 1px var(--border)" }}
       >
-        <span className="absolute bottom-3 left-3 right-3 top-9 grid grid-cols-3 gap-1.5">
-          {[0, 1, 2, 3, 4, 5].map((i) => (
-            <span
-              key={i}
-              className="block rounded-small"
-              style={{
-                background: i % 3 === 1 ? "var(--fg-subtle)" : "var(--bg-elevated)",
-                opacity: i % 3 === 1 ? 0.5 : 1,
-                boxShadow: "var(--panel-edge)",
-              }}
-            />
-          ))}
+        <span className="theme-preview__scene" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+          <i />
         </span>
-        <span className="control absolute left-3 right-3 top-2.5 flex h-5 items-center rounded-full px-2">
-          <span className="h-1 w-1/3 rounded-full bg-fg opacity-70" />
+        <span className="theme-preview__content">
+          <span className="theme-preview__search control">
+            <span className="theme-preview__line" />
+          </span>
+          <span className="theme-preview__cards">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <span key={i} className="theme-preview__tile surface">
+                <i className={i % 3 === 0 ? "theme-preview__image" : ""} />
+                <b />
+                <b />
+              </span>
+            ))}
+          </span>
         </span>
       </span>
       <span className={`px-0.5 text-[13px] ${active ? "font-medium text-fg" : "text-muted"}`}>{label}</span>

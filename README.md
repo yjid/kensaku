@@ -109,7 +109,7 @@ Filename tools are everywhere. Reading *inside* your files — locally, instantl
 - No account, no telemetry, no cloud search. Your index stays in your OS config directory.
 
 **Pleasant to use**
-- Light, dark, Frost, and Graphite themes. Continuous-corner cards, a borderless search field, and hover details — a calm, native-feeling interface.
+- Light and dark themes, plus Frost and Liquid Glass. Liquid Glass includes a multicolor app backdrop; native desktop materials are used where supported, with an in-app blur fallback elsewhere. Reduced-transparency settings use opaque surfaces. See [theme support](docs/THEMES.md).
 - English, Simplified Chinese, and Russian interface, auto-detected from the system or chosen in Settings.
 - Right-click for open, show in folder, copy path, and details.
 
@@ -254,7 +254,7 @@ Full threat model: [SECURITY.md](SECURITY.md).
 
 **Shipping now (1.0.16)**
 
-- Desktop app for Windows, macOS, and Linux: light, dark, Frost, and Graphite themes, grid and list results, infinite scroll, thumbnails, hover details, right-click actions
+- Desktop app for Windows, macOS, and Linux: light, dark, Frost, and Liquid Glass themes with platform-specific material support and an opaque fallback, grid and list results, infinite scroll, thumbnails, hover details, right-click actions
 - Two window modes: a tray launcher with a global summon keystroke (setup default) or a normal desktop app; closing either keeps the index warm
 - English, Simplified Chinese, and Russian interface, auto-detected from the system or chosen in Settings
 - Recents ranked by what you actually opened, persisted across restarts

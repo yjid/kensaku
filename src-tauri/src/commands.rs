@@ -490,10 +490,10 @@ pub async fn set_theme(
         "light" | "paper" => "light",
         "dark" | "void" => "dark",
         "frost" => "frost",
-        "graphite" | "liquid-glass" => "graphite",
+        "graphite" | "liquid-glass" => "liquid-glass",
         _ => {
             return Err(format!(
-                "Unsupported theme '{}'. Expected 'light', 'dark', 'frost' or 'graphite'.",
+                "Unsupported theme '{}'. Expected 'light', 'dark', 'frost' or 'liquid-glass'.",
                 theme
             ));
         }
@@ -532,6 +532,35 @@ pub async fn set_theme(
     let _ = app;
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn apply_window_material(
+    app: AppHandle,
+    theme: String,
+    reduce_transparency: bool,
+) -> Result<crate::window_material::MaterialStatus, String> {
+    let Some(window) = app.get_webview_window(crate::main_window::LABEL) else {
+        return Ok(crate::window_material::MaterialStatus::unavailable(
+            "window-unavailable",
+        ));
+    };
+
+    let (sender, receiver) = std::sync::mpsc::channel();
+    app.run_on_main_thread(move || {
+        let status =
+            crate::window_material::apply(&window, &theme, reduce_transparency);
+        let _ = sender.send(status);
+    })
+    .map_err(|error| format!("Could not schedule native material update: {error}"))?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        receiver
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .map_err(|error| format!("Native material update did not finish: {error}"))
+    })
+    .await
+    .map_err(|error| format!("Native material task failed: {error}"))?
 }
 
 #[tauri::command]

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3840 2160" fill="none">
+  <defs>
+    <linearGradient id="sky" x1="450" y1="0" x2="3240" y2="2160" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E8F7FE"/>
+      <stop offset=".55" stop-color="#C9E6F5"/>
+      <stop offset="1" stop-color="#A9D1E8"/>
+    </linearGradient>
+    <radialGradient id="sunlight" cx="0" cy="0" r="1" gradientTransform="translate(2800 520) rotate(120) scale(980 1280)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity=".82"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="mountain-far" x1="1940" y1="930" x2="1940" y2="1790" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C7E1EF"/>
+      <stop offset="1" stop-color="#A9D0E4"/>
+    </linearGradient>
+    <linearGradient id="mountain-mid" x1="1780" y1="1190" x2="1850" y2="2040" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A9D0E5"/>
+      <stop offset="1" stop-color="#85B8D5"/>
+    </linearGradient>
+    <linearGradient id="mountain-front" x1="1830" y1="1500" x2="1900" y2="2160" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#91C0DA"/>
+      <stop offset="1" stop-color="#6FA5C5"/>
+    </linearGradient>
+  </defs>
+  <rect width="3840" height="2160" fill="url(#sky)"/>
+  <rect width="3840" height="2160" fill="url(#sunlight)"/>
+  <circle cx="2800" cy="520" r="220" fill="#F8FCFE" fill-opacity=".52"/>
+  <path d="m0 1450 364-340 276 232 420-497 340 402 350-287 393 412 389-502 392 397 378-301 462 405v789H0v-710Z" fill="url(#mountain-far)"/>
+  <path d="m0 1620 405-316 382 278 406-463 343 330 346-250 410 358 384-424 401 353 354-271 409 335v610H0v-540Z" fill="url(#mountain-mid)"/>
+  <path d="M0 1838c352-196 657-226 928-120 265 104 428 241 707 239 294-2 463-191 743-222 309-35 549 111 823 66 242-40 429-136 639-133v492H0v-322Z" fill="url(#mountain-front)"/>
+  <path d="m0 1450 364-340 276 232 420-497 340 402 350-287 393 412 389-502 392 397 378-301 462 405" stroke="#F8FCFE" stroke-opacity=".66" stroke-width="7"/>
+  <path d="m0 1620 405-316 382 278 406-463 343 330 346-250 410 358 384-424 401 353 354-271 409 335" stroke="#E8F5FB" stroke-opacity=".58" stroke-width="6"/>
+  <path d="M320 1482c255-128 441-137 658-23m-205 131c210-116 383-119 574-10m698-4c206-120 390-131 600-29m-124 160c205-102 380-100 565 0m-1962 215c276-123 498-111 701 16m489-12c236-119 443-116 655 9" stroke="#F5FBFE" stroke-opacity=".38" stroke-width="3"/>
+  <path d="M840 2160c124-182 194-359 205-533m1134 533c-91-174-135-332-126-483m674 483c-63-120-85-245-67-374" stroke="#D8EDF7" stroke-opacity=".34" stroke-width="3"/>
+</svg>

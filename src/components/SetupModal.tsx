@@ -881,7 +881,7 @@ function Shell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="absolute inset-0 z-50 flex bg-bg">
+    <div className="glass-overlay absolute inset-0 z-50 flex bg-bg">
       <aside data-tauri-drag-region className="relative z-10 hidden w-[40%] min-w-[300px] flex-col justify-between p-8 md:flex">
         <span className="text-[14px] font-semibold tracking-[-0.02em] text-fg">Kensaku</span>
         {brand}

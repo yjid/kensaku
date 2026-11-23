@@ -68,7 +68,12 @@
     "light": "浅色",
     "dark": "深色",
     "frost": "霜雾",
-    "graphite": "石墨"
+    "liquidGlass": "液态玻璃",
+    "materialActive": "已请求系统材质：{{effect}}。",
+    "materialLegacyLiquidGlass": "此 macOS 版本使用窗口活力效果，而非原生 Liquid Glass。",
+    "materialReduced": "系统已启用减少透明度；当前使用不透明表面。",
+    "materialGlassFallback": "系统材质不可用；正在内置背景上显示玻璃效果。",
+    "materialFallback": "系统材质不可用；当前使用不透明表面。"
   },
   "window": {
     "title": "窗口",

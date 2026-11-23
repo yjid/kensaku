@@ -103,11 +103,8 @@ fn present(window: &WebviewWindow) {
 }
 
 fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
-    // In "app" mode the window is a normal application window: decorated,
-    // opaque, in the dock/taskbar, and not pinned above other windows. In
-    // "launcher" mode it stays frameless, off the taskbar, and floats like a
-    // palette. (`app_mode` itself defaults to launcher in the config so
-    // existing installs keep their behavior; Setup defaults new users to app.)
+    // Both modes need a transparent native surface so supported platform
+    // materials can show through. Solid themes paint an opaque page instead.
     //
     // Before setup is complete the window is always created as an ordinary
     // app window. The first-run wizard can index for a long time, so it has to
@@ -123,7 +120,7 @@ fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .inner_size(920.0, 640.0)
         .min_inner_size(720.0, 520.0)
         .decorations(!launcher)
-        .transparent(launcher)
+        .transparent(true)
         .always_on_top(launcher)
         .skip_taskbar(launcher)
         .visible_on_all_workspaces(launcher)
@@ -132,6 +129,7 @@ fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .resizable(true)
         .visible(false)
         .build()?;
+    crate::window_material::apply(&window, &config.theme, false);
 
     // Closing the window hides it and keeps the app running in the tray.
     //
@@ -150,7 +148,13 @@ fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     // Config is read inside the handler so a Settings change applies to the
     // live window without recreating it.
     let app_handle = app.clone();
+    #[cfg(target_os = "linux")]
+    let window_for_events = window.clone();
     window.on_window_event(move |event| {
+        #[cfg(target_os = "linux")]
+        if let WindowEvent::Resized(_) = event {
+            crate::window_material::update_linux_blur(&window_for_events);
+        }
         if let WindowEvent::CloseRequested { api, .. } = event {
             if !crate::config::KensakuConfig::load().close_to_background {
                 app_handle.exit(0);

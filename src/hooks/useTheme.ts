@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-export type Theme = "light" | "dark" | "frost" | "graphite";
+export type Theme = "light" | "dark" | "frost" | "liquid-glass";
+
+export interface MaterialStatus {
+  active: boolean;
+  effect: string | null;
+  reason: string | null;
+}
+
+const SOLID_FALLBACK: MaterialStatus = {
+  active: false,
+  effect: null,
+  reason: "unsupported-platform",
+};
 
 const STORAGE_KEY = "kensaku.theme";
 
@@ -10,7 +22,7 @@ export function normalizeTheme(raw: string | null | undefined): Theme {
   if (raw === "light" || raw === "paper") return "light";
   if (raw === "dark" || raw === "void") return "dark";
   if (raw === "frost") return "frost";
-  if (raw === "graphite" || raw === "liquid-glass") return "graphite";
+  if (raw === "graphite" || raw === "liquid-glass") return "liquid-glass";
   return "dark";
 }
 
@@ -41,18 +53,20 @@ function readStored(): Theme {
   }
 }
 
-function apply(t: Theme) {
-  document.documentElement.dataset.theme = t;
-  document.documentElement.dataset.glassSupported =
-    typeof CSS !== "undefined" &&
-    (CSS.supports("backdrop-filter", "blur(1px)") || CSS.supports("-webkit-backdrop-filter", "blur(1px)"))
-      ? "true"
-      : "false";
+function reducedTransparencyPreference(): boolean {
+  try {
+    return typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-transparency: reduce)").matches;
+  } catch {
+    return false;
+  }
 }
 
 /**
- * Theme control. Two finishes: light and dark. localStorage holds the
- * pre-paint pick, but the backend config is the durable source of truth —
+ * Theme control. Light and dark are opaque; Frost and Liquid Glass request a
+ * native window material. Liquid Glass has an in-app artwork fallback when no
+ * native material is active. localStorage holds the pre-paint pick, but the
+ * backend config is the durable source of truth —
  * the launcher destroys its webview on hide, so localStorage (which may not
  * survive that) must never be trusted alone. On mount the persisted config
  * wins, unless the user has already picked in this session.
@@ -61,9 +75,52 @@ let lastLocalChange = 0;
 
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(readStored);
+  const [materialStatus, setMaterialStatus] = useState<MaterialStatus>(SOLID_FALLBACK);
 
   useEffect(() => {
-    apply(theme);
+    const root = document.documentElement;
+    root.dataset.theme = theme;
+    root.dataset.materialActive = "false";
+    setMaterialStatus(SOLID_FALLBACK);
+
+    let cancelled = false;
+    let media: MediaQueryList | null = null;
+    try {
+      media = window.matchMedia("(prefers-reduced-transparency: reduce)");
+    } catch {
+      /* the WebView may not expose matchMedia */
+    }
+    const applyMaterial = () => {
+      const reduceTransparency = media?.matches ?? reducedTransparencyPreference();
+      root.dataset.reducedTransparency = reduceTransparency ? "true" : "false";
+      invoke<MaterialStatus>("apply_window_material", {
+        theme,
+        reduceTransparency,
+      })
+        .then((status) => {
+          if (cancelled) return;
+          setMaterialStatus(status);
+          if (status.reason === "reduced-transparency") {
+            root.dataset.reducedTransparency = "true";
+          }
+          root.dataset.materialActive = status.active ? "true" : "false";
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          console.warn("Native window material unavailable:", error);
+          setMaterialStatus({ active: false, effect: null, reason: "native-effect-failed" });
+          root.dataset.materialActive = "false";
+        });
+    };
+
+    applyMaterial();
+    media?.addEventListener?.("change", applyMaterial);
+    window.addEventListener("focus", applyMaterial);
+    return () => {
+      cancelled = true;
+      media?.removeEventListener?.("change", applyMaterial);
+      window.removeEventListener("focus", applyMaterial);
+    };
   }, [theme]);
 
   useEffect(() => {
@@ -121,5 +178,5 @@ export function useTheme() {
     setTheme(theme === "light" || theme === "frost" ? "dark" : "light");
   }, [theme, setTheme]);
 
-  return { theme, setTheme, toggle };
+  return { theme, setTheme, toggle, materialStatus };
 }

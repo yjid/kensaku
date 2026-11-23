@@ -177,7 +177,7 @@ Results are deterministic: score, then path.
 > again**; model/OCR downloads are acquired in setup, and Settings shows installed
 > status only. Later launches stay search-first.
 
-- **General** — theme (`light` / `dark`), interface language, global shortcut,
+- **General** — theme (`light`, `dark`, `frost`, or `liquid-glass`), interface language, global shortcut,
   max results, start at login, window mode, and **Keep running when closed**.
   The shortcut field records a combo when you click it and press the keys
   (Esc cancels).

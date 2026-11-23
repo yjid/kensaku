@@ -64,7 +64,7 @@ const config: Record<string, unknown> = {
   watched_dirs: ["/Users/mira/Documents", "/Users/mira/Pictures", "/Users/mira/Code"],
   excluded_dirs: ["node_modules", ".git"], excluded_extensions: [],
   shortcut: "Alt+Space", max_results: 200, is_setup_complete: params.get("setup") !== "1",
-  semantic_enabled: true, ocr_enabled: true, ocr_engine: "tesseract", theme: "dark",
+  semantic_enabled: true, ocr_enabled: true, ocr_engine: "tesseract", theme: "liquid-glass",
   saved_searches: [{ name: "Invoices", query: "invoice type:pdf" }, { name: "This week's screenshots", query: "screenshot modified:7d" }],
   pins: [], show_thumbnails: true, results_view: "grid", crawl_mode: "balanced",
 };
@@ -118,6 +118,7 @@ const handlers: Record<string, (a: any) => unknown> = {
     return null;
   },
   get_config: () => structuredClone(config),
+  apply_window_material: () => ({ active: false, effect: null, reason: "unsupported-platform" }),
   save_config: (a) => Object.assign(config, a.config),
   get_home_data: () => ({
     recent: params.get("empty") ? [] : FILES.slice(0, 12).map((r) => ({ path: r.path, filename: r.filename, size: r.file_size, modified: r.modified, is_dir: r.is_dir, last_open: 0, opens: 0 })),

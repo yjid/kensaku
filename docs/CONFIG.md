@@ -65,7 +65,7 @@ verification.
 | `agent_scoped_roots` | string[] | `[]` | MCP/CLI read-only scope roots. Empty means the whole index. |
 | `include_ignored` | bool | `false` | Include files matched by `.gitignore` / `.cursorignore`. |
 | `name_only_dirs` | string[] | `[]` | Directories (a watched root or any folder below it) indexed by file name and path only: no text extraction, OCR or semantic units. Everything else is indexed by name and content. Changing the list reconciles the index on the next scan. |
-| `theme` | string | `dark` | `light` or `dark`. Fresh installs follow the OS theme before falling back to dark. |
+| `theme` | string | `dark` | `light`, `dark`, `frost`, or `liquid-glass`. Fresh installs follow OS light/dark appearance; native materials and opaque fallbacks are described in [THEMES.md](THEMES.md). |
 | `language` | string\|null | `null` | UI language code (`en`, `zh`, `ru`); `null` auto-detects the system. |
 | `aliases` | object[] | `resume → cv, curriculum vitae`; `invoice → receipt, bill`; `screenshot → screen shot, capture`; plus receipt, contract, photo | Personal vocabulary for plain-language queries. |
 | `saved_searches` | object[] | `[]` | Saved queries shown on the home screen. |

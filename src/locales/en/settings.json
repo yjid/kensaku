@@ -68,7 +68,12 @@
     "light": "Light",
     "dark": "Dark",
     "frost": "Frost",
-    "graphite": "Graphite"
+    "liquidGlass": "Liquid Glass",
+    "materialActive": "Native material requested: {{effect}}.",
+    "materialLegacyLiquidGlass": "This macOS version uses vibrancy instead of native Liquid Glass.",
+    "materialReduced": "Reduced transparency is enabled; an opaque surface is active.",
+    "materialGlassFallback": "Native material unavailable; showing glass over in-app artwork.",
+    "materialFallback": "No supported native material is active; using an opaque surface."
   },
   "window": {
     "title": "Window",
