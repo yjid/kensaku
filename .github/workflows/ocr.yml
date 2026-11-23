@@ -17,6 +17,7 @@ on:
       - "src-tauri/Cargo.toml"
       - "src-tauri/tests/fixtures/ocr-ui-text/**"
       - ".github/workflows/ocr.yml"
+      - ".github/actions/fetch-ort/**"
       # Cargo.lock is intentionally not listed: Dependabot bumps every week and
       # each run costs three 35-minute Rust builds. OCR-relevant dependency
       # changes still touch Cargo.toml.

@@ -33,7 +33,7 @@ runs:
         base="https://github.com/yjid/kensaku/releases/download/v1.0.18"
         deb="$RUNNER_TEMP/kensaku_1.0.18_amd64.deb"
         curl -fsSL --retry 3 -o "$deb" "$base/kensaku_1.0.18_amd64.deb"
-        echo "2ea9437340abde54e690208b3152f91be0f98a3c9561352a61c6e42ed03b09b  $deb" | sha256sum -c -
+        echo "2ea9437340abde54e690208b3152f91be0f98a3fc9561352a61c6e42ed03b09b  $deb" | sha256sum -c -
         root="$DEST/onnxruntime-$PLATFORM-1.31.0"
         mkdir -p "$root/lib"
         dpkg-deb -x "$deb" "$RUNNER_TEMP/kensaku-deb"
@@ -53,9 +53,15 @@ runs:
         dmg="$RUNNER_TEMP/kensaku_1.0.18_universal.dmg"
         curl -fsSL --retry 3 -o "$dmg" "$base/kensaku_1.0.18_universal.dmg"
         echo "1985891ec5884ea2e3448e506bd6f240b083c67c7a957f26cba6eb8f60f72c28  $dmg" | shasum -a 256 -c -
-        mount="$RUNNER_TEMP/kensaku-mnt"
-        mkdir -p "$mount"
-        hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg" >/dev/null
+        # Let hdiutil pick the mount point; `-mountpoint` under RUNNER_TEMP
+        # fails with "attach canceled" on the hosted runners.
+        attach_out="$(hdiutil attach -nobrowse -noverify "$dmg")"
+        mount="$(printf '%s\n' "$attach_out" | awk '/\/Volumes\// {print $NF; exit}')"
+        if [ -z "$mount" ]; then
+          printf '%s\n' "$attach_out"
+          echo "could not determine the mounted dmg path" >&2
+          exit 1
+        fi
         trap 'hdiutil detach "$mount" >/dev/null 2>&1 || true' EXIT
         root="$DEST/onnxruntime-$PLATFORM-1.31.0"
         mkdir -p "$root/lib"
@@ -78,13 +84,13 @@ runs:
         }
         $pin = $pins[$env:PLATFORM]
         if (-not $pin) { throw "unsupported Windows platform: $env:PLATFORM" }
-        $zip = Join-Path $RUNNER_TEMP $pin.name
+        $zip = Join-Path $env:DEST $pin.name
         Invoke-WebRequest -Uri "$base/$($pin.name)" -OutFile $zip -UseBasicParsing
         $actual = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
         if ($actual -ne $pin.sha256) {
           throw "Kensaku bundle checksum mismatch: expected $($pin.sha256), got $actual"
         }
-        $unpacked = Join-Path $RUNNER_TEMP 'kensaku-portable'
+        $unpacked = Join-Path $env:DEST 'kensaku-portable'
         Expand-Archive -Path $zip -DestinationPath $unpacked -Force
         $root = Join-Path $env:DEST "onnxruntime-$env:PLATFORM-1.31.0"
         New-Item -ItemType Directory -Force (Join-Path $root 'lib') | Out-Null
