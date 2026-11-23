@@ -16,8 +16,9 @@ let pending: Update | null = null;
 let lastInfo: UpdateInfo | null = null;
 
 /**
- * Cached answer to "can this install apply an NSIS update?". MSI and portable
- * copies must update through their own package, never through the installer.
+ * Cached answer to "can this install update itself?". MSI, portable, and Linux
+ * package installs must update through their own package, never through the
+ * in-app installer.
  */
 let supported: boolean | null = null;
 

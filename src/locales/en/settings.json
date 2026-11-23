@@ -272,7 +272,7 @@
     "viewReleaseNotes": "View on GitHub",
     "publishedOn": "Released on {{date}}",
     "downloadFailed": "Update download failed: {{error}}",
-    "manualUpdateRequired": "This copy was installed with the MSI package or unpacked from the portable zip, so it cannot update itself. Download the new package from the releases page.",
+    "manualUpdateRequired": "This copy was installed in a way that cannot update itself (MSI, portable zip, or Linux package). Download the new package from the releases page.",
     "noAssetFound": "No compatible package found for your platform. Please download from GitHub."
   },
   "models": {

@@ -1,9 +1,9 @@
 # Updates
 
 Kensaku uses Tauri's signed updater. An installed copy checks a small JSON
-manifest, downloads the new package in the background, verifies its minisign
-signature, and installs it in place. Windows no longer opens the NSIS wizard for
-an update, and the user does not have to revisit the Releases page.
+manifest and, when an update is started, downloads the new package, verifies its
+minisign signature, and installs it in place. Windows no longer opens the NSIS
+wizard for an update, and the user does not have to revisit the Releases page.
 
 ## How it works
 
@@ -32,7 +32,7 @@ download.
 
 | Install | Update path |
 |---|---|
-| NSIS, per-user (`currentUser`) | In-app, silent, no UAC |
+| NSIS, per-user (`currentUser`) | In-app, passive progress only, no UAC |
 | MSI, per-machine | Manual: install the new `.msi` |
 | Portable zip | Manual: unpack the new portable zip next to the old one |
 

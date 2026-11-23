@@ -272,7 +272,7 @@
     "viewReleaseNotes": "在 GitHub 上查看",
     "publishedOn": "发布于 {{date}}",
     "downloadFailed": "更新下载失败：{{error}}",
-    "manualUpdateRequired": "此副本通过 MSI 或便携版压缩包安装，无法自动更新。请从发布页面下载新版本。",
+    "manualUpdateRequired": "此副本的安装方式不支持自动更新（MSI、便携版压缩包或 Linux 软件包）。请从发布页面下载新版本。",
     "noAssetFound": "未找到适合当前平台的安装包，请从 GitHub 手动下载。"
   },
   "models": {
