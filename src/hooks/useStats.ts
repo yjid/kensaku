@@ -49,11 +49,16 @@ export function useStats(intervalMs: number | null = 2000): UseStatsResult {
     // invocation and the panel never caught up.
     if (inFlight.current) return;
     inFlight.current = true;
+    const request = invoke<SystemStats>("get_stats");
+    // Keep the single-flight guard until the backend actually answers. The
+    // 5s timeout only unblocks the UI; the original invoke can still be
+    // waiting on the metadata lock, and a new poll must not pile up behind it.
+    const release = () => {
+      inFlight.current = false;
+    };
+    request.then(release, release);
     try {
-      const res = await withTimeout(
-        invoke<SystemStats>("get_stats"),
-        STATS_TIMEOUT_MS,
-      );
+      const res = await withTimeout(request, STATS_TIMEOUT_MS);
       if (!mounted.current) return;
       // Merge defensively — partial fields fall back to zeroes.
       const base = emptyStats();
@@ -66,8 +71,6 @@ export function useStats(intervalMs: number | null = 2000): UseStatsResult {
       setLive(true);
     } catch (err) {
       console.warn("get_stats not available:", err);
-    } finally {
-      inFlight.current = false;
     }
   }, []);
 
