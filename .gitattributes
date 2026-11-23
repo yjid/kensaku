@@ -1,0 +1,3 @@
+# The bundled OCR dictionary is byte-exact: its size and SHA-256 are pinned in
+# src-tauri/src/models.rs. CRLF conversion on Windows changes both.
+src-tauri/resources/ppocrv6_tiny_dict.txt -text
