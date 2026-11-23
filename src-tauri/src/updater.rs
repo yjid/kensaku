@@ -184,6 +184,14 @@ const DOWNLOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600
 /// metadata check. `None` when the release does not publish one.
 static SUMS_URL: Mutex<Option<String>> = Mutex::new(None);
 
+/// Name and URL of the asset chosen by the most recent update check.
+///
+/// `download_update` is reachable from the webview. Without this cache it
+/// accepted any URL the caller supplied, which would turn a future XSS into a
+/// download-and-execute primitive. A download must now match the asset from
+/// the latest `check_for_update`.
+static CACHED_ASSET: Mutex<Option<(String, String)>> = Mutex::new(None);
+
 /// Checks GitHub for the latest release metadata.
 pub fn check_for_update() -> Result<UpdateInfo, String> {
     let current_version = env!("CARGO_PKG_VERSION");
@@ -211,6 +219,12 @@ pub fn check_for_update() -> Result<UpdateInfo, String> {
     let latest_tag = resp.tag_name.trim_start_matches('v');
     let has_update = is_newer_version(latest_tag, current_version);
     let chosen_asset = select_platform_asset(&resp.assets);
+
+    if let Ok(mut slot) = CACHED_ASSET.lock() {
+        *slot = chosen_asset
+            .as_ref()
+            .map(|asset| (asset.name.clone(), asset.browser_download_url.clone()));
+    }
 
     Ok(UpdateInfo {
         current_version: current_version.to_string(),
@@ -338,6 +352,35 @@ fn validate_asset_name(asset_name: &str) -> Result<(), String> {
         .any(|c| c.is_control() || matches!(c, '/' | '\\'))
     {
         return Err(format!("Invalid update asset name: {asset_name}"));
+    }
+    Ok(())
+}
+
+/// Only release assets hosted by this repository may be downloaded.
+///
+/// The caller-supplied URL is validated again against the cached asset in
+/// `validate_update_request`; this is the cheap, testable first line.
+fn trusted_asset_url(url: &str) -> bool {
+    url.starts_with("https://github.com/yjid/kensaku/releases/download/")
+}
+
+/// Rejects an update request that does not match the latest checked release.
+fn validate_update_request(asset_url: &str, asset_name: &str) -> Result<(), String> {
+    validate_asset_name(asset_name)?;
+    if !trusted_asset_url(asset_url) {
+        return Err("Refusing an update from an unexpected host.".to_string());
+    }
+    let cached = CACHED_ASSET
+        .lock()
+        .map_err(|_| "Update state is unavailable.".to_string())?
+        .clone();
+    let Some((cached_name, cached_url)) = cached else {
+        return Err("Check for updates before downloading one.".to_string());
+    };
+    if cached_name != asset_name || cached_url != asset_url {
+        return Err(
+            "Refusing an update that does not match the latest checked release.".to_string(),
+        );
     }
     Ok(())
 }
@@ -479,13 +522,10 @@ pub fn download_update(asset_url: &str, asset_name: &str) -> Result<UpdateStatus
         );
     }
 
+    validate_update_request(asset_url, asset_name)?;
+
     if DOWNLOADING.swap(true, Ordering::SeqCst) {
         return Ok(get_status());
-    }
-
-    if let Err(err) = validate_asset_name(asset_name) {
-        DOWNLOADING.store(false, Ordering::SeqCst);
-        return Err(err);
     }
 
     let staging_dir = match create_staging_dir(&update_staging_root()) {
@@ -524,6 +564,13 @@ pub fn download_update(asset_url: &str, asset_name: &str) -> Result<UpdateStatus
         .name("kensaku-updater".to_string())
         .spawn(move || {
             let res = (|| -> Result<(), String> {
+                // A release without a checksum must not be installed: the
+                // updater would otherwise execute whatever the URL served.
+                let expected = expected_sha256(&asset_name_for_check)?.ok_or_else(|| {
+                    "This release publishes no checksum for the update; refusing to run it."
+                        .to_string()
+                })?;
+
                 let resp = ureq::get(&url)
                     .set(
                         "User-Agent",
@@ -585,16 +632,14 @@ pub fn download_update(asset_url: &str, asset_name: &str) -> Result<UpdateStatus
                 }
 
                 // Verify against the release's published checksum before the
-                // file is ever executable. The workflow already publishes
-                // SHA256SUMS; the updater used to ignore it entirely.
-                if let Some(expected) = expected_sha256(&asset_name_for_check)? {
-                    let actual = sha256_of(&part_path)?;
-                    if actual != expected {
-                        let _ = std::fs::remove_file(&part_path);
-                        return Err(format!(
-                            "Update failed verification: expected {expected}, got {actual}"
-                        ));
-                    }
+                // file is ever executable. The checksum is mandatory: a
+                // missing SHA256SUMS entry is a failed update, not a pass.
+                let actual = sha256_of(&part_path)?;
+                if actual != expected {
+                    let _ = std::fs::remove_file(&part_path);
+                    return Err(format!(
+                        "Update failed verification: expected {expected}, got {actual}"
+                    ));
                 }
 
                 let _ = std::fs::remove_file(&final_path);
@@ -794,6 +839,22 @@ mod tests {
                 validate_asset_name(bad).is_err(),
                 "{bad:?} should be rejected"
             );
+        }
+    }
+
+    #[test]
+    fn update_downloads_must_come_from_the_project_release_host() {
+        assert!(trusted_asset_url(
+            "https://github.com/yjid/kensaku/releases/download/v1.0.18/kensaku_1.0.18_x64-setup.exe"
+        ));
+        for bad in [
+            "http://github.com/yjid/kensaku/releases/download/v1.0.18/a.exe",
+            "https://github.com/yjid/kensaku-evil/releases/download/v1.0.18/a.exe",
+            "https://github.com/other/kensaku/releases/download/v1.0.18/a.exe",
+            "https://objects.githubusercontent.com/a.exe",
+            "https://example.com/a.exe",
+        ] {
+            assert!(!trusted_asset_url(bad), "{bad} should be rejected");
         }
     }
 
