@@ -34,7 +34,11 @@ updates:
       cargo-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
-  - package-ecosystem: npm
+  # Bun is the only JavaScript package manager this repo uses: CI and release
+  # run `bun install --frozen-lockfile`, which reads bun.lock. The npm
+  # ecosystem made Dependabot write package-lock.json, so every npm PR failed
+  # at the frozen lockfile step.
+  - package-ecosystem: bun
     directory: /
     schedule:
       interval: weekly
@@ -42,6 +46,11 @@ updates:
       npm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    # Majors need a deliberate migration (TypeScript 7, i18next 27, etc.);
+    # do not open red PRs for them automatically.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
