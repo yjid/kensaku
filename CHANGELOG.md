@@ -17,10 +17,60 @@ versioning: [SemVer](https://semver.org/).
   a second install; `.deb`/`.rpm` users update through the package manager.
   Existing configuration and the index live outside the install directory and
   survive the update.
+- **OCR packs can be re-downloaded from Settings** (#232). The action appears
+  next to an installed pack, drops the cached engine, removes the pack files and
+  runs the normal checksum-verified download. This is the repair path for a
+  stale or truncated pack.
+- **The PP-OCR dictionary ships with the app** (#222), so character matching no
+  longer depends on a GitHub download.
+- **Whole-volume roots prune Windows system trees** — `Windows`, `Program
+  Files`, `ProgramData`, other profiles' `AppData`, the recycle bin and the
+  recovery trees (#230). An explicitly watched folder inside one of them stays
+  indexable.
+- **Setup canonicalizes and deduplicates folder paths** (#210), including UNC
+  shares, duplicate pasted paths and missing folders, with errors translated in
+  all three languages.
+- **The update check is bounded.** A timeout and single in-flight request stop a
+  busy index from leaving the UI on "Waiting for backend" (#221).
+
+### Fixed
+- **OCR no longer panics on a detector box far outside the image** (#234).
+  Rectification rejects absurd coordinates and caps the rectified side at 8192
+  px; a regression test covers the `1e20` coordinate case.
+- **Re-indexing keeps semantic search alive while paused** (#206). Old semantic
+  units are retained until the replacement rows are inserted, and only the rows
+  for files whose extraction actually completed are removed. A paused or
+  cancelled crawl can no longer empty the semantic tier.
+- **macOS no longer spawns a helper daemon from the GUI** (#73). Protected-folder
+  reads stay in the process that received the TCC grant from the native folder
+  picker; a daemon that is already running is still used.
+- **An explicitly watched system folder survives volume-root pruning**, including
+  the exact `C:\Windows` case, and UNC roots no longer trigger a `Users`
+  directory listing on every watcher event.
+- **Hidden-entry watcher tests are Windows-portable**; the full Rust suite now
+  passes on Windows, not only the compile check.
+
+### Changed
+- **Security and CI:** a restrictive webview CSP (#213), ONNX Runtime mirror and
+  release/CI gates (#211, #220, #231), daily CodeQL (#223, #226), Dependabot for
+  `bun.lock` (#224), CLI workspace checks, and refreshed lockfiles.
+- **Dependencies:** rusqlite 0.43, zip 9.1, interprocess 2.4.9 and the grouped
+  npm minor updates (#219, #227, #228, #229).
+- **Docs:** release/signing/updater documentation and the 1.0.19 release
+  checklist.
 
 ### Migration
 - 1.0.16–1.0.18 users must install 1.0.19 once manually. From 1.0.20 onward,
   updates are in-app. See `docs/UPDATER.md`.
+
+### Known open
+- Whole-volume roots still collect the walk before indexing, so a very large
+  drive can take a long time to show the first files; streaming the walk and a
+  non-blocking metadata load remain tracked in #207.
+- Indra on Fedora 44 / Zen 5 still needs the reporter's `[Kensaku OCR]` log and
+  a PP-OCR comparison before the zero-detector result can be identified (#174).
+- MSI, portable `.zip`, `.deb` and `.rpm` installs update through their own
+  package, not the in-app updater.
 
 ## [1.0.18] — 2026-11-17
 
