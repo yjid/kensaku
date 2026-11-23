@@ -2056,35 +2056,59 @@ pub async fn get_thumbnail_data(path: String) -> Result<String, String> {
     .map_err(|e| format!("Thumbnail task failed: {}", e))?
 }
 
-/// Checks GitHub for new Kensaku releases.
+/// Whether in-app updates are safe for this install.
+///
+/// The updater installs the per-user NSIS package on Windows and the AppImage
+/// on Linux. That would create a second copy next to an MSI install under
+/// Program Files, a portable copy is not installer-managed at all, and a
+/// `.deb`/`.rpm` install must go through its package manager. Those keep their
+/// own update path, so the frontend asks before it lets a download start.
 #[tauri::command]
-pub async fn check_for_updates() -> Result<crate::updater::UpdateInfo, String> {
-    tauri::async_runtime::spawn_blocking(crate::updater::check_for_update)
-        .await
-        .map_err(|e| format!("Update check task failed: {}", e))?
-}
+pub fn updater_supported() -> bool {
+    let Ok(exe) = std::env::current_exe() else {
+        return true;
+    };
 
-/// Downloads the specified update asset in the background.
-#[tauri::command]
-pub async fn download_update(
-    asset_url: String,
-    asset_name: String,
-) -> Result<crate::updater::UpdateStatus, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::updater::download_update(&asset_url, &asset_name)
-    })
-    .await
-    .map_err(|e| format!("Update download task failed: {}", e))?
-}
+    if let Some(dir) = exe.parent()
+        && (dir.join("portable").is_file() || dir.join("kensaku.portable").is_file())
+    {
+        return false;
+    }
 
-/// Polls progress of an in-progress update download.
-#[tauri::command]
-pub async fn get_updater_status() -> Result<crate::updater::UpdateStatus, String> {
-    Ok(crate::updater::get_status())
-}
+    #[cfg(windows)]
+    {
+        if matches!(
+            tauri::utils::platform::bundle_type(),
+            Some(tauri::utils::config::BundleType::Msi)
+        ) {
+            return false;
+        }
 
-/// Spawns the downloaded installer detached and shuts down the current app instance.
-#[tauri::command]
-pub async fn install_update_and_restart(app: AppHandle) -> Result<(), String> {
-    crate::updater::install_and_restart(&app)
+        // With `--no-binary-patching` there is no bundle marker, so fall back
+        // to the install location: the MSI is per-machine under Program
+        // Files, while the NSIS package is per-user under %LOCALAPPDATA%.
+        let path = exe.to_string_lossy().to_lowercase();
+        for var in ["PROGRAMFILES", "PROGRAMFILES(X86)"] {
+            if let Ok(dir) = std::env::var(var) {
+                let dir = dir.trim_end_matches(['\\', '/']).to_lowercase();
+                if !dir.is_empty() && path.starts_with(&format!("{dir}\\")) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // AppImage builds carry the AppImage marker and update in place;
+        // package installs are managed by apt/dnf and must stay that way.
+        if matches!(
+            tauri::utils::platform::bundle_type(),
+            Some(tauri::utils::config::BundleType::Deb | tauri::utils::config::BundleType::Rpm)
+        ) {
+            return false;
+        }
+    }
+
+    true
 }

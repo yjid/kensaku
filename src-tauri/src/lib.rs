@@ -16,7 +16,6 @@ pub mod preview;
 pub mod query;
 pub mod search;
 pub mod tray_icon;
-pub mod updater;
 pub mod util;
 
 use config::KensakuConfig;
@@ -473,6 +472,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, _shortcut, event| {
@@ -543,10 +544,7 @@ pub fn run() {
             commands::agent_connect_status,
             commands::agent_connect_install,
             commands::agent_connect_snippet,
-            commands::check_for_updates,
-            commands::download_update,
-            commands::get_updater_status,
-            commands::install_update_and_restart,
+            commands::updater_supported,
             models::get_models_status,
             models::download_models,
             models::delete_models,

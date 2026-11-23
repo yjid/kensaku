@@ -41,14 +41,14 @@ be safe when pointed at untrusted files.
 - **Read-only agent access.** `kensaku-cli` and the MCP server open the index
   without the Tantivy writer lock and cannot mutate it.
 - **UI escaping.** Indexed content (filenames, snippets, previews) is rendered as
-  text, never as HTML or `dangerouslySetInnerHTML`. The webview currently ships
-  without a Content-Security-Policy; tightening it is tracked as hardening work,
+  text, never as HTML or `dangerouslySetInnerHTML`. The webview ships with a
+  restrictive Content-Security-Policy (`script-src 'self'`, no remote origins)
   and the app loads no remote content.
 - **Default exclusions** skip hidden files and common junk directories.
 - **Local only.** No telemetry and no data about your files or searches leaves
-  the machine. Outbound requests are limited to a periodic GitHub release check
-  (no payload beyond the request itself) and model/OCR pack downloads. The
-  default text model downloads after setup; OCR data for the enabled engine may
+  the machine. Outbound requests are limited to a periodic GitHub release check,
+  user-initiated update downloads, and model/OCR pack downloads. The default
+  text model downloads after setup; OCR data for the enabled engine may
   download automatically while OCR is on; optional Indra, smart-embedding, and
   visual packs are user-initiated.
 
@@ -86,8 +86,17 @@ release workflow fails rather than ship an unsigned Windows installer. macOS
 builds are not signed or notarized yet, and Intel Macs have no bundled ONNX
 Runtime (PP-OCR falls back to Tesseract there).
 
-Verify downloads against `SHA256SUMS` attached to the GitHub release. In-app
-updates compare the download with the expected size and verify it against the
-release checksums before running the installer; portable installs are told to
-replace the folder instead of installing a second copy. macOS signing and
-notarization are tracked in the project issue tracker.
+Every release also publishes Tauri updater artifacts signed with a minisign
+key. The public key is compiled into the app (`plugins.updater.pubkey`); the
+private key exists only in GitHub Actions secrets and in the maintainer's
+offline backup. In-app updates require a valid signature and fail closed on a
+missing or mismatched one. The manifest (`latest.json`) is not signed, but it
+cannot make a client accept an artifact without a valid signature.
+
+Verify manual downloads against `SHA256SUMS` attached to the GitHub release.
+
+Windows in-app updates install the per-user NSIS package only. MSI installs
+under `Program Files` and portable copies are excluded at runtime and must
+update through their own package, so an update cannot silently create a second
+install. `.deb`/`.rpm` users update through their package manager; the AppImage
+updates in place. See `docs/UPDATER.md`.

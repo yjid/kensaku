@@ -462,6 +462,8 @@ export interface UpdateInfo {
   asset_name?: string | null;
   asset_url?: string | null;
   asset_size?: number | null;
+  /** False for MSI and portable installs, which update manually. */
+  in_app_supported?: boolean;
 }
 
 export interface UpdateProgress {

@@ -44,6 +44,7 @@ import { openGitHubBugReport } from "../lib/githubIssue";
 import {
   checkForUpdates,
   downloadUpdate,
+  getCachedUpdateInfo,
   getUpdaterStatus,
   installUpdateAndRestart,
   formatReleaseDate,
@@ -1598,7 +1599,9 @@ function AboutSection({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [version, setVersion] = useState<string>("…");
   const [checking, setChecking] = useState(false);
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(() =>
+    getCachedUpdateInfo(),
+  );
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [updaterError, setUpdaterError] = useState<string | null>(null);
@@ -1615,6 +1618,19 @@ function AboutSection({
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  /* Restore an in-flight or completed download after Settings is reopened. */
+  useEffect(() => {
+    getUpdaterStatus()
+      .then((st) => {
+        if (st.error) setUpdaterError(st.error);
+        if (st.busy || st.ready_to_install) {
+          setUpdateStatus(st);
+          setDownloading(st.busy);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   /* Poll updater progress while active */
@@ -1649,11 +1665,11 @@ function AboutSection({
   };
 
   const startDownload = async () => {
-    if (!updateInfo?.asset_url || !updateInfo?.asset_name) return;
+    if (!updateInfo?.has_update) return;
     setDownloading(true);
     setUpdaterError(null);
     try {
-      const st = await downloadUpdate(updateInfo.asset_url, updateInfo.asset_name);
+      const st = await downloadUpdate();
       setUpdateStatus(st);
       if (st.ready_to_install) {
         setDownloading(false);
@@ -1828,7 +1844,11 @@ function AboutSection({
 
                 {/* Action Buttons */}
                 <div className="flex items-center gap-2 pt-2 border-t border-line">
-                  {updateStatus?.ready_to_install ? (
+                  {updateInfo.in_app_supported === false ? (
+                    <span className="text-[12px] text-muted">
+                      {t("about.manualUpdateRequired")}
+                    </span>
+                  ) : updateStatus?.ready_to_install ? (
                     <button
                       type="button"
                       onClick={runInstall}
@@ -1846,7 +1866,7 @@ function AboutSection({
                       <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                       {t("about.downloading")}
                     </button>
-                  ) : updateInfo.asset_url ? (
+                  ) : updateInfo.has_update ? (
                     <button
                       type="button"
                       onClick={startDownload}

@@ -3,6 +3,25 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [1.0.19] — 2026-11-24
+
+### Added
+- **Signed in-app updates** (#235). Kensaku now uses Tauri's updater: it
+  checks `latest.json`, downloads the new package in the background, verifies a
+  minisign signature, installs it in place, and relaunches. Windows updates no
+  longer open the NSIS installer wizard and per-user installs do not prompt for
+  admin. macOS updates come from the universal `.app` archive, and the Linux
+  AppImage updates in place.
+- **Manual update paths stay explicit.** MSI installs under `Program Files` and
+  portable copies are excluded from in-app updates, so an update cannot create
+  a second install; `.deb`/`.rpm` users update through the package manager.
+  Existing configuration and the index live outside the install directory and
+  survive the update.
+
+### Migration
+- 1.0.16–1.0.18 users must install 1.0.19 once manually. From 1.0.20 onward,
+  updates are in-app. See `docs/UPDATER.md`.
+
 ## [1.0.18] — 2026-11-17
 
 ### Added

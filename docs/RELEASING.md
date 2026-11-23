@@ -14,10 +14,12 @@ git checkout master && git pull
 
 # The CLI is a separate workspace with its own lockfile. A version bump in the
 # library it depends on leaves cli/Cargo.lock stale, and `cargo --locked` then
-# fails on a clean checkout. Refresh it and verify:
+# fails on a clean checkout. Refresh the app lock for the version bump too, then
+# verify both:
+cargo metadata --format-version 1 --manifest-path src-tauri/Cargo.toml > /dev/null
 cargo metadata --format-version 1 --manifest-path cli/Cargo.toml > /dev/null
-cargo metadata --locked --format-version 1 --manifest-path cli/Cargo.toml > /dev/null
 cargo metadata --locked --format-version 1 --manifest-path src-tauri/Cargo.toml > /dev/null
+cargo metadata --locked --format-version 1 --manifest-path cli/Cargo.toml > /dev/null
 
 bun install
 cargo test --locked --all-targets --manifest-path src-tauri/Cargo.toml
@@ -40,14 +42,28 @@ gh run watch   # or: gh run list --workflow=release.yml
 
 | Artifact | Contents |
 |---|---|
-| `kensaku-linux` | `.deb`, `.rpm`, `.AppImage` |
-| `kensaku-macos` | universal `.dmg` / `.app` |
-| `kensaku-windows` | `.msi`, NSIS `.exe`, portable `.zip` (x64 + ARM64) |
+| `kensaku-linux` | `.deb`, `.rpm`, `.AppImage`, `.AppImage.sig` |
+| `kensaku-macos` | universal `.dmg` / `.app`, `.app.tar.gz`, `.app.tar.gz.sig` |
+| `kensaku-windows` | `.msi`, NSIS `.exe` + `.sig`, portable `.zip` (x64 + ARM64) |
 | `kensaku-cli-{linux,macos,windows}` | `kensaku-cli` binary (including Windows ARM64) |
+| `latest.json` | Updater manifest (generated in the publish job) |
 
 Builds are **Authenticode-signed on Windows** through SignPath Foundation; the
 workflow fails instead of shipping an unsigned Windows installer. macOS builds
 are still unsigned. See `SIGNING.md`.
+
+### Updater signing
+
+Every release must also be signed with the updater's minisign key. The public
+key lives in `src-tauri/tauri.conf.json`; the private key and password are the
+`TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository
+secrets. A missing key fails the bundle job rather than publishing an update no
+client can verify.
+
+Tauri signs the installers before SignPath re-signs them, so the release job
+re-signs the final NSIS installer and regenerates `latest.json` from the signed
+assets. See `UPDATER.md` for the full flow, the backup requirement, and the
+MSI/portable policy.
 
 ### ONNX Runtime
 
@@ -78,12 +94,24 @@ Check that the expected assets are present:
 
 | Asset | Platform |
 |---|---|
-| `kensaku_*_amd64.deb`, `kensaku-*.rpm`, `kensaku_*.AppImage` | Linux |
-| `kensaku_*_universal.dmg` | macOS |
-| `kensaku_*_x64-setup.exe`, `kensaku_*_x64_en-US.msi` | Windows |
-| `kensaku_*_arm64-setup.exe`, `kensaku_*_arm64_en-US.msi`, `kensaku-portable-*-{x64,arm64}.zip` | Windows (x64 and ARM64) |
+| `kensaku_*_amd64.deb`, `kensaku-*.rpm`, `kensaku_*.AppImage`, `kensaku_*.AppImage.sig` | Linux |
+| `kensaku_*_universal.dmg`, `kensaku.app.tar.gz`, `kensaku.app.tar.gz.sig` | macOS |
+| `kensaku_*_x64-setup.exe`, `kensaku_*_x64-setup.exe.sig`, `kensaku_*_x64_en-US.msi` | Windows |
+| `kensaku_*_arm64-setup.exe`, `kensaku_*_arm64-setup.exe.sig`, `kensaku_*_arm64_en-US.msi`, `kensaku-portable-*-{x64,arm64}.zip` | Windows (x64 and ARM64) |
 | `kensaku-cli-linux-*`, `kensaku-cli-macos-*`, `kensaku-cli-windows-*` | Agent CLI |
+| `latest.json` | Updater manifest |
 | `SHA256SUMS` | All assets |
+
+Before publishing, confirm the updater manifest is present and correct:
+
+```bash
+gh release download vX.Y.Z -p latest.json -O /tmp/latest.json
+node -e 'const m=require("/tmp/latest.json"); console.log(m.version); console.log(Object.keys(m.platforms))'
+```
+
+The version must match the tag, and the platform keys must include
+`windows-x86_64`, `darwin-aarch64`, and `linux-x86_64` (plus the ARM64 variants
+when built). Each pointed-to asset and its `.sig` must be on the release.
 
 Then publish the draft (or edit the notes first):
 

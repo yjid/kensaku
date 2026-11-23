@@ -2,8 +2,9 @@ name: Release builds
 
 # Builds desktop bundles and the agent CLI for Linux, macOS and
 # Windows, Authenticode-signs the Windows binaries through SignPath
-# Foundation, then assembles a draft GitHub release with every asset and a
-# SHA256SUMS file. A maintainer reviews and publishes the draft.
+# Foundation, then assembles a draft GitHub release with every asset, the
+# updater manifest (latest.json), and a SHA256SUMS file. A maintainer reviews
+# and publishes the draft.
 #
 # Signing is mandatory for tag builds: if the SignPath variables/secrets are
 # missing, the Windows jobs fail instead of silently shipping unsigned
@@ -26,6 +27,11 @@ jobs:
   bundle:
     name: Bundles (${{ matrix.platform }})
     runs-on: ${{ matrix.platform }}
+    env:
+      # Tauri signs every updater artifact with this minisign key. An empty
+      # secret fails the bundle step instead of publishing an unsigned update.
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     strategy:
       fail-fast: false
       matrix:
@@ -54,6 +60,24 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+
+      # `createUpdaterArtifacts` makes the bundler sign every updater artifact.
+      # Fail before the long build if the key is missing, instead of publishing
+      # a release no installed copy can verify.
+      - name: Check updater signing configuration
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          test -n "$TAURI_SIGNING_PRIVATE_KEY" || {
+            echo "TAURI_SIGNING_PRIVATE_KEY is not set; refusing to build unsigned updater artifacts"
+            exit 1
+          }
+          test -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" || {
+            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD is not set"
+            exit 1
+          }
 
       # SignPath Foundation issues the Authenticode certificate; the private
       # key stays on SignPath's HSM. Configuration lives in repository
@@ -211,8 +235,11 @@ jobs:
 
       # `--no-binary-patching` keeps that signature valid: otherwise Tauri
       # rewrites the executable in place per bundle type to embed updater
-      # metadata, which invalidates Authenticode. Kensaku does not use Tauri's
-      # updater artifacts, so the metadata is not needed.
+      # metadata, which invalidates Authenticode. The updater identifies the
+      # package from the downloaded bytes, and latest.json publishes the NSIS
+      # artifact for every Windows install, so the per-bundle marker is not
+      # needed. MSI and portable installs are excluded at runtime (see
+      # `updater_supported`).
       - name: Bundle installers
         run: bunx tauri bundle ${{ runner.os == 'Windows' && '--no-binary-patching' || '' }} ${{ matrix.args }}
 
@@ -274,6 +301,27 @@ jobs:
             Copy-Item $file.FullName $dest.FullName -Force
             Write-Host "$($file.Name): $($sig.Status) by $($sig.SignerCertificate.Subject)"
           }
+
+      # `tauri bundle` signed the updater artifacts before SignPath re-signed
+      # the installers, so those signatures no longer match the bytes that
+      # ship. Re-sign the final NSIS installer for the updater. Windows updates
+      # use the NSIS package only; the MSI stays a manual/enterprise install,
+      # so its stale signature is removed rather than published.
+      - name: Re-sign Windows updater artifact
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $nsis = @(Get-ChildItem src-tauri\target\release\bundle\nsis -Filter '*-setup.exe' -File)
+          if ($nsis.Count -ne 1) { throw "expected exactly one NSIS installer, found $($nsis.Count)" }
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          Get-ChildItem src-tauri\target\release\bundle\msi -Filter '*.msi.sig' -File -ErrorAction SilentlyContinue |
+            Remove-Item -Force
+          Remove-Item "$($nsis[0].FullName).sig" -Force -ErrorAction SilentlyContinue
+          bunx tauri signer sign --app-version $version $nsis[0].FullName
+          if (-not (Test-Path "$($nsis[0].FullName).sig")) {
+            throw "updater signature was not written"
+          }
+          Write-Host "signed $($nsis[0].Name) for version $version"
 
       # Portable build: the raw exe plus a `portable` marker file so
       # KensakuConfig::config_dir keeps everything (config, metadata DB,
@@ -504,7 +552,7 @@ jobs:
   # Assemble one draft GitHub release from both build jobs. A maintainer
   # reviews the draft, then publishes it; this keeps signing and announcement
   # decisions out of tag pushes while still collecting every asset in one
-  # place (bundles, CLI binaries, and SHA256SUMS).
+  # place (bundles, CLI binaries, latest.json, and SHA256SUMS).
   publish:
     name: Draft release
     if: startsWith(github.ref, 'refs/tags/v')
@@ -538,18 +586,35 @@ jobs:
           find artifacts -type f | grep -q . || { echo "no artifacts downloaded"; exit 1; }
 
       # Bundle directories contain support files with identical basenames
-      # (icon.icns, icon.ico, ...). Only stage installable artifacts so the
-      # release never gets two assets with the same name.
+      # (icon.icns, icon.ico, ...). Only stage installable artifacts and the
+      # updater signatures so the release never gets two assets with the same
+      # name. MSI signatures are deliberately omitted: Windows in-app updates
+      # use the NSIS package, and the MSI is a manual/enterprise install.
       - name: Stage release assets
         run: |
           mkdir -p release
           find artifacts -type f \
             \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
-               -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \
+               -o -name '*.AppImage.sig' -o -name '*.dmg' -o -name '*.msi' \
+               -o -name '*-setup.exe' -o -name '*-setup.exe.sig' \
+               -o -name '*.app.tar.gz' -o -name '*.app.tar.gz.sig' \
                -o -name 'kensaku-portable-*.zip' \
                -o -name 'kensaku-cli-*' \) \
             -exec cp -t release {} +
           test -n "$(find release -type f -print -quit)" || { echo "no release assets staged"; exit 1; }
+
+      # The updater downloads this manifest from
+      # releases/latest/download/latest.json. It must contain the signature of
+      # each artifact; a missing signature or artifact fails the build rather
+      # than publishing an update nobody can install.
+      - name: Generate updater manifest
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: node tools/generate-latest-json.mjs
+
+      - name: Write checksums
+        run: |
           cd release
           find . -type f ! -name SHA256SUMS -exec sha256sum {} + | sort -k2 > SHA256SUMS
 
