@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Roadmap and current versions
+    url: https://github.com/yjid/kensaku/blob/master/ROADMAP.md
+    about: What each version is for, and how to help finish one.
   - name: Security report
     url: https://github.com/yjid/kensaku/security/advisories/new
     about: Please report vulnerabilities privately, never in a public issue.

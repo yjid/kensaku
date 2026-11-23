@@ -1,0 +1,88 @@
+name: Epic / version workstream
+description: One workstream inside a version, with child issues and exit criteria
+title: "[epic] "
+labels: ["epic"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One epic per workstream inside a version. The milestone is the version;
+        this issue is the spec. Link child issues with task lists so progress is
+        visible in the roadmap and the milestone.
+  - type: input
+    id: outcome
+    attributes:
+      label: Outcome
+      description: The user-visible change, in one sentence. Not "add feature X".
+      placeholder: "A new user on 200k files gets a useful result in under two minutes."
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why now
+      description: Evidence — issue numbers, user reports, benchmark, strategy.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: One shippable item per line.
+      value: |
+        -
+        -
+        -
+    validations:
+      required: true
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope
+      description: What this epic deliberately does not do, so reviewers can say no.
+    validations:
+      required: true
+  - type: textarea
+    id: children
+    attributes:
+      label: Child issues
+      description: Task list; use "#123" links.
+      value: |
+        - [ ] #
+        - [ ] #
+    validations:
+      required: false
+  - type: textarea
+    id: exit
+    attributes:
+      label: Exit criteria
+      description: Observable and testable. "X works on Y with Z data."
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+  - type: input
+    id: owner
+    attributes:
+      label: Owner / captain
+      description: Who triages this area and reviews PRs.
+    validations:
+      required: false
+  - type: dropdown
+    id: size
+    attributes:
+      label: Size
+      options:
+        - S (≤ 1 day)
+        - M (≤ 1 week)
+        - L (needs design or multiple people)
+    validations:
+      required: true
+  - type: input
+    id: dependencies
+    attributes:
+      label: Dependencies / blocks
+      placeholder: "Depends on #123; blocks #456"
+    validations:
+      required: false

@@ -30,6 +30,7 @@
   <a href="#features">Features</a> ·
   <a href="#performance">Performance</a> ·
   <a href="#connect-ai-agents-mcp">MCP</a> ·
+  <a href="ROADMAP.md">Roadmap</a> ·
   <a href="docs/README.md">Docs</a> ·
   <a href="docs/LANGUAGES.md">Languages</a> ·
   <a href="#contributing">Contribute</a>
