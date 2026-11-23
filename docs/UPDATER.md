@@ -40,7 +40,10 @@ Mixing them is avoided on purpose. An NSIS update on an MSI install would create
 a second copy under `%LOCALAPPDATA%` while the MSI copy stayed under
 `Program Files`. The `updater_supported` command therefore refuses in-app
 updates for portable copies and for executables under `Program Files`; the
-settings panel shows a manual-update message instead of the download button.
+settings panel shows a manual-update message instead of the download button. An
+MSI installed to a custom directory outside `Program Files` cannot be detected
+without the Windows bundle marker, so keep MSI deployments in the default
+location or update them manually.
 
 On Linux, the same command refuses `.deb`/`.rpm` installs (their bundle marker
 identifies them) because those belong to apt/dnf. AppImage installs, which carry
