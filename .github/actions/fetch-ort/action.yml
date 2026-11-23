@@ -53,20 +53,23 @@ runs:
         dmg="$RUNNER_TEMP/kensaku_1.0.18_universal.dmg"
         curl -fsSL --retry 3 -o "$dmg" "$base/kensaku_1.0.18_universal.dmg"
         echo "1985891ec5884ea2e3448e506bd6f240b083c67c7a957f26cba6eb8f60f72c28  $dmg" | shasum -a 256 -c -
-        # Let hdiutil pick the mount point; `-mountpoint` under RUNNER_TEMP
-        # fails with "attach canceled" on the hosted runners.
-        attach_out="$(hdiutil attach -nobrowse -noverify "$dmg")"
-        mount="$(printf '%s\n' "$attach_out" | awk '/\/Volumes\// {print $NF; exit}')"
-        if [ -z "$mount" ]; then
-          printf '%s\n' "$attach_out"
-          echo "could not determine the mounted dmg path" >&2
+        # hdiutil refuses to attach this image on the hosted runner
+        # ("attach canceled"), so unpack the dmg with 7-Zip instead.
+        seven="$RUNNER_TEMP/7z"
+        mkdir -p "$seven"
+        curl -fsSL --retry 3 -o "$RUNNER_TEMP/7z.tar.xz" \
+          "https://www.7-zip.org/a/7z2501-mac.tar.xz"
+        tar -xf "$RUNNER_TEMP/7z.tar.xz" -C "$seven"
+        "$seven/7zz" x -y -o"$RUNNER_TEMP/kensaku-dmg" "$dmg" >/dev/null
+        dylib="$(find "$RUNNER_TEMP/kensaku-dmg" -name libonnxruntime.dylib -print -quit)"
+        if [ -z "$dylib" ]; then
+          find "$RUNNER_TEMP/kensaku-dmg" -maxdepth 6 -type f | head -50
+          echo "libonnxruntime.dylib was not found in the 1.0.18 dmg" >&2
           exit 1
         fi
-        trap 'hdiutil detach "$mount" >/dev/null 2>&1 || true' EXIT
         root="$DEST/onnxruntime-$PLATFORM-1.31.0"
         mkdir -p "$root/lib"
-        cp "$mount/kensaku.app/Contents/Resources/libonnxruntime.dylib" \
-          "$root/lib/libonnxruntime.1.31.0.dylib"
+        cp "$dylib" "$root/lib/libonnxruntime.1.31.0.dylib"
         test -s "$root/lib/libonnxruntime.1.31.0.dylib"
 
     - name: Extract from the Windows portable zip
@@ -77,6 +80,7 @@ runs:
         DEST: ${{ inputs.dest }}
       run: |
         $ErrorActionPreference = 'Stop'
+        New-Item -ItemType Directory -Force -Path $env:DEST | Out-Null
         $base = "https://github.com/yjid/kensaku/releases/download/v1.0.18"
         $pins = @{
           'win-x64'   = @{ name = 'kensaku-portable-1.0.18-x64.zip';   sha256 = 'b645c688056e5a8ac154d4d66e38bb4222811535699317a4798a3ab195f5496d' }
