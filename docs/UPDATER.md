@@ -44,7 +44,9 @@ settings panel shows a manual-update message instead of the download button.
 
 On Linux, the same command refuses `.deb`/`.rpm` installs (their bundle marker
 identifies them) because those belong to apt/dnf. AppImage installs, which carry
-the AppImage marker, update in place.
+the AppImage marker, update in place. The AppImage must live in a user-writable
+directory; replacing one under `/opt` or `/usr/bin` fails without root, so move
+it somewhere writable or use the package manager.
 
 `tauri bundle` runs with `--no-binary-patching` on Windows only, so the
 Authenticode signature on `kensaku.exe` survives bundling. That also means

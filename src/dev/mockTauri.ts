@@ -99,6 +99,7 @@ const handlers: Record<string, (a: any) => unknown> = {
   is_setup_complete: () => config.is_setup_complete,
   is_setup_configured: () => false,
   get_reset_pending: () => false,
+  updater_supported: () => false,
   last_query: () => params.get("q") ?? "",
   remember_query: () => null,
   record_recent_query: (a) => {
