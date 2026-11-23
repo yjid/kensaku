@@ -187,7 +187,7 @@ pub fn volume_root_prunes(roots: &[PathBuf]) -> Vec<PathBuf> {
     #[cfg(not(windows))]
     {
         let _ = roots;
-        return Vec::new();
+        Vec::new()
     }
 
     #[cfg(windows)]
