@@ -75,7 +75,11 @@ bunx tauri signer generate -w ~/.tauri/kensaku-updater.key
 ```
 
 Then put the contents of the `.pub` file in `tauri.conf.json`, and the private
-key and its password in the two repository secrets.
+key and its password in the two repository secrets. To rotate an existing
+channel, first ship one release that carries the new public key but is signed
+with the **old** private key; only after that release is installed should CI
+switch to the new private key. Otherwise existing clients reject the new
+signature.
 
 ## Release pipeline
 
