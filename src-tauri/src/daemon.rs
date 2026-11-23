@@ -192,6 +192,29 @@ mod tests {
             vec![config.join("kensaku.sock")]
         );
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn macos_does_not_spawn_a_helper_daemon() {
+        assert!(!daemon_spawn_allowed_on("macos"));
+        assert!(daemon_spawn_allowed_on("linux"));
+    }
+}
+
+/// Whether the GUI may spawn its own helper daemon for `os`.
+///
+/// macOS keeps indexing in the app process: the GUI received the TCC folder
+/// grant from the native picker, and a separately launched helper has a
+/// different process identity, so macOS can prompt again for the same folders.
+/// Linux keeps the warm-sidecar path.
+#[cfg(unix)]
+fn daemon_spawn_allowed_on(os: &str) -> bool {
+    os != "macos"
+}
+
+#[cfg(unix)]
+fn daemon_spawn_allowed() -> bool {
+    daemon_spawn_allowed_on(std::env::consts::OS)
 }
 
 #[derive(Clone, Copy)]
@@ -200,26 +223,37 @@ pub struct DaemonClient;
 impl DaemonClient {
     #[cfg(unix)]
     pub fn ensure() -> bool {
+        // An already-running daemon is always preferred: it owns the index and
+        // gives the GUI/CLI/MCP the warm path. On macOS we only ever *use* such
+        // a daemon; we never spawn one.
         if request("ping", serde_json::json!({})).is_ok() {
             return true;
         }
-        let Some(exe) = daemon_binary_path() else {
-            return false;
-        };
-        let mut command = std::process::Command::new(exe);
-        command
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-        if command.spawn().is_err() {
+        if !daemon_spawn_allowed() {
             return false;
         }
-        for _ in 0..40 {
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            if request("ping", serde_json::json!({})).is_ok() {
-                return true;
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let Some(exe) = daemon_binary_path() else {
+                return false;
+            };
+            let mut command = std::process::Command::new(exe);
+            command
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+            if command.spawn().is_err() {
+                return false;
+            }
+            for _ in 0..40 {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                if request("ping", serde_json::json!({})).is_ok() {
+                    return true;
+                }
             }
         }
+
         false
     }
 
@@ -393,7 +427,7 @@ impl DaemonClient {
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 fn daemon_binary_path() -> Option<std::path::PathBuf> {
     let name = "kensaku-daemon";
     let mut candidates = Vec::new();

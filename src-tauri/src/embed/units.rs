@@ -160,6 +160,38 @@ impl UnitStore {
         self.node_to_units = new_node_map;
     }
 
+    /// Removes units by their database row id in one pass.
+    ///
+    /// Used after a re-index inserts the replacement units: deleting by node id
+    /// at that point would remove the new units too, while deleting before the
+    /// re-index loses them when the crawl is paused. The old row ids are
+    /// collected first, so this removes only the superseded units.
+    pub fn remove_units_by_ids(&mut self, unit_ids: &std::collections::HashSet<u64>) {
+        if unit_ids.is_empty() || self.units.is_empty() {
+            return;
+        }
+
+        let mut new_units = Vec::with_capacity(self.units.len());
+        let mut new_vectors = Vec::with_capacity(self.vectors.len());
+        let mut new_node_map: HashMap<u64, Vec<usize>> = HashMap::new();
+
+        for (old_idx, unit) in self.units.drain(..).enumerate() {
+            if unit_ids.contains(&unit.id) {
+                continue;
+            }
+            let new_idx = new_units.len();
+            new_node_map.entry(unit.node_id).or_default().push(new_idx);
+            new_units.push(unit);
+            let v_start = old_idx * self.dim;
+            let v_end = v_start + self.dim;
+            new_vectors.extend_from_slice(&self.vectors[v_start..v_end]);
+        }
+
+        self.units = new_units;
+        self.vectors = new_vectors;
+        self.node_to_units = new_node_map;
+    }
+
     pub fn clear(&mut self) {
         self.units.clear();
         self.vectors.clear();
@@ -395,6 +427,31 @@ mod tests {
                 _ => panic!("unexpected node_id"),
             }
         }
+    }
+
+    /// remove_units_by_ids removes only the requested rows, keeping the
+    /// replacement units that share a node id.
+    #[test]
+    fn unit_store_remove_units_by_ids_keeps_replacements() {
+        let mut store = UnitStore::new(2);
+        store.add_unit(make_unit(10, 1), &[1i8, 0]); // old unit for node 1
+        store.add_unit(make_unit(11, 2), &[0i8, 1]); // old unit for node 2
+        store.add_unit(make_unit(12, 1), &[2i8, 0]); // replacement for node 1
+        store.add_unit(make_unit(13, 3), &[0i8, 2]);
+
+        let to_remove = std::collections::HashSet::from([10u64, 11]);
+        store.remove_units_by_ids(&to_remove);
+
+        assert_eq!(store.len(), 2);
+        assert_eq!(
+            store.units.iter().map(|u| u.id).collect::<Vec<_>>(),
+            vec![12, 13]
+        );
+        assert_eq!(store.get_vector(0), Some([2i8, 0].as_slice()));
+        assert_eq!(store.get_vector(1), Some([0i8, 2].as_slice()));
+        assert!(store.node_to_units.contains_key(&1));
+        assert!(store.node_to_units.contains_key(&3));
+        assert!(!store.node_to_units.contains_key(&2));
     }
 
     /// remove_units_for_nodes with an empty set is a no-op.

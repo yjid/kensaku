@@ -677,6 +677,67 @@ impl MetadataDb {
         Ok(())
     }
 
+    /// Returns `(unit_id, node_id)` for every unit belonging to `node_ids`.
+    ///
+    /// The crawl uses this to remember the old rows before it inserts the new
+    /// ones, then deletes exactly those rows after a successful re-index. That
+    /// keeps semantic search available while a crawl is paused: the previous
+    /// implementation deleted by node id before extraction, so pausing left the
+    /// files with no units at all.
+    pub fn unit_ids_for_nodes(&self, node_ids: &[u64]) -> Result<Vec<(u64, u64)>, String> {
+        if node_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn.lock();
+        let mut out = Vec::new();
+        for chunk in node_ids.chunks(500) {
+            let placeholders = std::iter::repeat_n("?", chunk.len())
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql = format!(
+                "SELECT id, node_id FROM units WHERE node_id IN ({})",
+                placeholders
+            );
+            let params: Vec<i64> = chunk.iter().map(|id| *id as i64).collect();
+            let mut stmt = conn
+                .prepare_cached(&sql)
+                .map_err(|e| format!("Failed to prepare unit id lookup: {}", e))?;
+            let rows = stmt
+                .query_map(rusqlite::params_from_iter(params), |row| {
+                    Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))
+                })
+                .map_err(|e| format!("Failed to query unit ids: {}", e))?;
+            for row in rows {
+                out.push(row.map_err(|e| format!("Failed to read unit id: {}", e))?);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Deletes the exact unit rows in `unit_ids`.
+    ///
+    /// The crawl passes the ids it collected before inserting replacements, so
+    /// the delete cannot remove a newly inserted unit that shares the node id.
+    pub fn delete_units_by_ids(&self, unit_ids: &[u64]) -> Result<(), String> {
+        if unit_ids.is_empty() {
+            return Ok(());
+        }
+        let conn = self.conn.lock();
+        for chunk in unit_ids.chunks(500) {
+            let placeholders = std::iter::repeat_n("?", chunk.len())
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql = format!("DELETE FROM units WHERE id IN ({})", placeholders);
+            let mut stmt = conn
+                .prepare_cached(&sql)
+                .map_err(|e| format!("Failed to prepare unit delete: {}", e))?;
+            let params: Vec<i64> = chunk.iter().map(|id| *id as i64).collect();
+            stmt.execute(rusqlite::params_from_iter(params))
+                .map_err(|e| format!("Failed to delete units: {}", e))?;
+        }
+        Ok(())
+    }
+
     pub fn save_visual_unit(
         &self,
         node_id: u64,
@@ -2278,5 +2339,31 @@ mod tests {
         assert_eq!(db.load_all_units().unwrap().len(), 1);
         db.reset_semantic_index().expect("reset semantic index");
         assert!(db.load_all_units().unwrap().is_empty());
+    }
+
+    #[test]
+    fn unit_ids_and_delete_by_id_keep_replacements() {
+        let temp = TempDb::new("units-delete-by-id");
+        let db = temp.db();
+
+        let node = db.upsert(&entry(Path::new("/file.txt"), false)).unwrap();
+        let other = db.upsert(&entry(Path::new("/other.txt"), false)).unwrap();
+        let old_a = db.insert_unit(node, 0, 10, 1, &[1, 2, 3, 4]).unwrap();
+        let old_b = db.insert_unit(other, 0, 10, 1, &[1, 2, 3, 4]).unwrap();
+        let replacement = db.insert_unit(node, 0, 10, 1, &[5, 6, 7, 8]).unwrap();
+
+        let rows = db.unit_ids_for_nodes(&[node, other]).unwrap();
+        assert_eq!(rows.len(), 3);
+        assert!(rows.contains(&(old_a, node)));
+        assert!(rows.contains(&(old_b, other)));
+        assert!(rows.contains(&(replacement, node)));
+
+        // Delete the old rows only; the replacement sharing `node` must stay.
+        db.delete_units_by_ids(&[old_a, old_b]).unwrap();
+        let remaining = db.load_all_units().unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].0.id, replacement);
+        assert_eq!(remaining[0].0.node_id, node);
+        assert_eq!(remaining[0].1, [5, 6, 7, 8]);
     }
 }

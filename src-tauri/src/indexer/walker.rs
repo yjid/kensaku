@@ -178,6 +178,16 @@ pub fn is_volume_root(_path: &std::path::Path) -> bool {
     false
 }
 
+#[cfg(windows)]
+fn is_unc_root(path: &std::path::Path) -> bool {
+    use std::path::{Component, Prefix};
+    matches!(
+        path.components().next(),
+        Some(Component::Prefix(prefix))
+            if matches!(prefix.kind(), Prefix::UNC(..) | Prefix::VerbatimUNC(..))
+    )
+}
+
 /// Windows system trees that must not be walked when a whole volume is added.
 ///
 /// Without this, `C:\` walks WinSxS, every profile's AppData, the recycle bin,
@@ -193,9 +203,9 @@ pub fn volume_root_prunes(roots: &[PathBuf]) -> Vec<PathBuf> {
     #[cfg(windows)]
     {
         let explicitly_wanted = |dir: &std::path::Path| {
-            roots
-                .iter()
-                .any(|root| root.as_path() != dir && root.starts_with(dir))
+            // Equality counts: adding `C:\Windows` explicitly must keep it even
+            // though the volume-root policy would otherwise prune it.
+            roots.iter().any(|root| root.starts_with(dir))
         };
         let mut prunes = Vec::new();
         for root in roots.iter().filter(|root| is_volume_root(root)) {
@@ -216,7 +226,12 @@ pub fn volume_root_prunes(roots: &[PathBuf]) -> Vec<PathBuf> {
                 }
             }
             // Other users' profiles are under Users, but their AppData is the
-            // same cache/log swamp as the current profile's.
+            // same cache/log swamp as the current profile's. Do not enumerate
+            // this on a UNC share root: every watcher event would turn into a
+            // network directory listing.
+            if is_unc_root(root) {
+                continue;
+            }
             if let Ok(entries) = std::fs::read_dir(root.join("Users")) {
                 for entry in entries.flatten() {
                     let appdata = entry.path().join("AppData");
@@ -676,6 +691,7 @@ mod tests {
         let root = PathBuf::from(r"C:\");
         assert!(is_volume_root(&root));
         assert!(is_volume_root(&PathBuf::from(r"\\server\share\")));
+        assert!(is_unc_root(&PathBuf::from(r"\\server\share\")));
         assert!(!is_volume_root(&PathBuf::from(r"C:\Users")));
 
         let prunes = volume_root_prunes(std::slice::from_ref(&root));
@@ -698,9 +714,16 @@ mod tests {
 
         // An explicit root inside a system tree disables the prune for that
         // whole tree, because the walker only supports prefix prunes. The
-        // explicit folder therefore stays reachable.
+        // explicit folder therefore stays reachable. Equality also counts.
         let explicit = PathBuf::from(r"C:\Windows\Fonts");
         let prunes = volume_root_prunes(&[root, explicit]);
+        assert!(!starts_with_any(
+            std::path::Path::new(r"C:\Windows\Fonts\arial.ttf"),
+            &prunes
+        ));
+
+        let exact = PathBuf::from(r"C:\Windows");
+        let prunes = volume_root_prunes(&[PathBuf::from(r"C:\"), exact]);
         assert!(!starts_with_any(
             std::path::Path::new(r"C:\Windows\Fonts\arial.ttf"),
             &prunes

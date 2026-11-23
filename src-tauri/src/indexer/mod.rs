@@ -983,10 +983,12 @@ impl IndexerManager {
             let model = semantic_enabled.then(|| ModelRegistry::global().clone());
             let embed_model_id = model.as_ref().map(|m| m.model_id);
 
-            // Drop semantic units for every file about to be re-extracted. New
-            // files have none, so a first scan does no work here. One batched
-            // pass (instead of per-file vector compaction) keeps re-indexing a
-            // large tree linear.
+            // Remember the old semantic rows for every file about to be
+            // re-extracted. They are deleted after the replacement units are
+            // inserted: deleting by node id before extraction (the previous
+            // behavior) left a paused or cancelled crawl with no semantic units
+            // for those files, which is why search went empty while paused.
+            let mut stale_units_by_node: HashMap<u64, Vec<u64>> = HashMap::new();
             if semantic_enabled && !to_extract.is_empty() {
                 let ids: HashSet<u64> = to_extract
                     .iter()
@@ -996,12 +998,19 @@ impl IndexerManager {
                 if !ids.is_empty() {
                     let id_vec: Vec<u64> = ids.iter().copied().collect();
                     if let Some(db) = metadata.read().db() {
-                        let _ = db.delete_units_for_nodes(&id_vec);
-                        let _ = db.delete_visual_units_for_nodes(&id_vec);
-                    }
-                    unit_store.write().remove_units_for_nodes(&ids);
-                    for id in &ids {
-                        visual_store.write().remove_node(*id);
+                        match db.unit_ids_for_nodes(&id_vec) {
+                            Ok(rows) => {
+                                for (unit_id, node_id) in rows {
+                                    stale_units_by_node
+                                        .entry(node_id)
+                                        .or_default()
+                                        .push(unit_id);
+                                }
+                            }
+                            Err(e) => crate::say_err!(
+                                "[Kensaku Indexer] could not read old semantic units: {e}"
+                            ),
+                        }
                     }
                 }
             }
@@ -1013,6 +1022,10 @@ impl IndexerManager {
             // a timed-out or OCR-less image was recorded as "no text" forever.
             let mut retry_paths: HashSet<PathBuf> = HashSet::new();
             let mut units_added = 0usize;
+            // Nodes that produced a completed extraction this crawl. Only these
+            // lose their old semantic rows; a file skipped by a cancel or pause
+            // keeps the units it had.
+            let mut replaced_nodes: HashSet<u64> = HashSet::new();
 
             // Bounded handoff: at most 32 extracted documents (and their
             // vectors) are in flight at any moment.
@@ -1211,35 +1224,53 @@ impl IndexerManager {
                         extracted_paths.insert(work.path.clone());
                     }
 
+                    // Only replace the old semantic units when the new rows all
+                    // inserted. A disk-full or locked DB keeps the previous units
+                    // and leaves the node for the embed worker instead of deleting
+                    // searchable text.
+                    let mut units_ok = embed_model_id.is_none() || db_handle.is_some();
                     if let Some(model_id) = embed_model_id
                         && let Some(db) = db_handle.as_ref()
                     {
                         for (start, end, vector) in &work.units {
-                            if let Ok(id) =
-                                db.insert_unit(work.node_id, *start, *end, model_id, vector)
-                            {
-                                let unit = Unit {
-                                    id,
-                                    node_id: work.node_id,
-                                    byte_start: *start,
-                                    byte_end: *end,
-                                    model_id,
-                                };
-                                unit_store.write().add_unit(unit, vector);
-                                units_added += 1;
-                                if units_added.is_multiple_of(256) {
-                                    let mut st = status.write();
-                                    st.units_indexed = unit_store.read().len();
-                                    st.semantic_ready = st.units_indexed > 0;
-                                    Self::emit_status(&app_handle, &st);
+                            match db.insert_unit(work.node_id, *start, *end, model_id, vector) {
+                                Ok(id) => {
+                                    let unit = Unit {
+                                        id,
+                                        node_id: work.node_id,
+                                        byte_start: *start,
+                                        byte_end: *end,
+                                        model_id,
+                                    };
+                                    unit_store.write().add_unit(unit, vector);
+                                    units_added += 1;
+                                    if units_added.is_multiple_of(256) {
+                                        let mut st = status.write();
+                                        st.units_indexed = unit_store.read().len();
+                                        st.semantic_ready = st.units_indexed > 0;
+                                        Self::emit_status(&app_handle, &st);
+                                    }
+                                }
+                                Err(e) => {
+                                    units_ok = false;
+                                    crate::say_err!(
+                                        "[Kensaku Indexer] could not insert semantic unit for {}: {e}",
+                                        work.path.display()
+                                    );
                                 }
                             }
                         }
-                        let _ = db.update_node_indexed_gen(
-                            work.node_id,
-                            1,
-                            work.content_hash.as_deref(),
-                        );
+                        if units_ok {
+                            let _ = db.update_node_indexed_gen(
+                                work.node_id,
+                                1,
+                                work.content_hash.as_deref(),
+                            );
+                        }
+                    }
+
+                    if !work.retry && work.node_id > 0 && units_ok {
+                        replaced_nodes.insert(work.node_id);
                     }
 
                     // Done reading this file; a retry keeps (re-sets) the flag
@@ -1266,6 +1297,29 @@ impl IndexerManager {
                     }
                 }
             });
+
+            // Replacements are now in the unit store and the open transaction.
+            // Delete only the old row ids for files whose extraction completed,
+            // so a paused or cancelled crawl never drops semantic search.
+            if semantic_enabled && !stale_units_by_node.is_empty() && !replaced_nodes.is_empty() {
+                let stale_ids: HashSet<u64> = replaced_nodes
+                    .iter()
+                    .filter_map(|node_id| stale_units_by_node.get(node_id))
+                    .flatten()
+                    .copied()
+                    .collect();
+                if !stale_ids.is_empty() {
+                    let id_vec: Vec<u64> = stale_ids.iter().copied().collect();
+                    if let Some(db) = db_handle.as_ref()
+                        && let Err(e) = db.delete_units_by_ids(&id_vec)
+                    {
+                        crate::say_err!(
+                            "[Kensaku Indexer] could not delete superseded semantic units: {e}"
+                        );
+                    }
+                    unit_store.write().remove_units_by_ids(&stale_ids);
+                }
+            }
 
             if !quiet {
                 let mut st = status.write();

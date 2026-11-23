@@ -13,7 +13,9 @@ Both use the same index as the desktop app: `~/.config/kensaku` on Linux,
 `%APPDATA%\kensaku` on Windows, and `~/Library/Application Support/kensaku` on
 macOS. The MCP server pings the daemon and forwards searches/state to it when
 available; with no daemon it opens the index read-only and loads
-metadata/vectors once per session.
+metadata/vectors once per session. On macOS the desktop app does not spawn a
+daemon (it keeps protected-folder reads in the process that holds the TCC grant),
+but it will use one if it is already running.
 
 ---
 

@@ -13,16 +13,19 @@ frontend. No indexing logic lives in the webview.
 
 | Process | Built from | Role |
 |---|---|---|
-| `kensaku` | `src-tauri/` (Tauri 2) | Desktop app. Hosts the indexer in-process on Windows; on Unix it can start the daemon sidecar. |
+| `kensaku` | `src-tauri/` (Tauri 2) | Desktop app. Hosts the indexer in-process on Windows and macOS; on Linux it can start the daemon sidecar. |
 | `kensaku-daemon` | `cli/src/bin/kensaku-daemon.rs` | Owns a warm index for CLI/MCP clients. Unix only in practice. |
 | `kensaku-cli` | `cli/src/main.rs` | `search`, `state`, `mcp`, `serve`, `connect`. |
 
-**Daemon-first, with a read-only fallback.** On Unix the GUI calls
+**Daemon-first, with a read-only fallback.** On Linux the GUI calls
 `DaemonClient::ensure()`, which pings the socket and, if nobody answers, spawns
-`kensaku-daemon` from next to the app binary or from `PATH`. CLI and MCP prefer
-the daemon too. When it is absent:
+`kensaku-daemon` from next to the app binary or from `PATH`. On macOS `ensure()`
+uses a daemon that is already answering but **never spawns one**: the GUI must
+keep the protected-folder reads in the process that received the TCC grant from
+the native folder picker. CLI and MCP prefer the daemon too. When it is absent:
 
-- the GUI uses its in-process `IndexerManager` (the only writer on Windows);
+- the GUI uses its in-process `IndexerManager` (the only writer on Windows, and
+  the default on macOS);
 - CLI and MCP open the index read-only in-process.
 
 The IPC protocol is newline-delimited JSON-RPC 2.0 over a Unix domain socket or
@@ -54,8 +57,10 @@ polls it, which is how `--toggle` and normal shortcut launches work on every OS.
 ```
 
 Windows note: `DaemonClient::ensure()` returns `false` on non-Unix targets, so a
-Windows install runs everything in the GUI process. The CLI still works and
-opens the index read-only.
+Windows install runs everything in the GUI process. macOS also runs indexing in
+the GUI process unless a daemon is already running, because a separately spawned
+helper has a different TCC identity and can re-trigger folder prompts. The CLI
+still works and opens the index read-only when no daemon is present.
 
 ## 2. On-disk layout
 

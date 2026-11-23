@@ -1334,7 +1334,7 @@ mod tests {
     fn hidden_entries_survive_rescan_until_skip_hidden_is_enabled() {
         let root = temp_dir("hidden-rescan");
         let data = temp_dir("hidden-rescan-store");
-        let hidden = root.join(".notes/note.txt");
+        let hidden = root.join(".notes").join("note.txt");
         let visible = root.join("visible.txt");
         std::fs::create_dir_all(hidden.parent().unwrap()).unwrap();
         std::fs::write(&hidden, "hidden note").unwrap();
@@ -1366,7 +1366,7 @@ mod tests {
         let old = root.join("old");
         let new = root.join(".renamed");
         std::fs::create_dir_all(old.join(".nested")).unwrap();
-        std::fs::write(old.join(".nested/payload.txt"), "fixture").unwrap();
+        std::fs::write(old.join(".nested").join("payload.txt"), "fixture").unwrap();
         let cfg = KensakuConfig {
             watched_dirs: vec![root.clone()],
             skip_hidden: false,
@@ -1380,7 +1380,7 @@ mod tests {
         handle_file_upsert(&old, &metadata, &content_index);
         std::fs::rename(&old, &new).unwrap();
         handle_directory_rename(&old, &new, &cfg, &metadata, &content_index);
-        let expected = new.join(".nested/payload.txt");
+        let expected = new.join(".nested").join("payload.txt");
         let deadline = Instant::now() + Duration::from_secs(5);
         while metadata.read().get(&expected).is_none() && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(10));
