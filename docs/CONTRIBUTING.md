@@ -21,6 +21,22 @@ bun run tauri dev
 
 System prerequisites: [`INSTALL.md`](INSTALL.md#build-prerequisites).
 
+### Local OCR runtime
+
+Release builds bundle ONNX Runtime 1.31.0; a plain `cargo run`/`tauri dev` does
+not. Doctor will warn that PP-OCR and Indra cannot load, which is expected. Stage
+the same library the release uses:
+
+```bash
+make ort
+# then launch with the printed path, e.g.
+ORT_DYLIB_PATH="$PWD/src-tauri/libonnxruntime.so" bun run tauri dev
+```
+
+On Windows: `make ort` or `powershell -File tools/stage-ort.ps1`, then set
+`$env:ORT_DYLIB_PATH` to the printed `src-tauri\onnxruntime.dll`. Do not commit
+the staged library.
+
 ## The checks CI runs
 
 ```bash
@@ -36,6 +52,14 @@ bun run build
 
 All five must pass. The Rust suite has 500+ tests; the frontend has a `vitest`
 suite. Do not add `#[allow]` to silence a lint without a comment explaining why.
+
+CI also runs a compile-only `cargo check --all-targets` on `windows-latest`, so
+Windows-gated code has to build before it reaches the release matrix. It is not a
+substitute for the Linux test and clippy jobs — those remain authoritative.
+
+**First-time contributors:** GitHub holds workflow runs from forks for approval,
+so a new pull request can sit with no checks for a while. That is expected, not
+a broken pipeline — the maintainer approves the run and CI starts.
 
 ## Tests
 

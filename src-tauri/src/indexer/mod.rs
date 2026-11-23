@@ -363,7 +363,11 @@ impl IndexerManager {
         crate::indexer::extract::set_external_extractors(config.extractors.clone());
         crate::indexer::extract::set_path_modes(&config.watched_dirs, &config.name_only_dirs);
         crate::indexer::extract::image::set_ocr_max_image_bytes(config.ocr_max_image_bytes);
-        crate::indexer::extract::set_content_caps(config.content_max_file_size_mb, config.content_max_text_bytes, config.content_csv_head_rows);
+        crate::indexer::extract::set_content_caps(
+            config.content_max_file_size_mb,
+            config.content_max_text_bytes,
+            config.content_csv_head_rows,
+        );
         crate::embed::set_max_semantic_units(config.content_max_semantic_units);
         let index_dir = KensakuConfig::index_dir();
         let content_index = match ContentIndex::new(&index_dir) {
@@ -487,7 +491,11 @@ impl IndexerManager {
         crate::indexer::extract::set_external_extractors(config.extractors.clone());
         crate::indexer::extract::set_path_modes(&config.watched_dirs, &config.name_only_dirs);
         crate::indexer::extract::image::set_ocr_max_image_bytes(config.ocr_max_image_bytes);
-        crate::indexer::extract::set_content_caps(config.content_max_file_size_mb, config.content_max_text_bytes, config.content_csv_head_rows);
+        crate::indexer::extract::set_content_caps(
+            config.content_max_file_size_mb,
+            config.content_max_text_bytes,
+            config.content_csv_head_rows,
+        );
         crate::embed::set_max_semantic_units(config.content_max_semantic_units);
         let index_dir = KensakuConfig::index_dir();
         let content_index = ContentIndex::open_read_only(&index_dir).ok();
@@ -860,8 +868,7 @@ impl IndexerManager {
                     Some(existing) => {
                         if was_pending {
                             pending_files += 1;
-                        } else if existing.modified != entry.modified
-                            || existing.size != entry.size
+                        } else if existing.modified != entry.modified || existing.size != entry.size
                         {
                             restamped_files += 1;
                         }
@@ -1304,7 +1311,10 @@ impl IndexerManager {
                 let keep_trying = metadata
                     .read()
                     .db()
-                    .map(|db| db.record_retry(path, MAX_EXTRACTION_ATTEMPTS).unwrap_or(true))
+                    .map(|db| {
+                        db.record_retry(path, MAX_EXTRACTION_ATTEMPTS)
+                            .unwrap_or(true)
+                    })
                     .unwrap_or(true);
                 if keep_trying {
                     metadata.write().set_content_pending(path);
@@ -1527,7 +1537,8 @@ impl IndexerManager {
 
             crate::say!(
                 "[Kensaku Indexer] Finished initial index: {} files ({} with full text)",
-                files_count, content_count
+                files_count,
+                content_count
             );
 
             // Start file watcher for live changes, replacing any previous one.
@@ -1849,9 +1860,7 @@ impl IndexerManager {
                     // decode budget until embedding has consumed it.
                     let (img, _reserved) =
                         crate::indexer::extract::image::decode_for_recognition(path)
-                            .ok_or_else(|| {
-                                format!("Failed to open image {}", path.display())
-                            })?;
+                            .ok_or_else(|| format!("Failed to open image {}", path.display()))?;
                     encoder.embed_image(&img)
                 } else {
                     return Err(format!(
@@ -2040,7 +2049,10 @@ impl IndexerManager {
                 if entry.is_dir {
                     continue;
                 }
-                match (previous.mode_for(&entry.path), current.mode_for(&entry.path)) {
+                match (
+                    previous.mode_for(&entry.path),
+                    current.mode_for(&entry.path),
+                ) {
                     (IndexMode::NameAndContent, IndexMode::NamesOnly) => {
                         if entry.id > 0 {
                             to_drop_ids.insert(entry.id);
@@ -2112,7 +2124,9 @@ impl IndexerManager {
                         crate::say_err!("[Kensaku OCR] tesseract not found; switched to PP-OCR");
                         *config_arc.write() = config.clone();
                     }
-                    Err(e) => crate::say_err!("[Kensaku OCR] could not save the engine switch: {e}"),
+                    Err(e) => {
+                        crate::say_err!("[Kensaku OCR] could not save the engine switch: {e}")
+                    }
                 }
             }
             if crate::ocr::engine_name() == crate::ocr::ACCURATE && !crate::ocr::pack_present() {
@@ -2194,7 +2208,9 @@ impl IndexerManager {
                                 "[Kensaku] Semantic model changed (units id {existing} -> {expected_model_id}); cleared semantic index for a rebuild"
                             );
                         }
-                        Err(e) => crate::say_err!("[Kensaku] Failed to reset semantic index: {}", e),
+                        Err(e) => {
+                            crate::say_err!("[Kensaku] Failed to reset semantic index: {}", e)
+                        }
                     }
                 }
                 Ok(_) => {}
@@ -2254,7 +2270,11 @@ impl IndexerManager {
         *self.config.write() = config.clone();
         crate::util::priority::set_mode(config.crawl_mode);
         crate::indexer::extract::image::set_ocr_max_image_bytes(config.ocr_max_image_bytes);
-        crate::indexer::extract::set_content_caps(config.content_max_file_size_mb, config.content_max_text_bytes, config.content_csv_head_rows);
+        crate::indexer::extract::set_content_caps(
+            config.content_max_file_size_mb,
+            config.content_max_text_bytes,
+            config.content_csv_head_rows,
+        );
         crate::embed::set_max_semantic_units(config.content_max_semantic_units);
 
         let mut reindex = false;
@@ -2432,7 +2452,10 @@ impl IndexModeState {
         watched.dedup();
         names_only.sort();
         names_only.dedup();
-        Self { watched, names_only }
+        Self {
+            watched,
+            names_only,
+        }
     }
 
     fn mode_for(&self, path: &Path) -> IndexMode {

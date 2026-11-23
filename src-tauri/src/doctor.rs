@@ -53,7 +53,6 @@ impl DoctorAction {
             section: None,
         }
     }
-
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -424,7 +423,10 @@ fn check_storage() -> DoctorCheck {
         parts.push(format!("index {}", format_bytes(info.index_bytes)));
     }
     if info.pack_bytes > 0 {
-        parts.push(format!("downloaded packs {}", format_bytes(info.pack_bytes)));
+        parts.push(format!(
+            "downloaded packs {}",
+            format_bytes(info.pack_bytes)
+        ));
     }
     if info.legacy_backups > 0 {
         parts.push(format!(
@@ -434,7 +436,10 @@ fn check_storage() -> DoctorCheck {
         ));
     }
     if info.update_temp_bytes > 0 {
-        parts.push(format!("staged updates {}", format_bytes(info.update_temp_bytes)));
+        parts.push(format!(
+            "staged updates {}",
+            format_bytes(info.update_temp_bytes)
+        ));
     }
     let detail = parts.join(" · ");
 

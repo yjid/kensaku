@@ -517,7 +517,10 @@ fn tesseract_has_language() -> bool {
         Ok(output) => {
             let err = String::from_utf8_lossy(&output.stderr);
             if !err.trim().is_empty() {
-                eprintln!("[Kensaku OCR] tesseract --list-langs failed: {}", err.trim());
+                eprintln!(
+                    "[Kensaku OCR] tesseract --list-langs failed: {}",
+                    err.trim()
+                );
             }
             false
         }
@@ -641,7 +644,10 @@ fn tesseract_lang_arg() -> Option<String> {
     if chosen.is_empty() {
         // No explicit setting (or none of it is installed): fall back to
         // English when present, then to whatever single language exists.
-        if available.iter().any(|lang| lang.eq_ignore_ascii_case("eng")) {
+        if available
+            .iter()
+            .any(|lang| lang.eq_ignore_ascii_case("eng"))
+        {
             chosen.push("eng".to_string());
         } else if available.len() == 1 {
             chosen.push(available[0].clone());

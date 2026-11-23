@@ -335,8 +335,8 @@ pub fn crop_line(gray: &Gray, b: &LineBox, height: usize, window: usize, dark: b
                 gray.at(x as usize, y as usize);
         }
     }
-    let out_w = ((cw as f64 * height as f64 / ch as f64).round() as usize)
-        .clamp(WIDTH_MULTIPLE, 4096);
+    let out_w =
+        ((cw as f64 * height as f64 / ch as f64).round() as usize).clamp(WIDTH_MULTIPLE, 4096);
     let resized = resize(&crop, out_w, height);
     let ink = resized
         .data
@@ -357,7 +357,12 @@ pub fn crop_line(gray: &Gray, b: &LineBox, height: usize, window: usize, dark: b
 /// the [B, 1, H, W] batch, W, and each crop's width.
 pub fn pad_batch(crops: &[&Crop]) -> (Vec<f32>, usize, Vec<i64>) {
     let h = crops[0].h;
-    let wm = crops.iter().map(|c| c.w).max().unwrap_or(0).div_ceil(WIDTH_MULTIPLE)
+    let wm = crops
+        .iter()
+        .map(|c| c.w)
+        .max()
+        .unwrap_or(0)
+        .div_ceil(WIDTH_MULTIPLE)
         * WIDTH_MULTIPLE;
     let mut out = vec![0f32; crops.len() * h * wm];
     for (k, c) in crops.iter().enumerate() {
@@ -424,7 +429,10 @@ mod tests {
         assert_eq!(resize(&g, 2, 1).data, vec![50, 228]);
         let g = gray(2, 1, &[0, 200]);
         // cv2.resize(INTER_LINEAR) of [0, 200] to width 4: [0, 50, 150, 200]
-        assert_eq!(resize(&g, 4, 2).data, vec![0, 50, 150, 200, 0, 50, 150, 200]);
+        assert_eq!(
+            resize(&g, 4, 2).data,
+            vec![0, 50, 150, 200, 0, 50, 150, 200]
+        );
     }
 
     #[test]
@@ -444,7 +452,10 @@ mod tests {
         assert_eq!(boxes.len(), 1);
         let b = boxes[0];
         // rows 0 and 1 have centres 1 and 3: mean top 2 - 3 = -1, bottom 5.
-        assert!((b.y0 + 1.0).abs() < 1e-5 && (b.y1 - 5.0).abs() < 1e-5, "{b:?}");
+        assert!(
+            (b.y0 + 1.0).abs() < 1e-5 && (b.y1 - 5.0).abs() < 1e-5,
+            "{b:?}"
+        );
         assert!((b.x0 - (2.0 - 0.9)).abs() < 1e-5 && (b.x1 - (6.0 + 0.9)).abs() < 1e-5);
     }
 
@@ -457,7 +468,12 @@ mod tests {
                 g.data[y * 100 + x] = 0;
             }
         }
-        let b = LineBox { x0: 20.0, y0: 15.0, x1: 80.0, y1: 25.0 };
+        let b = LineBox {
+            x0: 20.0,
+            y0: 15.0,
+            x1: 80.0,
+            y1: 25.0,
+        };
         assert!(!is_dark_line(&g, &b));
         let c = crop_line(&g, &b, 32, 1, false);
         assert_eq!(c.h, 32);
@@ -469,7 +485,10 @@ mod tests {
         let tall = crop_line(&g, &b, 32, 3, false);
         assert_eq!((tall.h, tall.w), (96, c.w));
 
-        let inverted = Gray { data: g.data.iter().map(|v| 255 - v).collect(), ..g };
+        let inverted = Gray {
+            data: g.data.iter().map(|v| 255 - v).collect(),
+            ..g
+        };
         assert!(is_dark_line(&inverted, &b));
     }
 
@@ -478,8 +497,16 @@ mod tests {
         let batches = width_batches(&[100, 300, 110, 120, 40]);
         assert_eq!(batches, vec![vec![4], vec![0, 2, 3], vec![1]]);
         let (arr, wm, widths) = pad_batch(&[
-            &Crop { h: 1, w: 3, ink: vec![1.0; 3] },
-            &Crop { h: 1, w: 9, ink: vec![1.0; 9] },
+            &Crop {
+                h: 1,
+                w: 3,
+                ink: vec![1.0; 3],
+            },
+            &Crop {
+                h: 1,
+                w: 9,
+                ink: vec![1.0; 9],
+            },
         ]);
         assert_eq!((wm, widths), (16, vec![3, 9]));
         assert_eq!(arr.iter().filter(|&&v| v == 1.0).count(), 12);

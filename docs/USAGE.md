@@ -1,6 +1,6 @@
 # Usage
 
-> This page documents **shipped behavior** in 1.0.16: plain-language intent, `/`
+> This page documents **shipped behavior** in 1.0.18: plain-language intent, `/`
 > commands, `@` scopes, facet counts, window modes, and settings. The visual
 > Beta only downloads a model pack; it is not part of search yet.
 
@@ -181,7 +181,9 @@ Results are deterministic: score, then path.
   max results, start at login, window mode, and **Keep running when closed**.
   The shortcut field records a combo when you click it and press the keys
   (Esc cancels).
-- **Folders** — watched roots, add/remove, drag-and-drop.
+- **Folders** — watched roots, add/remove, drag-and-drop, and a **Names only**
+  switch per folder: files below it stay searchable by name and path but are
+  never read, OCR'd or embedded.
 - **Exclusions** — presets (Developer, Creative, All-round), directories,
   extensions.
 - **Search** — thumbnails, grid/list layout, semantic toggle, OCR engine and

@@ -1,0 +1,104 @@
+name: Fetch ONNX Runtime
+description: Extract the pinned ONNX Runtime 1.31.0 library from the published v1.0.18 bundles and verify the bundle's SHA-256.
+
+# Upstream removed the standalone ONNX Runtime 1.31.0 archives from
+# microsoft/onnxruntime, which broke OCR CI and release builds. Do not publish
+# a mirror on this repository's releases page: the runtime is already inside
+# the v1.0.18 bundles we shipped. This action extracts it from those assets and
+# pins each bundle by the checksum in v1.0.18's SHA256SUMS.
+#
+# Bump `bundle_version` and the hashes below when a later release bundles a
+# newer runtime. Reusing a shipped release keeps the Releases page limited to
+# Kensaku releases.
+
+inputs:
+  platform:
+    description: One of win-x64, win-arm64, linux-x64, osx-arm64
+    required: true
+  dest:
+    description: Directory to extract into; the library lands under onnxruntime-<platform>-1.31.0/lib
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Extract from the Linux .deb
+      if: inputs.platform == 'linux-x64'
+      shell: bash
+      env:
+        PLATFORM: ${{ inputs.platform }}
+        DEST: ${{ inputs.dest }}
+      run: |
+        set -euo pipefail
+        base="https://github.com/yjid/kensaku/releases/download/v1.0.18"
+        deb="$RUNNER_TEMP/kensaku_1.0.18_amd64.deb"
+        curl -fsSL --retry 3 -o "$deb" "$base/kensaku_1.0.18_amd64.deb"
+        echo "2ea9437340abde54e690208b3152f91be0f98a3fc9561352a61c6e42ed03b09b  $deb" | sha256sum -c -
+        root="$DEST/onnxruntime-$PLATFORM-1.31.0"
+        mkdir -p "$root/lib"
+        dpkg-deb -x "$deb" "$RUNNER_TEMP/kensaku-deb"
+        cp "$RUNNER_TEMP/kensaku-deb/usr/lib/kensaku/libonnxruntime.so" \
+          "$root/lib/libonnxruntime.so.1.31.0"
+        test -s "$root/lib/libonnxruntime.so.1.31.0"
+
+    - name: Extract from the macOS .dmg
+      if: inputs.platform == 'osx-arm64'
+      shell: bash
+      env:
+        PLATFORM: ${{ inputs.platform }}
+        DEST: ${{ inputs.dest }}
+      run: |
+        set -euo pipefail
+        base="https://github.com/yjid/kensaku/releases/download/v1.0.18"
+        dmg="$RUNNER_TEMP/kensaku_1.0.18_universal.dmg"
+        curl -fsSL --retry 3 -o "$dmg" "$base/kensaku_1.0.18_universal.dmg"
+        echo "1985891ec5884ea2e3448e506bd6f240b083c67c7a957f26cba6eb8f60f72c28  $dmg" | shasum -a 256 -c -
+        # hdiutil refuses to attach this image on the hosted runner
+        # ("attach canceled"), so unpack the dmg with 7-Zip instead.
+        seven="$RUNNER_TEMP/7z"
+        mkdir -p "$seven"
+        curl -fsSL --retry 3 -o "$RUNNER_TEMP/7z.tar.xz" \
+          "https://www.7-zip.org/a/7z2501-mac.tar.xz"
+        tar -xf "$RUNNER_TEMP/7z.tar.xz" -C "$seven"
+        "$seven/7zz" x -y -o"$RUNNER_TEMP/kensaku-dmg" "$dmg" >/dev/null
+        dylib="$(find "$RUNNER_TEMP/kensaku-dmg" -name libonnxruntime.dylib -print -quit)"
+        if [ -z "$dylib" ]; then
+          find "$RUNNER_TEMP/kensaku-dmg" -maxdepth 6 -type f | head -50
+          echo "libonnxruntime.dylib was not found in the 1.0.18 dmg" >&2
+          exit 1
+        fi
+        root="$DEST/onnxruntime-$PLATFORM-1.31.0"
+        mkdir -p "$root/lib"
+        cp "$dylib" "$root/lib/libonnxruntime.1.31.0.dylib"
+        test -s "$root/lib/libonnxruntime.1.31.0.dylib"
+
+    - name: Extract from the Windows portable zip
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        PLATFORM: ${{ inputs.platform }}
+        DEST: ${{ inputs.dest }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        New-Item -ItemType Directory -Force -Path $env:DEST | Out-Null
+        $base = "https://github.com/yjid/kensaku/releases/download/v1.0.18"
+        $pins = @{
+          'win-x64'   = @{ name = 'kensaku-portable-1.0.18-x64.zip';   sha256 = 'b645c688056e5a8ac154d4d66e38bb4222811535699317a4798a3ab195f5496d' }
+          'win-arm64' = @{ name = 'kensaku-portable-1.0.18-arm64.zip'; sha256 = '1360a8b84f8d83e79d2be92374e59a0e0b300ae8a693c83aa9b7184066fde331' }
+        }
+        $pin = $pins[$env:PLATFORM]
+        if (-not $pin) { throw "unsupported Windows platform: $env:PLATFORM" }
+        $zip = Join-Path $env:DEST $pin.name
+        Invoke-WebRequest -Uri "$base/$($pin.name)" -OutFile $zip -UseBasicParsing
+        $actual = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+        if ($actual -ne $pin.sha256) {
+          throw "Kensaku bundle checksum mismatch: expected $($pin.sha256), got $actual"
+        }
+        $unpacked = Join-Path $env:DEST 'kensaku-portable'
+        Expand-Archive -Path $zip -DestinationPath $unpacked -Force
+        $root = Join-Path $env:DEST "onnxruntime-$env:PLATFORM-1.31.0"
+        New-Item -ItemType Directory -Force (Join-Path $root 'lib') | Out-Null
+        Copy-Item (Join-Path $unpacked 'onnxruntime.dll') (Join-Path $root 'lib\onnxruntime.dll')
+        if (-not (Test-Path (Join-Path $root 'lib\onnxruntime.dll'))) {
+          throw 'onnxruntime.dll was not extracted from the 1.0.18 portable bundle'
+        }

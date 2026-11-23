@@ -4,8 +4,8 @@ pub mod external;
 pub mod image;
 pub mod markdown;
 pub mod office;
-pub mod pdf;
 pub mod parquet;
+pub mod pdf;
 pub mod pdf_image;
 pub mod text;
 
@@ -15,8 +15,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
-use std::sync::{Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 /// Process-wide OCR setting, mirroring [`crate::config::KensakuConfig::ocr_enabled`].
@@ -73,8 +73,10 @@ struct ModeRules {
     names_only: Vec<String>,
 }
 
-static MODE_RULES: std::sync::RwLock<ModeRules> =
-    std::sync::RwLock::new(ModeRules { watched: Vec::new(), names_only: Vec::new() });
+static MODE_RULES: std::sync::RwLock<ModeRules> = std::sync::RwLock::new(ModeRules {
+    watched: Vec::new(),
+    names_only: Vec::new(),
+});
 
 /// Canonical comparison key for a rule path: no trailing separator, forward
 /// slashes everywhere, and case-insensitive on Windows like the filesystem.
@@ -92,7 +94,10 @@ pub fn rule_key(path: &Path) -> String {
 /// True when `rule` is `path` itself or one of its ancestor directories.
 /// The separator check keeps `/media-notes` out of `/media`.
 fn rule_covers(rule: &str, path: &str) -> bool {
-    path == rule || path.strip_prefix(rule).is_some_and(|rest| rest.starts_with('/'))
+    path == rule
+        || path
+            .strip_prefix(rule)
+            .is_some_and(|rest| rest.starts_with('/'))
 }
 
 /// Resolves the effective mode from an explicit rule set. The deepest (most
@@ -123,8 +128,7 @@ pub fn mode_from_rules(watched: &[String], names_only: &[String], path: &Path) -
             best = Some((rule.len(), IndexMode::NamesOnly));
         }
     }
-    best
-        .map(|(_, mode)| mode)
+    best.map(|(_, mode)| mode)
         .unwrap_or(IndexMode::NameAndContent)
 }
 
@@ -440,7 +444,9 @@ const SLOT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 /// Number of concurrent extractions (and therefore concurrent OCR processes).
 pub(crate) fn extraction_concurrency() -> usize {
     extraction_concurrency_for(
-        std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4),
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4),
     )
 }
 
@@ -627,7 +633,11 @@ fn extract_document_tracked(
     let head_sampled = path
         .extension()
         .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ["csv", "tsv", "parquet"].iter().any(|s| ext.eq_ignore_ascii_case(s)));
+        .is_some_and(|ext| {
+            ["csv", "tsv", "parquet"]
+                .iter()
+                .any(|s| ext.eq_ignore_ascii_case(s))
+        });
     if file_size > content_max_file_size_bytes() && !head_sampled {
         return None;
     }
@@ -934,10 +944,7 @@ fn extract_document_inner(
                 };
 
                 let mut tail_bytes = vec![0u8; half];
-                let n_tail = if f
-                    .seek(std::io::SeekFrom::End(-(half as i64)))
-                    .is_ok()
-                {
+                let n_tail = if f.seek(std::io::SeekFrom::End(-(half as i64))).is_ok() {
                     f.read(&mut tail_bytes).unwrap_or(0)
                 } else {
                     0
@@ -954,10 +961,7 @@ fn extract_document_inner(
 
                 let head_str = String::from_utf8_lossy(&head_bytes[..head_end]);
                 let tail_str = String::from_utf8_lossy(&tail_bytes[tail_start..]);
-                let combined = format!(
-                    "{}\n\n... [content omitted] ...\n\n{}",
-                    head_str, tail_str
-                );
+                let combined = format!("{}\n\n... [content omitted] ...\n\n{}", head_str, tail_str);
 
                 let combined = if markdown::is_markdown(path) {
                     // Keep the existing sampling policy; do not carry fence state
@@ -1242,11 +1246,19 @@ mod mode_tests {
     #[test]
     fn nested_watched_root_overrides_names_only_parent() {
         assert_eq!(
-            mode(&["/media", "/media/work"], &["/media"], "/media/work/report.pdf"),
+            mode(
+                &["/media", "/media/work"],
+                &["/media"],
+                "/media/work/report.pdf"
+            ),
             IndexMode::NameAndContent
         );
         assert_eq!(
-            mode(&["/media", "/media/work"], &["/media"], "/media/other/report.pdf"),
+            mode(
+                &["/media", "/media/work"],
+                &["/media"],
+                "/media/other/report.pdf"
+            ),
             IndexMode::NamesOnly
         );
         assert_eq!(
@@ -1277,9 +1289,15 @@ mod mode_tests {
 
     #[test]
     fn trailing_separators_and_legacy_names_only_rules() {
-        assert_eq!(rule_key(Path::new("/media/")), rule_key(Path::new("/media")));
+        assert_eq!(
+            rule_key(Path::new("/media/")),
+            rule_key(Path::new("/media"))
+        );
         assert_eq!(mode(&[], &["/media"], "/media/a.pdf"), IndexMode::NamesOnly);
-        assert_eq!(mode(&[], &["/media"], "/other/a.pdf"), IndexMode::NameAndContent);
+        assert_eq!(
+            mode(&[], &["/media"], "/other/a.pdf"),
+            IndexMode::NameAndContent
+        );
     }
 
     #[test]

@@ -91,7 +91,8 @@ pub fn compose_hangul(text: &str) -> String {
         let code = c as u32;
         if let Some(&last) = out.last() {
             let prev = last as u32;
-            if (L_BASE..L_BASE + L_COUNT).contains(&prev) && (V_BASE..V_BASE + V_COUNT).contains(&code)
+            if (L_BASE..L_BASE + L_COUNT).contains(&prev)
+                && (V_BASE..V_BASE + V_COUNT).contains(&code)
             {
                 let s = S_BASE + ((prev - L_BASE) * V_COUNT + (code - V_BASE)) * T_COUNT;
                 *out.last_mut().unwrap() = char::from_u32(s).unwrap_or(last);
@@ -202,7 +203,10 @@ pub fn flip(text: &str, base_rtl: bool) -> String {
         // the units reverse.
         let mut units: Vec<String> = Vec::new();
         let mut i = 0;
-        for (a, b) in runs('L', 'R').into_iter().chain([(clusters.len(), clusters.len())]) {
+        for (a, b) in runs('L', 'R')
+            .into_iter()
+            .chain([(clusters.len(), clusters.len())])
+        {
             units.extend(clusters[i..a].iter().map(|c| mirror(c)));
             if a < b {
                 units.push(clusters[a..b].concat());
@@ -264,7 +268,10 @@ mod tests {
     #[test]
     fn hangul_jamo_compose_into_syllables() {
         // ᄒ ᅡ ᆫ ᄀ ᅳ ᆯ -> 한글
-        assert_eq!(compose_hangul("\u{1112}\u{1161}\u{11AB}\u{1100}\u{1173}\u{11AF}"), "한글");
+        assert_eq!(
+            compose_hangul("\u{1112}\u{1161}\u{11AB}\u{1100}\u{1173}\u{11AF}"),
+            "한글"
+        );
         assert_eq!(compose_hangul("abc"), "abc");
     }
 

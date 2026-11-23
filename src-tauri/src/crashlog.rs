@@ -390,7 +390,9 @@ mod tests {
         assert!(super::is_broken_pipe(
             "failed printing to stderr: The pipe is being closed. (os error 232)"
         ));
-        assert!(super::is_broken_pipe("failed printing to stdout: Broken pipe (os error 32)"));
+        assert!(super::is_broken_pipe(
+            "failed printing to stdout: Broken pipe (os error 32)"
+        ));
         assert!(!super::is_broken_pipe("index out of bounds: the len is 3"));
     }
 
@@ -400,7 +402,10 @@ mod tests {
 
         // Two healthy startups, exactly the shape that made the doctor warn
         // on a clean install.
-        append_line(&log, "[1793822770] INFO starting kensaku 1.0.15 (windows x86_64)\n");
+        append_line(
+            &log,
+            "[1793822770] INFO starting kensaku 1.0.15 (windows x86_64)\n",
+        );
         append_line(
             &log,
             "[1793822771] INFO config loaded: setup_complete=false app_mode=launcher\n",

@@ -162,8 +162,7 @@ impl ModelRegistry {
                     Ok(registry) => registry,
                     Err(reason) => {
                         let mut reg = Self::new_static();
-                        reg.fallback_reason =
-                            Some(format!("{reason}; using the hashing fallback"));
+                        reg.fallback_reason = Some(format!("{reason}; using the hashing fallback"));
                         reg
                     }
                 }

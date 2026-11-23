@@ -338,7 +338,6 @@ fn run_serve(args: &[String]) -> i32 {
     }
 }
 
-
 fn open_index() -> Result<HeadlessIndex, i32> {
     match HeadlessIndex::open() {
         Ok(index) => Ok(index),

@@ -61,7 +61,10 @@ pub enum Kind {
 
 /// Classifies a file by extension. `None` means it has no preview.
 pub fn kind_for(filename: &str) -> Option<Kind> {
-    let ext = filename.rsplit('.').next().filter(|_| filename.contains('.'))?;
+    let ext = filename
+        .rsplit('.')
+        .next()
+        .filter(|_| filename.contains('.'))?;
     match ext.to_ascii_lowercase().as_str() {
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "tiff" | "tif" => Some(Kind::Image),
         "pdf" => Some(Kind::Pdf),
@@ -91,7 +94,6 @@ fn target_for(source: &Path, out_dir: &Path) -> PathBuf {
     let hash = fnv1a(source.to_string_lossy().as_bytes());
     out_dir.join(format!("{:016x}-preview.jpg", hash))
 }
-
 
 fn is_fresh(target: &Path, source: &Path) -> bool {
     match (std::fs::metadata(target), std::fs::metadata(source)) {
@@ -141,7 +143,9 @@ fn render_external(source: &Path, out_dir: &Path, kind: Kind) -> Result<PathBuf,
                         cmd.arg("-");
                         Some(bytes)
                     }
-                    Err(_) => return Err(format!("could not read source PDF: {}", source.display())),
+                    Err(_) => {
+                        return Err(format!("could not read source PDF: {}", source.display()));
+                    }
                 }
             } else {
                 cmd.arg(source);
@@ -157,10 +161,13 @@ fn render_external(source: &Path, out_dir: &Path, kind: Kind) -> Result<PathBuf,
         image::open(&raw)
             .map_err(|e| format!("could not read rendered frame: {}", e))
             .and_then(|img| {
-                img.thumbnail(crate::indexer::extract::image::THUMB_SIZE, crate::indexer::extract::image::THUMB_SIZE)
-                    .to_rgb8()
-                    .save_with_format(&target, image::ImageFormat::Jpeg)
-                    .map_err(|e| format!("could not write preview: {}", e))
+                img.thumbnail(
+                    crate::indexer::extract::image::THUMB_SIZE,
+                    crate::indexer::extract::image::THUMB_SIZE,
+                )
+                .to_rgb8()
+                .save_with_format(&target, image::ImageFormat::Jpeg)
+                .map_err(|e| format!("could not write preview: {}", e))
             })
             .map(|_| target.clone())
     } else {
@@ -216,9 +223,7 @@ fn find_tool(name: &str) -> Option<PathBuf> {
     for extra in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"] {
         dirs.push(PathBuf::from(extra));
     }
-    dirs.into_iter()
-        .map(|d| d.join(name))
-        .find(|p| p.is_file())
+    dirs.into_iter().map(|d| d.join(name)).find(|p| p.is_file())
 }
 
 fn fnv1a(bytes: &[u8]) -> u64 {

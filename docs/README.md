@@ -12,6 +12,7 @@ These pages go deeper.
 | [CONFIG.md](CONFIG.md) | Every `config.json` key with its real default, data-directory overrides, migrations. |
 | [LANGUAGES.md](LANGUAGES.md) | CJK tokenization, code/data formats, document formats, OCR language support. |
 | [FAQ.md](FAQ.md) | Privacy, memory, OCR, updates, agents, and common "why no results?" questions. |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | The prompts and first-launch problems that come up most often, with the fix for each. |
 | [PRIVACY.md](PRIVACY.md) | What stays local, what leaves the machine, and what the MCP server can read. |
 
 ## For agents and integrations
@@ -32,7 +33,7 @@ These pages go deeper.
 
 ## Conventions in these docs
 
-- **Shipped** means the code in the current `1.0.16` tree does it.
+- **Shipped** means the code in the current `1.0.18` tree does it.
 - **Reference** numbers are measured on the stated machine and corpus. They are
   not guarantees; see [BENCHMARKS.md](BENCHMARKS.md) for the caveats.
 - **Not shipped** is called out explicitly. Visual search, native OCR, and

@@ -1,0 +1,55 @@
+name: CodeQL (scheduled)
+
+# Daily security analysis. PRs do not pay for CodeQL: the Rust analysis alone
+# takes ~15-20 minutes on a hosted runner. This replaces GitHub's default
+# setup, which ran on every PR and push.
+on:
+  schedule:
+    # 03:23 UTC daily.
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+            os: ubuntu-24.04
+          - language: javascript-typescript
+            build-mode: none
+            os: ubuntu-24.04
+          - language: python
+            build-mode: none
+            os: ubuntu-24.04
+          # Rust's extractor only supports build-mode none; it parses the
+          # crate directly, so no toolchain or frontend build is needed.
+          - language: rust
+            build-mode: none
+            os: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"

@@ -145,11 +145,11 @@ pub fn cleanup_stale_artifacts() -> CleanupReport {
                     report.legacy_backups_removed += 1;
                     report.bytes_reclaimed += bytes;
                 }
-                Err(error) => report.errors.push(format!(
-                    "could not remove {}: {}",
-                    dir.display(),
-                    error
-                )),
+                Err(error) => {
+                    report
+                        .errors
+                        .push(format!("could not remove {}: {}", dir.display(), error))
+                }
             }
         }
     }
@@ -162,11 +162,11 @@ pub fn cleanup_stale_artifacts() -> CleanupReport {
                 report.update_temp_cleared = true;
                 report.bytes_reclaimed += before;
             }
-            Err(error) => report.errors.push(format!(
-                "could not clear {}: {}",
-                temp.display(),
-                error
-            )),
+            Err(error) => {
+                report
+                    .errors
+                    .push(format!("could not clear {}: {}", temp.display(), error))
+            }
         }
     }
 
@@ -299,9 +299,15 @@ mod tests {
         apply_reset(&dir, ResetScope::default()).unwrap();
 
         assert!(!dir.join("index").exists(), "index should be cleared");
-        assert!(!dir.join("config.json").exists(), "config should be cleared");
+        assert!(
+            !dir.join("config.json").exists(),
+            "config should be cleared"
+        );
         assert!(dir.join("models").exists(), "model packs are not user data");
-        assert!(dir.join("ocr-indra").exists(), "OCR packs are not user data");
+        assert!(
+            dir.join("ocr-indra").exists(),
+            "OCR packs are not user data"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -312,13 +318,7 @@ mod tests {
         std::fs::create_dir_all(dir.join("models")).unwrap();
         std::fs::write(dir.join("models/embed.onnx"), b"y").unwrap();
 
-        apply_reset(
-            &dir,
-            ResetScope {
-                remove_packs: true,
-            },
-        )
-        .unwrap();
+        apply_reset(&dir, ResetScope { remove_packs: true }).unwrap();
 
         assert!(!dir.join("models").exists());
         let _ = std::fs::remove_dir_all(&dir);

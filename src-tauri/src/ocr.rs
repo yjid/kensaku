@@ -355,8 +355,7 @@ pub fn extract_image_ocr(path: &Path) -> OcrOutcome {
         };
         // Budgeted: the decoded page is charged against the decode budget for
         // as long as recognition holds it.
-        let Some((image, _reserved)) =
-            crate::indexer::extract::image::decode_for_recognition(path)
+        let Some((image, _reserved)) = crate::indexer::extract::image::decode_for_recognition(path)
         else {
             return OcrOutcome::NoText;
         };

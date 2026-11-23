@@ -11,9 +11,18 @@ git checkout master && git pull
 # bump the version in package.json, src-tauri/Cargo.toml, src-tauri/tauri.conf.json
 # and src-tauri/Cargo.lock; bump cli/Cargo.toml + cli/Cargo.lock when the CLI changes
 # update CHANGELOG.md
+
+# The CLI is a separate workspace with its own lockfile. A version bump in the
+# library it depends on leaves cli/Cargo.lock stale, and `cargo --locked` then
+# fails on a clean checkout. Refresh it and verify:
+cargo metadata --format-version 1 --manifest-path cli/Cargo.toml > /dev/null
+cargo metadata --locked --format-version 1 --manifest-path cli/Cargo.toml > /dev/null
+cargo metadata --locked --format-version 1 --manifest-path src-tauri/Cargo.toml > /dev/null
+
 bun install
-cargo test --all-targets --manifest-path src-tauri/Cargo.toml
-cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
+cargo test --locked --all-targets --manifest-path src-tauri/Cargo.toml
+cargo clippy --locked --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
+cargo test --locked --manifest-path cli/Cargo.toml
 npx tsc --noEmit && bun run test && bun run build
 git add -A && git commit -m "chore(release): vX.Y.Z"
 git push origin master
@@ -36,7 +45,19 @@ gh run watch   # or: gh run list --workflow=release.yml
 | `kensaku-windows` | `.msi`, NSIS `.exe`, portable `.zip` (x64 + ARM64) |
 | `kensaku-cli-{linux,macos,windows}` | `kensaku-cli` binary (including Windows ARM64) |
 
-Builds are **unsigned**. See `INSTALL.md` for the user-facing consequences.
+Builds are **Authenticode-signed on Windows** through SignPath Foundation; the
+workflow fails instead of shipping an unsigned Windows installer. macOS builds
+are still unsigned. See `SIGNING.md`.
+
+### ONNX Runtime
+
+Release builds bundle the ONNX Runtime 1.31.0 shared library. Upstream removed
+the standalone 1.31.0 archives from `microsoft/onnxruntime`, so
+`.github/actions/fetch-ort` extracts the library from the **v1.0.18 release
+bundles** (portable zips, `.deb`, `.dmg`) and verifies each bundle against the
+SHA-256 from that release's `SHA256SUMS`. The pin is in the action; bump it when
+a later release bundles a newer runtime. Do not publish a separate vendor
+release: the Releases page is for Kensaku releases only.
 
 ## 3. Review and publish the draft
 
@@ -88,10 +109,13 @@ gh release create vX.Y.Z --title "Kensaku vX.Y.Z" --notes-file /tmp/release-note
 - Download one bundle, verify its checksum, install it, and launch.
 - Check `kensaku-cli state --json` on a machine with an index.
 
-## Signing / notarization (not yet)
+## Signing / notarization
 
-Add the secrets and env vars described in the comment block in
-`release.yml`, then re-run the bundle job. macOS notarization needs
-`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
-`APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`. Windows needs
-`WINDOWS_CERTIFICATE` + password (or a `signtool` step).
+Windows Authenticode signing is configured in `release.yml` and uses SignPath
+Foundation; see `SIGNING.md` for the repository variables and the single API
+token secret. A tag build fails if they are missing or if the returned signature
+does not verify.
+
+macOS notarization is not configured yet. It needs `APPLE_CERTIFICATE`,
+`APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
+`APPLE_PASSWORD`, and `APPLE_TEAM_ID`. Until then macOS builds are unsigned.

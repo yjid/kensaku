@@ -147,14 +147,15 @@ pub fn self_test() -> Result<(), String> {
                     Some(Ok(result)) => {
                         let normalized =
                             result.text.split_whitespace().collect::<Vec<_>>().join(" ");
-                        if normalized.to_lowercase().contains(crate::ocr::SELF_TEST_EXPECTED) {
+                        if normalized
+                            .to_lowercase()
+                            .contains(crate::ocr::SELF_TEST_EXPECTED)
+                        {
                             Ok(())
                         } else if result.detected == 0 {
-                            Err(
-                                "Indra detected no text lines in its self-test image; \
+                            Err("Indra detected no text lines in its self-test image; \
                                  the model pack may be wrong or incomplete (re-download it)"
-                                    .into(),
-                            )
+                                .into())
                         } else if result.read == 0 {
                             Err(format!(
                                 "Indra detected {} lines but recognised none of them in its \
@@ -255,7 +256,10 @@ mod tests {
 
     #[test]
     fn pack_lives_in_its_own_folder() {
-        assert!(pack_dir().ends_with("ocr-indra") || std::env::var_os("KENSAKU_INDRA_PACK_DIR").is_some());
+        assert!(
+            pack_dir().ends_with("ocr-indra")
+                || std::env::var_os("KENSAKU_INDRA_PACK_DIR").is_some()
+        );
         assert!(PACK_FILES.contains(&"meta.json"));
     }
 

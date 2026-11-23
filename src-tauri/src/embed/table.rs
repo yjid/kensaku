@@ -128,13 +128,13 @@ impl StaticTable {
         let (embeddings, embeddings_i8, embedding_scales): (Vec<f32>, Vec<i8>, Vec<f32>) =
             if use_f32 {
                 (embeddings, Vec::new(), Vec::new())
-        } else {
-            // Quantize first, then drop the f32 matrix before returning so the
-            // startup peak does not retain both representations.
-            let (quantized, scales) = quantize(&embeddings, dim);
-            drop(embeddings);
-            (Vec::new(), quantized, scales)
-        };
+            } else {
+                // Quantize first, then drop the f32 matrix before returning so the
+                // startup peak does not retain both representations.
+                let (quantized, scales) = quantize(&embeddings, dim);
+                drop(embeddings);
+                (Vec::new(), quantized, scales)
+            };
 
         Ok(Self {
             embeddings,

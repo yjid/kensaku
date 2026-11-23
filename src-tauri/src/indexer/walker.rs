@@ -161,6 +161,75 @@ pub fn system_data_dirs() -> Vec<PathBuf> {
     }
 }
 
+/// True when `path` is the root of a volume: `C:\`, `D:\`, or the root of a
+/// UNC share. A whole-drive scan needs the system-tree policy below; a normal
+/// folder (`C:\Users\me\Documents`) does not.
+#[cfg(windows)]
+pub fn is_volume_root(path: &std::path::Path) -> bool {
+    use std::path::Component;
+    let mut components = path.components();
+    matches!(components.next(), Some(Component::Prefix(_)))
+        && matches!(components.next(), Some(Component::RootDir))
+        && components.next().is_none()
+}
+
+#[cfg(not(windows))]
+pub fn is_volume_root(_path: &std::path::Path) -> bool {
+    false
+}
+
+/// Windows system trees that must not be walked when a whole volume is added.
+///
+/// Without this, `C:\` walks WinSxS, every profile's AppData, the recycle bin,
+/// and the recovery/reparse trees. An explicit root inside one of these keeps
+/// it indexable (the same "someone asked for it" rule as `~/Library`).
+pub fn volume_root_prunes(roots: &[PathBuf]) -> Vec<PathBuf> {
+    #[cfg(not(windows))]
+    {
+        let _ = roots;
+        Vec::new()
+    }
+
+    #[cfg(windows)]
+    {
+        let explicitly_wanted = |dir: &std::path::Path| {
+            roots
+                .iter()
+                .any(|root| root.as_path() != dir && root.starts_with(dir))
+        };
+        let mut prunes = Vec::new();
+        for root in roots.iter().filter(|root| is_volume_root(root)) {
+            for name in [
+                "Windows",
+                "Program Files",
+                "Program Files (x86)",
+                "ProgramData",
+                "$Recycle.Bin",
+                "System Volume Information",
+                "Recovery",
+                "PerfLogs",
+                "$WinREAgent",
+            ] {
+                let dir = root.join(name);
+                if !explicitly_wanted(&dir) {
+                    prunes.push(dir);
+                }
+            }
+            // Other users' profiles are under Users, but their AppData is the
+            // same cache/log swamp as the current profile's.
+            if let Ok(entries) = std::fs::read_dir(root.join("Users")) {
+                for entry in entries.flatten() {
+                    let appdata = entry.path().join("AppData");
+                    if appdata.is_dir() && !explicitly_wanted(&appdata) {
+                        prunes.push(appdata);
+                    }
+                }
+            }
+        }
+        prunes
+    }
+}
+
 /// Everything a walk or watch over `roots` must not enter: Kensaku's own
 /// data always, plus the OS data trees, except one that a root lives inside.
 /// Someone who adds iCloud Drive (`~/Library/Mobile Documents/...`) on
@@ -172,11 +241,14 @@ pub fn prunes_for_roots(roots: &[PathBuf]) -> Vec<PathBuf> {
 
 fn prunes_for_roots_with(roots: &[PathBuf], system: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut prunes = runtime_dir_prunes();
+    prunes.extend(volume_root_prunes(roots));
     for dir in system {
         if !roots.iter().any(|root| root.starts_with(&dir)) {
             prunes.push(dir);
         }
     }
+    prunes.sort();
+    prunes.dedup();
     prunes
 }
 
@@ -596,6 +668,43 @@ mod tests {
         let icloud = library.join("Mobile Documents/com~apple~CloudDocs");
         let prunes = prunes_for_roots_with(&[home.clone(), icloud.clone()], vec![library.clone()]);
         assert!(!starts_with_any(&icloud.join("notes.txt"), &prunes));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn volume_roots_skip_windows_system_trees() {
+        let root = PathBuf::from(r"C:\");
+        assert!(is_volume_root(&root));
+        assert!(is_volume_root(&PathBuf::from(r"\\server\share\")));
+        assert!(!is_volume_root(&PathBuf::from(r"C:\Users")));
+
+        let prunes = volume_root_prunes(std::slice::from_ref(&root));
+        for dir in [
+            r"C:\Windows",
+            r"C:\Program Files",
+            r"C:\ProgramData",
+            r"C:\$Recycle.Bin",
+            r"C:\System Volume Information",
+        ] {
+            assert!(
+                starts_with_any(std::path::Path::new(dir), &prunes),
+                "{dir} should be pruned"
+            );
+        }
+        assert!(!starts_with_any(
+            std::path::Path::new(r"C:\Users\me\Documents\a.txt"),
+            &prunes
+        ));
+
+        // An explicit root inside a system tree disables the prune for that
+        // whole tree, because the walker only supports prefix prunes. The
+        // explicit folder therefore stays reachable.
+        let explicit = PathBuf::from(r"C:\Windows\Fonts");
+        let prunes = volume_root_prunes(&[root, explicit]);
+        assert!(!starts_with_any(
+            std::path::Path::new(r"C:\Windows\Fonts\arial.ttf"),
+            &prunes
+        ));
     }
 
     #[test]

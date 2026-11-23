@@ -81,9 +81,13 @@ should still be added to exclusions.
 
 ## Release integrity
 
-Current release builds are **unsigned** (see `docs/INSTALL.md`). Verify downloads
-against `SHA256SUMS` attached to the GitHub release. In-app updates compare the
-download with the expected size and verify it against the release checksums
-before running the installer; portable installs are told to replace the folder
-instead of installing a second copy. Signing and notarization are tracked in the
-project issue tracker.
+Windows release builds are Authenticode-signed through SignPath Foundation; the
+release workflow fails rather than ship an unsigned Windows installer. macOS
+builds are not signed or notarized yet, and Intel Macs have no bundled ONNX
+Runtime (PP-OCR falls back to Tesseract there).
+
+Verify downloads against `SHA256SUMS` attached to the GitHub release. In-app
+updates compare the download with the expected size and verify it against the
+release checksums before running the installer; portable installs are told to
+replace the folder instead of installing a second copy. macOS signing and
+notarization are tracked in the project issue tracker.
