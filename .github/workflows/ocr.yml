@@ -15,15 +15,20 @@ on:
       - "src-tauri/src/indexer/extract/**"
       - "src-tauri/src/indexer/mod.rs"
       - "src-tauri/Cargo.toml"
-      - "src-tauri/Cargo.lock"
       - "src-tauri/tests/fixtures/ocr-ui-text/**"
       - ".github/workflows/ocr.yml"
+      # Cargo.lock is intentionally not listed: Dependabot bumps every week and
+      # each run costs three 35-minute Rust builds. OCR-relevant dependency
+      # changes still touch Cargo.toml.
   push:
     # Post-merge verification: the real-model jobs are the only place a
     # platform-specific OCR failure (like #174 on Fedora) can show up.
     branches: ["master"]
     tags: ["v*"]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ocr-${{ github.ref }}
@@ -42,15 +47,15 @@ jobs:
         include:
           - os: ubuntu-22.04
             ort: onnxruntime-linux-x64-1.31.0.tgz
-            ort_sha256: cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57
+            ort_sha256: cad93c74393531803fdf826eb8f97dd43e4d085ec6f16c3ac1e45ce2fbb26a32
             lib: lib/libonnxruntime.so.1.31.0
           - os: macos-latest
             ort: onnxruntime-osx-arm64-1.31.0.tgz
-            ort_sha256: 1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc
+            ort_sha256: d93de196a2f9f1ec3c36442c84eb03e04874b0fc013a127a5ff0e302996ba4c8
             lib: lib/libonnxruntime.1.31.0.dylib
           - os: windows-latest
             ort: onnxruntime-win-x64-1.31.0.zip
-            ort_sha256: 3958d8a44984160692c1b4ffd0de3cb48f8c39f9d34bb31e433db06e30b82195
+            ort_sha256: 43cf3bdae236cb750fb264d5a5c0b8d5e2ed0529c5a5368bbf7f165dd84334ac
             lib: lib/onnxruntime.dll
     steps:
       - uses: actions/checkout@v7
@@ -72,7 +77,14 @@ jobs:
           key: ocr-${{ matrix.os }}
           cache-on-failure: true
 
-      - name: Download the PP-OCR and Indra packs and ONNX Runtime
+      - name: Fetch ONNX Runtime
+        uses: ./.github/actions/fetch-ort
+        with:
+          archive: ${{ matrix.ort }}
+          sha256: ${{ matrix.ort_sha256 }}
+          dest: ${{ runner.temp }}/ort
+
+      - name: Download the PP-OCR and Indra packs
         shell: bash
         run: |
           set -euo pipefail
@@ -109,24 +121,16 @@ jobs:
           check "$indra/orient.onnx" 20eaf670f55a7cf9facfe1bdd6c7b8e40be75bbf4d48a3df43f66aa3bbd874fd
           check "$indra/meta.json" 4ce4c94b46f5d644033c02e718322014ff4081270f385038c571912b56696339
 
-          archive="$RUNNER_TEMP/${{ matrix.ort }}"
-          fetch "https://github.com/microsoft/onnxruntime/releases/download/v1.31.0/${{ matrix.ort }}" "$archive"
-          check "$archive" ${{ matrix.ort_sha256 }}
-          cd "$RUNNER_TEMP"
-          case "$archive" in
-            *.zip) unzip -q "$archive" ;;
-            *) tar xzf "$archive" ;;
-          esac
           dir="${{ matrix.ort }}"; dir="${dir%.tgz}"; dir="${dir%.zip}"
           echo "KENSAKU_OCR_PACK_DIR=$pack" >> "$GITHUB_ENV"
           echo "KENSAKU_INDRA_PACK_DIR=$indra" >> "$GITHUB_ENV"
-          echo "ORT_DYLIB_PATH=$RUNNER_TEMP/$dir/${{ matrix.lib }}" >> "$GITHUB_ENV"
+          echo "ORT_DYLIB_PATH=$RUNNER_TEMP/ort/$dir/${{ matrix.lib }}" >> "$GITHUB_ENV"
 
       # Single-threaded: the OCR engine choice is process-wide state.
       - name: Run the real-model PP-OCR tests
         shell: bash
         run: >
-          cargo test --manifest-path src-tauri/Cargo.toml --release --lib
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --release --lib
           ocr::tests::real -- --include-ignored --test-threads=1 --nocapture
           --skip real_pack_reads_text
 
@@ -135,5 +139,5 @@ jobs:
       - name: Run the real-model Indra tests
         shell: bash
         run: >
-          cargo test --manifest-path src-tauri/Cargo.toml --release --lib
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --release --lib
           ocr_indra::tests:: -- --include-ignored --test-threads=1 --nocapture

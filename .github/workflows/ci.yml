@@ -7,6 +7,10 @@ on:
     branches: [master]
   pull_request:
 
+# The default token is write-all; none of these jobs need more than read.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -18,6 +22,7 @@ jobs:
     # (actions/runner-images#14748), which would change the toolchain layout
     # under this job without notice.
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -40,7 +45,7 @@ jobs:
         uses: ./.github/actions/linux-deps
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
       # `generate_context!` embeds `frontendDist`, so the web build must exist
       # before any cargo command compiles the lib.
       - uses: oven-sh/setup-bun@v2
@@ -53,23 +58,24 @@ jobs:
         with:
           workspaces: src-tauri -> target
           cache-on-failure: true
-      - run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
-      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets
+      - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
-  rust-windows:
-    name: Rust (Windows)
-    # Compile-only check for the Windows-gated paths. Linux stays authoritative
-    # for tests and clippy; this exists because the Windows-specific breakages
-    # (the Common Controls manifest, the WebView2 profile race) are invisible to
-    # a Linux build and previously reached the release matrix before anyone saw
-    # them. `cargo check` keeps it to a few minutes, with no bundling.
-    runs-on: windows-latest
+  # The CLI is a separate workspace with its own lockfile and is only built at
+  # release time. Without this job a stale cli/Cargo.lock (or an API break in
+  # the library it depends on) stays invisible until a tag is pushed.
+  cli:
+    name: CLI
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      - name: Install system dependencies
+        uses: ./.github/actions/linux-deps
       - uses: dtolnay/rust-toolchain@stable
-      # `generate_context!` embeds `frontendDist`, so the web build must exist
-      # before cargo compiles the lib.
+        with:
+          components: clippy, rustfmt
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -78,7 +84,8 @@ jobs:
       - name: Cache Cargo target directory
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
-          key: windows
+          workspaces: cli -> target
           cache-on-failure: true
-      - run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets
+      - run: cargo fmt --manifest-path cli/Cargo.toml --all -- --check
+      - run: cargo test --locked --manifest-path cli/Cargo.toml
+      - run: cargo clippy --locked --manifest-path cli/Cargo.toml --all-targets -- -D warnings

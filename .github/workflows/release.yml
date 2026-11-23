@@ -33,14 +33,19 @@ jobs:
           - platform: ubuntu-22.04
             artifact: kensaku-linux
             args: "--config src-tauri/tauri.onnxruntime.linux.conf.json"
+            ort: onnxruntime-linux-x64-1.31.0.tgz
+            ort_sha256: cad93c74393531803fdf826eb8f97dd43e4d085ec6f16c3ac1e45ce2fbb26a32
           - platform: macos-latest
             artifact: kensaku-macos
             args: "--target universal-apple-darwin --config src-tauri/tauri.onnxruntime.macos.conf.json"
+            ort: onnxruntime-osx-arm64-1.31.0.tgz
+            ort_sha256: d93de196a2f9f1ec3c36442c84eb03e04874b0fc013a127a5ff0e302996ba4c8
           - platform: windows-latest
             artifact: kensaku-windows
             args: "--config src-tauri/tauri.onnxruntime.windows.conf.json"
             arch: x64
-            ort_sha256: 3958d8a44984160692c1b4ffd0de3cb48f8c39f9d34bb31e433db06e30b82195
+            ort: onnxruntime-win-x64-1.31.0.zip
+            ort_sha256: 43cf3bdae236cb750fb264d5a5c0b8d5e2ed0529c5a5368bbf7f165dd84334ac
           # Native Windows on ARM (Snapdragon) build: x64 builds only run
           # there under emulation, and the bundled onnxruntime.dll must match
           # the process architecture or PP-OCR cannot load.
@@ -48,7 +53,8 @@ jobs:
             artifact: kensaku-windows-arm64
             args: "--config src-tauri/tauri.onnxruntime.windows.conf.json"
             arch: arm64
-            ort_sha256: ef6206fa8d6975878d93a97035d280240ce5764c126a7430e5427e18923316d5
+            ort: onnxruntime-win-arm64-1.31.0.zip
+            ort_sha256: e8500d935084b20e1ba5f99ba045925cc6a684f3f5f0f4e25df69f08f9f88ff6
 
     steps:
       - uses: actions/checkout@v7
@@ -120,56 +126,33 @@ jobs:
       # ONNX Runtime 1.31, so PP-OCR only works when that library ships with
       # the app (see `ocr::runtime_candidates`). Without it the accurate
       # engine can never load: Windows may even find an old, incompatible
-      # copy in System32, and macOS/Linux have none at all. Each step
-      # downloads Microsoft's official build, verifies it, and stages it for
-      # the per-platform `--config` in the matrix, which adds it as a bundle
-      # resource for release builds only (local builds keep working without
-      # it). 1.31 has no Intel macOS build; on Intel Macs PP-OCR says so and
-      # Tesseract is used.
-      - name: Stage ONNX Runtime (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $version = "1.31.0"
-          $arch = "${{ matrix.arch }}"
-          $sha256 = "${{ matrix.ort_sha256 }}"
-          $url = "https://github.com/microsoft/onnxruntime/releases/download/v$version/onnxruntime-win-$arch-$version.zip"
-          $zip = Join-Path $env:RUNNER_TEMP "onnxruntime.zip"
-          $out = Join-Path $env:RUNNER_TEMP "onnxruntime"
-          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
-          $actual = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
-          if ($actual -ne $sha256) { throw "onnxruntime zip checksum mismatch: $actual" }
-          Expand-Archive -Path $zip -DestinationPath $out -Force
-          Copy-Item -Path (Join-Path $out "onnxruntime-win-$arch-$version\lib\onnxruntime.dll") -Destination "src-tauri\onnxruntime.dll"
-          if (-not (Test-Path "src-tauri\onnxruntime.dll")) { throw "onnxruntime.dll was not staged" }
+      # copy in System32, and macOS/Linux have none at all.
+      #
+      # The 1.31.0 archives are fetched from the `ort-vendor-1.31.0` mirror
+      # because upstream removed them (see .github/actions/fetch-ort). The
+      # staged file is added as a bundle resource by the per-platform
+      # `--config`, so local builds keep working without it. 1.31 has no
+      # Intel macOS build; on Intel Macs PP-OCR says so and Tesseract is used.
+      - name: Fetch ONNX Runtime
+        uses: ./.github/actions/fetch-ort
+        with:
+          archive: ${{ matrix.ort }}
+          sha256: ${{ matrix.ort_sha256 }}
+          dest: ${{ runner.temp }}/ort
 
-      - name: Stage ONNX Runtime (macOS, Apple silicon)
-        if: matrix.platform == 'macos-latest'
+      - name: Stage ONNX Runtime
         shell: bash
         run: |
           set -euo pipefail
-          version=1.31.0
-          sha256=1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc
-          curl -fsSL -o "$RUNNER_TEMP/ort.tgz" \
-            "https://github.com/microsoft/onnxruntime/releases/download/v$version/onnxruntime-osx-arm64-$version.tgz"
-          echo "$sha256  $RUNNER_TEMP/ort.tgz" | shasum -a 256 -c -
-          tar xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
-          cp "$RUNNER_TEMP/onnxruntime-osx-arm64-$version/lib/libonnxruntime.$version.dylib" src-tauri/libonnxruntime.dylib
-          test -s src-tauri/libonnxruntime.dylib
-
-      - name: Stage ONNX Runtime (Linux)
-        if: matrix.platform == 'ubuntu-22.04'
-        shell: bash
-        run: |
-          set -euo pipefail
-          version=1.31.0
-          sha256=cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57
-          curl -fsSL -o "$RUNNER_TEMP/ort.tgz" \
-            "https://github.com/microsoft/onnxruntime/releases/download/v$version/onnxruntime-linux-x64-$version.tgz"
-          echo "$sha256  $RUNNER_TEMP/ort.tgz" | sha256sum -c -
-          tar xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
-          cp "$RUNNER_TEMP/onnxruntime-linux-x64-$version/lib/libonnxruntime.so.$version" src-tauri/libonnxruntime.so
-          test -s src-tauri/libonnxruntime.so
+          dir="${{ matrix.ort }}"; dir="${dir%.tgz}"; dir="${dir%.zip}"
+          root="$RUNNER_TEMP/ort/$dir"
+          case "$RUNNER_OS" in
+            Windows) cp "$root/lib/onnxruntime.dll" src-tauri/onnxruntime.dll; dest=src-tauri/onnxruntime.dll ;;
+            macOS)   cp "$root/lib/libonnxruntime.1.31.0.dylib" src-tauri/libonnxruntime.dylib; dest=src-tauri/libonnxruntime.dylib ;;
+            Linux)   cp "$root/lib/libonnxruntime.so.1.31.0" src-tauri/libonnxruntime.so; dest=src-tauri/libonnxruntime.so ;;
+            *) echo "unexpected runner OS: $RUNNER_OS"; exit 1 ;;
+          esac
+          test -s "$dest"
 
       # Build first without bundling, so the application executable can be
       # signed before it is embedded in the NSIS and MSI installers.
@@ -434,13 +417,13 @@ jobs:
           bun run build
 
       - name: Build CLI
-        run: cargo build --release --manifest-path cli/Cargo.toml
+        run: cargo build --release --locked --manifest-path cli/Cargo.toml
 
       - name: Build universal macOS CLI
         if: matrix.platform == 'macos-latest'
         run: |
           rustup target add x86_64-apple-darwin
-          cargo build --release --manifest-path cli/Cargo.toml --target x86_64-apple-darwin
+          cargo build --release --locked --manifest-path cli/Cargo.toml --target x86_64-apple-darwin
           mkdir -p dist
           # The host (macos-latest) is arm64, so the generic build above is the
           # aarch64 slice; only the x86_64 slice needs an explicit --target.

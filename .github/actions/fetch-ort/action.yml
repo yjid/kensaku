@@ -1,0 +1,60 @@
+name: Fetch ONNX Runtime
+description: Download a pinned ONNX Runtime archive from the Kensaku vendor mirror, verify its SHA-256, and extract it.
+
+# Upstream removed the 1.31.0 release assets on microsoft/onnxruntime, which
+# broke both OCR CI and release builds. The mirror is published under
+# https://github.com/yjid/kensaku/releases/tag/ort-vendor-1.31.0 and contains
+# the exact libraries that shipped in Kensaku v1.0.18. Keep `archive` and
+# `sha256` in sync with that release's SHA256SUMS.
+
+inputs:
+  archive:
+    description: Archive asset name in the ort-vendor-1.31.0 release
+    required: true
+  sha256:
+    description: Expected SHA-256 of the archive
+    required: true
+  dest:
+    description: Directory to download and extract into
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Download and verify (Unix)
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        ARCHIVE: ${{ inputs.archive }}
+        SHA256: ${{ inputs.sha256 }}
+        DEST: ${{ inputs.dest }}
+      run: |
+        set -euo pipefail
+        url="https://github.com/yjid/kensaku/releases/download/ort-vendor-1.31.0/$ARCHIVE"
+        mkdir -p "$DEST"
+        curl -fsSL --retry 3 -o "$DEST/$ARCHIVE" "$url"
+        if command -v sha256sum >/dev/null 2>&1; then
+          echo "$SHA256  $DEST/$ARCHIVE" | sha256sum -c -
+        else
+          echo "$SHA256  $DEST/$ARCHIVE" | shasum -a 256 -c -
+        fi
+        tar -xzf "$DEST/$ARCHIVE" -C "$DEST"
+
+    - name: Download and verify (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        ARCHIVE: ${{ inputs.archive }}
+        SHA256: ${{ inputs.sha256 }}
+        DEST: ${{ inputs.dest }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $url = "https://github.com/yjid/kensaku/releases/download/ort-vendor-1.31.0/$env:ARCHIVE"
+        New-Item -ItemType Directory -Force -Path $env:DEST | Out-Null
+        $archive = Join-Path $env:DEST $env:ARCHIVE
+        Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing
+        $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
+        if ($actual -ne $env:SHA256) {
+          throw "ONNX Runtime archive checksum mismatch: expected $env:SHA256, got $actual"
+        }
+        Expand-Archive -Path $archive -DestinationPath $env:DEST -Force
