@@ -9,7 +9,9 @@ assets explicit.
 ```bash
 git checkout master && git pull
 # bump the version in package.json, src-tauri/Cargo.toml, src-tauri/tauri.conf.json
-# and src-tauri/Cargo.lock; bump cli/Cargo.toml + cli/Cargo.lock when the CLI changes
+# and src-tauri/Cargo.lock; bump cli/Cargo.toml when the CLI changes. The CLI
+# depends on the app crate, so refresh cli/Cargo.lock after every app version
+# bump too (the commands below do it).
 # update CHANGELOG.md
 
 # The CLI is a separate workspace with its own lockfile. A version bump in the
