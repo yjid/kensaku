@@ -75,10 +75,7 @@ const OCR_ARTIFACTS: [Artifact; 3] = [
     },
     Artifact {
         name: "dict.txt",
-        urls: &[
-            "https://github.com/yjid/kensaku/releases/download/ort-vendor-1.31.0/ppocrv6_tiny_dict.txt",
-            "https://github.com/GreatV/oar-ocr/releases/download/v0.7.0/ppocrv6_tiny_dict.txt",
-        ],
+        urls: &["https://github.com/GreatV/oar-ocr/releases/download/v0.7.0/ppocrv6_tiny_dict.txt"],
         bytes_expected: 27_156,
         sha256: Some("c5cbe34ef40c29c4df07ed012bf96569cb69a2d2a01a07027e9f13cb832bd9cd"),
     },

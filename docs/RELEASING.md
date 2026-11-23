@@ -49,16 +49,15 @@ Builds are **Authenticode-signed on Windows** through SignPath Foundation; the
 workflow fails instead of shipping an unsigned Windows installer. macOS builds
 are still unsigned. See `SIGNING.md`.
 
-### ONNX Runtime mirror
+### ONNX Runtime
 
 Release builds bundle the ONNX Runtime 1.31.0 shared library. Upstream removed
-the 1.31.0 archives from `microsoft/onnxruntime`, so the workflows fetch them
-from the [`ort-vendor-1.31.0`](https://github.com/yjid/kensaku/releases/tag/ort-vendor-1.31.0)
-mirror and verify every archive against the SHA-256 pinned in
-`.github/actions/fetch-ort/action.yml`. Those archives are the exact libraries
-that shipped in v1.0.18. If the mirror has to move, publish a new
-`ort-vendor-<version>` release and update that action; do not tag it `v*`, or it
-will trigger the release workflow.
+the standalone 1.31.0 archives from `microsoft/onnxruntime`, so
+`.github/actions/fetch-ort` extracts the library from the **v1.0.18 release
+bundles** (portable zips, `.deb`, `.dmg`) and verifies each bundle against the
+SHA-256 from that release's `SHA256SUMS`. The pin is in the action; bump it when
+a later release bundles a newer runtime. Do not publish a separate vendor
+release: the Releases page is for Kensaku releases only.
 
 ## 3. Review and publish the draft
 

@@ -46,16 +46,13 @@ jobs:
       matrix:
         include:
           - os: ubuntu-22.04
-            ort: onnxruntime-linux-x64-1.31.0.tgz
-            ort_sha256: cad93c74393531803fdf826eb8f97dd43e4d085ec6f16c3ac1e45ce2fbb26a32
+            ort_platform: linux-x64
             lib: lib/libonnxruntime.so.1.31.0
           - os: macos-latest
-            ort: onnxruntime-osx-arm64-1.31.0.tgz
-            ort_sha256: d93de196a2f9f1ec3c36442c84eb03e04874b0fc013a127a5ff0e302996ba4c8
+            ort_platform: osx-arm64
             lib: lib/libonnxruntime.1.31.0.dylib
           - os: windows-latest
-            ort: onnxruntime-win-x64-1.31.0.zip
-            ort_sha256: 43cf3bdae236cb750fb264d5a5c0b8d5e2ed0529c5a5368bbf7f165dd84334ac
+            ort_platform: win-x64
             lib: lib/onnxruntime.dll
     steps:
       - uses: actions/checkout@v7
@@ -80,8 +77,7 @@ jobs:
       - name: Fetch ONNX Runtime
         uses: ./.github/actions/fetch-ort
         with:
-          archive: ${{ matrix.ort }}
-          sha256: ${{ matrix.ort_sha256 }}
+          platform: ${{ matrix.ort_platform }}
           dest: ${{ runner.temp }}/ort
 
       - name: Download the PP-OCR and Indra packs
@@ -121,7 +117,7 @@ jobs:
           check "$indra/orient.onnx" 20eaf670f55a7cf9facfe1bdd6c7b8e40be75bbf4d48a3df43f66aa3bbd874fd
           check "$indra/meta.json" 4ce4c94b46f5d644033c02e718322014ff4081270f385038c571912b56696339
 
-          dir="${{ matrix.ort }}"; dir="${dir%.tgz}"; dir="${dir%.zip}"
+          dir="onnxruntime-${{ matrix.ort_platform }}-1.31.0"
           echo "KENSAKU_OCR_PACK_DIR=$pack" >> "$GITHUB_ENV"
           echo "KENSAKU_INDRA_PACK_DIR=$indra" >> "$GITHUB_ENV"
           echo "ORT_DYLIB_PATH=$RUNNER_TEMP/ort/$dir/${{ matrix.lib }}" >> "$GITHUB_ENV"
