@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import inlineHtml from "../../index.html?raw";
+import themeBoot from "../../public/theme-boot.js?raw";
 import { normalizeTheme } from "./useTheme";
 
 const themeCases = [
@@ -12,9 +12,9 @@ const themeCases = [
   ["liquid-glass", "liquid-glass"],
 ] as const;
 
-function readInlineThemeMigrationMap(): Record<string, string> {
-  const mapSource = inlineHtml.match(/var map = \{([^}]+)\};/)?.[1];
-  if (!mapSource) throw new Error("Could not find the inline theme migration map");
+function readThemeMigrationMap(): Record<string, string> {
+  const mapSource = themeBoot.match(/var map = \{([^}]+)\};/)?.[1];
+  if (!mapSource) throw new Error("Could not find the theme boot migration map");
 
   const entries = [
     ...mapSource.matchAll(/(?:"([^"]+)"|([\w-]+)):\s*"([^"]+)"/g),
@@ -31,8 +31,8 @@ describe("normalizeTheme", () => {
     expect(normalizeTheme("neon")).toBe("dark");
   });
 
-  it("keeps the inline pre-paint migration map in sync", () => {
-    expect(readInlineThemeMigrationMap()).toEqual(
+  it("keeps the pre-paint migration map in sync", () => {
+    expect(readThemeMigrationMap()).toEqual(
       Object.fromEntries(themeCases),
     );
     for (const [stored, expected] of themeCases) {
