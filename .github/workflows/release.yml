@@ -124,11 +124,12 @@ jobs:
       # engine can never load: Windows may even find an old, incompatible
       # copy in System32, and macOS/Linux have none at all.
       #
-      # The 1.31.0 archives are fetched from the `ort-vendor-1.31.0` mirror
-      # because upstream removed them (see .github/actions/fetch-ort). The
-      # staged file is added as a bundle resource by the per-platform
-      # `--config`, so local builds keep working without it. 1.31 has no
-      # Intel macOS build; on Intel Macs PP-OCR says so and Tesseract is used.
+      # The 1.31.0 library is extracted from the v1.0.18 bundles because
+      # upstream removed the standalone archives (see
+      # .github/actions/fetch-ort). The staged file is added as a bundle
+      # resource by the per-platform `--config`, so local builds keep working
+      # without it. 1.31 has no Intel macOS build; on Intel Macs PP-OCR says
+      # so and Tesseract is used.
       - name: Fetch ONNX Runtime
         uses: ./.github/actions/fetch-ort
         with:
