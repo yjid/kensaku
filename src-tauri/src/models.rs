@@ -53,6 +53,10 @@ const ARTIFACTS: [Artifact; 3] = [
     },
 ];
 
+/// The PP-OCRv6 tiny dictionary, bundled so installing the OCR pack never
+/// depends on a GitHub release asset (issue #208).
+const BUNDLED_OCR_DICT: &[u8] = include_bytes!("../resources/ppocrv6_tiny_dict.txt");
+
 /// Optional accurate OCR pack (PP-OCRv6 tiny detector + recognizer + dict).
 const OCR_ARTIFACTS: [Artifact; 3] = [
     Artifact {
@@ -662,6 +666,15 @@ fn download_missing_for(
 ) -> Result<(), String> {
     ensure_dir(dir)?;
 
+    // The dictionary is 27 KB and has no mirror. Write the bundled copy every
+    // time: if a previous download truncated it, `download_one` would retry
+    // the release URL, which is exactly what fails on blocked networks.
+    if artifacts.iter().any(|artifact| artifact.name == "dict.txt") {
+        let path = dir.join("dict.txt");
+        std::fs::write(&path, BUNDLED_OCR_DICT)
+            .map_err(|e| format!("Could not write the bundled OCR dictionary: {e}"))?;
+    }
+
     let missing_bytes: u64 = artifacts
         .iter()
         .filter(|artifact| !dir.join(artifact.name).is_file())
@@ -958,6 +971,23 @@ pub async fn delete_models() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bundled_ocr_dict_matches_the_artifact_pin() {
+        use sha2::{Digest, Sha256};
+        let digest = Sha256::digest(BUNDLED_OCR_DICT);
+        let mut hex = String::with_capacity(digest.len() * 2);
+        for byte in digest {
+            use std::fmt::Write as _;
+            let _ = write!(hex, "{:02x}", byte);
+        }
+        let dict = OCR_ARTIFACTS
+            .iter()
+            .find(|artifact| artifact.name == "dict.txt")
+            .expect("the OCR pack has a dictionary");
+        assert_eq!(BUNDLED_OCR_DICT.len() as u64, dict.bytes_expected);
+        assert_eq!(Some(hex.as_str()), dict.sha256);
+    }
 
     #[test]
     fn download_state_never_leaks_between_packs() {
