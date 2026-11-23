@@ -30,7 +30,9 @@ pub fn reading_order(boxes: &[LineBox]) -> Vec<usize> {
         let mut out = ids.to_vec();
         out.sort_by(|&a, &b| {
             let row = |i: usize| ((boxes[i].y0 + boxes[i].y1) / 2.0 / half).round();
-            row(a).total_cmp(&row(b)).then(boxes[a].x0.total_cmp(&boxes[b].x0))
+            row(a)
+                .total_cmp(&row(b))
+                .then(boxes[a].x0.total_cmp(&boxes[b].x0))
         });
         out
     }
@@ -60,9 +62,19 @@ mod tests {
 
     #[test]
     fn two_columns_read_column_by_column() {
-        let line = |x0: f32, y0: f32| LineBox { x0, y0, x1: x0 + 80.0, y1: y0 + 10.0 };
+        let line = |x0: f32, y0: f32| LineBox {
+            x0,
+            y0,
+            x1: x0 + 80.0,
+            y1: y0 + 10.0,
+        };
         // Left column rows 0 and 1, right column rows 0 and 1.
-        let boxes = [line(0.0, 0.0), line(120.0, 0.0), line(0.0, 15.0), line(120.0, 15.0)];
+        let boxes = [
+            line(0.0, 0.0),
+            line(120.0, 0.0),
+            line(0.0, 15.0),
+            line(120.0, 15.0),
+        ];
         assert_eq!(reading_order(&boxes), vec![0, 2, 1, 3]);
     }
 }

@@ -512,6 +512,11 @@ mod time_travel_tests {
     #[test]
     fn days_ago_phrase_becomes_a_time_filter_chip() {
         let intent = compile("notes 3 days ago");
-        assert!(intent.chips.iter().any(|c| c.kind == "time" && c.raw.contains("..")));
+        assert!(
+            intent
+                .chips
+                .iter()
+                .any(|c| c.kind == "time" && c.raw.contains(".."))
+        );
     }
 }

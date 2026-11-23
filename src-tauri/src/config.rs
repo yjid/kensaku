@@ -272,9 +272,7 @@ fn resolve_config_dir(
 ) -> PathBuf {
     if let Some(dir) = env
         && !dir.is_empty()
-        && !dir
-            .to_str()
-            .is_some_and(|text| text.trim().is_empty())
+        && !dir.to_str().is_some_and(|text| text.trim().is_empty())
     {
         return PathBuf::from(dir);
     }
@@ -365,21 +363,17 @@ const DEFAULT_EXCLUDED_EXTENSIONS: &[&str] = &[
     // Binaries and build artifacts
     "exe", "dll", "so", "dylib", "bin", "o", "a", "lib", "class", "pyc", "pyo",
     // Secrets / credentials (`key` is also Apple Keynote; private keys win)
-    "pem", "key", "pfx", "p12", "crt", "cer",
-    // Databases
-    "db", "sqlite", "sqlite3",
-    // Lock files
-    "lock", "lockb",
-    // Minified / generated
+    "pem", "key", "pfx", "p12", "crt", "cer", // Databases
+    "db", "sqlite", "sqlite3", // Lock files
+    "lock", "lockb", // Minified / generated
     "min.js", "min.css", "map",
 ];
 
 /// Extensions excluded by default up to config v5 that are now findable by
 /// name (v6 removes them from existing configs).
 const NAME_SEARCHABLE_SINCE_V6: &[&str] = &[
-    "psd", "ai", "sketch", "fig", "mp3", "mp4", "wav", "avi", "mov", "mkv", "flac", "ogg",
-    "webm", "zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz", "ttf", "otf", "woff",
-    "woff2", "eot",
+    "psd", "ai", "sketch", "fig", "mp3", "mp4", "wav", "avi", "mov", "mkv", "flac", "ogg", "webm",
+    "zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz", "ttf", "otf", "woff", "woff2", "eot",
 ];
 
 impl Default for KensakuConfig {
@@ -983,7 +977,11 @@ mod tests {
     fn fresh_defaults_are_the_1_0_10_defaults() {
         let cfg = KensakuConfig::default();
         assert_eq!(cfg.ocr_engine, "accurate");
-        assert!(!cfg.excluded_extensions.iter().any(|e| e == "mp4" || e == "zip"));
+        assert!(
+            !cfg.excluded_extensions
+                .iter()
+                .any(|e| e == "mp4" || e == "zip")
+        );
         assert!(cfg.excluded_extensions.iter().any(|e| e == "exe"));
         assert!(!cfg.excluded_dirs.iter().any(|d| d.contains('*')));
         assert_eq!(cfg.content_max_file_size_mb, 100);
@@ -1123,7 +1121,11 @@ mod tests {
             );
 
             let cfg = KensakuConfig::load_from_str(&legacy);
-            assert_eq!(cfg.theme, expected, "theme {} should become {}", stored, expected);
+            assert_eq!(
+                cfg.theme, expected,
+                "theme {} should become {}",
+                stored, expected
+            );
             assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
         }
     }

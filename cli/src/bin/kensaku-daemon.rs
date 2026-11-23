@@ -374,9 +374,7 @@ fn handle_client(stream: LocalSocketStream, token: &str, manager: &Arc<IndexerMa
                 manager.start_indexing_when_idle();
                 Ok(json!({"started": true}))
             }
-            "cancel_setup_scan" => manager
-                .cancel_setup_scan()
-                .map(|()| json!({"ok": true})),
+            "cancel_setup_scan" => manager.cancel_setup_scan().map(|()| json!({"ok": true})),
             "search" => {
                 let query = params.get("query").and_then(|v| v.as_str()).unwrap_or("");
                 let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(10) as usize;

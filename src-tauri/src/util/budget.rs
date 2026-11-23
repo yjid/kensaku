@@ -83,7 +83,9 @@ impl DecodeBudget {
     fn lock(&self) -> MutexGuard<'_, u64> {
         // A panic while holding the lock leaves the counter as it was; there is
         // nothing to repair, so keep serving rather than cascading the panic.
-        self.in_use.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.in_use
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     fn release(&self, bytes: u64) {
@@ -129,8 +131,8 @@ pub fn rgba_bytes(width: u32, height: u32) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::thread;
     use std::time::Duration;
 

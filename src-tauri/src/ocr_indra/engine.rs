@@ -54,7 +54,11 @@ pub struct Engine {
     window: usize,
 }
 
-fn session(env: &ort::environment::Environment, path: &Path, threads: usize) -> Result<Session, String> {
+fn session(
+    env: &ort::environment::Environment,
+    path: &Path,
+    threads: usize,
+) -> Result<Session, String> {
     let fail = |e: &dyn std::fmt::Display| format!("{}: {e}", path.display());
     Session::builder(env)
         .map_err(|e| fail(&e))?
@@ -63,9 +67,7 @@ fn session(env: &ort::environment::Environment, path: &Path, threads: usize) -> 
         .with_inter_threads(1)
         .map_err(|e| fail(&e))?
         // Line batches change shape on every call; the arena only grows.
-        .with_execution_providers([ort::ep::CPU::default()
-            .with_arena_allocator(false)
-            .build()])
+        .with_execution_providers([ort::ep::CPU::default().with_arena_allocator(false).build()])
         .map_err(|e| fail(&e))?
         .commit_from_file(path)
         .map_err(|e| fail(&e))
@@ -95,7 +97,11 @@ impl ReadResult {
 }
 
 impl Engine {
-    pub fn load(env: &ort::environment::Environment, dir: &Path, threads: usize) -> Result<Self, String> {
+    pub fn load(
+        env: &ort::environment::Environment,
+        dir: &Path,
+        threads: usize,
+    ) -> Result<Self, String> {
         let meta: serde_json::Value = serde_json::from_slice(
             &std::fs::read(dir.join("meta.json")).map_err(|e| format!("meta.json: {e}"))?,
         )
@@ -122,13 +128,19 @@ impl Engine {
         }
         let optional = |name: &str| {
             let path = dir.join(name);
-            path.is_file().then(|| session(env, &path, threads)).transpose()
+            path.is_file()
+                .then(|| session(env, &path, threads))
+                .transpose()
         };
         Ok(Self {
             det: session(env, &dir.join("det.onnx"), threads)?,
             rec: session(env, &dir.join("rec.onnx"), threads)?,
             vocab: Vocab::from_meta(meta.get("vocab").ok_or("meta.json: no vocab")?)?,
-            script: if groups.is_empty() { None } else { optional("script.onnx")? },
+            script: if groups.is_empty() {
+                None
+            } else {
+                optional("script.onnx")?
+            },
             orient: optional("orient.onnx")?,
             groups,
             script_groups,
@@ -208,12 +220,17 @@ impl Engine {
         let x = orient_input(page, ORIENT_SIDE);
         let side = ORIENT_SIDE as i64;
         let input = Tensor::from_array(([1i64, 1, side, side], x)).map_err(|e| e.to_string())?;
-        let out = orient.run(ort::inputs!["x" => input]).map_err(|e| e.to_string())?;
-        let (_, p) = out["p"].try_extract_tensor::<f32>().map_err(|e| e.to_string())?;
-        let (k, best) = p
-            .iter()
-            .enumerate()
-            .fold((0, f32::MIN), |acc, (i, &v)| if v > acc.1 { (i, v) } else { acc });
+        let out = orient
+            .run(ort::inputs!["x" => input])
+            .map_err(|e| e.to_string())?;
+        let (_, p) = out["p"]
+            .try_extract_tensor::<f32>()
+            .map_err(|e| e.to_string())?;
+        let (k, best) =
+            p.iter().enumerate().fold(
+                (0, f32::MIN),
+                |acc, (i, &v)| if v > acc.1 { (i, v) } else { acc },
+            );
         Ok(if best > ORIENT_MIN { k } else { 0 })
     }
 
@@ -221,8 +238,13 @@ impl Engine {
         let (x, h, w, scale) = page_to_input(page, long_side);
         let input =
             Tensor::from_array(([1i64, 1, h as i64, w as i64], x)).map_err(|e| e.to_string())?;
-        let out = self.det.run(ort::inputs!["x" => input]).map_err(|e| e.to_string())?;
-        let (shape, data) = out[0].try_extract_tensor::<f32>().map_err(|e| e.to_string())?;
+        let out = self
+            .det
+            .run(ort::inputs!["x" => input])
+            .map_err(|e| e.to_string())?;
+        let (shape, data) = out[0]
+            .try_extract_tensor::<f32>()
+            .map_err(|e| e.to_string())?;
         let (oh, ow) = (shape[2] as usize, shape[3] as usize);
         Ok((decode_lines(data, oh, ow), scale))
     }
@@ -252,7 +274,12 @@ impl Engine {
     }
 
     /// Text and confidence per line box (`OrtOCR.recognize`).
-    fn recognize(&mut self, page: &Gray, boxes: &[LineBox], vertical: bool) -> Result<Vec<Reading>, String> {
+    fn recognize(
+        &mut self,
+        page: &Gray,
+        boxes: &[LineBox],
+        vertical: bool,
+    ) -> Result<Vec<Reading>, String> {
         let dark: Vec<bool> = boxes.iter().map(|b| is_dark_line(page, b)).collect();
         let crops: Vec<Crop> = boxes
             .iter()
@@ -277,10 +304,20 @@ impl Engine {
             plan.push((cjk, all));
         } else if self.script.is_some() {
             let (names, sure) = self.line_groups(&crops)?;
-            let base = all.iter().copied().filter(|&j| names[j].is_none() || !sure[j]).collect();
+            let base = all
+                .iter()
+                .copied()
+                .filter(|&j| names[j].is_none() || !sure[j])
+                .collect();
             plan.push((None, base));
             for g in 0..self.groups.len() {
-                plan.push((Some(g), all.iter().copied().filter(|&j| names[j] == Some(g)).collect()));
+                plan.push((
+                    Some(g),
+                    all.iter()
+                        .copied()
+                        .filter(|&j| names[j] == Some(g))
+                        .collect(),
+                ));
             }
         } else {
             plan.push((None, all));
@@ -288,7 +325,11 @@ impl Engine {
 
         let mut best: Vec<Reading> = vec![(String::new(), -1.0); crops.len()];
         for (group, lines) in plan {
-            let src = if group.is_none() && self.window > 1 { &tall } else { &crops };
+            let src = if group.is_none() && self.window > 1 {
+                &tall
+            } else {
+                &crops
+            };
             let widths: Vec<usize> = lines.iter().map(|&j| crops[j].w).collect();
             for part in width_batches(&widths) {
                 let idx: Vec<usize> = part.iter().map(|&i| lines[i]).collect();
@@ -360,15 +401,20 @@ impl Engine {
                     "widths" => widths_tensor(&batch)?,
                 ])
                 .map_err(|e| e.to_string())?;
-            let (shape, p) = out[0].try_extract_tensor::<f32>().map_err(|e| e.to_string())?;
+            let (shape, p) = out[0]
+                .try_extract_tensor::<f32>()
+                .map_err(|e| e.to_string())?;
             let classes = shape.get(1).copied().unwrap_or(1).max(1) as usize;
             for (k, &j) in idx.iter().enumerate() {
                 let row = &p[k * classes..(k + 1) * classes];
-                let (arg, max) = row
-                    .iter()
-                    .enumerate()
-                    .fold((0, f32::MIN), |acc, (i, &v)| if v > acc.1 { (i, v) } else { acc });
-                let name = self.script_groups.get(arg).map(String::as_str).unwrap_or("base");
+                let (arg, max) = row.iter().enumerate().fold((0, f32::MIN), |acc, (i, &v)| {
+                    if v > acc.1 { (i, v) } else { acc }
+                });
+                let name = self
+                    .script_groups
+                    .get(arg)
+                    .map(String::as_str)
+                    .unwrap_or("base");
                 names[j] = self.groups.iter().position(|g| g.name == name);
                 sure[j] = max > ROUTE_SURE;
             }
@@ -397,9 +443,15 @@ fn run_ctc(session: &mut Session, batch: &[&Crop]) -> Result<Vec<(Vec<i64>, f32)
             "widths" => widths_tensor(batch)?,
         ])
         .map_err(|e| e.to_string())?;
-    let (shape, ids) = out["ids"].try_extract_tensor::<i64>().map_err(|e| e.to_string())?;
-    let (_, conf) = out["conf"].try_extract_tensor::<f32>().map_err(|e| e.to_string())?;
-    let (_, lengths) = out["lengths"].try_extract_tensor::<i64>().map_err(|e| e.to_string())?;
+    let (shape, ids) = out["ids"]
+        .try_extract_tensor::<i64>()
+        .map_err(|e| e.to_string())?;
+    let (_, conf) = out["conf"]
+        .try_extract_tensor::<f32>()
+        .map_err(|e| e.to_string())?;
+    let (_, lengths) = out["lengths"]
+        .try_extract_tensor::<i64>()
+        .map_err(|e| e.to_string())?;
     let steps = shape.get(1).copied().unwrap_or(0).max(0) as usize;
     Ok((0..batch.len())
         .map(|k| {
@@ -413,7 +465,11 @@ fn run_ctc(session: &mut Session, batch: &[&Crop]) -> Result<Vec<(Vec<i64>, f32)
                     sum += pm[t];
                 }
             }
-            let mean = if kept.is_empty() { 0.0 } else { sum / kept.len() as f32 };
+            let mean = if kept.is_empty() {
+                0.0
+            } else {
+                sum / kept.len() as f32
+            };
             (kept, mean)
         })
         .collect())

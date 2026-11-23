@@ -167,7 +167,9 @@ pub fn parse_query(
                         if let Ok(distance) = value.parse::<u32>() {
                             let clamped = distance.min(NEAR_MAX_DISTANCE);
                             if clamped != distance {
-                                hints.push(format!("near:{distance} clamped to {NEAR_MAX_DISTANCE}"));
+                                hints.push(format!(
+                                    "near:{distance} clamped to {NEAR_MAX_DISTANCE}"
+                                ));
                             }
                             pending_near = Some(clamped);
                             continue;
@@ -774,10 +776,12 @@ mod tests {
     #[test]
     fn duplicate_near_hint_text_differs_for_filter_form() {
         let query = parse("near:900 mouse");
-        assert!(query
-            .hints
-            .iter()
-            .any(|h| h.contains("near:900 clamped to 100")));
+        assert!(
+            query
+                .hints
+                .iter()
+                .any(|h| h.contains("near:900 clamped to 100"))
+        );
     }
 
     #[test]

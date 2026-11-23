@@ -85,7 +85,8 @@ pub fn kill_webview_processes() {
                 if child_pid <= 0 || child_pid == pid as i32 {
                     continue;
                 }
-                let stat = std::fs::read_to_string(format!("/proc/{}/stat", child_pid)).unwrap_or_default();
+                let stat = std::fs::read_to_string(format!("/proc/{}/stat", child_pid))
+                    .unwrap_or_default();
                 let Some(idx) = stat.rfind(')') else { continue };
                 let rest = &stat[idx + 1..];
                 let fields: Vec<&str> = rest.split_whitespace().collect();
@@ -121,7 +122,7 @@ pub fn kill_webview_processes() {
             unsafe {
                 use windows::Win32::Foundation::CloseHandle;
                 use windows::Win32::System::Threading::{
-                    OpenProcess, TerminateProcess, PROCESS_TERMINATE,
+                    OpenProcess, PROCESS_TERMINATE, TerminateProcess,
                 };
                 if let Ok(handle) = OpenProcess(PROCESS_TERMINATE, false, child) {
                     let _ = TerminateProcess(handle, 0);
@@ -146,7 +147,7 @@ pub fn kill_webview_processes() {
 fn windows_webview_children(parent: u32) -> Vec<u32> {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
         TH32CS_SNAPPROCESS,
     };
 

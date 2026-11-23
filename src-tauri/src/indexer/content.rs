@@ -1321,12 +1321,18 @@ const ROW_SNIPPET_BYTES: usize = 200;
 
 /// True for CSV and TSV files, which get row-aligned snippets.
 pub fn is_delimited_extension(ext_opt: Option<&str>) -> bool {
-    matches!(ext_opt.map(str::to_ascii_lowercase).as_deref(), Some("csv" | "tsv"))
+    matches!(
+        ext_opt.map(str::to_ascii_lowercase).as_deref(),
+        Some("csv" | "tsv")
+    )
 }
 
 /// Snippet for a delimited file: the first row that contains a query term.
 /// Each row is one line, so the snippet never splits a row.
-fn delimited_row_snippet<'a>(mut rows: impl Iterator<Item = &'a str>, query: &str) -> Option<String> {
+fn delimited_row_snippet<'a>(
+    mut rows: impl Iterator<Item = &'a str>,
+    query: &str,
+) -> Option<String> {
     let query_lower = query.to_lowercase();
     let terms: Vec<&str> = query_lower.split_whitespace().collect();
     if terms.is_empty() {
@@ -1356,7 +1362,9 @@ pub fn snippet_for_path(path: &Path, query: &str) -> Option<String> {
         let file = fs::File::open(path).ok()?;
         let truncated = file.metadata().ok()?.len() > SNIPPET_READ_LIMIT;
         let mut buffer = Vec::with_capacity(SNIPPET_READ_LIMIT as usize);
-        file.take(SNIPPET_READ_LIMIT).read_to_end(&mut buffer).ok()?;
+        file.take(SNIPPET_READ_LIMIT)
+            .read_to_end(&mut buffer)
+            .ok()?;
         let hint = crate::indexer::extract::delimited::hint_for_path(path);
         let rows = crate::indexer::extract::delimited::row_blocks(&buffer, truncated, hint);
         return delimited_row_snippet(rows.iter().map(String::as_str), query);
@@ -1906,7 +1914,10 @@ mod tests {
         drop(migrated);
 
         let reopened = ContentIndex::new(&index_dir).expect("reopen v4 index");
-        assert!(!reopened.rebuilt, "a schema 4 index must not rebuild on launch");
+        assert!(
+            !reopened.rebuilt,
+            "a schema 4 index must not rebuild on launch"
+        );
         drop(reopened);
 
         let _ = fs::remove_dir_all(&root);

@@ -30,7 +30,13 @@ pub fn extract_delimited(path: &Path, max_bytes: usize, head_rows: usize) -> Opt
         .take(max_bytes as u64)
         .read_to_end(&mut buffer)
         .ok()?;
-    render_rows(&buffer, truncated, hint_for_path(path), max_bytes, Some(head_rows))
+    render_rows(
+        &buffer,
+        truncated,
+        hint_for_path(path),
+        max_bytes,
+        Some(head_rows),
+    )
 }
 
 /// Row text as separate lines, for the snippet path. Rows are never split.
@@ -129,7 +135,11 @@ fn render_rows(
             out.truncate(keep);
         }
     } else if head_rows.is_some() {
-        let mut summary = String::from(if sampled { "columns (first rows sampled): " } else { "columns: " });
+        let mut summary = String::from(if sampled {
+            "columns (first rows sampled): "
+        } else {
+            "columns: "
+        });
         for (index, (name, kind)) in names.iter().flatten().zip(&kinds).enumerate() {
             if index > 0 {
                 summary.push_str(", ");
@@ -221,11 +231,7 @@ fn sniff_delimiter(text: &str, hint: u8) -> u8 {
     // work re-parsed the first scan. Ties prefer the earlier candidate, so
     // the hint must lead: hint → comma → semi → tab for TSV, collapsed to
     // comma → semi → tab for everything else.
-    let order: [u8; 3] = if hint == b'\t' {
-        *b"\t,;"
-    } else {
-        *b",;\t"
-    };
+    let order: [u8; 3] = if hint == b'\t' { *b"\t,;" } else { *b",;\t" };
     for candidate in order {
         let mut width = 0usize;
         let mut agreeing = 0usize;
@@ -455,11 +461,20 @@ mod tests {
 
     #[test]
     fn head_over_a_short_file_is_not_marked_sampled() {
-        let out = render_rows(b"a,b
+        let out = render_rows(
+            b"a,b
 1,x
-", false, b',', usize::MAX, Some(200)).unwrap();
-        assert!(out.starts_with("columns: a (integer), b (text)
-"));
+",
+            false,
+            b',',
+            usize::MAX,
+            Some(200),
+        )
+        .unwrap();
+        assert!(out.starts_with(
+            "columns: a (integer), b (text)
+"
+        ));
     }
 
     #[test]
@@ -490,7 +505,14 @@ mod tests {
     #[test]
     fn tab_hint_wins_a_tie_against_commas_in_values() {
         assert_eq!(
-            render_rows("a\tb,c\n1\t2,3\n".as_bytes(), false, b'\t', usize::MAX, None).as_deref(),
+            render_rows(
+                "a\tb,c\n1\t2,3\n".as_bytes(),
+                false,
+                b'\t',
+                usize::MAX,
+                None
+            )
+            .as_deref(),
             Some("a = \"1\", b,c = \"2,3\"")
         );
     }

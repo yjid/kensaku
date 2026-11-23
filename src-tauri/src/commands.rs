@@ -7,9 +7,9 @@ use auto_launch::{AutoLaunch, AutoLaunchBuilder};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::str::FromStr;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
@@ -1079,7 +1079,11 @@ pub async fn get_config(state: State<'_, AppState>) -> Result<KensakuConfig, Str
 }
 
 #[tauri::command]
-pub async fn save_config(config: KensakuConfig, state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
+pub async fn save_config(
+    config: KensakuConfig,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
     if let Some(daemon) = state.daemon.as_ref() {
         daemon.save_config(config.clone())?;
         *state.indexer.config.write() = config.clone();
@@ -1173,7 +1177,12 @@ pub async fn complete_setup(
         config.shortcut = sc;
     }
     if let Some(engine) = ocr_engine
-        && [crate::ocr::TESSERACT, crate::ocr::ACCURATE, crate::ocr::INDRA].contains(&engine.as_str())
+        && [
+            crate::ocr::TESSERACT,
+            crate::ocr::ACCURATE,
+            crate::ocr::INDRA,
+        ]
+        .contains(&engine.as_str())
     {
         config.ocr_engine = engine;
     }
@@ -1189,7 +1198,11 @@ pub async fn complete_setup(
     crate::indexer::extract::set_ocr_enabled(config.ocr_enabled);
     crate::indexer::extract::image::set_ocr_max_image_bytes(config.ocr_max_image_bytes);
     crate::indexer::extract::set_ocr_languages(config.ocr_languages.clone());
-    crate::indexer::extract::set_content_caps(config.content_max_file_size_mb, config.content_max_text_bytes, config.content_csv_head_rows);
+    crate::indexer::extract::set_content_caps(
+        config.content_max_file_size_mb,
+        config.content_max_text_bytes,
+        config.content_csv_head_rows,
+    );
     crate::embed::set_max_semantic_units(config.content_max_semantic_units);
     crate::ocr::set_engine(&config.ocr_engine);
     crate::indexer::extract::set_external_extractors(config.extractors.clone());
@@ -1587,7 +1600,11 @@ pub async fn reset_all(
     let marker = dir.join(".reset-requested");
     // The marker's contents carry the choice: the fresh process applies it
     // before anything is open, and keeps downloaded packs unless told "full".
-    let scope = if remove_packs.unwrap_or(false) { "full" } else { "keep-packs" };
+    let scope = if remove_packs.unwrap_or(false) {
+        "full"
+    } else {
+        "keep-packs"
+    };
     std::fs::write(&marker, scope.as_bytes())
         .map_err(|e| format!("Failed to write reset marker: {}", e))?;
 
@@ -1793,7 +1810,10 @@ mod tests {
     }
 
     fn strings(paths: &[PathBuf]) -> Vec<String> {
-        paths.iter().map(|p| p.to_string_lossy().into_owned()).collect()
+        paths
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect()
     }
 
     #[test]
@@ -1801,9 +1821,15 @@ mod tests {
         let src = temp_dir_with(&[("a.txt", "new"), ("b", "bee")]);
         let dest = temp_dir_with(&[("a.txt", "old")]);
         let report = transfer(&strings(&[src.join("a.txt"), src.join("b")]), &dest, false).unwrap();
-        assert_eq!((report.done.len(), report.skipped, report.failed.len()), (2, 0, 0));
+        assert_eq!(
+            (report.done.len(), report.skipped, report.failed.len()),
+            (2, 0, 0)
+        );
         assert_eq!(std::fs::read_to_string(dest.join("a.txt")).unwrap(), "old");
-        assert_eq!(std::fs::read_to_string(dest.join("a (1).txt")).unwrap(), "new");
+        assert_eq!(
+            std::fs::read_to_string(dest.join("a (1).txt")).unwrap(),
+            "new"
+        );
         assert_eq!(std::fs::read_to_string(dest.join("b")).unwrap(), "bee");
         assert!(src.join("a.txt").exists());
         let _ = std::fs::remove_dir_all(&src);
@@ -1839,7 +1865,6 @@ mod tests {
         let missing = temp_path("nope");
         assert!(transfer(&[], &missing, false).is_err());
     }
-
 }
 
 /* ---------------------------------------------------------------- */
@@ -1847,8 +1872,6 @@ mod tests {
 /* ---------------------------------------------------------------- */
 
 /// Outcome of an LLM compile attempt for the UI.
-
-
 
 /* ---------------------------------------------------------------- */
 /* One-click agent connect                                           */
@@ -1895,7 +1918,11 @@ pub async fn get_file_details(path: String) -> Result<FileDetails, String> {
         let is_image = p
             .extension()
             .and_then(|e| e.to_str())
-            .map(|e| crate::indexer::extract::image::is_supported_image_extension(&e.to_ascii_lowercase()))
+            .map(|e| {
+                crate::indexer::extract::image::is_supported_image_extension(
+                    &e.to_ascii_lowercase(),
+                )
+            })
             .unwrap_or(false);
         let dims = if is_image {
             crate::indexer::extract::image::dimensions(p)
@@ -1920,8 +1947,8 @@ pub async fn get_thumbnail_data(path: String) -> Result<String, String> {
     use base64::Engine;
     tauri::async_runtime::spawn_blocking(move || {
         let thumb = generate_thumbnail(&path)?;
-        let bytes = std::fs::read(&thumb)
-            .map_err(|e| format!("Failed to read thumbnail: {}", e))?;
+        let bytes =
+            std::fs::read(&thumb).map_err(|e| format!("Failed to read thumbnail: {}", e))?;
         Ok(format!(
             "data:image/jpeg;base64,{}",
             base64::engine::general_purpose::STANDARD.encode(bytes)
@@ -1941,7 +1968,10 @@ pub async fn check_for_updates() -> Result<crate::updater::UpdateInfo, String> {
 
 /// Downloads the specified update asset in the background.
 #[tauri::command]
-pub async fn download_update(asset_url: String, asset_name: String) -> Result<crate::updater::UpdateStatus, String> {
+pub async fn download_update(
+    asset_url: String,
+    asset_name: String,
+) -> Result<crate::updater::UpdateStatus, String> {
     tauri::async_runtime::spawn_blocking(move || {
         crate::updater::download_update(&asset_url, &asset_name)
     })
@@ -1959,5 +1989,4 @@ pub async fn get_updater_status() -> Result<crate::updater::UpdateStatus, String
 #[tauri::command]
 pub async fn install_update_and_restart(app: AppHandle) -> Result<(), String> {
     crate::updater::install_and_restart(&app)
-
 }

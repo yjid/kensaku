@@ -4,7 +4,6 @@
 
 use super::imageops::{Gray, resize};
 
-
 /// Degrees of tilt searched (quarter turns cover the rest).
 const DESKEW_MAX: f64 = 45.0;
 /// Smaller tilts are left alone (the search step is 0.1).

@@ -11,7 +11,8 @@ fn main() {
 
     // Copy onnxruntime library from src-tauri to target directories
     // so tests and debug builds can find and load it without manual setup.
-    let manifest_dir = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default());
+    let manifest_dir =
+        std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default());
     let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap_or_default());
 
     #[cfg(windows)]

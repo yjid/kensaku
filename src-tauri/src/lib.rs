@@ -7,9 +7,9 @@ pub mod daemon;
 pub mod doctor;
 pub mod embed;
 pub mod indexer;
-pub mod models;
 pub mod main_window;
 pub mod maintenance;
+pub mod models;
 pub mod ocr;
 pub mod ocr_indra;
 pub mod preview;
@@ -285,7 +285,10 @@ fn apply_pending_rebuild_in(dir: &std::path::Path) -> bool {
         let _ = std::fs::remove_file(dir.join(name));
     }
     let _ = std::fs::remove_file(&marker);
-    eprintln!("[Kensaku] Rebuild requested: index cleared in {}", dir.display());
+    eprintln!(
+        "[Kensaku] Rebuild requested: index cleared in {}",
+        dir.display()
+    );
     true
 }
 
@@ -377,7 +380,11 @@ pub fn run() {
     indexer::extract::set_ocr_enabled(config.ocr_enabled);
     indexer::extract::image::set_ocr_max_image_bytes(config.ocr_max_image_bytes);
     indexer::extract::set_ocr_languages(config.ocr_languages.clone());
-    indexer::extract::set_content_caps(config.content_max_file_size_mb, config.content_max_text_bytes, config.content_csv_head_rows);
+    indexer::extract::set_content_caps(
+        config.content_max_file_size_mb,
+        config.content_max_text_bytes,
+        config.content_csv_head_rows,
+    );
     crate::embed::set_max_semantic_units(config.content_max_semantic_units);
     ocr::set_engine(&config.ocr_engine);
 
@@ -549,17 +556,19 @@ pub fn run() {
             // read every 150 ms, and a normal launch has no file to read.
             {
                 let handle = app.handle().clone();
-                std::thread::spawn(move || loop {
-                    std::thread::sleep(std::time::Duration::from_millis(150));
-                    let path = window_request_path();
-                    let Ok(request) = std::fs::read_to_string(&path) else {
-                        continue;
-                    };
-                    let _ = std::fs::remove_file(&path);
-                    if request.trim() == "toggle" {
-                        main_window::toggle(&handle);
-                    } else {
-                        main_window::show(&handle);
+                std::thread::spawn(move || {
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_millis(150));
+                        let path = window_request_path();
+                        let Ok(request) = std::fs::read_to_string(&path) else {
+                            continue;
+                        };
+                        let _ = std::fs::remove_file(&path);
+                        if request.trim() == "toggle" {
+                            main_window::toggle(&handle);
+                        } else {
+                            main_window::show(&handle);
+                        }
                     }
                 });
             }
@@ -575,7 +584,10 @@ pub fn run() {
             if config.app_mode == "launcher" {
                 if let Ok(shortcut) = Shortcut::from_str(&shortcut_str) {
                     if let Err(e) = app.global_shortcut().register(shortcut) {
-                        eprintln!("[Kensaku] Could not register global shortcut '{}': {}", shortcut_str, e);
+                        eprintln!(
+                            "[Kensaku] Could not register global shortcut '{}': {}",
+                            shortcut_str, e
+                        );
                     }
                 } else {
                     eprintln!(
@@ -664,7 +676,10 @@ pub fn run() {
             // Destroying the search window (hide) must not end the app. The
             // indexer, watcher and tray keep running. Only the tray's Quit
             // (app.exit) ends it, and that call is not prevented here.
-            if let tauri::RunEvent::ExitRequested { api, code: None, .. } = event {
+            if let tauri::RunEvent::ExitRequested {
+                api, code: None, ..
+            } = event
+            {
                 api.prevent_exit();
             }
         });

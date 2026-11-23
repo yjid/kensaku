@@ -112,7 +112,9 @@ fn classify_extension(ext: &str) -> (usize, Option<usize>) {
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" | "ico" | "tiff" | "tif"
         | "heic" | "avif" => (1, None),
         "pdf" | "txt" | "doc" | "docx" | "ppt" | "pptx" | "odp" | "key" | "xls" | "xlsx"
-        | "csv" | "tsv" | "ods" | "rtf" | "eml" | "msg" | "odt" | "pages" | "epub" | "log" => (2, None),
+        | "csv" | "tsv" | "ods" | "rtf" | "eml" | "msg" | "odt" | "pages" | "epub" | "log" => {
+            (2, None)
+        }
         "lua" | "zig" | "nim" | "html" | "css" | "scss" | "xml" | "sql" | "conf" => (3, None),
         "mp4" | "mov" | "avi" | "mkv" | "webm" | "m4v" | "mp3" | "flac" | "wav" | "ogg" | "m4a"
         | "aac" | "opus" => (4, None),
@@ -485,9 +487,8 @@ fn apply_sort(results: &mut [SearchResult], sort: SortOrder) {
         }),
         // Cached key: a comparator allocating two Strings per comparison was
         // allocating O(n log n) times to order the page.
-        SortOrder::Name => results.sort_by_cached_key(|result| {
-            (result.filename.to_lowercase(), result.path.clone())
-        }),
+        SortOrder::Name => results
+            .sort_by_cached_key(|result| (result.filename.to_lowercase(), result.path.clone())),
     }
 }
 
@@ -1967,7 +1968,9 @@ fn contains_ignore_case(haystack: &str, needle: &str) -> bool {
 }
 
 fn ext_is(ext: &str, candidates: &[&str]) -> bool {
-    candidates.iter().any(|candidate| ext.eq_ignore_ascii_case(candidate))
+    candidates
+        .iter()
+        .any(|candidate| ext.eq_ignore_ascii_case(candidate))
 }
 
 fn matches_type_category(typ: &str, ext_opt: Option<&str>, is_dir: bool) -> bool {
@@ -1983,7 +1986,9 @@ fn matches_type_category(typ: &str, ext_opt: Option<&str>, is_dir: bool) -> bool
     if ext_is(typ, &["image"]) {
         return ext_is(
             ext,
-            &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "tiff", "tif"],
+            &[
+                "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "tiff", "tif",
+            ],
         );
     }
     if ext_is(typ, &["pdf"]) {
@@ -1993,12 +1998,16 @@ fn matches_type_category(typ: &str, ext_opt: Option<&str>, is_dir: bool) -> bool
         return ext_is(
             ext,
             &[
-                "doc", "docx", "odt", "rtf", "eml", "msg", "pdf", "txt", "md", "markdown", "pages", "epub",
+                "doc", "docx", "odt", "rtf", "eml", "msg", "pdf", "txt", "md", "markdown", "pages",
+                "epub",
             ],
         );
     }
     if ext_is(typ, &["sheet", "spreadsheet", "table"]) {
-        return ext_is(ext, &["xlsx", "xls", "ods", "csv", "tsv", "parquet", "numbers"]);
+        return ext_is(
+            ext,
+            &["xlsx", "xls", "ods", "csv", "tsv", "parquet", "numbers"],
+        );
     }
     if ext_is(typ, &["presentation", "slide", "slides"]) {
         return ext_is(ext, &["pptx", "ppt", "odp", "key"]);

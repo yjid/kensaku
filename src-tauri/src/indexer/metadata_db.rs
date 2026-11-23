@@ -1331,7 +1331,7 @@ impl MetadataDb {
             "UPDATE nodes SET content_pending = 1, retry_count = 0 WHERE is_dir = 0",
             [],
         )
-            .map_err(|e| format!("Failed to mark all content pending: {}", e))
+        .map_err(|e| format!("Failed to mark all content pending: {}", e))
     }
 
     /// Sets the pending flag for a single path.
