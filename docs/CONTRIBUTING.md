@@ -7,8 +7,8 @@ Thanks for helping. Bug reports, docs fixes, and focused PRs are all welcome.
 - Open an issue for anything larger than a small fix, so we can agree on scope.
 - Read [`ARCHITECTURE.md`](ARCHITECTURE.md) for the index/search shape and
   [`AGENTS.md`](AGENTS.md) for the read-only agent contract.
-- Check [`../ROADMAP.md`](../ROADMAP.md) for what the current version is for,
-  and [`MAINTAINING.md`](MAINTAINING.md) if you want to help run a milestone.
+- Check [`MAINTAINING.md`](MAINTAINING.md) for how versions, milestones, and
+  contributions are managed.
 - Keep the local-first, read-only-by-default thesis intact.
 - Security issues: do **not** open a public issue. See [`../SECURITY.md`](../SECURITY.md).
 
@@ -47,7 +47,7 @@ cargo test --all-targets --manifest-path src-tauri/Cargo.toml
 cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
 
 # Web
-npx tsc --noEmit
+bunx tsc --noEmit
 bun run test
 bun run build
 ```

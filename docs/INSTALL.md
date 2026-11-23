@@ -1,6 +1,92 @@
 # Install & build
 
-## Prebuilt bundles
+## One-line installer
+
+The installer reads `latest.json`, downloads the right asset, verifies its
+SHA-256 against `SHA256SUMS`, and installs into your user account. No admin
+prompt is required by default.
+
+The installer scripts ship with **1.0.19**. On 1.0.18 or older, use the manual
+bundles in this page.
+
+### Linux
+
+```bash
+curl -fsSL https://github.com/yjid/kensaku/releases/latest/download/install.sh | sh
+```
+
+- Installs the AppImage to `~/.local/share/kensaku/kensaku.AppImage`.
+- Creates `~/.local/bin/kensaku` and a desktop entry with the app icon.
+- No root. Add `--system` to install the native `.deb` (apt) or `.rpm`
+  (dnf/yum) instead.
+- Later releases update in-app (AppImage). `--system` installs update through
+  the package manager, not the in-app updater.
+
+### macOS
+
+```bash
+curl -fsSL https://github.com/yjid/kensaku/releases/latest/download/install.sh | sh
+```
+
+- Installs `kensaku.app` to `~/Applications`. Add `--system` for
+  `/Applications` (asks for sudo).
+- macOS builds are not notarized yet. `curl` does not add the browser
+  quarantine flag, so it usually launches normally. If macOS still blocks it,
+  use **System Settings → Privacy & Security → Open Anyway**, or re-run with
+  `--allow-unsigned` to clear the flag for this app only.
+- Folder-access prompts may repeat after upgrades because the ad-hoc signature
+  changes. This is the unsigned-build limitation tracked in #73.
+
+### Windows
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/yjid/kensaku/releases/latest/download/install.ps1 | iex"
+```
+
+- Downloads the Authenticode-signed NSIS setup, checks its SHA-256 and signature,
+  and installs per-user. No UAC prompt.
+- The installer runs with `/P /UPDATE` (progress) or `/S /UPDATE` with
+  `-Silent`; `/UPDATE` preserves `%APPDATA%\kensaku` and the index.
+- Later releases update in-app; no installer is needed.
+
+### Installer options
+
+```bash
+# Linux / macOS
+sh install.sh --version 1.0.19
+sh install.sh --system
+sh install.sh --prefix "$HOME/Apps"
+sh install.sh --dry-run
+sh install.sh --verify-only
+sh install.sh --allow-unsigned     # macOS only
+```
+
+```powershell
+# Windows
+.\install.ps1 -Version 1.0.19
+.\install.ps1 -Silent
+.\install.ps1 -DryRun
+.\install.ps1 -VerifyOnly
+```
+
+Inspect before running if you prefer:
+
+```bash
+curl -fsSLO https://github.com/yjid/kensaku/releases/latest/download/install.sh
+less install.sh && sh install.sh --dry-run
+```
+
+```powershell
+irm https://github.com/yjid/kensaku/releases/latest/download/install.ps1 -OutFile install.ps1
+notepad install.ps1
+powershell -ExecutionPolicy ByPass -File .\install.ps1 -DryRun
+```
+
+The scripts require HTTPS; only the release manifest and `SHA256SUMS` URLs can
+be overridden with `--manifest`/`--sums` (or `-ManifestUrl`/`-SumsUrl`) for a
+mirror. `--dry-run` prints the resolved URL without downloading.
+
+## Manual bundles
 
 Download from [Releases](https://github.com/yjid/kensaku/releases).
 
@@ -28,7 +114,9 @@ Get-AuthenticodeSignature .\kensaku_<ver>_x64-setup.exe | Format-List Status, Si
 ```
 
 **macOS.** Not signed or notarised yet, so Gatekeeper blocks the first launch.
-Either right-click the app → **Open** → **Open**, or clear the quarantine flag:
+The one-line installer downloads via `curl`, which does not add the browser
+quarantine flag, so it usually launches normally. A manual DMG download does get
+the flag. Either right-click the app → **Open** → **Open**, or clear it:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/kensaku.app
@@ -45,6 +133,59 @@ distros.
 Every release still ships `SHA256SUMS`; verify any platform with
 `sha256sum -c SHA256SUMS`. Build and signing details are in
 [SIGNING.md](SIGNING.md).
+
+---
+
+## Updates
+
+- **Installer or AppImage / NSIS / macOS `.app`:** later releases update in-app
+  (Settings → About → Check for updates). The update is signed with the
+  updater's minisign key and installed in place.
+- **`.deb` / `.rpm`:** update through the package manager. The in-app updater
+  deliberately refuses these installs.
+- **MSI / portable zip:** install the new MSI or unpack the new portable zip.
+  The in-app updater deliberately refuses these installs so it cannot create a
+  second copy.
+- **winget, Homebrew, Flatpak, AUR:** not published yet. Use the one-line
+  installer or a manual bundle for now.
+
+See [UPDATER.md](UPDATER.md) for the update flow and signing details.
+
+## Uninstall
+
+The uninstallers remove the app, not your index.
+
+**Linux (installer/AppImage)**
+
+```bash
+rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/kensaku"
+rm -f "${XDG_BIN_HOME:-$HOME/.local/bin}/kensaku"
+rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/applications/kensaku.desktop"
+rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/512x512/apps/kensaku.png"
+```
+
+Then remove `~/.config/kensaku` if you also want to delete the index, settings,
+and downloaded OCR/models. That cannot be undone.
+
+**Linux (.deb / .rpm)**
+
+```bash
+sudo apt remove kensaku      # Debian/Ubuntu
+sudo dnf remove kensaku      # Fedora
+```
+
+Remove `~/.config/kensaku` separately if you want a clean slate.
+
+**macOS**
+
+Drag `kensaku.app` from `~/Applications` (or `/Applications`) to the Bin. Remove
+`~/Library/Application Support/kensaku` to delete the index and settings.
+
+**Windows**
+
+Settings → Apps → Installed apps → Kensaku → Uninstall. The NSIS uninstaller
+removes `%APPDATA%\kensaku` as part of its cleanup. For the portable zip, delete
+the folder after quitting the app.
 
 ---
 

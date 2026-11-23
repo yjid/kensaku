@@ -95,6 +95,13 @@ cannot make a client accept an artifact without a valid signature.
 
 Verify manual downloads against `SHA256SUMS` attached to the GitHub release.
 
+The one-line installers (`install.sh`, `install.ps1`) download only from the
+release's `latest.json` over HTTPS, verify the artifact against `SHA256SUMS`,
+and refuse a mismatch. The Windows script also requires a `Valid` Authenticode
+signature before running the NSIS installer. macOS is still unsigned and not
+notarized; the installer prints the Gatekeeper steps and does not weaken
+Gatekeeper globally.
+
 Windows in-app updates install the per-user NSIS package only. MSI installs
 under `Program Files` and portable copies are excluded at runtime and must
 update through their own package, so an update cannot silently create a second

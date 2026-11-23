@@ -6,6 +6,12 @@ versioning: [SemVer](https://semver.org/).
 ## [1.0.19] — 2026-11-24
 
 ### Added
+- **One-line installers** (`install.sh`, `install.ps1`). Linux and macOS use
+  `curl .../install.sh | sh`; Windows uses
+  `irm .../install.ps1 | iex`. They read `latest.json`, verify `SHA256SUMS`, and
+  install per-user without admin. Windows also verifies the Authenticode
+  signature. `--system` installs the native `.deb`/`.rpm` or `/Applications`
+  copy; `--dry-run`/`--verify-only` are available.
 - **Signed in-app updates** (#235). Kensaku now uses Tauri's updater: it
   checks `latest.json`, downloads the new package in the background, verifies a
   minisign signature, installs it in place, and relaunches. Windows updates no

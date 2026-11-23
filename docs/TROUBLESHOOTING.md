@@ -9,6 +9,27 @@ metadata database, the full-text and semantic indexes, watched roots, the
 watcher, model files, OCR, external extractors, the crash log and the version in
 one pass, and each failing row names its own fix.
 
+## The one-line installer fails
+
+- **404 or “Could not download the release manifest”:** the release is still a
+  draft, or `latest.json` has not been published as the latest release yet. Use
+  the manual bundle from [Releases](https://github.com/yjid/kensaku/releases), or
+  run the installer again after the draft is published.
+- **SHA-256 mismatch:** re-download from GitHub Releases. Do not bypass the
+  check; it means the file changed in transit or the mirror is stale.
+- **Windows “signature is NotSigned/UnknownError”:** the release installer is
+  Authenticode-signed. Do not use `-SkipSignatureCheck` unless you built the
+  installer locally. Re-download from the official release.
+- **Linux AppImage will not start:** install FUSE (`libfuse2` on Ubuntu 22.04,
+  `libfuse2t64` on 24.04) or rerun the installer with `--system` to use the
+  `.deb`/`.rpm` instead.
+- **Need to see what it will do?** Run the installer with `--dry-run` (Windows:
+  `-DryRun`) or `--verify-only` (`-VerifyOnly`). Both print the resolved version
+  and artifact URL.
+
+The installer scripts are published on every release:
+`releases/latest/download/install.sh` and `install.ps1`.
+
 ## macOS keeps asking for folder access
 
 **Symptom:** you grant Desktop, Documents or Downloads, and macOS asks again —
@@ -61,18 +82,20 @@ Then check the file against `SHA256SUMS` from the release page before trusting i
 
 ## Windows shows "Unknown publisher"
 
-The installer and app are Authenticode-signed, but a new release starts with no
-SmartScreen reputation, and current builds use a test certificate while the
-production certificate is pending. Choose **More info** → **Run anyway**, or
-verify the download against `SHA256SUMS` first.
+The installer and app are Authenticode-signed through SignPath Foundation. A
+brand-new release can still show a SmartScreen reputation warning; choose
+**More info → Run anyway**, or verify the download against `SHA256SUMS` first.
+If `Get-AuthenticodeSignature` reports `NotSigned` or an invalid status, do not
+run it; re-download from GitHub Releases.
 
 ## OCR says "Indra read nothing in its self-test"
 
-1.0.18 verifies the Indra pack by size rather than only checking that a file
+1.0.18+ verifies the Indra pack by size instead of only checking that a file
 exists, and no longer caches a failed self-test for the life of the process.
+1.0.19 adds a **Re-download** action for both OCR packs.
 
-**Fix:** Settings → OCR → select **Indra** → **Download** again. A stale or
-truncated pack is now reported as not installed, so the download replaces it. No
+**Fix:** Settings → OCR → select **Indra** → **Re-download**. The action drops
+the cached engine, removes the pack, and runs the checksum-verified download. No
 re-index is needed; only files that failed extraction are retried.
 
 If it still fails, the message now says which half broke — detector found no
@@ -95,5 +118,7 @@ queues its files for extraction on the next scan.
 
 ## Linux: the AppImage does not start
 
-On hardened distributions the AppImage may need `--no-sandbox`. See
-[INSTALL.md](INSTALL.md) for per-distro notes.
+Install FUSE (`libfuse2` on Ubuntu 22.04, `libfuse2t64` on 24.04), or rerun the
+one-line installer with `--system` to install the `.deb`/`.rpm` instead. On
+hardened distributions the AppImage may also need `--no-sandbox`. See
+[INSTALL.md](INSTALL.md) for the installer options and per-distro notes.

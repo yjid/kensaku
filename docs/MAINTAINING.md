@@ -8,7 +8,7 @@ contributors, not a process department.
 
 | Layer | GitHub artifact | Holds | Changes |
 |---|---|---|---|
-| Direction | `ROADMAP.md` | Themes and outcomes, 2–3 quarters out | Quarterly |
+| Direction | GitHub Discussions | Themes and outcomes, 2-3 quarters out | Quarterly |
 | Version | **Milestone** | One outcome, scope, exit criteria, due window | At version start |
 | Workstream | **Epic issue** | The spec and child issues for one part of a version | At version start |
 | Work | **Issue** | One shippable change with acceptance criteria | Continuously |
@@ -115,7 +115,7 @@ Do **not** add `version/*` labels. The milestone is the version.
 - Add `epic.yml` for version workstreams (outcome, scope, child issues, exit
   criteria, owner).
 - Add a pull-request template with the Definition of Done.
-- `config.yml` should link Discussions, the roadmap, and the security policy.
+- `config.yml` should link Discussions and the security policy.
 
 ### 5. Discussions
 
@@ -228,4 +228,4 @@ Stars and downloads are inputs to marketing, not project health.
    ones that are already fixed.
 5. Write the pinned "how Kensaku is built" statement and close #175/#148.
 6. Open 8 `good first issue` items from the 1.0.x and 1.3 lists.
-7. Post the first monthly roadmap update, linking `ROADMAP.md`.
+7. Post the first monthly roadmap update in Discussions.

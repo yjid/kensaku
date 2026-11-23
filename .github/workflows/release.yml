@@ -3,8 +3,8 @@ name: Release builds
 # Builds desktop bundles and the agent CLI for Linux, macOS and
 # Windows, Authenticode-signs the Windows binaries through SignPath
 # Foundation, then assembles a draft GitHub release with every asset, the
-# updater manifest (latest.json), and a SHA256SUMS file. A maintainer reviews
-# and publishes the draft.
+# updater manifest (latest.json), the one-line installers, and a SHA256SUMS
+# file. A maintainer reviews and publishes the draft.
 #
 # Signing is mandatory for tag builds: if the SignPath variables/secrets are
 # missing, the Windows jobs fail instead of silently shipping unsigned
@@ -602,6 +602,9 @@ jobs:
                -o -name 'kensaku-cli-*' \) \
             -exec cp -t release {} +
           test -n "$(find release -type f -print -quit)" || { echo "no release assets staged"; exit 1; }
+          cp install.sh install.ps1 release/
+          test -s release/install.sh
+          test -s release/install.ps1
 
       # The updater downloads this manifest from
       # releases/latest/download/latest.json. It must contain the signature of

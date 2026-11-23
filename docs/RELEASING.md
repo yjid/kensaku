@@ -27,7 +27,7 @@ bun install
 cargo test --locked --all-targets --manifest-path src-tauri/Cargo.toml
 cargo clippy --locked --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
 cargo test --locked --manifest-path cli/Cargo.toml
-npx tsc --noEmit && bun run test && bun run build
+bunx tsc --noEmit && bun run test && bun run build
 git add -A && git commit -m "chore(release): vX.Y.Z"
 git push origin master
 ```
@@ -49,6 +49,7 @@ gh run watch   # or: gh run list --workflow=release.yml
 | `kensaku-windows` | `.msi`, NSIS `.exe` + `.sig`, portable `.zip` (x64 + ARM64) |
 | `kensaku-cli-{linux,macos,windows}` | `kensaku-cli` binary (including Windows ARM64) |
 | `latest.json` | Updater manifest (generated in the publish job) |
+| `install.sh`, `install.ps1` | One-line installers (staged in the publish job) |
 
 Builds are **Authenticode-signed on Windows** through SignPath Foundation; the
 workflow fails instead of shipping an unsigned Windows installer. macOS builds
@@ -67,6 +68,21 @@ re-signs the final NSIS installer and regenerates `latest.json` from the signed
 assets. See `UPDATER.md` for the full flow, the backup requirement, and the
 MSI/portable policy.
 
+### One-line installers
+
+The publish job copies `install.sh` and `install.ps1` into the release assets,
+so these URLs resolve after the draft is published as the latest release:
+
+```text
+https://github.com/yjid/kensaku/releases/latest/download/install.sh
+https://github.com/yjid/kensaku/releases/latest/download/install.ps1
+```
+
+CI checks `bash -n install.sh` and parses `install.ps1` with the PowerShell
+parser. Before publishing, run each with `--dry-run` / `-DryRun` and confirm the
+resolved asset URL and version. The installers verify `SHA256SUMS`; Windows also
+requires a `Valid` Authenticode signature.
+
 ### ONNX Runtime
 
 Release builds bundle the ONNX Runtime 1.31.0 shared library. Upstream removed
@@ -80,7 +96,8 @@ release: the Releases page is for Kensaku releases only.
 ## 3. Review and publish the draft
 
 The tag push builds every platform and assembles a **draft** GitHub release with
-all bundles, the CLI binaries, and `SHA256SUMS`.
+all bundles, the CLI binaries, `latest.json`, the one-line installers, and
+`SHA256SUMS`.
 
 ```bash
 # wait for the release build
@@ -102,6 +119,7 @@ Check that the expected assets are present:
 | `kensaku_*_arm64-setup.exe`, `kensaku_*_arm64-setup.exe.sig`, `kensaku_*_arm64_en-US.msi`, `kensaku-portable-*-{x64,arm64}.zip` | Windows (x64 and ARM64) |
 | `kensaku-cli-linux-*`, `kensaku-cli-macos-*`, `kensaku-cli-windows-*` | Agent CLI |
 | `latest.json` | Updater manifest |
+| `install.sh`, `install.ps1` | One-line installers |
 | `SHA256SUMS` | All assets |
 
 Before publishing, confirm the updater manifest is present and correct:

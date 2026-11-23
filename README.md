@@ -30,7 +30,6 @@
   <a href="#features">Features</a> ·
   <a href="#performance">Performance</a> ·
   <a href="#connect-ai-agents-mcp">MCP</a> ·
-  <a href="ROADMAP.md">Roadmap</a> ·
   <a href="docs/README.md">Docs</a> ·
   <a href="docs/LANGUAGES.md">Languages</a> ·
   <a href="#contributing">Contribute</a>
@@ -133,7 +132,42 @@ Full reference: [docs/USAGE.md](docs/USAGE.md) · Language & format support: [do
 
 ## Install
 
-Download the bundle for your system from the [latest release](https://github.com/yjid/kensaku/releases/latest).
+The fastest path is the one-line installer. It downloads the right release asset, verifies its SHA-256, and installs into your user account. No admin prompt and no release-page hunting.
+
+> The installer scripts ship with **1.0.19**. On 1.0.18 or older, use the manual bundles below.
+
+**Linux**
+
+```bash
+curl -fsSL https://github.com/yjid/kensaku/releases/latest/download/install.sh | sh
+```
+
+This installs the AppImage to `~/.local/share/kensaku`, adds a `kensaku` symlink in `~/.local/bin`, and creates a desktop entry. Add `--system` to install the native `.deb`/`.rpm` with apt/dnf instead.
+
+**macOS**
+
+```bash
+curl -fsSL https://github.com/yjid/kensaku/releases/latest/download/install.sh | sh
+```
+
+This installs `kensaku.app` to `~/Applications`. Add `--system` for `/Applications`. macOS builds are not notarized yet; if Gatekeeper blocks the first launch, open **System Settings → Privacy & Security → Open Anyway**, or re-run the installer with `--allow-unsigned` to clear the flag for this app only.
+
+**Windows**
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/yjid/kensaku/releases/latest/download/install.ps1 | iex"
+```
+
+This downloads the Authenticode-signed NSIS setup, checks the signature and SHA-256, and installs per-user. Add `-Silent` for no progress window.
+
+Prefer to inspect first? Download the script, read it, then run it:
+
+```bash
+curl -fsSLO https://github.com/yjid/kensaku/releases/latest/download/install.sh
+less install.sh && sh install.sh --dry-run
+```
+
+**Manual download.** Every release also has direct bundles:
 
 | Platform | Download |
 |---|---|
@@ -144,14 +178,14 @@ Download the bundle for your system from the [latest release](https://github.com
 | Linux | `kensaku_<version>_amd64.AppImage`, `.deb`, or `.rpm` |
 | Agent CLI | `kensaku-cli-{linux,macos,windows}-*` |
 
-Every release also ships `SHA256SUMS` so you can verify what you downloaded. The 1.0.18 Windows x64 downloads are a **14.3 MB** NSIS setup and a **20.2 MB** MSI; the installed app binary is about **38 MB**.
+Every release also ships `SHA256SUMS` so you can verify what you downloaded. The 1.0.19 Windows x64 downloads are a **14.9 MB** NSIS setup and a **20.9 MB** MSI; the installed app binary is about **39 MB**.
 
 Windows builds are Authenticode-signed through [SignPath Foundation](https://signpath.org/), so the publisher is named and SmartScreen reputation can build. macOS builds are not signed or notarised yet, so Gatekeeper blocks them the first time.
 
 - **Windows:** the installer and app are signed. If SmartScreen still shows a reputation warning for a brand-new release, click **More info** → **Run anyway**.
 - **macOS:** open the app, then go to System Settings → Privacy & Security and click **Open Anyway**. Unsigned builds also re-prompt for folder access after each upgrade — see [Troubleshooting](docs/TROUBLESHOOTING.md#macos-keeps-asking-for-folder-access).
 
-[docs/INSTALL.md](docs/INSTALL.md) has the full steps.
+[docs/INSTALL.md](docs/INSTALL.md) has the full steps, installer options, manual bundles, and uninstall instructions.
 
 **First run:** choose the folders you want indexed, pick exclusions, choose launcher or desktop mode, and optionally download the OCR or model packs. Search works while the first scan runs. Closing the window keeps Kensaku running in the tray; quit from the tray.
 
@@ -227,19 +261,15 @@ The two rows aren't a perfect match: Kensaku's search is fuzzy and runs inside a
 
 Indexing is a single pass: each file is read once and feeds both the name and text indexes. Work is queued in bounded batches, so memory stays flat on large folders.
 
-## What's new in 1.0.18
+## What's new in 1.0.19
 
-- **Per-folder indexing modes.** Any watched folder — or a folder inside one — can be set to **Names only** from Settings → Folders or during setup. Files below it stay searchable by name and path but are never read, OCR'd or embedded, which makes media libraries, archives and network shares cheap to index. The list is empty by default; changing it reconciles the index on the next scan. ([#145](https://github.com/yjid/kensaku/pull/145), [#140](https://github.com/yjid/kensaku/issues/140))
-- **Setup can be cancelled**, and folders can be changed while the first scan is running. ([#188](https://github.com/yjid/kensaku/pull/188))
-- **Cleaner Markdown search text and previews** — link and image destinations and fence markers are stripped from what is indexed and shown; link labels, alt text, frontmatter and code inside fences stay searchable. ([#139](https://github.com/yjid/kensaku/pull/139))
-- **Email bodies stored only as HTML or RTF are indexed** — some `.msg` files keep no plain-text body and were matched by subject only. ([#167](https://github.com/yjid/kensaku/pull/167))
-- **A stale or truncated Indra OCR pack is detected** instead of being treated as installed, a failed self-test is no longer cached for the life of the process, and the error now says whether the detector or the recognizer failed. ([#174](https://github.com/yjid/kensaku/issues/174))
-- **Custom CA bundles and the system trust store are honoured** for model, OCR and update downloads. ([#171](https://github.com/yjid/kensaku/pull/171))
-- **The semantic tier no longer returns letter-soup matches** for short or unusual queries. ([#177](https://github.com/yjid/kensaku/issues/177))
-- **Windows folder renames no longer lose their indexed files**, and dot-folders are indexed again when "Skip hidden files" is off. ([#187](https://github.com/yjid/kensaku/issues/187), [#179](https://github.com/yjid/kensaku/pull/179))
-- **The headless Linux daemon no longer deadlocks** on a one-CPU quota and tries every candidate socket path before giving up. ([#180](https://github.com/yjid/kensaku/issues/180))
-- **OCR no longer oversubscribes every core** — inference threads are bounded and UI-priority work is isolated from background OCR. ([#172](https://github.com/yjid/kensaku/pull/172))
-- **Updates are verified end to end**: bounded download, expected size, and `SHA256SUMS` checked before the installer runs.
+- **One-line installers.** Linux/macOS: `curl .../install.sh | sh`; Windows: `irm .../install.ps1 | iex`. They read `latest.json`, verify `SHA256SUMS`, and install per-user without admin. Windows also verifies the Authenticode signature. See [Install](#install).
+- **Signed in-app updates.** Windows updates no longer open the NSIS wizard; the app downloads, verifies a minisign signature, installs in place and relaunches. macOS uses the universal app archive; the Linux AppImage updates in place. MSI, portable, `.deb` and `.rpm` installs update through their own package.
+- **Whole-volume roots prune Windows system trees** — `Windows`, `Program Files`, `ProgramData`, other profiles' `AppData`, the recycle bin and recovery trees. An explicitly watched folder inside one of them stays indexable.
+- **Setup canonicalizes and deduplicates folder paths**, including UNC shares and duplicate pasted paths, and skips missing folders with a translated error.
+- **OCR repair and stability.** Settings → OCR now has **Re-download** for the PP-OCR and Indra packs. The PP-OCR dictionary ships with the app, so matching no longer depends on a GitHub download. OCR also rejects a detector box far outside the image instead of panicking.
+- **Semantic search survives a paused crawl.** Old semantic units are kept until replacements are inserted, so pausing or cancelling a re-index no longer empties the semantic tier.
+- **The update check is bounded** — a busy index no longer leaves the UI on "Waiting for backend".
 
 ## Privacy and security
 
@@ -253,8 +283,9 @@ Full threat model: [SECURITY.md](SECURITY.md).
 
 ## Status
 
-**Shipping now (1.0.18)**
+**Shipping now (1.0.19)**
 
+- One-line installers for Linux, macOS, and Windows, with `--system`/`-Silent` options and manual bundles for offline installs
 - Desktop app for Windows, macOS, and Linux: light and dark themes, grid and list results, infinite scroll, thumbnails, hover details, right-click actions
 - Two window modes: a tray launcher with a global summon keystroke (setup default) or a normal desktop app; closing either keeps the index warm
 - English, Simplified Chinese, and Russian interface, auto-detected from the system or chosen in Settings
@@ -265,7 +296,7 @@ Full threat model: [SECURITY.md](SECURITY.md).
 - Incremental indexing that tracks renames and deletes
 - Agent access over MCP and loopback HTTP, with one-click setup for Claude and Cursor
 - `.gitignore` and `.cursorignore` respected by default
-- In-app updates: background checks, release notes, progress, size + checksum verification, and one-click install
+- Signed in-app updates: background checks, minisign-verified downloads, in-place install and relaunch
 
 **Known limitations**
 

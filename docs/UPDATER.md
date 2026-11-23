@@ -28,6 +28,22 @@ The manifest itself is not signed, but every artifact it points to is. A forged
 manifest cannot produce a valid minisign signature, so the updater rejects the
 download.
 
+## First install vs updates
+
+- **Linux / macOS / Windows one-liner or AppImage/NSIS/macOS app:** the
+  installer sets up 1.0.19, then the in-app updater handles later releases. The
+  first install of 1.0.19 is the migration step for older versions.
+- **`.deb` / `.rpm`:** install and update through the package manager. The
+  in-app updater refuses these installs so it cannot overwrite a package-owned
+  binary.
+- **MSI / portable zip:** install the new MSI or unpack the new portable zip.
+  The in-app updater refuses these installs so it cannot create a second copy.
+
+The one-line installers are release assets:
+`releases/latest/download/install.sh` and `install.ps1`. They read the same
+`latest.json`, verify `SHA256SUMS`, and on Windows require a valid Authenticode
+signature. See [INSTALL.md](INSTALL.md) for the commands and options.
+
 ## Windows install kinds
 
 | Install | Update path |

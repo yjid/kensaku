@@ -8,7 +8,7 @@ These pages go deeper.
 | Page | What it covers |
 |---|---|
 | [USAGE.md](USAGE.md) | Window modes, keyboard, query language, plain-language intent, settings, indexing behavior, slash commands. |
-| [INSTALL.md](INSTALL.md) | Prebuilt bundles, unsigned-build warnings, build prerequisites, the agent CLI, OCR engines, first run, uninstall. |
+| [INSTALL.md](INSTALL.md) | One-line installers, manual bundles, signing, update paths, uninstall, build prerequisites, the agent CLI, OCR engines, first run. |
 | [CONFIG.md](CONFIG.md) | Every `config.json` key with its real default, data-directory overrides, migrations. |
 | [LANGUAGES.md](LANGUAGES.md) | CJK tokenization, code/data formats, document formats, OCR language support. |
 | [FAQ.md](FAQ.md) | Privacy, memory, OCR, updates, agents, and common "why no results?" questions. |
@@ -33,7 +33,7 @@ These pages go deeper.
 
 ## Conventions in these docs
 
-- **Shipped** means the code in the current `1.0.18` tree does it.
+- **Shipped** means the code in the current `1.0.19` tree does it.
 - **Reference** numbers are measured on the stated machine and corpus. They are
   not guarantees; see [BENCHMARKS.md](BENCHMARKS.md) for the caveats.
 - **Not shipped** is called out explicitly. Visual search, native OCR, and

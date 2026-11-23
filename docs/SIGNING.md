@@ -117,7 +117,7 @@ files.
 Windows (PowerShell):
 
 ```powershell
-Get-AuthenticodeSignature .\kensaku_1.0.18_x64-setup.exe |
+Get-AuthenticodeSignature .\kensaku_1.0.19_x64-setup.exe |
   Format-List Status, SignerCertificate, TimeStamperCertificate
 ```
 

@@ -8,6 +8,16 @@ default text model downloads automatically after setup, and OCR data for the
 enabled engine may download automatically while OCR is on; the optional Indra,
 smart-embedding, and visual packs are user-initiated.
 
+**How do I install or update?**
+Use the one-line installer:
+`curl -fsSL https://github.com/yjid/kensaku/releases/latest/download/install.sh | sh`
+on Linux/macOS, or
+`powershell -ExecutionPolicy ByPass -c "irm https://github.com/yjid/kensaku/releases/latest/download/install.ps1 | iex"`
+on Windows. It verifies `SHA256SUMS` and installs per-user. From 1.0.19 onward,
+later releases update in-app; `.deb`/`.rpm` users update through the package
+manager, and MSI/portable users install the new package manually. See
+[INSTALL.md](INSTALL.md).
+
 **Why is the first launch slow?**
 It builds the index. The guided first run completes the initial scan before
 opening the main window, showing live counts and ending with a Done summary;
@@ -114,8 +124,8 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md). Tests and clippy must pass.
 
 **Why is the app bigger than the early 18 MB plan?**
 The early plan assumed a much smaller dependency set and no bundled ONNX Runtime.
-The 1.0.18 Windows x64 downloads are a 14.3 MB NSIS setup and a 20.2 MB MSI;
-the installed app binary is about 38 MB. The base search path uses the compact
+The 1.0.19 Windows x64 downloads are a 14.9 MB NSIS setup and a 20.9 MB MSI;
+the installed app binary is about 39 MB. The base search path uses the compact
 i8 static table rather than
 a neural graph at query time; ONNX is present for OCR, and the smart embedding
 tier remains optional.
