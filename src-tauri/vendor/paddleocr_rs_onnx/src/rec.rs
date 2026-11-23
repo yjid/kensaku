@@ -169,8 +169,30 @@ pub fn preprocess_region(
         return Err(PaddleOcrError::DegenerateRegion { reason: "degenerate text region bbox".to_string() });
     }
 
+    // A finite but absurd coordinate (a bad detector box, or a malformed
+    // region) makes imageproc's inverse projection overflow while sampling:
+    // `left + 1` wraps to i64::MAX and panics. A real text line never lives
+    // far outside the page, so reject those before building the homography.
+    let limit = (image.width().max(image.height()) as f32 * 4.0).max(64.0);
+    if bbox.iter().any(|point| point[0].abs() > limit || point[1].abs() > limit) {
+        warn!("[rec] skipping bbox outside the image bounds: {:?}", region.bbox);
+        return Err(PaddleOcrError::DegenerateRegion {
+            reason: "text region bbox is outside the image".to_string(),
+        });
+    }
+
     let rw = (point_dist(bbox[0], bbox[1]).max(point_dist(bbox[3], bbox[2])).ceil() as u32).max(1);
     let rh = (point_dist(bbox[1], bbox[2]).max(point_dist(bbox[0], bbox[3])).ceil() as u32).max(1);
+
+    // A single line wider or taller than this is not useful to the recognizer
+    // (which resizes to a fixed height) and would allocate far too much.
+    const MAX_RECTIFIED_SIDE: u32 = 8192;
+    if rw > MAX_RECTIFIED_SIDE || rh > MAX_RECTIFIED_SIDE {
+        warn!("[rec] skipping oversized text region: {}x{} for bbox {:?}", rw, rh, region.bbox);
+        return Err(PaddleOcrError::DegenerateRegion {
+            reason: "text region is too large to rectify".to_string(),
+        });
+    }
 
     let src = [
         (bbox[0][0], bbox[0][1]),
@@ -364,6 +386,26 @@ mod tests {
     fn quad_area_calculation() {
         let bbox = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
         assert_eq!(quad_area(&bbox), 100.0);
+    }
+
+    #[test]
+    fn bbox_far_outside_the_image_is_rejected_without_panicking() {
+        let image = image::DynamicImage::new_rgb8(100, 100);
+        let region = crate::TextRegion {
+            bbox: [
+                [1.0e20, 1.0e20],
+                [2.0e20, 1.0e20],
+                [2.0e20, 2.0e20],
+                [1.0e20, 2.0e20],
+            ],
+            confidence: 0.9,
+        };
+
+        let err = super::preprocess_region(&image, &region, 48, None).unwrap_err();
+        assert!(
+            matches!(err, crate::PaddleOcrError::DegenerateRegion { .. }),
+            "expected a rejected region, got {err:?}"
+        );
     }
 }
 
