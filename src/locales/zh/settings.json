@@ -320,6 +320,7 @@
     "installed": "已安装",
     "notInstalled": "未安装",
     "download": "下载",
+    "redownload": "重新下载",
     "notCompiled": "{{name}} 未编译进此版本。使用默认特性重新构建即可启用。",
     "copyInstall": "复制安装命令 — {{command}}",
     "otherPlatforms": "其他平台",

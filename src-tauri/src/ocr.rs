@@ -427,6 +427,27 @@ enum AccurateEngine {
     Unavailable,
 }
 
+#[cfg(feature = "accurate-ocr")]
+static ENGINE_CACHE: std::sync::OnceLock<std::sync::Mutex<AccurateEngine>> =
+    std::sync::OnceLock::new();
+
+#[cfg(feature = "accurate-ocr")]
+fn engine_cache() -> &'static std::sync::Mutex<AccurateEngine> {
+    ENGINE_CACHE.get_or_init(|| std::sync::Mutex::new(AccurateEngine::Uninitialized))
+}
+
+/// Drops the cached PP-OCR engine so a re-downloaded pack is loaded on the
+/// next read. In-flight readers keep their `Arc` until they finish.
+#[cfg(feature = "accurate-ocr")]
+pub fn reset_engine() {
+    *engine_cache()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = AccurateEngine::Uninitialized;
+}
+
+#[cfg(not(feature = "accurate-ocr"))]
+pub fn reset_engine() {}
+
 /// The shared engine, loaded on first use.
 ///
 /// The lock is held only while loading. Recognition runs outside it on a
@@ -436,11 +457,9 @@ enum AccurateEngine {
 #[cfg(feature = "accurate-ocr")]
 fn accurate_engine() -> Option<std::sync::Arc<paddleocr_rs_onnx::OcrEngine>> {
     use paddleocr_rs_onnx::OcrEngine;
-    use std::sync::{Arc, Mutex, OnceLock};
+    use std::sync::Arc;
 
-    static ENGINE_CACHE: OnceLock<Mutex<AccurateEngine>> = OnceLock::new();
-
-    let cache = ENGINE_CACHE.get_or_init(|| Mutex::new(AccurateEngine::Uninitialized));
+    let cache = engine_cache();
     let mut guard = cache
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());

@@ -60,6 +60,16 @@ pub fn reset_self_test() {
     }
 }
 
+/// Drops the cached Indra engines so a re-downloaded pack is loaded on the
+/// next read. In-flight readers keep their engines until they finish.
+#[cfg(feature = "accurate-ocr")]
+pub fn reset_engine() {
+    pool::reset();
+}
+
+#[cfg(not(feature = "accurate-ocr"))]
+pub fn reset_engine() {}
+
 /// Why Indra cannot run, in words a user can act on, or `None` when it can.
 pub fn problem() -> Option<String> {
     if !crate::ocr::accurate_compiled() {
@@ -190,15 +200,33 @@ mod pool {
     use super::engine::Engine;
     use super::imageops::Gray;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::{Arc, Mutex, OnceLock};
 
     /// Threads per engine; engines = half the cores / this, at most 3.
     const THREADS: usize = 2;
 
-    /// `None` once loading failed: a corrupt pack is probed once, not once
-    /// per image.
-    static ENGINES: OnceLock<Option<Vec<Mutex<Engine>>>> = OnceLock::new();
+    #[derive(Default)]
+    struct Pool {
+        loaded: bool,
+        engines: Option<Arc<Vec<Mutex<Engine>>>>,
+    }
+
+    /// `loaded` distinguishes "not attempted" from "attempted and failed":
+    /// a corrupt pack is probed once, not once per image.
+    static POOL: OnceLock<Mutex<Pool>> = OnceLock::new();
     static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    fn pool() -> &'static Mutex<Pool> {
+        POOL.get_or_init(|| Mutex::new(Pool::default()))
+    }
+
+    /// Drops the loaded engines. In-flight readers keep their `Arc` until
+    /// they finish; the next read loads the current pack from disk.
+    pub fn reset() {
+        *pool()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Pool::default();
+    }
 
     fn load() -> Option<Vec<Mutex<Engine>>> {
         let cores = std::thread::available_parallelism().map_or(2, |n| n.get());
@@ -227,7 +255,17 @@ mod pool {
 
     /// `None` when no engine could load.
     pub fn read(page: &Gray) -> Option<Result<super::engine::ReadResult, String>> {
-        let engines = ENGINES.get_or_init(load).as_ref()?;
+        let engines = {
+            let mut guard = pool()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if !guard.loaded {
+                guard.engines = load().map(Arc::new);
+                guard.loaded = true;
+            }
+            guard.engines.clone()
+        };
+        let engines = engines.as_ref()?;
         let start = NEXT.fetch_add(1, Ordering::Relaxed);
         let mut attempts = 0;
         let mut engine = loop {

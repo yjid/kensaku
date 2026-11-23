@@ -504,6 +504,8 @@ pub fn run() {
             commands::download_ocr_pack,
             commands::get_indra_pack_status,
             commands::download_indra_pack,
+            commands::redownload_ocr_pack,
+            commands::redownload_indra_pack,
             commands::get_smart_pack_status,
             commands::download_smart_pack,
             commands::get_visual_pack_status,

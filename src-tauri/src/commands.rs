@@ -862,6 +862,20 @@ pub async fn download_indra_pack() -> Result<crate::models::ModelsStatus, String
     Ok(crate::models::indra_status())
 }
 
+/// Forces a fresh download of the accurate OCR pack.
+#[tauri::command]
+pub async fn redownload_ocr_pack() -> Result<crate::models::ModelsStatus, String> {
+    crate::models::redownload_ocr_pack()?;
+    Ok(crate::models::ocr_status())
+}
+
+/// Forces a fresh download of the Indra OCR pack.
+#[tauri::command]
+pub async fn redownload_indra_pack() -> Result<crate::models::ModelsStatus, String> {
+    crate::models::redownload_indra_pack()?;
+    Ok(crate::models::indra_status())
+}
+
 /// Reports the optional smart embedding pack inventory.
 #[tauri::command]
 pub async fn get_smart_pack_status() -> Result<crate::models::ModelsStatus, String> {

@@ -138,6 +138,8 @@ const handlers: Record<string, (a: any) => unknown> = {
   get_ocr_status: () => ({ available: true, engine_present: true, accurate_compiled: true, accurate_available: true, accurate_problem: null, active_engine: "tesseract", engine: "tesseract", languages: ["eng"] }),
   get_ocr_pack_status: () => ({ ready: false, downloading: false, dir: "~/.config/kensaku/ocr", artifacts: [] }),
   get_indra_pack_status: () => ({ ready: false, downloading: false, dir: "~/.config/kensaku/ocr-indra", artifacts: [] }),
+  redownload_ocr_pack: () => ({ ready: false, downloading: true, dir: "~/.config/kensaku/ocr", artifacts: [] }),
+  redownload_indra_pack: () => ({ ready: false, downloading: true, dir: "~/.config/kensaku/ocr-indra", artifacts: [] }),
   get_models_status: () => ({ ready: true }),
   get_autostart: () => true,
   get_file_details: (a) => {

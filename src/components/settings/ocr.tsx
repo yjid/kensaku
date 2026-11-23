@@ -26,12 +26,14 @@ const PACKS = {
     name: "PP-OCRv6",
     statusCommand: "get_ocr_pack_status",
     downloadCommand: "download_ocr_pack",
+    redownloadCommand: "redownload_ocr_pack",
     blurbKey: "ocr.ppocrBlurb",
   },
   indra: {
     name: "Indra OCR",
     statusCommand: "get_indra_pack_status",
     downloadCommand: "download_indra_pack",
+    redownloadCommand: "redownload_indra_pack",
     blurbKey: "ocr.indraBlurb",
   },
 } as const;
@@ -87,6 +89,7 @@ export function OcrField({
   const [status, setStatus] = useState<OcrStatus | null>(null);
   const [pack, setPack] = useState<ModelsStatus | null>(null);
   const [packBusy, setPackBusy] = useState(false);
+  const [packError, setPackError] = useState<string | null>(null);
   const [rechecking, setRechecking] = useState(false);
   const [allPlatforms, setAllPlatforms] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
@@ -105,6 +108,7 @@ export function OcrField({
     if (!packInfo) return;
     try {
       setPack(await invoke<ModelsStatus>(packInfo.statusCommand));
+      setPackError(null);
     } catch {
       setPack(null);
     }
@@ -129,10 +133,26 @@ export function OcrField({
   const downloadPack = async () => {
     if (!packInfo) return;
     setPackBusy(true);
+    setPackError(null);
     try {
       setPack(await invoke<ModelsStatus>(packInfo.downloadCommand));
     } catch (err) {
+      setPackError(String(err));
       console.warn(`${packInfo.downloadCommand} failed:`, err);
+    } finally {
+      setPackBusy(false);
+    }
+  };
+
+  const redownloadPack = async () => {
+    if (!packInfo) return;
+    setPackBusy(true);
+    setPackError(null);
+    try {
+      setPack(await invoke<ModelsStatus>(packInfo.redownloadCommand));
+    } catch (err) {
+      setPackError(String(err));
+      console.warn(`${packInfo.redownloadCommand} failed:`, err);
     } finally {
       setPackBusy(false);
     }
@@ -323,6 +343,11 @@ export function OcrField({
                       ? pack.error
                       : t("ocr.notInstalled")}
               </p>
+              {packError && (
+                <p className="mt-0.5 break-words text-[11px] leading-4 text-warning">
+                  {packError}
+                </p>
+              )}
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {!pack?.ready && (
@@ -336,6 +361,19 @@ export function OcrField({
                     className={`h-3 w-3 ${packBusy || pack?.downloading ? "animate-spin" : ""}`}
                   />
                   {t("ocr.download")}
+                </button>
+              )}
+              {pack?.ready && (
+                <button
+                  type="button"
+                  disabled={packBusy || pack?.downloading}
+                  onClick={redownloadPack}
+                  className="btn btn-secondary h-8 px-3 text-[12px]"
+                >
+                  <RefreshCw
+                    className={`h-3 w-3 ${packBusy || pack?.downloading ? "animate-spin" : ""}`}
+                  />
+                  {t("ocr.redownload")}
                 </button>
               )}
             </div>

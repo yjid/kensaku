@@ -320,6 +320,7 @@
     "installed": "Installed",
     "notInstalled": "Not installed",
     "download": "Download",
+    "redownload": "Re-download",
     "notCompiled": "{{name}} is not compiled into this build. Rebuild with default features to enable it.",
     "copyInstall": "Copy install command — {{command}}",
     "otherPlatforms": "Other platforms",

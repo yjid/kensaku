@@ -549,6 +549,55 @@ pub fn download_indra_pack() -> Result<(), String> {
     )
 }
 
+/// Forces a fresh download of the accurate OCR pack.
+///
+/// Drops the cached engine first: on Windows an open ONNX session can keep the
+/// model files locked, and a repair is useless if the old engine keeps being
+/// served from memory.
+pub fn redownload_ocr_pack() -> Result<(), String> {
+    redownload_pack(
+        crate::ocr::pack_dir(),
+        &OCR_ARTIFACTS,
+        "kensaku-ocr-download",
+        "OCR pack",
+    )
+}
+
+/// Forces a fresh download of the Indra OCR pack.
+pub fn redownload_indra_pack() -> Result<(), String> {
+    redownload_pack(
+        crate::ocr_indra::pack_dir(),
+        &INDRA_ARTIFACTS,
+        "kensaku-indra-download",
+        "Indra OCR pack",
+    )
+}
+
+fn redownload_pack(
+    dir: PathBuf,
+    artifacts: &'static [Artifact],
+    thread_name: &str,
+    label: &'static str,
+) -> Result<(), String> {
+    if download_running() {
+        return Err(BUSY_DOWNLOAD.to_string());
+    }
+    match Pack::of(artifacts) {
+        Some(Pack::Ocr) => crate::ocr::reset_engine(),
+        Some(Pack::Indra) => crate::ocr_indra::reset_engine(),
+        _ => {}
+    }
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| {
+            format!(
+                "Could not remove {}: {e}. Close and reopen Kensaku, then try again.",
+                dir.display()
+            )
+        })?;
+    }
+    start_download(dir, artifacts, thread_name, label)
+}
+
 /// Starts a background download of the optional ONNX smart embedding pack.
 pub fn download_smart_pack() -> Result<(), String> {
     start_download(
