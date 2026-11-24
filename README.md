@@ -1,12 +1,8 @@
-<p align="center">
-  <img src="assets/icon.png" width="112" height="112" alt="Kensaku" />
-</p>
-
-<h1 align="center">Kensaku <span title="kensaku = search, in Japanese">検索</span></h1>
+﻿<h1 align="center">Kensaku <span title="kensaku = search, in Japanese">æ¤œç´¢</span></h1>
 
 <p align="center">
   <b>Find anything on your computer. Privately.</b><br/>
-  File names, the text inside documents, screenshots, and meaning — all offline.
+  File names, the text inside documents, screenshots, and meaning â€” all offline.
 </p>
 
 <p align="center">
@@ -21,27 +17,12 @@
 </p>
 
 <p align="center">
-  <a href="#install">Install</a> ·
-  <a href="#why-kensaku">Why Kensaku</a> ·
-  <a href="#features">Features</a> ·
-  <a href="#for-ai-agents">Agents</a> ·
-  <a href="docs/README.md">Docs</a> ·
-  <a href="#contributing">Contribute</a>
+  <img src="assets/hero.png" width="100%" alt="Kensaku â€” find anything on your computer" />
 </p>
 
-<p align="center">
-  <img src="assets/hero.png" width="100%" alt="Kensaku — find anything on your computer" />
-</p>
+## Install
 
-## ⚡ Install
-
-<p align="center">
-  <a href="https://github.com/yjid/kensaku/releases/latest"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white" /></a>
-  <a href="https://github.com/yjid/kensaku/releases/latest"><img alt="Download for macOS" src="https://img.shields.io/badge/Download-macOS-111111?style=for-the-badge&logo=apple&logoColor=white" /></a>
-  <a href="https://github.com/yjid/kensaku/releases/latest"><img alt="Download for Linux" src="https://img.shields.io/badge/Download-Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" /></a>
-</p>
-
-Or install from a terminal:
+Download the latest release for **[Windows](https://github.com/yjid/kensaku/releases/latest)**, **[macOS](https://github.com/yjid/kensaku/releases/latest)**, or **[Linux](https://github.com/yjid/kensaku/releases/latest)**. Or install from a terminal:
 
 ```bash
 # Linux / macOS
@@ -70,13 +51,13 @@ powershell -ExecutionPolicy ByPass -c "irm https://github.com/yjid/kensaku/relea
 
 </details>
 
-**Windows:** per-user install, no admin prompt. The installer is Authenticode-signed. A brand-new release can still show a SmartScreen reputation warning; choose **More info → Run anyway** only if it came from this repository's Releases page.
+**Windows:** per-user install, no admin prompt. The installer is Authenticode-signed. A brand-new release can still show a SmartScreen reputation warning; choose **More info â†’ Run anyway** only if it came from this repository's Releases page.
 
-**macOS:** builds are not notarized yet. If macOS blocks the first launch, open **System Settings → Privacy & Security → Open Anyway**. Folder-access prompts can return after an upgrade; see [Troubleshooting](docs/TROUBLESHOOTING.md#macos-keeps-asking-for-folder-access).
+**macOS:** builds are not notarized yet. If macOS blocks the first launch, open **System Settings â†’ Privacy & Security â†’ Open Anyway**. Folder-access prompts can return after an upgrade; see [Troubleshooting](docs/TROUBLESHOOTING.md#macos-keeps-asking-for-folder-access).
 
 Full steps, options, updates, and uninstall: [docs/INSTALL.md](docs/INSTALL.md).
 
-## 🔍 Why Kensaku
+## Why Kensaku
 
 You don't remember the filename. You remember what was in it.
 
@@ -88,26 +69,26 @@ Type what you remember. Kensaku searches names, text inside files, and meaning, 
 
 | | Kensaku | Everything | Listary | PowerToys Run |
 |---|---|---|---|---|
-| Search inside PDF, Office, EPUB, email | ✅ | ❌ | ❌ | ❌ |
-| Text inside screenshots and scans (OCR) | ✅ | ❌ | ❌ | ❌ |
-| Search by meaning | ✅ | ❌ | ❌ | ❌ |
-| Multilingual and CJK text | ✅ | ❌ | ❌ | ❌ |
-| Your AI agents can search the same index | ✅ | ❌ | ❌ | ❌ |
-| Free and open source (MIT) | ✅ | ❌ | ❌ | ✅ |
+| Search inside PDF, Office, EPUB, email | âœ… | âŒ | âŒ | âŒ |
+| Text inside screenshots and scans (OCR) | âœ… | âŒ | âŒ | âŒ |
+| Search by meaning | âœ… | âŒ | âŒ | âŒ |
+| Multilingual and CJK text | âœ… | âŒ | âŒ | âŒ |
+| Your AI agents can search the same index | âœ… | âŒ | âŒ | âŒ |
+| Free and open source (MIT) | âœ… | âŒ | âŒ | âœ… |
 
 **Three things worth trying on day one:**
 
-1. 📸 **Screenshot archaeology.** Search the error text you saw in a screenshot.
-2. 🗣️ **Describe, don't recall.** “big videos from last month” is a valid query.
-3. 🤖 **Give your AI agent eyes.** Claude or Cursor can search this same local index.
+1. **Screenshot archaeology.** Search the error text you saw in a screenshot.
+2. **Describe, don't recall.** â€œbig videos from last monthâ€ is a valid query.
+3. **Give your AI agent eyes.** Claude or Cursor can search this same local index.
 
 <p align="center">
   <img src="assets/search-dashboard.png" width="100%" alt="Kensaku search results" />
 </p>
 
-## ✨ Features
+## Features
 
-**🔎 Finds more**
+**Finds more**
 - Names, full text, fuzzy matches, and meaning in one search.
 - PDF, DOCX/PPTX/XLSX, EPUB, ODT, RTF, CSV/TSV, email (`.eml`, `.msg`), and plain text.
 - 50+ code and data formats, including Rust, Python, TypeScript, Go, C/C++, SQL, JSON, YAML, and TOML.
@@ -115,23 +96,23 @@ Type what you remember. Kensaku searches names, text inside files, and meaning, 
 - Images and OCR: PP-OCRv6 by default; optional Indra for deskew and multi-script recognition.
 - A query language for power users: `type:pdf invoice`, `modified:7d`, `re:"fn \w+"`. [Reference](docs/USAGE.md).
 
-**⚡ Fast and calm**
+**Fast and calm**
 - 100,000 filenames in milliseconds on a warm cache; about 12 MB of metadata. [Benchmarks](docs/BENCHMARKS.md).
 - Results update as you type. Changed files are picked up incrementally.
 - Closing the window keeps the index warm; reopening is instant.
 - Launcher or desktop-app mode, keyboard navigation, space previews, grid or list.
 
-**🔒 Private**
+**Private**
 - No account, no telemetry, no cloud search. Your index stays on your machine.
 - The agent surface is read-only by default; `reindex` is opt-in.
 - Hidden files, build folders, and credential files are excluded by default.
 
-**💡 Good to know**
+**Good to know**
 - OCR packs download once (PP-OCRv6 is ~6.1 MB; Indra is ~27 MB). Intel Macs fall back to Tesseract.
 - Visual search is a beta model download and is not part of search results yet.
 - Windows is the most tested platform; macOS and Linux reports are especially valuable.
 
-## 📊 Performance
+## Performance
 
 | What | Result |
 |---|---|
@@ -144,7 +125,7 @@ Type what you remember. Kensaku searches names, text inside files, and meaning, 
 
 The Windows and Linux rows are the same workload on different hardware; NTFS metadata reads and antivirus make the walk slower on Windows. Method, corpus, and caveats: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
-## 🤖 For AI agents
+## For AI agents
 
 `kensaku-cli` ships with each release and shares the same local index:
 
@@ -158,7 +139,7 @@ The Windows and Linux rows are the same workload on different hardware; NTFS met
 
 Read-only by default, with scoped roots, cursor pagination, and tree-sitter symbol lookup. Full guide: [docs/AGENTS.md](docs/AGENTS.md).
 
-## 🛠 Build from source
+## Build from source
 
 ```bash
 git clone https://github.com/yjid/kensaku
@@ -169,35 +150,27 @@ bun run tauri build
 
 You need Rust stable, Bun 1.1+, and your platform's webview libraries. Full prerequisites and build notes: [docs/INSTALL.md](docs/INSTALL.md). A `Makefile` wraps `make dev`, `make build`, `make test`, and `make reset`.
 
-## 📚 Docs
+## Documentation
 
-[Install](docs/INSTALL.md) ·
-[Usage](docs/USAGE.md) ·
-[FAQ](docs/FAQ.md) ·
-[Troubleshooting](docs/TROUBLESHOOTING.md) ·
-[Privacy](docs/PRIVACY.md) ·
-[Agents](docs/AGENTS.md) ·
-[Benchmarks](docs/BENCHMARKS.md) ·
-[Architecture](docs/ARCHITECTURE.md) ·
-[Contributing](docs/CONTRIBUTING.md) ·
-[Security](SECURITY.md)
+Start with [Install](docs/INSTALL.md), [Usage](docs/USAGE.md), [FAQ](docs/FAQ.md), or [Troubleshooting](docs/TROUBLESHOOTING.md). For agents, see [AGENTS](docs/AGENTS.md); for performance and internals, see [BENCHMARKS](docs/BENCHMARKS.md) and [ARCHITECTURE](docs/ARCHITECTURE.md). Contributing and security have their own pages: [CONTRIBUTING](docs/CONTRIBUTING.md), [SECURITY](SECURITY.md).
 
-## 🤝 Contributing
+## Contributing
 
 Kensaku is MIT-licensed and built by people who wanted a better launcher.
 
 - **Use it and break it.** Bug reports with steps to reproduce are the most valuable contribution right now.
 - **Pick a good first issue** in the [issue tracker](https://github.com/yjid/kensaku/issues).
-- **Improve search quality** — ranking, typo tolerance, and new extractors.
-- **Docs, translations, and screenshots** — [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
-- **Security** — report privately via [SECURITY.md](SECURITY.md).
+- **Improve search quality** â€” ranking, typo tolerance, and new extractors.
+- **Docs, translations, and screenshots** â€” [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
+- **Security** â€” report privately via [SECURITY.md](SECURITY.md).
 
 If Kensaku saves you time, [star the repository](https://github.com/yjid/kensaku/stargazers). It is how the next contributor finds us.
 
-## ⭐ Star history
+## Star history
 
 [![Star History Chart](https://api.star-history.com/svg?repos=yjid/kensaku&type=Date)](https://star-history.com/#yjid/kensaku&Date)
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
