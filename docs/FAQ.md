@@ -128,7 +128,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md). Tests and clippy must pass.
 
 **Why is the app bigger than the early 18 MB plan?**
 The early plan assumed a much smaller dependency set and no bundled ONNX Runtime.
-The 1.0.19 Windows x64 downloads are a 14.9 MB NSIS setup and a 20.9 MB MSI;
+The 1.0.20 Windows x64 downloads are a 14.9 MB NSIS setup and a 20.9 MB MSI;
 the installed app binary is about 39 MB. The base search path uses the compact
 i8 static table rather than
 a neural graph at query time; ONNX is present for OCR, and the smart embedding

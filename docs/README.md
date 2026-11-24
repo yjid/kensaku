@@ -33,7 +33,7 @@ These pages go deeper.
 
 ## Conventions in these docs
 
-- **Shipped** means the code in the current `1.0.19` tree does it.
+- **Shipped** means the code in the current `1.0.20` tree does it.
 - **Reference** numbers are measured on the stated machine and corpus. They are
   not guarantees; see [BENCHMARKS.md](BENCHMARKS.md) for the caveats.
 - **Not shipped** is called out explicitly. Visual search, native OCR, and

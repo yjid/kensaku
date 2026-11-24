@@ -3,7 +3,7 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.0.20] — 2026-11-24
 
 ### Fixed
 - **PP-OCR sessions no longer pin ONNX Runtime's CPU arena.** The arena only
