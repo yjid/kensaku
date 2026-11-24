@@ -114,6 +114,9 @@ fn install_signal_handlers() {
 fn install_signal_handlers() {}
 
 fn main() {
+    // The daemon owns the index and the crawl on Linux; the GUI's allocator
+    // settings do not cross a process boundary.
+    kensaku_lib::util::memory::configure_allocator();
     install_signal_handlers();
     let config_dir = KensakuConfig::config_dir();
     let _ = fs::create_dir_all(&config_dir);
