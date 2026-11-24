@@ -10,6 +10,12 @@ versioning: [SemVer](https://semver.org/).
   grows, and every detector and recognizer session kept its own, so the peak
   from an image-heavy crawl outlived the crawl. Both now allocate through the
   system allocator, matching the Indra OCR path.
+- **PP-OCR converts the page to RGB once, not once per text line.** Every
+  detected line used to copy the whole page, multiplying memory and CPU work
+  on text-heavy screenshots.
+- **A failed recognition returns its session to the pool.** An inference error
+  used to drop the session; enough errors drained the pool and left other
+  workers blocked forever.
 - **The allocator returns the crawl's large buffers.** On glibc, multi-megabyte
   image decodes were landing in per-thread arenas that only trim their top
   chunk, leaving hundreds of megabytes mapped after an image-heavy first scan.

@@ -57,7 +57,7 @@ pub use error::PaddleOcrError;
 pub use cls::{DocOrientation, OrientationResult, classify_orientation};
 pub use decode::DecodedText;
 
-use image::DynamicImage;
+use image::{DynamicImage, RgbImage};
 use serde::{Deserialize, Serialize};
 
 /// A detected text region in an image.
@@ -704,7 +704,16 @@ impl OcrEngine {
     /// [`detect_text_regions`]: OcrEngine::detect_text_regions
     /// [`recognize_all`]: OcrEngine::recognize_all
     pub fn recognize_text(&self, image: &DynamicImage, region: &TextRegion) -> Result<decode::DecodedText, PaddleOcrError> {
-        let (data, width) = rec::preprocess_region(image, region, self.rec_height, self.rec_width)?;
+        let rgb = image.to_rgb8();
+        self.recognize_text_rgb(&rgb, region)
+    }
+
+    /// Recognition for a page already converted to RGB.
+    ///
+    /// `recognize_all` converts once per page and reuses the buffer; converting
+    /// per line copied the whole page for every detection.
+    fn recognize_text_rgb(&self, image: &RgbImage, region: &TextRegion) -> Result<decode::DecodedText, PaddleOcrError> {
+        let (data, width) = rec::preprocess_region_rgb(image, region, self.rec_height, self.rec_width)?;
 
         // Pop a session from the pool, blocking until one is available
         let mut session = {
@@ -717,16 +726,18 @@ impl OcrEngine {
             }
         };
 
-        let result = rec::run_recognition(&mut session, &data, width, self.rec_height, &self.rec_input, &self.rec_output)?;
+        let result = rec::run_recognition(&mut session, &data, width, self.rec_height, &self.rec_input, &self.rec_output);
 
-        // Always return session to pool and notify waiters
+        // Always return the session to the pool, even when inference fails:
+        // returning early on `?` used to drop it, draining the pool until every
+        // waiter blocked on the condvar forever.
         {
             let mut pool = self.rec_sessions.lock();
             pool.push_back(session);
             self.rec_sessions_cvar.notify_one();
         }
 
-        let probs = result;
+        let probs = result?;
         Ok(decode::ctc_decode(&probs, &self.keys))
     }
 
@@ -788,12 +799,18 @@ impl OcrEngine {
                 .map_err(|e| PaddleOcrError::General(e.to_string()));
         }
 
+        // One page conversion shared by every detected line. `as_rgb8` avoids
+        // the copy when the decoder already produced RGB.
+        let rgb = image
+            .as_rgb8()
+            .cloned()
+            .unwrap_or_else(|| image.to_rgb8());
         let mut blocks: Vec<OcrBlock> = regions
             // Parallelize documents in Kensaku's bounded extraction pool, not
             // regions on a second pool (including calls outside a Rayon pool).
             .iter()
             .filter_map(|region| {
-                match self.recognize_text(image, region) {
+                match self.recognize_text_rgb(&rgb, region) {
                     Ok(decoded) => {
                         if decoded.text.is_empty() {
                             None

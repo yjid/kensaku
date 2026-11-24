@@ -270,6 +270,9 @@ Indexing is a single pass: each file is read once and feeds both the name and te
   the only way to get it back.
 - **The Linux daemon gets the same settings** as the GUI process, so the
   process that actually crawls is the one that releases the memory.
+- **Less OCR work per page.** PP-OCR converts the page to RGB once instead of
+  once per detected text line, and an inference error no longer drops the
+  recognition session.
 
 ## What's new in 1.0.19
 

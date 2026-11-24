@@ -13,7 +13,7 @@ use crate::error::PaddleOcrError;
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use image::{DynamicImage, RgbImage};
+use image::RgbImage;
 use imageproc::geometric_transformations::{warp_into, Interpolation, Border, Projection};
 use log::warn;
 use ort::session::Session;
@@ -152,8 +152,23 @@ fn order_bbox_points(bbox: [[f32; 2]; 4]) -> [[f32; 2]; 4] {
 ///
 /// Returns [`PaddleOcrError::DegenerateRegion`] if the bounding box is invalid,
 /// or [`PaddleOcrError::Projection`] if the perspective transformation fails.
+#[cfg(test)]
 pub fn preprocess_region(
-    image: &DynamicImage,
+    image: &image::DynamicImage,
+    region: &TextRegion,
+    rec_height: u32,
+    rec_width: Option<u32>,
+) -> Result<(Vec<f32>, i64), PaddleOcrError> {
+    let rgb = image.to_rgb8();
+    preprocess_region_rgb(&rgb, region, rec_height, rec_width)
+}
+
+/// Like [`preprocess_region`], but takes an already-converted RGB page.
+///
+/// `recognize_all` converts the page once and reuses it for every detection.
+/// Converting inside this function copied the whole page once per text line.
+pub fn preprocess_region_rgb(
+    image: &RgbImage,
     region: &TextRegion,
     rec_height: u32,
     rec_width: Option<u32>,
@@ -210,7 +225,6 @@ pub fn preprocess_region(
     let proj = Projection::from_control_points(src, dst)
         .ok_or(PaddleOcrError::Projection { reason: "Failed to create projection".to_string() })?;
 
-    let rgb = image.to_rgb8();
     let mut rectified = RgbImage::new(rw, rh);
 
     // Use Bilinear instead of Bicubic: bilinear samples a 2×2 neighbourhood
@@ -219,7 +233,7 @@ pub fn preprocess_region(
     // For OCR text rectification the quality difference is negligible.
     let warp_result = catch_unwind(AssertUnwindSafe(|| {
         warp_into(
-            &rgb,
+            image,
             proj,
             Interpolation::Bilinear,
             Border::Replicate,
@@ -287,8 +301,8 @@ pub fn preprocess_region(
 /// # Arguments
 ///
 /// * `session` — The ONNX runtime session loaded with the recognition model.
-/// * `data` — Flattened CHW-format image data from [`preprocess_region`].
-/// * `width` — Width of the input tensor (from [`preprocess_region`]).
+/// * `data` — Flattened CHW-format image data from [`preprocess_region_rgb`].
+/// * `width` — Width of the input tensor (from [`preprocess_region_rgb`]).
 /// * `height` — Height of the input tensor (`rec_height`).
 /// * `input_name` — Name of the model's input tensor.
 /// * `output_name` — Name of the model's output tensor.
@@ -406,6 +420,29 @@ mod tests {
             matches!(err, crate::PaddleOcrError::DegenerateRegion { .. }),
             "expected a rejected region, got {err:?}"
         );
+    }
+
+    #[test]
+    fn rgb_page_path_matches_dynamic_image_path() {
+        let page = image::RgbImage::from_fn(80, 40, |x, y| {
+            image::Rgb([(x % 255) as u8, (y % 255) as u8, 128])
+        });
+        let region = crate::TextRegion {
+            bbox: [[2.0, 2.0], [78.0, 2.0], [78.0, 38.0], [2.0, 38.0]],
+            confidence: 0.9,
+        };
+
+        let from_dynamic = super::preprocess_region(
+            &image::DynamicImage::ImageRgb8(page.clone()),
+            &region,
+            48,
+            None,
+        )
+        .expect("dynamic path");
+        let from_rgb = super::preprocess_region_rgb(&page, &region, 48, None).expect("rgb path");
+
+        assert_eq!(from_dynamic.1, from_rgb.1);
+        assert_eq!(from_dynamic.0, from_rgb.0);
     }
 }
 
