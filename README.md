@@ -39,9 +39,23 @@
 
 ## Install
 
-**Download for [Windows](https://github.com/yjid/kensaku/releases/latest) ·
+Download the release for **[Windows](https://github.com/yjid/kensaku/releases/latest) ·
 [macOS](https://github.com/yjid/kensaku/releases/latest) ·
-[Linux](https://github.com/yjid/kensaku/releases/latest)**
+[Linux](https://github.com/yjid/kensaku/releases/latest)**.
+
+Or install from a terminal:
+
+```bash
+# Linux / macOS
+curl -fsSL https://github.com/yjid/kensaku/releases/latest/download/install.sh | sh
+```
+
+```powershell
+# Windows PowerShell
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/yjid/kensaku/releases/latest/download/install.ps1 | iex"
+```
+
+The installers verify `SHA256SUMS`; Windows also verifies the Authenticode signature. Use `--system` on Linux for the `.deb`/`.rpm`, `-Silent` on Windows, or `--dry-run` / `-DryRun` to see what will happen.
 
 1. Download the installer for your computer.
 2. Run it and open Kensaku.
@@ -58,25 +72,6 @@
 **Windows:** per-user install, no admin prompt. The installer is Authenticode-signed. A brand-new release can still show a SmartScreen reputation warning; choose **More info → Run anyway** only if it came from this repository's Releases page.
 
 **macOS:** builds are not notarized yet. If macOS blocks the first launch, open **System Settings → Privacy & Security → Open Anyway**. Folder-access prompts can return after an upgrade; see [Troubleshooting](docs/TROUBLESHOOTING.md#macos-keeps-asking-for-folder-access).
-
-<details>
-<summary><b>Terminal one-line install</b> (optional)</summary>
-
-Linux and macOS:
-
-```bash
-curl -fsSL https://github.com/yjid/kensaku/releases/latest/download/install.sh | sh
-```
-
-Windows PowerShell:
-
-```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://github.com/yjid/kensaku/releases/latest/download/install.ps1 | iex"
-```
-
-The installers verify `SHA256SUMS`; Windows also verifies the Authenticode signature. Use `--system` on Linux for the `.deb`/`.rpm`, `-Silent` on Windows, or `--dry-run` / `-DryRun` to see what will happen.
-
-</details>
 
 Full steps, updates, and uninstall: [docs/INSTALL.md](docs/INSTALL.md).
 
