@@ -61,6 +61,48 @@ pub fn release_memory() {
 )))]
 pub fn release_memory() {}
 
+/// Tunes the process allocator for the crawl's large, short-lived buffers.
+///
+/// glibc keeps one arena per busy thread and only trims the top of each. A
+/// crawl decodes multi-megabyte images on several workers, and glibc raises
+/// its mmap threshold dynamically (up to 32 MiB) after it sees large frees.
+/// Those buffers then land in arenas; free chunks in the middle stay mapped
+/// for the life of the process even though `malloc_trim` runs after every
+/// file. That is the several hundred megabytes an idle Kensaku can report
+/// after an image-heavy first scan.
+///
+/// Pinning the mmap and trim thresholds keeps multi-megabyte buffers on
+/// mmap-backed allocations, which are returned on free. Capping the arena
+/// count stops every worker from growing its own 64 MiB heap. A `MALLOC_*`
+/// setting in the environment still wins, so the process can be tuned without
+/// rebuilding.
+///
+/// Must run before worker threads allocate: `M_ARENA_MAX` only limits arenas
+/// created afterwards.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+pub fn configure_allocator() {
+    /// 1 MiB: ordinary text and index buffers stay on the fast path, while
+    /// decoded pixels and OCR tensors are mmap'd and unmapped on free.
+    const MIB: libc::c_int = 1024 * 1024;
+    let unset = |name: &str| std::env::var_os(name).is_none();
+    unsafe {
+        if unset("MALLOC_MMAP_THRESHOLD_") {
+            libc::mallopt(libc::M_MMAP_THRESHOLD, MIB);
+        }
+        if unset("MALLOC_TRIM_THRESHOLD_") {
+            libc::mallopt(libc::M_TRIM_THRESHOLD, MIB);
+        }
+        if unset("MALLOC_ARENA_MAX") {
+            // glibc defaults to 8 * cores. Eight heaps is enough for the
+            // crawler, search and Tantivy while bounding retained free space.
+            libc::mallopt(libc::M_ARENA_MAX, 8);
+        }
+    }
+}
+
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+pub fn configure_allocator() {}
+
 /// Terminates the WebKit/WebView helper processes that survive the destruction
 /// of the search window, so the hidden app keeps only the Rust side in memory.
 ///
@@ -190,6 +232,14 @@ mod tests {
     fn release_memory_is_callable() {
         super::release_memory();
         super::release_memory();
+    }
+
+    #[test]
+    fn configure_allocator_is_callable() {
+        // Idempotent: startup calls it once, tests may call it again after
+        // arenas already exist. It must never fail or panic.
+        super::configure_allocator();
+        super::configure_allocator();
     }
 
     #[cfg(windows)]

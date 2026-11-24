@@ -83,10 +83,10 @@ one image at a time, and the Tantivy writer arena is 16 MB. A text-only corpus
 peaks in the tens of megabytes. Image-heavy corpora with the accurate OCR pack
 peak higher while their files are being read: decoded pixels are charged against
 a process-wide budget (`KENSAKU_DECODE_BUDGET_MB`, 768 MiB by default), so the
-peak tracks the largest images rather than the worker count. Some of that peak
-can stay mapped in the allocator after the crawl finishes; it is reusable, not
-live index data. Total app memory is dominated by the OS webview that hosts the
-desktop window.
+peak tracks the largest images rather than the worker count. Large decode
+buffers are allocated outside glibc's per-thread arenas and returned when freed,
+so an idle process keeps far less of the crawl's peak. Total app memory is
+dominated by the OS webview that hosts the desktop window.
 
 **Does it conflict with Spotlight / Everything / Recoll?**
 No. It builds its own index and does not read or write theirs.

@@ -10,6 +10,11 @@ versioning: [SemVer](https://semver.org/).
   grows, and every detector and recognizer session kept its own, so the peak
   from an image-heavy crawl outlived the crawl. Both now allocate through the
   system allocator, matching the Indra OCR path.
+- **The allocator returns the crawl's large buffers.** On glibc, multi-megabyte
+  image decodes were landing in per-thread arenas that only trim their top
+  chunk, leaving hundreds of megabytes mapped after an image-heavy first scan.
+  The allocator now keeps large buffers on mmap-backed allocations, trims sooner,
+  and caps the arena count. Explicit `MALLOC_*` environment settings still win.
 
 ## [1.0.19] — 2026-11-24
 
