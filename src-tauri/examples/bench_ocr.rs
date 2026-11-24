@@ -39,6 +39,9 @@ fn main() {
         .collect();
     paths.sort();
     assert!(!paths.is_empty(), "no images in {}", root.display());
+    // Mirror the app's allocator settings; otherwise the benchmark measures
+    // glibc defaults instead of the shipped process.
+    kensaku_lib::util::memory::configure_allocator();
     ocr::set_engine(ocr::ACCURATE);
     extract::set_ocr_enabled(true);
     let start = Instant::now();
