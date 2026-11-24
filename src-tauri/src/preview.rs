@@ -6,8 +6,9 @@
 //! Previews are generated only when a card is shown, cached as 240px JPEGs next
 //! to the image thumbnails, and reused until the source file changes. External
 //! tools are optional: when a tool is missing the file keeps its type icon.
-//! Renders run with a timeout and a small concurrency limit, so a grid full of
-//! PDFs cannot start dozens of processes at once.
+//! Both image decodes and external renders run under one small concurrency
+//! limit, so a grid full of uncached files cannot decode dozens of full-size
+//! images or start dozens of processes at once.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -16,9 +17,11 @@ use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 const RENDER_TIMEOUT: Duration = Duration::from_secs(12);
-const MAX_CONCURRENT_RENDERS: usize = 2;
+/// Full decodes and external renders that may run at once. Kept separate from
+/// the OCR decode budget so browsing during a crawl does not stall behind OCR.
+const MAX_CONCURRENT_PREVIEWS: usize = 2;
 
-/// Counting semaphore for external renders.
+/// Counting semaphore for preview work (image decodes and external renders).
 struct Slots {
     used: Mutex<usize>,
     free: Condvar,
@@ -35,7 +38,7 @@ fn slots() -> &'static Slots {
 fn acquire() -> SlotGuard {
     let s = slots();
     let mut used = s.used.lock().unwrap_or_else(|p| p.into_inner());
-    while *used >= MAX_CONCURRENT_RENDERS {
+    while *used >= MAX_CONCURRENT_PREVIEWS {
         used = s.free.wait(used).unwrap_or_else(|p| p.into_inner());
     }
     *used += 1;
@@ -83,8 +86,15 @@ pub fn preview_jpeg(source: &Path, out_dir: &Path) -> Result<PathBuf, String> {
         return Err(format!("{} is only in the cloud", name));
     }
     match kind_for(name) {
-        Some(Kind::Image) => crate::indexer::extract::image::thumbnail(source, out_dir)
-            .ok_or_else(|| format!("could not decode image {}", name)),
+        Some(Kind::Image) => {
+            // Up to 30 cards can ask for a thumbnail at once. Gate the full
+            // decode here, not on the OCR budget: a grid must not wait for a
+            // background crawl to release memory, and two concurrent decodes
+            // bound the preview peak on their own.
+            let _slot = acquire();
+            crate::indexer::extract::image::thumbnail(source, out_dir)
+                .ok_or_else(|| format!("could not decode image {}", name))
+        }
         Some(Kind::Pdf) => render_external(source, out_dir, Kind::Pdf),
         None => Err(format!("no preview for {}", name)),
     }

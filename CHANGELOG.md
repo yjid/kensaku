@@ -15,9 +15,11 @@ versioning: [SemVer](https://semver.org/).
   chunk, leaving hundreds of megabytes mapped after an image-heavy first scan.
   The allocator now keeps large buffers on mmap-backed allocations, trims sooner,
   and caps the arena count. Explicit `MALLOC_*` environment settings still win.
-- **Grid thumbnails share the decode budget.** A grid of uncached images could
-  start up to 30 full-resolution decodes at once through the blocking pool. They
-  now queue behind the same `KENSAKU_DECODE_BUDGET_MB` cap as OCR.
+- **Grid thumbnails have their own two-slot limit.** A grid of uncached images
+  could start up to 30 full-resolution decodes at once through the blocking
+  pool. Previews now allow two concurrent decodes, independent of the OCR
+  budget, so browsing during a crawl neither multiplies the peak nor stalls
+  behind OCR.
 
 ## [1.0.19] — 2026-11-24
 

@@ -810,10 +810,7 @@ pub(crate) fn decode_guarded(path: &Path) -> Option<DynamicImage> {
 /// that fail to decode, or exceed the pixel budget, return `None` instead of
 /// panicking.
 pub fn phash64(path: &Path) -> Option<u64> {
-    // A full decode, like OCR: charge it against the same budget so opening a
-    // grid of uncached images cannot multiply the peak.
-    let (image, _permit) = decode_for_recognition(path)?;
-    hash_image(&image)
+    hash_image(&decode_guarded(path)?)
 }
 
 fn hash_image(image: &DynamicImage) -> Option<u64> {
@@ -885,9 +882,7 @@ pub fn thumbnail(path: &Path, out_dir: &Path) -> Option<PathBuf> {
         return Some(target);
     }
 
-    // Budgeted: the UI asks for up to 30 cards at once, and each miss here is
-    // a full-resolution decode. OCR and preview generation share the budget.
-    let (image, _permit) = decode_for_recognition(path)?;
+    let image = decode_guarded(path)?;
     std::fs::create_dir_all(out_dir).ok()?;
 
     let temp = out_dir.join(format!(

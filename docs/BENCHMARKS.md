@@ -103,6 +103,14 @@ one or two available CPUs, one extraction worker is retained for progress.
 Background mode applies to crawler/extraction threads, leaving UI threads at
 their existing priority.
 
+`bench_ocr` prints extraction time, RSS after extraction, peak RSS and RSS after
+dropping the cached engine. To isolate the allocator tuning, run the same binary
+twice on the same folder: once with the built-in thresholds, and once with
+`MALLOC_MMAP_THRESHOLD_=33554432 MALLOC_TRIM_THRESHOLD_=33554432` (explicit
+`MALLOC_*` settings win, so the process keeps glibc's defaults). Compare the
+seconds and both RSS numbers; that is the cost/benefit check for pinning the
+mmap threshold at 1 MiB instead of letting glibc raise it dynamically.
+
 Local correctness validation for #170 used Windows 10, four available CPUs,
 15.9 GiB RAM, ONNX Runtime 1.31.0 and the PP-OCRv6 tiny pack. All 104 UI-text
 fixture lines matched exactly; image and scanned-PDF pipeline tests passed.
