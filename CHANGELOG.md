@@ -3,6 +3,14 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **PP-OCR sessions no longer pin ONNX Runtime's CPU arena.** The arena only
+  grows, and every detector and recognizer session kept its own, so the peak
+  from an image-heavy crawl outlived the crawl. Both now allocate through the
+  system allocator, matching the Indra OCR path.
+
 ## [1.0.19] — 2026-11-24
 
 ### Added

@@ -206,9 +206,18 @@ pub fn shared_environment() -> ort::Result<ort::environment::Environment> {
 fn session_builder() -> ort::Result<ort::session::builder::SessionBuilder> {
     // Kensaku owns concurrency in its extraction pool. A default ORT pool
     // per detector/recognizer would multiply that budget by the core count.
+    //
+    // Kensaku patch: disable the CPU memory arena. ORT's arena only grows, and
+    // every detector and recognizer session keeps its own, so the peak from an
+    // image crawl stays resident for the life of the process. Line batches
+    // change shape on every call, so reuse across calls is low. Indra OCR
+    // already disables the arena in `ocr_indra/engine.rs`.
     Ok(ort::session::Session::builder(&shared_environment()?)?
         .with_intra_threads(1)?
-        .with_inter_threads(1)?)
+        .with_inter_threads(1)?
+        .with_execution_providers([ort::ep::CPU::default()
+            .with_arena_allocator(false)
+            .build()])?)
 }
 
 #[cfg(test)]

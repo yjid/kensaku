@@ -79,10 +79,14 @@ entries), plus a path index and the ~7.3 MiB i8 static embedding table when the
 semantic pack is installed (the f32 switch is ~30 MB). The crawl is bounded:
 extracted text is written through a small queue instead of accumulating in
 memory, perceptual image hashing runs in a separate background pass that decodes
-one image at a time, and the Tantivy writer arena is 16 MB. On the development
-machine the indexer process peaked at roughly 72–73 MB for both text-only and
-mixed image/text corpora (before adding the embedding table). Total app memory
-is dominated by the OS webview that hosts the desktop window.
+one image at a time, and the Tantivy writer arena is 16 MB. A text-only corpus
+peaks in the tens of megabytes. Image-heavy corpora with the accurate OCR pack
+peak higher while their files are being read: decoded pixels are charged against
+a process-wide budget (`KENSAKU_DECODE_BUDGET_MB`, 768 MiB by default), so the
+peak tracks the largest images rather than the worker count. Some of that peak
+can stay mapped in the allocator after the crawl finishes; it is reusable, not
+live index data. Total app memory is dominated by the OS webview that hosts the
+desktop window.
 
 **Does it conflict with Spotlight / Everything / Recoll?**
 No. It builds its own index and does not read or write theirs.
