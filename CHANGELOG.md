@@ -3,6 +3,32 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Home-screen keyboard navigation starts on the recents that are actually
+  loaded.** The key handler kept the pre-load list, so arrow and Tab presses
+  never entered the grid or drew its focus ring.
+
+### Changed
+- **Motion is one system now.** Shared duration and easing tokens drive
+  dialogs, menus, toasts, cards, rows, controls and loading states. Arrivals
+  use a fast ease-out (140–300 ms); exits are shorter than entrances.
+- **Overlays leave as deliberately as they arrive.** Settings, setup, preview,
+  details, help, duplicates and the context menu fade and settle on both enter
+  and exit, stay non-interactive while closing, and unmount cleanly.
+- **Cards and rows feel physical.** Result and recent tiles lift on hover,
+  settle on press, fade thumbnails in, and keep a visible selection and
+  keyboard-focus ring; list rows share the same feedback.
+- **Reduced motion keeps the meaning.** `prefers-reduced-motion` now removes
+  travel, scale and stagger while preserving opacity feedback, instead of
+  collapsing every transition to zero.
+- **Progress stays off the layout thread.** Determinate bars animate with
+  `transform: scaleX()` rather than width, and the switch thumb moves with a
+  transform.
+- **Two quiet surface fixes:** undefined `bg-surface-2` hover/track styles now
+  use the existing accent-soft token.
+
 ## [1.0.19] — 2026-11-24
 
 ### Added

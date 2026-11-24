@@ -18,7 +18,6 @@ export type ResultView = "grid" | "list";
 interface ResultItemProps {
   result: SearchResult;
   query: string;
-  index: number;
   isSelected: boolean;
   view: ResultView;
   onSelect: (mods?: SelectMods) => void;
@@ -30,7 +29,7 @@ interface ResultItemProps {
 }
 
 export const ResultItem = React.memo<ResultItemProps>(
-  ({ result, query, index, isSelected, onSelect, onOpen, onContextMenu, showThumbs }) => {
+  ({ result, query, isSelected, onSelect, onOpen, onContextMenu, showThumbs }) => {
     const { t } = useTranslation("common");
     const imageEligible = Boolean(showThumbs) && !result.is_dir && isThumbImage(result.filename);
     const { src: thumbSrc, failed: thumbFailed } = useThumbnail(result.path, imageEligible);
@@ -66,12 +65,11 @@ export const ResultItem = React.memo<ResultItemProps>(
         }}
         aria-selected={isSelected}
         title={result.path}
-        style={{ ["--stagger-delay" as string]: `${Math.min(index, 11) * 28}ms` }}
-        className="group card-in flex h-full w-full flex-col text-left outline-none"
+        className="group flex h-full w-full flex-col text-left outline-none"
       >
         <span
-          className={`surface relative block aspect-[16/10] w-full overflow-hidden transition-[transform,box-shadow] duration-[280ms] [transition-timing-function:var(--ease)] group-hover:-translate-y-[3px] group-hover:[box-shadow:var(--panel-edge),var(--shadow-float)] ${
-            isSelected ? "outline-2 outline-offset-[3px] outline-[color-mix(in_srgb,var(--ink)_45%,transparent)]" : ""
+          className={`card-surface surface relative block aspect-[16/10] w-full overflow-hidden group-focus-visible:outline-2 group-focus-visible:outline-offset-[3px] group-focus-visible:outline-[color-mix(in_srgb,var(--ink)_60%,transparent)] ${
+            isSelected ? "card-selected" : ""
           }`}
         >
           {hasThumb ? (
@@ -79,7 +77,7 @@ export const ResultItem = React.memo<ResultItemProps>(
               src={thumbSrc!}
               alt=""
               draggable={false}
-              className="fade-in h-full w-full object-cover transition-transform duration-[520ms] [transition-timing-function:var(--ease)] group-hover:scale-[1.04]"
+              className="fade-in card-media h-full w-full object-cover"
             />
           ) : (
             <TypeTile filename={result.filename} isDir={result.is_dir} snippet={result.snippet} query={query} />
@@ -87,8 +85,8 @@ export const ResultItem = React.memo<ResultItemProps>(
           <HoverDetails result={result} active={hovered} />
         </span>
 
-        <span className="flex min-w-0 flex-col px-0.5 pt-2">
-          <span className="truncate text-[13px] font-medium leading-[18px] text-fg">
+        <span className="flex min-w-0 flex-col px-0.5 pt-2.5">
+          <span className="truncate text-[13px] font-medium leading-[19px] text-fg">
             <HighlightedName text={result.filename} query={query} />
           </span>
           <span className="t-meta truncate text-subtle">{meta}</span>
@@ -106,6 +104,5 @@ export const ResultItem = React.memo<ResultItemProps>(
     prev.result.is_dir === next.result.is_dir &&
     prev.isSelected === next.isSelected &&
     prev.query === next.query &&
-    prev.index === next.index &&
     prev.showThumbs === next.showThumbs,
 );

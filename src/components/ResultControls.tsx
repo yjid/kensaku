@@ -123,7 +123,7 @@ export function ResultControls({
   };
 
   return (
-    <div className="flex shrink-0 items-center gap-2">
+    <div className="flex shrink-0 items-center gap-2.5">
       <div ref={wrapRef} className="relative">
         <button
           ref={buttonRef}
@@ -133,7 +133,7 @@ export function ResultControls({
           aria-label={t("sort.label")}
           title={t("sort.label")}
           onClick={() => setOpen((v) => !v)}
-          className="control flex h-[38px] cursor-pointer items-center gap-1.5 rounded-control pl-3.5 pr-3 text-[13px] font-medium text-fg outline-none"
+          className="control flex h-10 cursor-pointer items-center gap-2 rounded-control pl-4 pr-3.5 text-[13px] font-medium text-fg outline-none"
         >
           <span className="max-w-[110px] truncate">{selected.label}</span>
           <ChevronDown
@@ -149,7 +149,7 @@ export function ResultControls({
             ref={listRef}
             tabIndex={-1}
             onKeyDown={onListKeyDown}
-            className="menu-pop elevated absolute right-0 z-[70] mt-1.5 w-[180px] overflow-hidden p-1"
+            className="menu-pop menu-pop-right elevated absolute right-0 z-[70] mt-2 w-[192px] overflow-hidden p-1.5"
           >
             {SORT_OPTIONS.map((option, index) => {
               const isSelected = option.value === sort;
@@ -177,17 +177,17 @@ export function ResultControls({
         )}
       </div>
 
-      <div role="radiogroup" aria-label={t("view.layout")} className="control flex items-center gap-0.5 rounded-control p-1">
-        <button type="button" role="radio" aria-checked={view === "grid"} aria-label={t("view.gridShort")} title={t("view.gridShort")} onClick={() => onView("grid")} className="seg !px-2.5">
+      <div role="radiogroup" aria-label={t("view.layout")} className="control flex items-center gap-1 rounded-control p-1">
+        <button type="button" role="radio" aria-checked={view === "grid"} aria-label={t("view.gridShort")} title={t("view.gridShort")} onClick={() => onView("grid")} className="seg !px-3">
           <LayoutGrid className="h-4 w-4" strokeWidth={1.75} />
         </button>
-        <button type="button" role="radio" aria-checked={view === "list"} aria-label={t("view.listShort")} title={t("view.listShort")} onClick={() => onView("list")} className="seg !px-2.5">
+        <button type="button" role="radio" aria-checked={view === "list"} aria-label={t("view.listShort")} title={t("view.listShort")} onClick={() => onView("list")} className="seg !px-3">
           <Rows3 className="h-4 w-4" strokeWidth={1.75} />
         </button>
       </div>
 
       {canSave && (
-        <button type="button" title={t("saveSearch")} aria-label={t("saveSearch")} onClick={onSave} className="control flex h-[38px] w-[38px] items-center justify-center rounded-control text-muted transition-colors hover:text-fg">
+        <button type="button" title={t("saveSearch")} aria-label={t("saveSearch")} onClick={onSave} className="control flex h-10 w-10 items-center justify-center rounded-control text-muted transition-colors hover:text-fg">
           <Bookmark className="h-4 w-4" strokeWidth={1.75} />
         </button>
       )}

@@ -23,7 +23,7 @@ export function SlashMenu({
 }) {
   if (items.length === 0) return null;
   return (
-    <div className="elevated menu-pop relative z-20 mx-8 mb-2 mt-3 shrink-0 overflow-hidden p-1.5">
+    <div className="elevated menu-pop menu-pop-center relative z-20 mx-8 mb-2 mt-3 shrink-0 overflow-hidden p-1.5">
       {items.map((item, i) => {
         const Icon = item.icon;
         const active = i === activeIndex;
@@ -36,15 +36,15 @@ export function SlashMenu({
               onPick(item);
             }}
             className={`flex w-full items-center gap-3 rounded-control px-3 py-2 text-left transition-colors ${
-              active ? "bg-accent-soft" : "hover:bg-accent-soft"
+              active ? "bg-ink-soft" : "hover:bg-accent-soft active:bg-ink-soft"
             }`}
           >
-            <Icon className={`h-3.5 w-3.5 shrink-0 ${active ? "text-ink" : "text-subtle"}`} />
+            <Icon className={`h-4 w-4 shrink-0 ${active ? "text-ink" : "text-subtle"}`} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-medium text-fg">
+              <span className="t-body block truncate font-medium text-fg">
                 /{item.name}
               </span>
-              <span className="block truncate text-[12px] text-muted">{item.description}</span>
+              <span className="t-label block truncate text-muted">{item.description}</span>
             </span>
             <span className="shrink-0 t-meta text-subtle">{item.label}</span>
           </button>

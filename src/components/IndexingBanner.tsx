@@ -128,22 +128,22 @@ export function IndexingBanner() {
       <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted" strokeWidth={2} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <p className="text-[12px] font-medium text-fg">{label}</p>
-          <p className="truncate text-[11px] text-muted">{detail}</p>
+          <p className="t-label font-medium text-fg">{label}</p>
+          <p className="truncate text-[11px] leading-4 text-muted">{detail}</p>
         </div>
         {/* Indeterminate while walking: the total is not known yet. */}
-        <div className="mt-1.5 h-0.5 w-full overflow-hidden rounded-full bg-[var(--border)]">
+        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-[var(--border)]">
           {percent === null ? (
             <div className="progress-bar" />
           ) : (
             <div
-              className="h-full rounded-full bg-fg transition-[width] duration-300"
-              style={{ width: `${percent}%` }}
+              className="progress-fill rounded-full bg-fg"
+              style={{ transform: `scaleX(${Math.max(0, Math.min(100, percent)) / 100})` }}
             />
           )}
         </div>
       </div>
-      <p className="shrink-0 tabular-nums text-[11px] text-subtle">
+      <p className="t-meta shrink-0 text-subtle">
         {percent === null ? t("indexingBanner.workingShort") : `${percent}%`}
       </p>
       <p className="sr-only">{t("indexingBanner.screenReader")}</p>

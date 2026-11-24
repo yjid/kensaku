@@ -530,7 +530,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
           </div>
           <div className="max-w-sm space-y-2">
             <div className="h-px w-full overflow-hidden bg-line">
-              <div className="h-full bg-ink transition-[width] duration-500 [transition-timing-function:var(--ease)]" style={{ width: `${Math.max(2, pct)}%` }} />
+              <div className="progress-fill bg-ink" style={{ transform: `scaleX(${Math.max(2, pct) / 100})` }} />
             </div>
             <div className="t-meta flex justify-between text-subtle">
               <span>{pct}%</span>
@@ -603,8 +603,8 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                 <div
                   key={dir}
                   style={{ ["--stagger-delay" as string]: `${i * 40}ms` }}
-                  className={`surface rise-in group flex h-14 items-center gap-3 pr-4 text-left transition-[box-shadow,transform] duration-200 active:scale-[0.99] ${
-                    selected ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]" : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
+                  className={`surface rise-in group flex h-14 items-center gap-3 pr-4 text-left transition-[box-shadow,transform] duration-[var(--dur-base)] motion-reduce:active:scale-100 active:scale-[0.99] ${
+                    selected ? "![box-shadow:inset_0_0_0_2px_color-mix(in_srgb,var(--ink)_60%,transparent)]" : "hover:[box-shadow:var(--panel-edge),var(--shadow-raise)]"
                   }`}
                 >
                   <button
@@ -635,7 +635,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                   <span
                     aria-hidden="true"
                     onClick={() => toggleDir(dir)}
-                    className={`flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-200 ${
+                    className={`flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors ${
                       selected ? "bg-ink text-bg" : "shadow-[inset_0_0_0_1.5px_var(--border-strong)]"
                     }`}
                   >
@@ -831,7 +831,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               <button
                 type="button"
                 onClick={() => setCapturing(true)}
-                className={`surface flex h-14 w-full items-center justify-between px-4 text-left transition-shadow ${capturing ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]" : ""}`}
+                className={`surface flex h-14 w-full items-center justify-between px-4 text-left transition-shadow ${capturing ? "![box-shadow:inset_0_0_0_2px_color-mix(in_srgb,var(--ink)_60%,transparent)]" : ""}`}
               >
                 <span className="flex items-center gap-1.5">
                   {capturing ? (
@@ -920,7 +920,7 @@ function Shell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="absolute inset-0 z-50 flex bg-bg">
+    <div className="fade-in absolute inset-0 z-50 flex bg-bg">
       <aside data-tauri-drag-region className="relative z-10 hidden w-[40%] min-w-[300px] flex-col justify-between p-8 md:flex">
         <span className="text-[14px] font-semibold tracking-[-0.02em] text-fg">Kensaku</span>
         {brand}
@@ -1003,8 +1003,8 @@ function EngineOption({
         if (disabled) return;
         (e.key === "Enter" || e.key === " ") && onSelect();
       }}
-      className={`surface flex min-h-16 cursor-default items-center gap-4 px-4 py-3 transition-shadow duration-200 ${
-        selected ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]" : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
+      className={`surface flex min-h-16 cursor-default items-center gap-4 px-4 py-3 transition-shadow ${
+        selected ? "![box-shadow:inset_0_0_0_2px_color-mix(in_srgb,var(--ink)_60%,transparent)]" : "hover:[box-shadow:var(--panel-edge),var(--shadow-raise)]"
       } ${disabled ? "opacity-60" : ""}`}
     >
       <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors ${selected ? "bg-ink" : "shadow-[inset_0_0_0_1.5px_var(--border-strong)]"}`}>

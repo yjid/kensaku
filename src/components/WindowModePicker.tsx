@@ -58,10 +58,10 @@ export function WindowModePicker({
         tabIndex={active ? 0 : -1}
         onClick={() => onChange(mode)}
         onKeyDown={(event) => move(event, mode)}
-        className={`group flex flex-1 flex-col gap-3 rounded-panel p-2 text-left outline-none transition-[background-color,box-shadow] duration-200 [transition-timing-function:var(--ease)] ${
+        className={`group flex flex-1 flex-col gap-3 rounded-panel p-2.5 text-left transition-[background-color,box-shadow,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] motion-safe:hover:-translate-y-1 hover:[box-shadow:var(--panel-edge),var(--shadow-raise)] active:scale-[0.99] active:[box-shadow:var(--panel-edge),var(--shadow-press)] ${
           active
-            ? "bg-accent-soft shadow-[inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_35%,transparent)]"
-            : "shadow-[inset_0_0_0_1px_var(--border)] hover:bg-accent-soft/50 hover:shadow-[inset_0_0_0_1px_var(--border-strong)]"
+            ? "bg-accent-soft outline-2 -outline-offset-2 outline-ink/55"
+            : "shadow-[inset_0_0_0_1px_var(--border)] hover:bg-accent-soft/50"
         }`}
       >
         {/* Preview illustration */}
@@ -75,9 +75,9 @@ export function WindowModePicker({
         <span className="flex w-full items-center justify-between gap-2 px-0.5 pb-1">
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
-              <span className="text-[13px] font-semibold leading-none text-fg">{label}</span>
+              <span className="t-body font-semibold leading-none text-fg">{label}</span>
             </span>
-            <span className="mt-1 block text-[12px] leading-[17px] text-muted">
+            <span className="t-label mt-1 block text-muted">
               {description}
             </span>
           </span>
@@ -85,14 +85,14 @@ export function WindowModePicker({
           {/* Apple-style selection indicator: empty circle → filled blue dot */}
           <span
             aria-hidden
-            className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full transition-all duration-150 ${
+            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-[background-color,box-shadow] ${
               active
-                ? "bg-blue shadow-[0_0_0_2px_var(--bg),0_0_0_3.5px_var(--blue)]"
-                : "shadow-[inset_0_0_0_1.5px_var(--border-strong)] group-hover:shadow-[inset_0_0_0_1.5px_var(--fg-muted)]"
+                ? "bg-ink shadow-[0_0_0_2px_var(--bg),0_0_0_3.5px_var(--ink)]"
+                : "shadow-[inset_0_0_0_1.5px_var(--border-strong)] group-hover:shadow-[inset_0_0_0_2px_var(--fg-muted)]"
             }`}
           >
             {active && (
-              <span className="h-[6px] w-[6px] rounded-full bg-white" />
+              <span className="h-1.5 w-1.5 rounded-full bg-bg" />
             )}
           </span>
         </span>
@@ -122,7 +122,7 @@ function AppPreview({ compact }: { compact: boolean }) {
     >
       {/* Floating mini-window */}
       <span
-        className={`absolute left-1/2 flex -translate-x-1/2 flex-col overflow-hidden rounded-control border border-line-strong bg-elevated shadow-[var(--shadow-float)] transition-transform duration-200 [transition-timing-function:var(--ease)] group-hover:-translate-y-0.5 ${
+        className={`absolute left-1/2 flex -translate-x-1/2 flex-col overflow-hidden rounded-control border border-line-strong bg-elevated shadow-[var(--shadow-float)] transition-transform motion-safe:group-hover:-translate-y-0.5 ${
           compact ? "bottom-7 top-2.5 w-[84%]" : "bottom-8 top-3 w-[82%]"
         }`}
       >
@@ -156,10 +156,10 @@ function AppPreview({ compact }: { compact: boolean }) {
 
       {/* Apple-style dock: rounded-square icon shapes in vivid colours */}
       <span className="absolute bottom-1.5 left-1/2 flex h-[22px] -translate-x-1/2 items-center gap-1 rounded-full border border-line bg-elevated/90 px-2 shadow-[var(--shadow-float)]">
-        <span className="h-[11px] w-[11px] rounded-[3px]" style={{ background: "var(--blue)" }} />
-        <span className="h-[11px] w-[11px] rounded-[3px]" style={{ background: "var(--pink)" }} />
-        <span className="h-[11px] w-[11px] rounded-[3px]" style={{ background: "var(--traffic-zoom)" }} />
-        <span className="h-[11px] w-[11px] rounded-[3px] bg-line-strong" />
+        <span className="h-[11px] w-[11px] rounded-small" style={{ background: "var(--blue)" }} />
+        <span className="h-[11px] w-[11px] rounded-small" style={{ background: "var(--pink)" }} />
+        <span className="h-[11px] w-[11px] rounded-small" style={{ background: "var(--traffic-zoom)" }} />
+        <span className="h-[11px] w-[11px] rounded-small bg-line-strong" />
       </span>
     </span>
   );
@@ -183,7 +183,7 @@ function LauncherPreview({
     >
       {/* Floating palette */}
       <span
-        className={`absolute left-1/2 flex w-[78%] -translate-x-1/2 flex-col overflow-hidden rounded-panel border border-line-strong bg-elevated shadow-[var(--shadow-float)] transition-transform duration-200 [transition-timing-function:var(--ease)] group-hover:-translate-y-0.5 ${
+        className={`absolute left-1/2 flex w-[78%] -translate-x-1/2 flex-col overflow-hidden rounded-panel border border-line-strong bg-elevated shadow-[var(--shadow-float)] transition-transform motion-safe:group-hover:-translate-y-0.5 ${
           compact ? "bottom-7 top-2.5" : "bottom-8 top-3"
         }`}
       >
@@ -197,12 +197,12 @@ function LauncherPreview({
         {/* Results list */}
         <span className="flex flex-1 flex-col justify-center gap-1 p-1.5">
           <span className="flex items-center gap-1.5 rounded-small bg-accent-soft px-1.5 py-[5px]">
-            <span className="h-[10px] w-[10px] shrink-0 rounded-[3px]" style={{ background: "var(--blue)", opacity: 0.6 }} />
+            <span className="h-[10px] w-[10px] shrink-0 rounded-small" style={{ background: "var(--blue)", opacity: 0.6 }} />
             <span className="h-[3px] w-14 rounded-full bg-line-strong" />
           </span>
           {!compact && (
             <span className="flex items-center gap-1.5 rounded-small px-1.5 py-[5px]">
-              <span className="h-[10px] w-[10px] shrink-0 rounded-[3px]" style={{ background: "var(--pink)", opacity: 0.5 }} />
+              <span className="h-[10px] w-[10px] shrink-0 rounded-small" style={{ background: "var(--pink)", opacity: 0.5 }} />
               <span className="h-[3px] w-10 rounded-full bg-line" />
             </span>
           )}

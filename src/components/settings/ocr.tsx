@@ -453,7 +453,7 @@ export function OcrField({
                     type="button"
                     title={t("ocr.copyInstall", { command: p.command })}
                     onClick={() => copy(p.command)}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-accent-soft hover:text-fg"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-small text-subtle transition-colors hover:bg-accent-soft hover:text-fg"
                   >
                     {copied === p.command ? (
                       <Check className="h-3 w-3 text-accent" />
@@ -474,7 +474,7 @@ export function OcrField({
               className="flex h-7 items-center gap-1 pl-1 pr-2 text-[12px] text-muted transition-colors hover:text-fg"
             >
               <ChevronDown
-                className={`h-3 w-3 transition-transform duration-150 ${
+                className={`h-3 w-3 transition-transform ${
                   allPlatforms ? "rotate-180" : ""
                 }`}
               />

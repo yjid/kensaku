@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { TypeTile } from "./TypeTile";
 import { displayParent } from "../lib/format";
 import { isThumbImage } from "../lib/thumbnails";
+import { usePresence } from "../lib/usePresence";
 import type { SearchResult } from "../types";
 
 /* Quick look (Space). Shows the file's preview at a readable size: the
@@ -30,6 +31,7 @@ export function PreviewDialog({
   onClose: () => void;
 }) {
   const { t } = useTranslation("details");
+  const { closing, close } = usePresence(onClose);
   const [src, setSrc] = useState<string | null>(null);
   const [text, setText] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,7 +71,7 @@ export function PreviewDialog({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" || e.key === " ") {
         e.preventDefault();
-        onClose();
+        close();
       }
       if (e.key === "Enter") {
         e.preventDefault();
@@ -78,20 +80,20 @@ export function PreviewDialog({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose, onOpen]);
+  }, [close, onOpen]);
 
   return (
     <div
-      className="fade-in fixed inset-0 z-[80] flex items-center justify-center bg-scrim p-10 backdrop-blur-[6px]"
+      className={`${closing ? "fade-out pointer-events-none" : "fade-in"} fixed inset-0 z-[80] flex items-center justify-center bg-scrim p-10 backdrop-blur-[6px]`}
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) close();
       }}
     >
-      <div role="dialog" aria-label={t("preview.title")} className="elevated overlay-in flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-sheet">
+      <div role="dialog" aria-label={t("preview.title")} className={`elevated ${closing ? "overlay-out" : "overlay-in"} flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-sheet`}>
         <div className="flex items-center justify-between gap-4 px-6 pb-4 pt-5">
           <div className="min-w-0">
             <p className="t-lead truncate font-medium text-fg">{result.filename}</p>
-            <p className="truncate text-[12px] text-subtle">{displayParent(result.path)}</p>
+            <p className="t-label truncate text-subtle">{displayParent(result.path)}</p>
           </div>
           <button type="button" onClick={onOpen} className="btn btn-primary h-8 shrink-0 px-4">
             {t("preview.open")}
@@ -106,12 +108,12 @@ export function PreviewDialog({
             </pre>
           ) : (
             <div className="flex flex-col items-center gap-3 text-muted">
-              <span className="relative block h-40 w-52"><TypeTile filename={result.filename} isDir={result.is_dir} /></span>
+              <span className={`relative block h-40 w-52 ${loading ? "skeleton rounded-panel" : ""}`}><TypeTile filename={result.filename} isDir={result.is_dir} /></span>
               <p className="t-meta text-subtle">{loading ? t("preview.loading") : t("preview.unavailable")}</p>
             </div>
           )}
         </div>
-        <div className="flex items-center gap-4 px-6 py-3.5 text-[11px] text-subtle">
+        <div className="t-meta flex items-center gap-4 px-6 py-3 text-subtle">
           <span className="flex items-center gap-1.5"><span className="kbd">Space</span> {t("preview.close")}</span>
           <span className="flex items-center gap-1.5"><span className="kbd">↵</span> {t("preview.open")}</span>
         </div>

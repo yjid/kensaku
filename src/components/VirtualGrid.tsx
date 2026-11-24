@@ -8,15 +8,15 @@ import { useTranslation } from "react-i18next";
    per item. */
 
 const MIN_CELL = 168;
-const GAP = 12;
-const PAD = 16;
-const LIST_GAP = 2;
-const LIST_PAD = 8;
-const LIST_ROW = 52;
+const GAP = 16;
+const PAD = 20;
+const LIST_GAP = 4;
+const LIST_PAD = 12;
+const LIST_ROW = 56;
 const OVERSCAN_ROWS = 4;
 /** Top/bottom inset. Smaller than the side gutter: the tab row above already
  *  separates the grid from the query. */
-const PAD_Y = 6;
+const PAD_Y = 10;
 
 export interface VirtualGridProps<T> {
   items: T[];
@@ -150,11 +150,11 @@ export function VirtualGrid<T>({
   }
 
   return (
-    <div ref={setRefs} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto">
+    <div ref={setRefs} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
       <div style={{ height: contentHeight, position: "relative" }}>{rows}</div>
       {loading && (
         <div className="pointer-events-none sticky bottom-3 flex justify-center">
-          <span className="elevated fade-in t-meta !rounded-full px-3 py-1 text-muted">{t("loadingMore")}</span>
+          <span className="elevated fade-in t-meta !rounded-full ![box-shadow:var(--panel-edge),var(--shadow-raise)] px-4 py-2 text-muted">{t("loadingMore")}</span>
         </div>
       )}
     </div>

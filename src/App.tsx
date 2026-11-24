@@ -701,12 +701,26 @@ function App() {
   }, []);
 
   const [toast, setToast] = useState<string | null>(null);
+  const [toastLeaving, setToastLeaving] = useState(false);
   const toastTimer = useRef<number | undefined>(undefined);
+  const toastExitTimer = useRef<number | undefined>(undefined);
   const flash = useCallback((msg: string) => {
-    setToast(msg);
     window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 1600);
+    window.clearTimeout(toastExitTimer.current);
+    setToastLeaving(false);
+    setToast(msg);
+    toastTimer.current = window.setTimeout(() => {
+      setToastLeaving(true);
+      toastExitTimer.current = window.setTimeout(() => setToast(null), 140);
+    }, 1600);
   }, []);
+  useEffect(
+    () => () => {
+      window.clearTimeout(toastTimer.current);
+      window.clearTimeout(toastExitTimer.current);
+    },
+    [],
+  );
   const handleCopyPath = useCallback(
     (path: string) => {
       navigator.clipboard.writeText(path).then(
@@ -1107,7 +1121,7 @@ function App() {
         setDetails(navList[selectedIndex]);
       }
     },
-    [isSetupComplete, showSettings, showDuplicates, showHelp, details, menu, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, setResultView, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope, preview, displayResults, hasQuery],
+    [isSetupComplete, showSettings, showDuplicates, showHelp, details, menu, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, setResultView, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope, preview, displayResults, hasQuery, homeNavList],
   );
 
   // Window-level, so shortcuts keep working after a dialog closes and focus
@@ -1315,7 +1329,7 @@ function App() {
                     type="button"
                     title={t("settingsTitle")}
                     onClick={() => openSettings()}
-                    className="btn btn-ghost btn-icon h-9 w-9"
+                    className="btn btn-ghost btn-icon h-10 w-10"
                   >
                     <SettingsIcon className="h-4 w-4" strokeWidth={1.75} />
                   </button>
@@ -1331,8 +1345,8 @@ function App() {
 
 
               {!isCommandMode && interpretation.length > 0 && (
-                <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3.5 pb-1.5">
-                  <span className="t-meta mr-1 text-subtle">{t("understoodAs")}</span>
+                <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 pb-2">
+                  <span className="t-label mr-1 text-subtle">{t("understoodAs")}</span>
                   {interpretation.map((c, i) => (
                     <button
                       key={`${c.raw}-${i}`}
@@ -1343,7 +1357,7 @@ function App() {
                           prev.replace(c.source, "").replace(/\s+/g, " ").trim(),
                         )
                       }
-                      className="group flex h-6 items-center gap-1.5 rounded-full bg-accent-soft px-2.5 text-[12px] text-fg shadow-[inset_0_0_0_1px_var(--border)] transition-colors hover:text-danger"
+                      className="group flex h-7 items-center gap-1.5 rounded-full bg-accent-soft px-3 text-[12px] text-fg shadow-[inset_0_0_0_1px_var(--border)] transition-colors hover:text-danger"
                     >
                       {interpretationLabel(c, t)}
                       <X className="h-2.5 w-2.5 opacity-50 group-hover:opacity-100" />
@@ -1354,7 +1368,7 @@ function App() {
 
               {/* One control bar: category chips on the left, layout and save on the right. */}
               {!isCommandMode && hasQuery && (
-                <div className="fade-in flex shrink-0 items-center gap-2 px-3.5 pb-1.5">
+                <div className="fade-in flex shrink-0 items-center gap-3 px-4 pb-2">
                   <CategoryChips
                     results={results}
                     facets={facets}
@@ -1374,7 +1388,7 @@ function App() {
               )}
 
               {saveOpen && (
-                <div className="overlay-in flex shrink-0 items-center gap-2 px-3.5 pb-1.5">
+                <div className="overlay-in flex shrink-0 items-center gap-2.5 px-4 pb-2">
                   <input
                     autoFocus
                     value={saveName}
@@ -1398,7 +1412,7 @@ function App() {
                         console.error(err);
                       }
                     }}
-                    className="field h-8 min-w-0 flex-1"
+                    className="field h-9 min-w-0 flex-1"
                   />
                   <button
                     type="button"
@@ -1419,7 +1433,7 @@ function App() {
                         console.error(err);
                       }
                     }}
-                    className="btn btn-primary h-8"
+                    className="btn btn-primary h-9 px-4"
                   >
                     {tc("actions.save")}
                   </button>
@@ -1438,7 +1452,7 @@ function App() {
 
               {/* Command output banner */}
               {commandOutput && (
-                <div className="surface overlay-in mx-3.5 mb-1.5 flex shrink-0 items-start justify-between gap-3 px-3.5 py-2.5">
+                <div className="surface overlay-in mx-4 mb-2 flex shrink-0 items-start justify-between gap-3 px-4 py-3">
                   <div className="flex min-w-0 items-start gap-2">
                     <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />
                     <pre className="select-text whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-muted">
@@ -1495,7 +1509,6 @@ function App() {
                           <ResultItem
                             result={res}
                             query={query}
-                            index={idx}
                             isSelected={isRowSelected(res.path, idx)}
                             view="grid"
                             onSelect={(mods) => pickRow(idx, mods)}
@@ -1557,7 +1570,7 @@ function App() {
 
               {toast && (
                 <div className="pointer-events-none absolute inset-x-0 bottom-12 z-[90] flex justify-center">
-                  <span className="elevated overlay-in !rounded-full px-4 py-2 text-[13px] font-medium text-fg">{toast}</span>
+                  <span className={`elevated ${toastLeaving ? "toast-out" : "toast-in"} !rounded-full px-5 py-2.5 text-[13px] font-medium text-fg`}>{toast}</span>
                 </div>
               )}
 
