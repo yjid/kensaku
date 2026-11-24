@@ -52,7 +52,7 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div className={`${closing ? "fade-out pointer-events-none" : "fade-in"} fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6 backdrop-blur-[6px]`}>
-      <div className={`elevated ${closing ? "overlay-out" : "overlay-in"} max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-sheet p-6`}>
+      <div className={`elevated ${closing ? "overlay-out" : "overlay-in"} max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-sheet p-7`}>
         <div className="flex items-center justify-between pb-3">
           <h2 className="t-title text-fg">{t("title")}</h2>
           <button
@@ -69,8 +69,8 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
             <tbody>
               {KEYS.map(({ combo, key }) => (
                 <tr key={combo} className="border-t border-line">
-                  <td className="t-meta py-2 pr-6 text-fg">{combo}</td>
-                  <td className="py-2 text-[13px] text-muted">{t(`keys.${key}`)}</td>
+                  <td className="t-meta py-2.5 pr-6 text-fg">{combo}</td>
+                  <td className="t-body py-2.5 text-muted">{t(`keys.${key}`)}</td>
                 </tr>
               ))}
             </tbody>
@@ -82,8 +82,8 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
             <tbody>
               {FILTERS.map(({ token, key }) => (
                 <tr key={token} className="border-t border-line">
-                  <td className="t-meta py-2 pr-6 text-fg">{token}</td>
-                  <td className="py-2 text-[13px] text-muted">{t(`filterDescriptions.${key}`)}</td>
+                  <td className="t-meta py-2.5 pr-6 text-fg">{token}</td>
+                  <td className="t-body py-2.5 text-muted">{t(`filterDescriptions.${key}`)}</td>
                 </tr>
               ))}
             </tbody>

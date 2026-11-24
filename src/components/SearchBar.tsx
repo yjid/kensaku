@@ -55,8 +55,8 @@ export function SearchBar({
   const Glyph = isCommandMode ? Terminal : Search;
 
   return (
-    <div data-tauri-drag-region className="px-3.5 pb-1.5 pt-2.5">
-      <div className="relative flex h-11 items-center gap-2.5 pl-3.5 pr-1.5">
+    <div data-tauri-drag-region className="px-4 pb-2 pt-3">
+      <div className="relative flex h-12 items-center gap-3 pl-4 pr-2">
         <Glyph className="h-5 w-5 shrink-0 text-muted" strokeWidth={1.75} />
         <input
           ref={inputRef}
@@ -69,7 +69,7 @@ export function SearchBar({
           placeholder={isCommandMode ? t("command") : placeholders[phIdx % placeholders.length]}
           onFocus={onFocusInput}
           aria-label={tc("actions.search")}
-          className="min-w-0 flex-1 bg-transparent text-[19px] font-medium leading-none tracking-[-0.022em] text-fg outline-none placeholder:font-normal placeholder:text-subtle"
+          className="min-w-0 flex-1 bg-transparent text-[20px] font-medium leading-none tracking-[-0.024em] text-fg outline-none placeholder:font-normal placeholder:text-subtle"
           style={{ caretColor: "var(--blue)" }}
         />
 
@@ -87,7 +87,7 @@ export function SearchBar({
               setQuery("");
               inputRef.current?.focus();
             }}
-            className="btn btn-ghost btn-icon h-9 w-9 shrink-0"
+            className="btn btn-ghost btn-icon h-10 w-10 shrink-0"
           >
             <X className="h-4 w-4" strokeWidth={1.75} />
           </button>

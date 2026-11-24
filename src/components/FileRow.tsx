@@ -17,7 +17,7 @@ export interface FileRowItem {
   is_dir: boolean;
 }
 
-export const FILE_ROW_HEIGHT = 52;
+export const FILE_ROW_HEIGHT = 56;
 
 export const FileRow = React.memo(function FileRow({
   item,
@@ -65,23 +65,25 @@ export const FileRow = React.memo(function FileRow({
         e.dataTransfer.setData("text/uri-list", `file://${item.path}`);
       }}
       style={{ height: FILE_ROW_HEIGHT }}
-      className={`group relative flex w-full cursor-default items-center gap-2.5 rounded-control px-2.5 transition-colors duration-[var(--dur-fast)] ${
-        selected ? "bg-accent-soft" : "hover:bg-accent-soft active:bg-accent-soft"
+      className={`group relative flex w-full cursor-default items-center gap-3 rounded-control px-3 transition-[background-color,box-shadow] duration-[var(--dur-fast)] ease-[var(--ease-out)] ${
+        selected
+          ? "bg-ink-soft shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--ink)_30%,transparent)]"
+          : "hover:bg-accent-soft active:bg-ink-soft"
       }`}
     >
-      {selected && <span className="absolute left-0 top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-full bg-ink/40" />}
+      {selected && <span className="absolute left-0 top-1/2 h-7 w-[3px] -translate-y-1/2 rounded-full bg-ink" />}
       {thumb ? (
-        <img src={thumb} alt="" draggable={false} className="fade-in h-8 w-8 shrink-0 rounded-control object-cover shadow-[var(--panel-edge)]" />
+        <img src={thumb} alt="" draggable={false} className="fade-in h-10 w-10 shrink-0 rounded-control object-cover shadow-[var(--panel-edge)]" />
       ) : (
-        <span className="surface flex h-8 w-8 shrink-0 items-center justify-center rounded-control font-mono text-[10px] font-medium text-muted">
+        <span className="surface flex h-10 w-10 shrink-0 items-center justify-center rounded-control font-mono text-[10px] font-medium text-muted">
           {item.is_dir ? "/" : ext.slice(0, 4)}
         </span>
       )}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-medium leading-[18px] text-fg">
+        <p className="t-body truncate font-medium text-fg">
           <HighlightedName text={item.filename} query={query} />
         </p>
-        <p className="truncate text-[12px] leading-[16px] text-subtle">{displayParent(item.path)}</p>
+        <p className="t-label truncate text-subtle">{displayParent(item.path)}</p>
       </div>
       <span className="t-meta w-16 shrink-0 text-right text-subtle">
         {item.is_dir ? "—" : formatBytes(item.file_size)}

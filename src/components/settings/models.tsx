@@ -111,7 +111,7 @@ export function ModelFilesCard() {
               type="button"
               title={t("models.copyPath")}
               onClick={copyDir}
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-accent-soft hover:text-fg"
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-small text-subtle transition-colors hover:bg-accent-soft hover:text-fg"
             >
               {copied ? <Check className="h-3 w-3 text-accent" /> : <Copy className="h-3 w-3" />}
             </button>
@@ -133,7 +133,7 @@ export function ModelFilesCard() {
         artifacts.map((a) => (
           <div
             key={a.name + a.url}
-            className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5 last:border-b-0"
+            className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-b-0"
           >
             <div className="flex min-w-0 items-center gap-2">
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${a.present ? "bg-success" : "bg-subtle"}`} />

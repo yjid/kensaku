@@ -36,11 +36,11 @@ export function Field({
 }) {
   const labelId = React.useId();
   return (
-    <div className="flex min-h-[52px] items-center justify-between gap-6 border-b border-line px-4 py-2.5 last:border-b-0">
-      <div className="min-w-0 space-y-0.5">
-        <p id={labelId} className="text-[13px] font-medium text-fg">{label}</p>
-        {description && <p className="line-clamp-2 text-[12px] leading-[18px] text-muted">{description}</p>}
-        {hint && <p className="line-clamp-2 text-[12px] leading-[18px] text-subtle">{hint}</p>}
+    <div className="flex min-h-14 items-center justify-between gap-6 border-b border-line px-4 py-3 last:border-b-0">
+      <div className="min-w-0 space-y-1">
+        <p id={labelId} className="t-body font-medium text-fg">{label}</p>
+        {description && <p className="t-label line-clamp-2 text-muted">{description}</p>}
+        {hint && <p className="t-label line-clamp-2 text-subtle">{hint}</p>}
       </div>
       <FieldLabelContext.Provider value={labelId}>
         {children}
@@ -51,8 +51,8 @@ export function Field({
 
 export function Card({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
-    <section className="mb-5">
-      {title && <p className="t-meta px-1 pb-2.5 text-subtle">{title}</p>}
+    <section className="mb-6">
+      {title && <p className="t-meta px-1 pb-3 text-subtle">{title}</p>}
       <div className="surface overflow-hidden">{children}</div>
     </section>
   );
@@ -60,11 +60,9 @@ export function Card({ title, children }: { title?: string; children: React.Reac
 
 export function SectionHeader({ title, description }: { title: string; description: string }) {
   return (
-    <div className="pb-5">
-      <h2 className="text-fg" style={{ fontSize: 24, lineHeight: "30px", fontWeight: 600, letterSpacing: "-0.03em" }}>
-        {title}
-      </h2>
-      <p className="t-lead pt-1.5 text-muted">{description}</p>
+    <div className="pb-6">
+      <h2 className="t-title text-fg">{title}</h2>
+      <p className="t-lead pt-2 text-muted">{description}</p>
     </div>
   );
 }
@@ -96,7 +94,7 @@ export function Switch({
       } ${disabled ? "cursor-not-allowed opacity-40" : ""}`}
     >
       <span
-        className={`absolute left-[2px] top-[2px] h-[18px] w-[18px] rounded-full shadow-[0_1px_3px_rgb(0_0_0/0.25)] transition-transform ${
+        className={`absolute left-[2px] top-[2px] h-[18px] w-[18px] rounded-full shadow-[var(--shadow-press)] transition-transform ${
           checked ? "translate-x-4 bg-bg" : "translate-x-0 bg-white"
         }`}
       />

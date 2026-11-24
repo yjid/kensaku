@@ -53,7 +53,7 @@ export const KeyHintStrip: React.FC<{
   const issues = doctor ? doctor.summary.warn + doctor.summary.fail : 0;
   const { text, busy } = statusText(status, t);
   return (
-    <div className="relative z-10 flex h-7 shrink-0 items-center justify-between gap-4 px-3.5 text-[11px] text-subtle">
+    <div className="relative z-10 flex h-8 shrink-0 items-center justify-between gap-4 px-4 text-[11px] text-subtle">
       <span className="flex items-center gap-2">
         {text && (
           <>
@@ -66,7 +66,7 @@ export const KeyHintStrip: React.FC<{
             type="button"
             onClick={onDoctor}
             title={issues ? t("health.issue", { count: issues }) : t("health.ok")}
-            className={`flex items-center gap-1 rounded-full px-1.5 py-0.5 transition-colors hover:bg-accent-soft ${issues ? "text-warning" : "text-subtle"}`}
+            className={`flex items-center gap-1 rounded-full px-2 py-1 transition-colors hover:bg-accent-soft active:bg-ink-soft ${issues ? "text-warning" : "text-subtle"}`}
           >
             <Stethoscope className="h-3.5 w-3.5" />
             {issues > 0 && <span className="t-meta">{t("health.issuesShort", { count: issues })}</span>}
@@ -77,7 +77,7 @@ export const KeyHintStrip: React.FC<{
             type="button"
             onClick={onUpdate}
             title={t("update.available", { version: updateAvailable })}
-            className="flex items-center gap-1 rounded-full px-1.5 py-0.5 text-accent transition-colors hover:bg-accent-soft"
+            className="flex items-center gap-1 rounded-full px-2 py-1 text-accent transition-colors hover:bg-accent-soft active:bg-ink-soft"
           >
             <ArrowUpCircle className="h-3.5 w-3.5" />
             <span className="t-meta">{t("update.label")}</span>
@@ -86,7 +86,7 @@ export const KeyHintStrip: React.FC<{
       </span>
       <span className="hidden items-center gap-4 sm:flex">
         {HINTS.map((h) => (
-          <span key={h.labelKey} className="flex items-center gap-1.5">
+          <span key={h.labelKey} className="flex items-center gap-2">
             <span className="kbd">{h.keys}</span>
             <span>{t(h.labelKey)}</span>
           </span>

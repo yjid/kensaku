@@ -68,8 +68,8 @@ export const ResultItem = React.memo<ResultItemProps>(
         className="group flex h-full w-full flex-col text-left outline-none"
       >
         <span
-          className={`card-surface surface relative block aspect-[16/10] w-full overflow-hidden group-focus-visible:outline-2 group-focus-visible:outline-offset-[3px] group-focus-visible:outline-[color-mix(in_srgb,var(--ink)_45%,transparent)] ${
-            isSelected ? "outline-2 outline-offset-[3px] outline-[color-mix(in_srgb,var(--ink)_45%,transparent)]" : ""
+          className={`card-surface surface relative block aspect-[16/10] w-full overflow-hidden group-focus-visible:outline-2 group-focus-visible:outline-offset-[3px] group-focus-visible:outline-[color-mix(in_srgb,var(--ink)_60%,transparent)] ${
+            isSelected ? "card-selected" : ""
           }`}
         >
           {hasThumb ? (
@@ -85,8 +85,8 @@ export const ResultItem = React.memo<ResultItemProps>(
           <HoverDetails result={result} active={hovered} />
         </span>
 
-        <span className="flex min-w-0 flex-col px-0.5 pt-2">
-          <span className="truncate text-[13px] font-medium leading-[18px] text-fg">
+        <span className="flex min-w-0 flex-col px-0.5 pt-2.5">
+          <span className="truncate text-[13px] font-medium leading-[19px] text-fg">
             <HighlightedName text={result.filename} query={query} />
           </span>
           <span className="t-meta truncate text-subtle">{meta}</span>

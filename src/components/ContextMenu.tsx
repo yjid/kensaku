@@ -49,7 +49,7 @@ export function ContextMenu({
   }, [close]);
 
   const width = 200;
-  const height = items.length * 32 + 12;
+  const height = items.length * 36 + 12;
   const left = Math.min(x, window.innerWidth - width - 8);
   const top = Math.min(y, window.innerHeight - height - 8);
 

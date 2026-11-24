@@ -93,7 +93,7 @@ export function PreviewDialog({
         <div className="flex items-center justify-between gap-4 px-6 pb-4 pt-5">
           <div className="min-w-0">
             <p className="t-lead truncate font-medium text-fg">{result.filename}</p>
-            <p className="truncate text-[12px] text-subtle">{displayParent(result.path)}</p>
+            <p className="t-label truncate text-subtle">{displayParent(result.path)}</p>
           </div>
           <button type="button" onClick={onOpen} className="btn btn-primary h-8 shrink-0 px-4">
             {t("preview.open")}
@@ -108,12 +108,12 @@ export function PreviewDialog({
             </pre>
           ) : (
             <div className="flex flex-col items-center gap-3 text-muted">
-              <span className="relative block h-40 w-52"><TypeTile filename={result.filename} isDir={result.is_dir} /></span>
+              <span className={`relative block h-40 w-52 ${loading ? "skeleton rounded-panel" : ""}`}><TypeTile filename={result.filename} isDir={result.is_dir} /></span>
               <p className="t-meta text-subtle">{loading ? t("preview.loading") : t("preview.unavailable")}</p>
             </div>
           )}
         </div>
-        <div className="flex items-center gap-4 px-6 py-3.5 text-[11px] text-subtle">
+        <div className="t-meta flex items-center gap-4 px-6 py-3 text-subtle">
           <span className="flex items-center gap-1.5"><span className="kbd">Space</span> {t("preview.close")}</span>
           <span className="flex items-center gap-1.5"><span className="kbd">↵</span> {t("preview.open")}</span>
         </div>

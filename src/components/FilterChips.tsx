@@ -24,7 +24,7 @@ export const FilterChips: React.FC<FilterChipsProps> = ({
   if (filters.length === 0 && hints.length === 0) return null;
 
   return (
-    <div className="no-scrollbar flex shrink-0 items-center gap-1.5 overflow-x-auto px-4 pb-2">
+    <div className="no-scrollbar flex shrink-0 items-center gap-2 overflow-x-auto px-4 pb-2.5">
       {filters.map((f, i) => (
         <button
           key={f.raw + i}
@@ -34,7 +34,7 @@ export const FilterChips: React.FC<FilterChipsProps> = ({
             e.stopPropagation();
             onRemoveFilter(f);
           }}
-          className="group flex h-6 shrink-0 items-center gap-1 rounded-full bg-sunken pl-2.5 pr-1.5 text-[11px] font-mono text-muted transition-colors hover:text-fg"
+          className="group flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-sunken pl-3 pr-2 text-[11px] font-mono text-muted shadow-[inset_0_0_0_1px_var(--border)] transition-colors hover:text-fg"
         >
           <span className={f.negated ? "line-through decoration-danger" : ""}>{f.raw}</span>
           <X className="h-3 w-3 opacity-50 transition-opacity group-hover:opacity-100" />
@@ -51,7 +51,7 @@ export const FilterChips: React.FC<FilterChipsProps> = ({
               e.stopPropagation();
               onApplyHint(h);
             }}
-            className="flex h-6 shrink-0 items-center gap-1.5 rounded-full border border-line px-2.5 text-[11px] text-muted transition-colors hover:bg-sunken hover:text-fg"
+            className="flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-line px-3 text-[11px] text-muted transition-colors hover:bg-sunken hover:text-fg"
           >
             {isDir && <Folder className="h-3 w-3 text-accent" />}
             <span className="font-medium">{label}</span>

@@ -53,13 +53,13 @@ export function DetailsDialog({
       <div
         role="dialog"
         aria-label={t("title")}
-        className={`elevated ${closing ? "overlay-out" : "overlay-in"} w-full max-w-[440px] rounded-sheet p-6`}
+        className={`elevated ${closing ? "overlay-out" : "overlay-in"} w-full max-w-[440px] rounded-sheet p-7`}
       >
         <p className="t-title break-words text-fg">{result.filename}</p>
         <dl className="mt-6 divide-y divide-line">
           {rows.map(([label, value]) => (
-            <div key={label} className="flex items-baseline justify-between gap-6 py-2.5">
-              <dt className="shrink-0 text-[13px] text-muted">{label}</dt>
+            <div key={label} className="flex items-baseline justify-between gap-6 py-3">
+              <dt className="t-label shrink-0 text-muted">{label}</dt>
               <dd className="t-meta min-w-0 truncate text-right text-fg">
                 {value}
               </dd>

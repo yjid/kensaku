@@ -604,7 +604,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
                   key={dir}
                   style={{ ["--stagger-delay" as string]: `${i * 40}ms` }}
                   className={`surface rise-in group flex h-14 items-center gap-3 pr-4 text-left transition-[box-shadow,transform] duration-[var(--dur-base)] motion-reduce:active:scale-100 active:scale-[0.99] ${
-                    selected ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]" : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
+                    selected ? "![box-shadow:inset_0_0_0_2px_color-mix(in_srgb,var(--ink)_60%,transparent)]" : "hover:[box-shadow:var(--panel-edge),var(--shadow-raise)]"
                   }`}
                 >
                   <button
@@ -831,7 +831,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
               <button
                 type="button"
                 onClick={() => setCapturing(true)}
-                className={`surface flex h-14 w-full items-center justify-between px-4 text-left transition-shadow ${capturing ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]" : ""}`}
+                className={`surface flex h-14 w-full items-center justify-between px-4 text-left transition-shadow ${capturing ? "![box-shadow:inset_0_0_0_2px_color-mix(in_srgb,var(--ink)_60%,transparent)]" : ""}`}
               >
                 <span className="flex items-center gap-1.5">
                   {capturing ? (
@@ -1004,7 +1004,7 @@ function EngineOption({
         (e.key === "Enter" || e.key === " ") && onSelect();
       }}
       className={`surface flex min-h-16 cursor-default items-center gap-4 px-4 py-3 transition-shadow ${
-        selected ? "![box-shadow:inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_45%,transparent)]" : "hover:[box-shadow:var(--panel-edge),var(--shadow-float)]"
+        selected ? "![box-shadow:inset_0_0_0_2px_color-mix(in_srgb,var(--ink)_60%,transparent)]" : "hover:[box-shadow:var(--panel-edge),var(--shadow-raise)]"
       } ${disabled ? "opacity-60" : ""}`}
     >
       <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors ${selected ? "bg-ink" : "shadow-[inset_0_0_0_1.5px_var(--border-strong)]"}`}>

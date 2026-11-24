@@ -174,7 +174,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
     <div className={`${closing ? "fade-out pointer-events-none" : "fade-in"} absolute inset-0 z-40 flex bg-bg`}>
       <nav data-tauri-drag-region className="relative z-10 flex w-[200px] shrink-0 flex-col overflow-y-auto px-3 pb-3 pt-5">
         <p data-tauri-drag-region className="t-title px-3 pb-4 text-fg">{t("title")}</p>
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-1">
           {SECTIONS.map((s) => {
             const active = section === s.id;
             const Icon = s.icon;
@@ -184,8 +184,8 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
                 type="button"
                 onClick={() => setSection(s.id)}
                 aria-current={active ? "page" : undefined}
-                className={`relative flex h-8 w-full items-center gap-2.5 rounded-control px-2.5 text-[13px] transition-colors ${
-                  active ? "control font-medium text-fg" : "text-muted hover:text-fg"
+                className={`t-body relative flex h-9 w-full items-center gap-3 rounded-control px-3 transition-colors active:scale-[0.99] ${
+                  active ? "control font-medium text-fg" : "text-muted hover:bg-accent-soft hover:text-fg"
                 }`}
               >
                 <Icon className={`h-4 w-4 shrink-0 ${active ? "text-fg" : "text-subtle"}`} strokeWidth={1.75} />
@@ -196,7 +196,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
         </div>
       </nav>
 
-      <main className="surface relative z-10 m-2 ml-0 flex min-w-0 flex-1 flex-col overflow-hidden rounded-sheet">
+      <main className="surface relative z-10 m-2 ml-0 flex min-w-0 flex-1 flex-col overflow-hidden rounded-sheet ![box-shadow:var(--panel-edge),var(--shadow-float)]">
         <button
           type="button"
           title={t("close")}
@@ -216,16 +216,16 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
         </div>
 
         <footer className="relative z-10 flex shrink-0 flex-col gap-2 pb-3">
-          <div className="control mx-auto flex items-center gap-2 rounded-full py-1.5 pl-4 pr-1.5">
-            <span className="flex items-center gap-2 pr-2 text-[12px] text-muted">
+          <div className="control mx-auto flex items-center gap-2 rounded-full py-1 pl-4 pr-1">
+            <span className="t-label flex items-center gap-2 pr-2 text-muted">
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors ${dirty ? "bg-warning" : "bg-success/70"}`} />
               {dirty ? t("footer.unsaved") : saved ? t("footer.saved") : t("footer.upToDate")}
             </span>
-            <button type="button" onClick={() => handleSave(true)} disabled={saving || !config} className="btn btn-ghost h-8 !rounded-full px-3 text-[12px]">
+            <button type="button" onClick={() => handleSave(true)} disabled={saving || !config} className="btn btn-ghost t-label h-8 !rounded-full px-3">
               <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.75} />
               {t("footer.saveReindex")}
             </button>
-            <button type="button" onClick={() => handleSave(false)} disabled={saving || !config || !dirty} className="btn btn-primary h-8 !rounded-full px-4 text-[12px]">
+            <button type="button" onClick={() => handleSave(false)} disabled={saving || !config || !dirty} className="btn btn-primary t-label h-8 !rounded-full px-4">
               {saved ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" strokeWidth={1.75} />}
               {saved ? t("footer.saved") : saving ? t("footer.saving") : t("footer.save")}
             </button>
@@ -287,7 +287,7 @@ function ConfigSkeleton() {
   return (
     <div className="space-y-3">
       {[0, 1, 2].map((i) => (
-        <div key={i} className="surface h-16 animate-pulse opacity-60" />
+        <div key={i} className="surface skeleton h-16 opacity-60" />
       ))}
     </div>
   );
@@ -438,7 +438,7 @@ function GeneralSection({
       </Card>
 
       <Card title={t("window.title")}>
-        <div className="space-y-3 px-4 py-3.5">
+        <div className="space-y-3 px-4 py-3">
           <div className="space-y-0.5">
             <p className="text-[13px] font-medium text-fg">{t("window.mode")}</p>
             <p className="text-[12px] leading-[18px] text-muted">{t("window.description")}</p>
@@ -582,7 +582,7 @@ function FoldersSection({
         {config.watched_dirs.map((dir) => (
           <div
             key={dir}
-            className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5 last:border-b-0"
+            className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-b-0"
           >
             <div className="min-w-0 flex-1">
               <p className="truncate text-[12px] text-fg">
@@ -619,7 +619,7 @@ function FoldersSection({
                     : c,
                 )
               }
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-accent-soft hover:text-danger"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-small text-subtle transition-colors hover:bg-accent-soft hover:text-danger"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -647,12 +647,12 @@ function FoldersSection({
             if (paths.length === 0 && input.trim()) paths.push(input.trim());
             addDropped(paths);
           }}
-          className="mx-4 my-2.5 flex h-16 items-center justify-center rounded-control border border-dashed border-line text-[11px] text-subtle transition-colors"
+          className="mx-4 my-3 flex h-16 items-center justify-center rounded-control border border-dashed border-line text-[11px] text-subtle transition-colors hover:border-line-strong hover:text-fg"
         >
           {t("folders.drop")}
         </div>
 
-        <div className="flex gap-1.5 border-t border-line p-3">
+        <div className="flex gap-2 border-t border-line p-3">
           <input
             type="text"
             value={input}
@@ -705,7 +705,7 @@ function ExclusionsSection({
   return (
     <>
       <Card title={t("exclusions.presets")}>
-        <div className="flex flex-wrap gap-1.5 px-4 py-3">
+        <div className="flex flex-wrap gap-2 px-4 py-3">
           {Object.keys(EXCLUSION_PRESETS).map((p) => {
             const key = p === "Developer" ? "developer" : p === "Creative" ? "creative" : "allRound";
             return (
@@ -724,7 +724,7 @@ function ExclusionsSection({
       </Card>
 
       <Card title={t("exclusions.directories")}>
-        <div className="flex flex-wrap gap-1.5 px-4 py-3">
+        <div className="flex flex-wrap gap-2 px-4 py-3">
           {config.excluded_dirs.map((d) => (
             <button
               key={d}
@@ -759,7 +759,7 @@ function ExclusionsSection({
       </Card>
 
       <Card title={t("exclusions.extensions")}>
-        <div className="flex flex-wrap gap-1.5 px-4 py-3">
+        <div className="flex flex-wrap gap-2 px-4 py-3">
           {config.excluded_extensions.map((x) => (
             <button
               key={x}
@@ -975,7 +975,7 @@ function SearchSection({
                     c ? { ...c, aliases: (c.aliases ?? []).filter((_, j) => j !== i) } : c,
                   )
                 }
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-accent-soft hover:text-danger"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-small text-subtle transition-colors hover:bg-accent-soft hover:text-danger"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -996,7 +996,7 @@ function SearchSection({
       </Card>
 
       <Card title={t("search.queryLanguage")}>
-        <div className="grid grid-cols-2 gap-x-8 px-4 py-2.5">
+        <div className="grid grid-cols-2 gap-x-8 px-4 py-3">
           {CHEATSHEET.map(([token, key], idx) => (
             <div
               key={token}
@@ -1154,7 +1154,7 @@ function CopyRow({
           navigator.clipboard.writeText(text);
           onCopied();
         }}
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-subtle transition-colors hover:bg-elevated hover:text-fg"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-small text-subtle transition-colors hover:bg-elevated hover:text-fg"
       >
         {copied ? <Check className="h-3 w-3 text-accent" /> : <Copy className="h-3 w-3" />}
       </button>
@@ -1323,7 +1323,7 @@ function AgentsSection({
               setConfigCopied(true);
               window.setTimeout(() => setConfigCopied(false), 1500);
             }}
-            className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded text-subtle transition-colors hover:bg-elevated hover:text-fg"
+            className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-small text-subtle transition-colors hover:bg-elevated hover:text-fg"
           >
             {configCopied ? <Check className="h-3.5 w-3.5 text-accent" /> : <Copy className="h-3.5 w-3.5" />}
           </button>
@@ -1501,15 +1501,15 @@ function ResetDialog({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-label={t("about.resetDialog.aria")}
-        className="overlay-in elevated w-full max-w-[400px] overflow-hidden border-danger/30"
+        className="overlay-in elevated w-full max-w-[400px] overflow-hidden rounded-sheet border border-danger/30"
       >
-        <div className="flex items-center justify-between border-b border-line bg-accent-soft px-4 py-2.5">
+        <div className="flex items-center justify-between border-b border-line bg-accent-soft px-4 py-3">
           <p className="text-[11px] font-medium text-danger">{t("about.danger")}</p>
           <button
             type="button"
             title={t("about.resetDialog.cancel")}
             onClick={onClose}
-            className="flex h-6 w-6 items-center justify-center rounded text-muted transition-colors hover:bg-elevated hover:text-fg"
+            className="flex h-7 w-7 items-center justify-center rounded-small text-muted transition-colors hover:bg-elevated hover:text-fg"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -1693,7 +1693,7 @@ function AboutSection({
   return (
     <>
       {resetPending && (
-        <div className="flex items-center gap-2 rounded-control border border-warning/40 bg-elevated px-4 py-2.5">
+        <div className="flex items-center gap-2 rounded-control border border-warning/40 bg-elevated px-4 py-3">
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
           <p className="text-[12px] text-muted">{t("about.resetPending")}</p>
         </div>
@@ -1703,10 +1703,10 @@ function AboutSection({
       <Card title={t("about.version")}>
         <div className="flex items-center justify-between p-4">
           <div>
-            <p className="text-[15px] font-semibold text-fg">
+            <p className="t-lead font-semibold text-fg">
               Kensaku <span className="font-normal text-muted">検索</span>
             </p>
-            <p className="font-mono text-[11px] text-subtle">{version}</p>
+            <p className="t-meta text-subtle">{version}</p>
             <p className="mt-1 text-[11px] text-subtle">
               {t("about.autoUpdate")}
             </p>
@@ -1794,7 +1794,7 @@ function AboutSection({
           <div className="p-4 space-y-3">
             {!updateInfo.has_update ? (
               <div className="flex items-center gap-2 text-[13px] text-fg">
-                <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
                 <span>{t("about.upToDate")} (v{updateInfo.current_version})</span>
               </div>
             ) : (

@@ -27,13 +27,13 @@ export function ScopeMenu({
               onPick(path);
             }}
             className={`flex w-full items-center gap-3 rounded-control px-3 py-2 text-left transition-colors ${
-              active ? "bg-accent-soft" : "hover:bg-accent-soft"
+              active ? "bg-ink-soft" : "hover:bg-accent-soft active:bg-ink-soft"
             }`}
           >
-            <Folder className={`h-3.5 w-3.5 shrink-0 ${active ? "text-ink" : "text-subtle"}`} />
+            <Folder className={`h-4 w-4 shrink-0 ${active ? "text-ink" : "text-subtle"}`} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-medium text-fg">@{name}</span>
-              <span className="block truncate t-meta text-subtle">{path}</span>
+              <span className="t-body block truncate font-medium text-fg">@{name}</span>
+              <span className="t-meta block truncate text-subtle">{path}</span>
             </span>
           </button>
         );
