@@ -312,6 +312,11 @@ impl CrawlGateGuard {
 
 impl Drop for CrawlGateGuard {
     fn drop(&mut self) {
+        // This guard is declared before the crawl's path sets, extraction
+        // buffers and commit structures, so those locals have already been
+        // dropped by the time we get here. Return their pages before the
+        // process goes idle instead of waiting for the next allocation.
+        crate::util::memory::release_memory();
         if !self.armed {
             return;
         }
