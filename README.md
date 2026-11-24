@@ -10,6 +10,10 @@
 </p>
 
 <p align="center">
+  <a href="https://upstar.dev/r/yjid/kensaku"><picture><source media="(prefers-color-scheme: dark)" srcset="https://upstar.dev/badge/yjid/kensaku/day/windows-dark.svg"><img alt="Upstar: #1 Riser Of The Day in Windows, October 29, 2026" src="https://upstar.dev/badge/yjid/kensaku/day/windows.svg" width="250" height="55"></picture></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/yjid/kensaku/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/yjid/kensaku?style=for-the-badge" /></a>
   <a href="https://github.com/yjid/kensaku/releases/latest"><img alt="Downloads" src="https://img.shields.io/github/downloads/yjid/kensaku/total?style=for-the-badge" /></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-111111?style=for-the-badge" /></a>
@@ -127,6 +131,19 @@ Type what you remember. Kensaku searches names, text inside files, and meaning, 
 - Visual search is a beta model download and is not part of search results yet.
 - Windows is the most tested platform; macOS and Linux reports are especially valuable.
 
+## 📊 Performance
+
+| What | Result |
+|---|---|
+| Name search, 100k files (Windows 11, default threads) | **18 ms average** (best 8.3 ms) |
+| Name search, 100k files (Windows 11, 4 threads) | **3.1 ms average** |
+| Name search, 100k files (Linux reference, warm) | **1.3 ms average** (best 0.5 ms) |
+| Metadata for 100k files | **12.2 MB** |
+| First run over 101k mixed files (earlier Linux reference) | 184 s, peak 183 MB |
+| Re-index with nothing changed | 0.56 s |
+
+The Windows and Linux rows are the same workload on different hardware; NTFS metadata reads and antivirus make the walk slower on Windows. Method, corpus, and caveats: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+
 ## 🤖 For AI agents
 
 `kensaku-cli` ships with each release and shares the same local index:
@@ -140,6 +157,17 @@ Type what you remember. Kensaku searches names, text inside files, and meaning, 
 ```
 
 Read-only by default, with scoped roots, cursor pagination, and tree-sitter symbol lookup. Full guide: [docs/AGENTS.md](docs/AGENTS.md).
+
+## 🛠 Build from source
+
+```bash
+git clone https://github.com/yjid/kensaku
+cd kensaku
+bun install
+bun run tauri build
+```
+
+You need Rust stable, Bun 1.1+, and your platform's webview libraries. Full prerequisites and build notes: [docs/INSTALL.md](docs/INSTALL.md). A `Makefile` wraps `make dev`, `make build`, `make test`, and `make reset`.
 
 ## 📚 Docs
 
@@ -165,6 +193,10 @@ Kensaku is MIT-licensed and built by people who wanted a better launcher.
 - **Security** — report privately via [SECURITY.md](SECURITY.md).
 
 If Kensaku saves you time, [star the repository](https://github.com/yjid/kensaku/stargazers). It is how the next contributor finds us.
+
+## ⭐ Star history
+
+[![Star History Chart](https://api.star-history.com/svg?repos=yjid/kensaku&type=Date)](https://star-history.com/#yjid/kensaku&Date)
 
 ## License
 
