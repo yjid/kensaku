@@ -448,6 +448,34 @@
 }
 .group:hover .card-media { transform: scale(1.055); }
 
+/* Motion levels. The full lift above is the default; "subtle" softens it and
+   "off" removes motion without removing state feedback. */
+html[data-motion="subtle"] .group:hover .card-surface {
+  transform: translateY(-2px);
+  box-shadow: var(--panel-edge), var(--shadow-card);
+}
+html[data-motion="subtle"] .group:active .card-surface {
+  transform: translateY(0) scale(0.995);
+}
+html[data-motion="subtle"] .group:hover .card-media { transform: scale(1.03); }
+html[data-motion="subtle"] .btn:active:not(:disabled) { transform: scale(0.995); }
+
+html[data-motion="off"] *,
+html[data-motion="off"] *::before,
+html[data-motion="off"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+html[data-motion="off"] .card-surface,
+html[data-motion="off"] .group:hover .card-surface,
+html[data-motion="off"] .group:active .card-surface,
+html[data-motion="off"] .card-media,
+html[data-motion="off"] .group:hover .card-media,
+html[data-motion="off"] .btn:active,
+html[data-motion="off"] .pill:active,
+html[data-motion="off"] .menu-row:active { transform: none; }
+
 .hover-reveal {
   opacity: 0;
   transform: translateY(6px);

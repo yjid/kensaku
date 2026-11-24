@@ -192,6 +192,10 @@ export interface KensakuConfig {
   /** Closing the window hides to the tray instead of quitting. */
   close_to_background?: boolean;
   theme?: "light" | "dark";
+  /** Hover/press motion level; "full" is the default. */
+  motion?: "full" | "subtle" | "off";
+  /** Result grid spacing preset. */
+  grid_density?: "compact" | "comfortable" | "spacious";
   language?: string | null;
   aliases?: Alias[];
   saved_searches?: SavedSearch[];

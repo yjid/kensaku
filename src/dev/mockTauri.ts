@@ -65,6 +65,7 @@ const config: Record<string, unknown> = {
   excluded_dirs: ["node_modules", ".git"], excluded_extensions: [],
   shortcut: "Alt+Space", max_results: 200, is_setup_complete: params.get("setup") !== "1",
   semantic_enabled: true, ocr_enabled: true, ocr_engine: "tesseract", theme: "dark",
+  motion: "full", grid_density: "comfortable",
   saved_searches: [{ name: "Invoices", query: "invoice type:pdf" }, { name: "This week's screenshots", query: "screenshot modified:7d" }],
   pins: [], show_thumbnails: true, results_view: "grid", crawl_mode: "balanced",
 };

@@ -31,6 +31,7 @@ import { VirtualGrid } from "./components/VirtualGrid";
 import { FileRow } from "./components/FileRow";
 import { rangeSelect, toggle, type SelectMods } from "./lib/selection";
 import { normalizeTheme } from "./hooks/useTheme";
+import { applyMotion, densityMetrics } from "./lib/uiPrefs";
 import { useLanguage } from "./hooks/useLanguage";
 import { classify } from "./lib/categories";
 import { shouldHideOnBlur } from "./lib/dismiss";
@@ -154,6 +155,11 @@ function App() {
       /* ignore */
     }
   }, [config?.theme]);
+  /* Motion level is a data attribute, so it applies without touching any
+     component: Settings can switch it and the whole UI follows. */
+  useEffect(() => {
+    applyMotion(config?.motion);
+  }, [config?.motion]);
   useEffect(() => {
     if (isSetupComplete !== true) return;
     invoke<DoctorReport>("run_doctor")
@@ -1487,6 +1493,7 @@ function App() {
                       cardHeight={(w) => w * 0.625 + 56}
                       list={view === "list"}
                       insetTop={barHeight}
+                      density={densityMetrics(config?.grid_density)}
                       selectedIndex={selectedIndex}
                       hasMore={results.length < total && exhaustedKey !== pageKey}
                       loading={loadingMore}

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { GRID_METRICS, type GridMetrics } from "../lib/uiPrefs";
 
 /* Windowed results. Only rows inside the viewport (plus overscan) are mounted,
    so long result sets stay as light as short ones. Grid mode fits as many
@@ -7,16 +8,8 @@ import { useTranslation } from "react-i18next";
    fixed-height rows. Row heights are known up front, so nothing is measured
    per item. */
 
-const MIN_CELL = 168;
-const GAP = 16;
-const PAD = 20;
-const LIST_GAP = 4;
-const LIST_PAD = 12;
-const LIST_ROW = 56;
+const DEFAULT_DENSITY = GRID_METRICS.comfortable;
 const OVERSCAN_ROWS = 4;
-/** Top/bottom inset. Smaller than the side gutter: the tab row above already
- *  separates the grid from the query. */
-const PAD_Y = 10;
 
 export interface VirtualGridProps<T> {
   items: T[];
@@ -36,6 +29,8 @@ export interface VirtualGridProps<T> {
   containerRef?: React.RefObject<HTMLDivElement | null>;
   /** Space reserved at the top for a bar that floats over the content. */
   insetTop?: number;
+  /** Gap, gutter and row-height preset from Settings. */
+  density?: GridMetrics;
 }
 
 export function VirtualGrid<T>({
@@ -52,6 +47,7 @@ export function VirtualGrid<T>({
   list = false,
   containerRef,
   insetTop = 0,
+  density = DEFAULT_DENSITY,
 }: VirtualGridProps<T>) {
   const { t } = useTranslation("results");
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -76,16 +72,19 @@ export function VirtualGrid<T>({
     return () => ro.disconnect();
   }, []);
 
-  const pad = list ? LIST_PAD : PAD;
-  const padY = (list ? 4 : PAD_Y) + insetTop;
-  const gap = list ? LIST_GAP : GAP;
+  const pad = list ? density.listPad : density.pad;
+  const padY = (list ? Math.max(4, Math.round(density.padY / 2)) : density.padY) + insetTop;
+  const gap = list ? density.listGap : density.gap;
   const inner = Math.max(0, size.width - pad * 2);
-  const cols = list ? 1 : Math.max(1, Math.floor((inner + gap) / (MIN_CELL + gap)));
+  const cols = list
+    ? 1
+    : Math.max(1, Math.floor((inner + gap) / (density.minCell + gap)));
   const cell = list ? inner : (inner - gap * (cols - 1)) / cols;
-  const cardH = list ? LIST_ROW : cardHeight(cell);
+  const cardH = list ? density.listRow : cardHeight(cell);
   const rowH = cardH + gap;
   const totalRows = Math.ceil(items.length / cols);
-  const contentHeight = totalRows > 0 ? totalRows * rowH - gap + padY + PAD_Y + 24 : 0;
+  const contentHeight =
+    totalRows > 0 ? totalRows * rowH - gap + padY + density.padY + 24 : 0;
 
   useEffect(() => {
     onColumns?.(cols);
@@ -108,9 +107,9 @@ export function VirtualGrid<T>({
     const row = Math.floor(selectedIndex / cols);
     const top = padY + row * rowH;
     const bottom = top + cardH;
-    if (top < el.scrollTop + insetTop) el.scrollTop = Math.max(0, top - insetTop - PAD_Y);
-    else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight + PAD_Y + 8;
-  }, [selectedIndex, cols, rowH, cardH, padY]);
+    if (top < el.scrollTop + insetTop) el.scrollTop = Math.max(0, top - insetTop - density.padY);
+    else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight + density.padY + 8;
+  }, [selectedIndex, cols, rowH, cardH, padY, density.padY]);
 
   const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const next = e.currentTarget.scrollTop;

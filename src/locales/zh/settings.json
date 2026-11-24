@@ -66,7 +66,17 @@
     "language": "语言",
     "auto": "自动（跟随系统）",
     "light": "浅色",
-    "dark": "深色"
+    "dark": "深色",
+    "motion": "动效",
+    "motionDescription": "卡片、列表行和按钮的悬停与点击反馈。选择“轻柔”减少位移，选择“关闭”停用动效。",
+    "motion_full": "完整",
+    "motion_subtle": "轻柔",
+    "motion_off": "关闭",
+    "density": "网格密度",
+    "densityDescription": "网格和列表视图中结果的间距。",
+    "density_compact": "紧凑",
+    "density_comfortable": "适中",
+    "density_spacious": "宽松"
   },
   "window": {
     "title": "窗口",

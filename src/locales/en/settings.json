@@ -66,7 +66,17 @@
     "language": "Language",
     "auto": "Auto (system)",
     "light": "Light",
-    "dark": "Dark"
+    "dark": "Dark",
+    "motion": "Motion",
+    "motionDescription": "Hover and click feedback on cards, rows, and buttons. Choose Subtle for less travel or Off to disable.",
+    "motion_full": "Full",
+    "motion_subtle": "Subtle",
+    "motion_off": "Off",
+    "density": "Grid density",
+    "densityDescription": "Spacing of results in grid and list view.",
+    "density_compact": "Compact",
+    "density_comfortable": "Comfortable",
+    "density_spacious": "Spacious"
   },
   "window": {
     "title": "Window",

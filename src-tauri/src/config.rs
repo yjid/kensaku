@@ -214,6 +214,14 @@ pub struct KensakuConfig {
     /// configs are migrated at load (v5).
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// How much motion the interface uses: "subtle" (default), "standard"
+    /// (stronger lift and press), or "off". Unknown values normalize to the
+    /// default on load.
+    #[serde(default = "default_motion")]
+    pub motion: String,
+    /// Result grid density: "compact", "comfortable" (default) or "spacious".
+    #[serde(default = "default_grid_density")]
+    pub grid_density: String,
     /// UI language code ("en", "zh", …) or None for auto-detect from the
     /// system locale. Added in v7.
     #[serde(default)]
@@ -355,6 +363,35 @@ pub fn normalize_language(raw: &str) -> Option<String> {
     }
 }
 
+fn default_motion() -> String {
+    "full".to_string()
+}
+
+/// Canonicalizes the motion level. Unknown values fall back to the default so a
+/// hand-edited config cannot leave the UI with no motion tokens at all.
+pub fn normalize_motion(raw: &str) -> String {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "full" | "standard" | "default" => "full".to_string(),
+        "subtle" => "subtle".to_string(),
+        "off" | "none" | "reduced" => "off".to_string(),
+        _ => default_motion(),
+    }
+}
+
+fn default_grid_density() -> String {
+    "comfortable".to_string()
+}
+
+/// Canonicalizes the grid density. Unknown values fall back to `comfortable`.
+pub fn normalize_grid_density(raw: &str) -> String {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "compact" => "compact".to_string(),
+        "comfortable" => "comfortable".to_string(),
+        "spacious" => "spacious".to_string(),
+        _ => default_grid_density(),
+    }
+}
+
 /// Version written by this build; see `parse_and_migrate`.
 pub const CURRENT_CONFIG_VERSION: u32 = 7;
 
@@ -487,6 +524,8 @@ impl Default for KensakuConfig {
             app_mode: default_app_mode(),
             close_to_background: true,
             theme: default_theme(),
+            motion: default_motion(),
+            grid_density: default_grid_density(),
             language: None,
             aliases: default_aliases(),
             saved_searches: Vec::new(),
@@ -641,6 +680,18 @@ impl KensakuConfig {
             // codes fall back to auto-detect (None).
             cfg.language = cfg.language.as_deref().and_then(normalize_language);
             cfg.config_version = 7;
+            migrated = true;
+        }
+
+        // Add-only settings: repair hand-edited values without a schema bump.
+        let motion = normalize_motion(&cfg.motion);
+        if motion != cfg.motion {
+            cfg.motion = motion;
+            migrated = true;
+        }
+        let density = normalize_grid_density(&cfg.grid_density);
+        if density != cfg.grid_density {
+            cfg.grid_density = density;
             migrated = true;
         }
 
@@ -1136,6 +1187,39 @@ mod tests {
         assert_eq!(normalize_theme("DARK"), "dark");
         assert_eq!(normalize_theme("  Void "), "dark");
         assert_eq!(normalize_theme("solarized"), default_theme());
+    }
+
+    #[test]
+    fn motion_and_density_defaults_round_trip() {
+        let cfg = KensakuConfig::default();
+        assert_eq!(cfg.motion, "full");
+        assert_eq!(cfg.grid_density, "comfortable");
+
+        assert_eq!(normalize_motion("STANDARD"), "full");
+        assert_eq!(normalize_motion(" subtle "), "subtle");
+        assert_eq!(normalize_motion(" none "), "off");
+        assert_eq!(normalize_motion("wobble"), "full");
+
+        assert_eq!(normalize_grid_density("Compact"), "compact");
+        assert_eq!(normalize_grid_density(" spacious "), "spacious");
+        assert_eq!(normalize_grid_density("tiny"), "comfortable");
+    }
+
+    #[test]
+    fn load_repairs_unknown_motion_and_density() {
+        let raw = r#"{
+            "watched_dirs": [],
+            "excluded_dirs": [],
+            "excluded_extensions": [],
+            "shortcut": "Ctrl+Shift+Space",
+            "max_results": 100,
+            "is_setup_complete": true,
+            "motion": "wobble",
+            "grid_density": "huge"
+        }"#;
+        let cfg = KensakuConfig::load_from_str(raw);
+        assert_eq!(cfg.motion, "full");
+        assert_eq!(cfg.grid_density, "comfortable");
     }
 
     #[test]

@@ -66,7 +66,17 @@
     "language": "Язык",
     "auto": "Авто (системный)",
     "light": "Светлая",
-    "dark": "Тёмная"
+    "dark": "Тёмная",
+    "motion": "Анимация",
+    "motionDescription": "Отклик карточек, строк и кнопок при наведении и нажатии. «Мягкая» уменьшает смещение, «Выкл.» отключает анимацию.",
+    "motion_full": "Полная",
+    "motion_subtle": "Мягкая",
+    "motion_off": "Выкл.",
+    "density": "Плотность сетки",
+    "densityDescription": "Отступы между результатами в сетке и списке.",
+    "density_compact": "Плотная",
+    "density_comfortable": "Обычная",
+    "density_spacious": "Просторная"
   },
   "window": {
     "title": "Окно",

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
+import { applyMotion } from "../lib/uiPrefs";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -435,6 +436,55 @@ function GeneralSection({
             ))}
           </select>
         </div>
+        <Field
+          label={t("appearance.motion")}
+          description={t("appearance.motionDescription")}
+        >
+          <div role="radiogroup" aria-label={t("appearance.motion")} className="pill-group">
+            {(["full", "subtle", "off"] as const).map((v) => {
+              const active = (config.motion ?? "full") === v;
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  data-active={active}
+                  onClick={() => {
+                    applyMotion(v);
+                    setConfig((c) => (c ? { ...c, motion: v } : c));
+                  }}
+                  className="pill"
+                >
+                  {t(`appearance.motion_${v}`)}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
+        <Field
+          label={t("appearance.density")}
+          description={t("appearance.densityDescription")}
+        >
+          <div role="radiogroup" aria-label={t("appearance.density")} className="pill-group">
+            {(["compact", "comfortable", "spacious"] as const).map((v) => {
+              const active = (config.grid_density ?? "comfortable") === v;
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  data-active={active}
+                  onClick={() => setConfig((c) => (c ? { ...c, grid_density: v } : c))}
+                  className="pill"
+                >
+                  {t(`appearance.density_${v}`)}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
       </Card>
 
       <Card title={t("window.title")}>
