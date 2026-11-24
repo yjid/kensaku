@@ -5,16 +5,8 @@
 <h1 align="center">Kensaku <span title="kensaku = search, in Japanese">検索</span></h1>
 
 <p align="center">
-  <b>Fast, light, and efficient. Find anything on your computer.</b>
-</p>
-
-<p align="center">
-  Search 100,000 file names in milliseconds, with about 12 MB of metadata.<br/>
-  Search inside documents, images, and code too. Nothing leaves your machine.
-</p>
-
-<p align="center">
-  <a href="https://upstar.dev/r/yjid/kensaku"><picture><source media="(prefers-color-scheme: dark)" srcset="https://upstar.dev/badge/yjid/kensaku/day/windows-dark.svg"><img alt="Upstar: #1 Riser Of The Day in Windows, October 29, 2026" src="https://upstar.dev/badge/yjid/kensaku/day/windows.svg" width="250" height="55"></picture></a>
+  <b>Find anything on your computer. Privately.</b><br/>
+  File names, the text inside documents, screenshots, and meaning — all offline.
 </p>
 
 <p align="center">
@@ -37,11 +29,13 @@
   <img src="assets/hero.png" width="100%" alt="Kensaku — find anything on your computer" />
 </p>
 
-## Install
+## ⚡ Install
 
-Download the release for **[Windows](https://github.com/yjid/kensaku/releases/latest) ·
-[macOS](https://github.com/yjid/kensaku/releases/latest) ·
-[Linux](https://github.com/yjid/kensaku/releases/latest)**.
+<p align="center">
+  <a href="https://github.com/yjid/kensaku/releases/latest"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white" /></a>
+  <a href="https://github.com/yjid/kensaku/releases/latest"><img alt="Download for macOS" src="https://img.shields.io/badge/Download-macOS-111111?style=for-the-badge&logo=apple&logoColor=white" /></a>
+  <a href="https://github.com/yjid/kensaku/releases/latest"><img alt="Download for Linux" src="https://img.shields.io/badge/Download-Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" /></a>
+</p>
 
 Or install from a terminal:
 
@@ -55,11 +49,12 @@ curl -fsSL https://github.com/yjid/kensaku/releases/latest/download/install.sh |
 powershell -ExecutionPolicy ByPass -c "irm https://github.com/yjid/kensaku/releases/latest/download/install.ps1 | iex"
 ```
 
-The installers verify `SHA256SUMS`; Windows also verifies the Authenticode signature. Use `--system` on Linux for the `.deb`/`.rpm`, `-Silent` on Windows, or `--dry-run` / `-DryRun` to see what will happen.
-
 1. Download the installer for your computer.
 2. Run it and open Kensaku.
 3. Pick the folders you want searchable. Search works while the first scan runs.
+
+<details>
+<summary><b>Not sure which file to download?</b></summary>
 
 | Your computer | Download |
 |---|---|
@@ -69,13 +64,15 @@ The installers verify `SHA256SUMS`; Windows also verifies the Authenticode signa
 | Linux | `kensaku_<version>_amd64.AppImage` (or `.deb` / `.rpm`) |
 | Portable / no installer | Windows `.zip`, Linux `.AppImage`, macOS `.dmg` |
 
+</details>
+
 **Windows:** per-user install, no admin prompt. The installer is Authenticode-signed. A brand-new release can still show a SmartScreen reputation warning; choose **More info → Run anyway** only if it came from this repository's Releases page.
 
 **macOS:** builds are not notarized yet. If macOS blocks the first launch, open **System Settings → Privacy & Security → Open Anyway**. Folder-access prompts can return after an upgrade; see [Troubleshooting](docs/TROUBLESHOOTING.md#macos-keeps-asking-for-folder-access).
 
-Full steps, updates, and uninstall: [docs/INSTALL.md](docs/INSTALL.md).
+Full steps, options, updates, and uninstall: [docs/INSTALL.md](docs/INSTALL.md).
 
-## Why Kensaku
+## 🔍 Why Kensaku
 
 You don't remember the filename. You remember what was in it.
 
@@ -83,7 +80,7 @@ You don't remember the filename. You remember what was in it.
 - The log line from the failed deploy, somewhere in a folder of logs.
 - The screenshot with a CUDA error, which has no useful name at all.
 
-Type what you remember. Kensaku searches names, text inside files, and meaning, and shows the match with the words highlighted. Open it with Enter.
+Type what you remember. Kensaku searches names, text inside files, and meaning, and highlights the match. Open it with Enter.
 
 | | Kensaku | Everything | Listary | PowerToys Run |
 |---|---|---|---|---|
@@ -96,41 +93,41 @@ Type what you remember. Kensaku searches names, text inside files, and meaning, 
 
 **Three things worth trying on day one:**
 
-1. **Screenshot archaeology.** Search the error text you saw in a screenshot.
-2. **Describe, don't recall.** “big videos from last month” is a valid query.
-3. **Give your AI agent eyes.** Claude or Cursor can search this same local index.
+1. 📸 **Screenshot archaeology.** Search the error text you saw in a screenshot.
+2. 🗣️ **Describe, don't recall.** “big videos from last month” is a valid query.
+3. 🤖 **Give your AI agent eyes.** Claude or Cursor can search this same local index.
 
 <p align="center">
   <img src="assets/search-dashboard.png" width="100%" alt="Kensaku search results" />
 </p>
 
-## Features
+## ✨ Features
 
-**Finds more**
+**🔎 Finds more**
 - Names, full text, fuzzy matches, and meaning in one search.
 - PDF, DOCX/PPTX/XLSX, EPUB, ODT, RTF, CSV/TSV, email (`.eml`, `.msg`), and plain text.
-- 50+ code and data formats: Rust, Python, TypeScript, Go, C/C++, SQL, JSON, YAML, TOML, Dockerfile, and more.
+- 50+ code and data formats, including Rust, Python, TypeScript, Go, C/C++, SQL, JSON, YAML, and TOML.
 - Multilingual and CJK by default: Chinese, Japanese, and Korean, plus mixed-script boundaries.
 - Images and OCR: PP-OCRv6 by default; optional Indra for deskew and multi-script recognition.
-- A query language for power users: `type:pdf invoice`, `modified:7d`, `re:"fn \w+"`. [Full reference](docs/USAGE.md).
+- A query language for power users: `type:pdf invoice`, `modified:7d`, `re:"fn \w+"`. [Reference](docs/USAGE.md).
 
-**Fast and calm**
-- 100,000 filenames in milliseconds on a warm cache; about 12 MB of metadata. [Benchmarks and caveats](docs/BENCHMARKS.md).
+**⚡ Fast and calm**
+- 100,000 filenames in milliseconds on a warm cache; about 12 MB of metadata. [Benchmarks](docs/BENCHMARKS.md).
 - Results update as you type. Changed files are picked up incrementally.
 - Closing the window keeps the index warm; reopening is instant.
 - Launcher or desktop-app mode, keyboard navigation, space previews, grid or list.
 
-**Private**
+**🔒 Private**
 - No account, no telemetry, no cloud search. Your index stays on your machine.
 - The agent surface is read-only by default; `reindex` is opt-in.
 - Hidden files, build folders, and credential files are excluded by default.
 
-**Good to know**
+**💡 Good to know**
 - OCR packs download once (PP-OCRv6 is ~6.1 MB; Indra is ~27 MB). Intel Macs fall back to Tesseract.
 - Visual search is a beta model download and is not part of search results yet.
 - Windows is the most tested platform; macOS and Linux reports are especially valuable.
 
-## For AI agents
+## 🤖 For AI agents
 
 `kensaku-cli` ships with each release and shares the same local index:
 
@@ -144,7 +141,7 @@ Type what you remember. Kensaku searches names, text inside files, and meaning, 
 
 Read-only by default, with scoped roots, cursor pagination, and tree-sitter symbol lookup. Full guide: [docs/AGENTS.md](docs/AGENTS.md).
 
-## Docs
+## 📚 Docs
 
 [Install](docs/INSTALL.md) ·
 [Usage](docs/USAGE.md) ·
@@ -157,7 +154,7 @@ Read-only by default, with scoped roots, cursor pagination, and tree-sitter symb
 [Contributing](docs/CONTRIBUTING.md) ·
 [Security](SECURITY.md)
 
-## Contributing
+## 🤝 Contributing
 
 Kensaku is MIT-licensed and built by people who wanted a better launcher.
 
