@@ -83,6 +83,9 @@ coverage/
 .nyc_output/
 .playwright-mcp/
 .playwright/
+.impeccable/
+# Project-level agent skills/tools are local only; never ship them.
+.opencode/
 test-results/
 bench-results/
 *.profraw

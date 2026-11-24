@@ -58,7 +58,7 @@ export function WindowModePicker({
         tabIndex={active ? 0 : -1}
         onClick={() => onChange(mode)}
         onKeyDown={(event) => move(event, mode)}
-        className={`group flex flex-1 flex-col gap-3 rounded-panel p-2 text-left outline-none transition-[background-color,box-shadow] duration-200 [transition-timing-function:var(--ease)] ${
+        className={`group flex flex-1 flex-col gap-3 rounded-panel p-2 text-left outline-none transition-[background-color,box-shadow] duration-[var(--dur-base)] [transition-timing-function:var(--ease-out)] ${
           active
             ? "bg-accent-soft shadow-[inset_0_0_0_1.5px_color-mix(in_srgb,var(--ink)_35%,transparent)]"
             : "shadow-[inset_0_0_0_1px_var(--border)] hover:bg-accent-soft/50 hover:shadow-[inset_0_0_0_1px_var(--border-strong)]"
@@ -85,7 +85,7 @@ export function WindowModePicker({
           {/* Apple-style selection indicator: empty circle → filled blue dot */}
           <span
             aria-hidden
-            className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full transition-all duration-150 ${
+            className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full transition-[background-color,box-shadow] ${
               active
                 ? "bg-blue shadow-[0_0_0_2px_var(--bg),0_0_0_3.5px_var(--blue)]"
                 : "shadow-[inset_0_0_0_1.5px_var(--border-strong)] group-hover:shadow-[inset_0_0_0_1.5px_var(--fg-muted)]"
@@ -122,7 +122,7 @@ function AppPreview({ compact }: { compact: boolean }) {
     >
       {/* Floating mini-window */}
       <span
-        className={`absolute left-1/2 flex -translate-x-1/2 flex-col overflow-hidden rounded-control border border-line-strong bg-elevated shadow-[var(--shadow-float)] transition-transform duration-200 [transition-timing-function:var(--ease)] group-hover:-translate-y-0.5 ${
+        className={`absolute left-1/2 flex -translate-x-1/2 flex-col overflow-hidden rounded-control border border-line-strong bg-elevated shadow-[var(--shadow-float)] transition-transform motion-safe:group-hover:-translate-y-0.5 ${
           compact ? "bottom-7 top-2.5 w-[84%]" : "bottom-8 top-3 w-[82%]"
         }`}
       >
@@ -183,7 +183,7 @@ function LauncherPreview({
     >
       {/* Floating palette */}
       <span
-        className={`absolute left-1/2 flex w-[78%] -translate-x-1/2 flex-col overflow-hidden rounded-panel border border-line-strong bg-elevated shadow-[var(--shadow-float)] transition-transform duration-200 [transition-timing-function:var(--ease)] group-hover:-translate-y-0.5 ${
+        className={`absolute left-1/2 flex w-[78%] -translate-x-1/2 flex-col overflow-hidden rounded-panel border border-line-strong bg-elevated shadow-[var(--shadow-float)] transition-transform motion-safe:group-hover:-translate-y-0.5 ${
           compact ? "bottom-7 top-2.5" : "bottom-8 top-3"
         }`}
       >

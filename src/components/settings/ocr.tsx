@@ -474,7 +474,7 @@ export function OcrField({
               className="flex h-7 items-center gap-1 pl-1 pr-2 text-[12px] text-muted transition-colors hover:text-fg"
             >
               <ChevronDown
-                className={`h-3 w-3 transition-transform duration-150 ${
+                className={`h-3 w-3 transition-transform ${
                   allPlatforms ? "rotate-180" : ""
                 }`}
               />

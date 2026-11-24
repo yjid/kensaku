@@ -91,13 +91,13 @@ export function Switch({
       aria-labelledby={labelId}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors duration-200 ${
+      className={`relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors ${
         checked ? "bg-fg" : "bg-accent-soft shadow-[inset_0_0_0_1px_var(--border-strong)]"
       } ${disabled ? "cursor-not-allowed opacity-40" : ""}`}
     >
       <span
-        className={`absolute top-[2px] h-[18px] w-[18px] rounded-full shadow-[0_1px_3px_rgb(0_0_0/0.25)] transition-all duration-300 [transition-timing-function:var(--ease)] ${
-          checked ? "left-[18px] bg-bg" : "left-[2px] bg-white"
+        className={`absolute left-[2px] top-[2px] h-[18px] w-[18px] rounded-full shadow-[0_1px_3px_rgb(0_0_0/0.25)] transition-transform ${
+          checked ? "translate-x-4 bg-bg" : "translate-x-0 bg-white"
         }`}
       />
     </button>

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
+import { usePresence } from "../lib/usePresence";
 
 const KEYS = [
   { combo: "Alt+Space", key: "showHide" },
@@ -37,25 +38,26 @@ const FILTERS = [
 
 export function HelpDialog({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation("help");
+  const { closing, close } = usePresence(onClose);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" || e.key === "?") {
         e.preventDefault();
-        onClose();
+        close();
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [close]);
 
   return (
-    <div className="fade-in fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6 backdrop-blur-[6px]">
-      <div className="elevated overlay-in max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-sheet p-6">
+    <div className={`${closing ? "fade-out pointer-events-none" : "fade-in"} fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6 backdrop-blur-[6px]`}>
+      <div className={`elevated ${closing ? "overlay-out" : "overlay-in"} max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-sheet p-6`}>
         <div className="flex items-center justify-between pb-3">
           <h2 className="t-title text-fg">{t("title")}</h2>
           <button
             type="button"
-            onClick={onClose}
+            onClick={close}
             className="btn btn-ghost btn-icon h-8 !rounded-full"
           >
             <X className="h-4 w-4" />

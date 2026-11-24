@@ -21,7 +21,8 @@
 /*           Bound as --r-small/control/panel/sheet. Use the token,    */
 /*           never a literal: a `rounded-[Npx]` cannot be audited and  */
 /*           does not move when the system moves.                      */
-/* Motion    One curve (--ease). 160 quick, 280 base, 520 slow.        */
+/* Motion    One arrival curve (--ease-out) and one exit curve.        */
+/*           140 fast · 220 base · 300 slow. Exits are always faster.  */
 /*                                                                     */
 /* Components reference tokens via Tailwind (bg-bg, text-muted …) or   */
 /* var(--token). No raw colors in components.                          */
@@ -175,11 +176,19 @@
 }
 
 :root {
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-apple: var(--ease);
-  --dur-quick: 160ms;
-  --dur-base: 280ms;
-  --dur-slow: 520ms;
+  /* Confident deceleration for arrivals; a short acceleration for exits. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease: var(--ease-out);
+  --ease-apple: var(--ease-out);
+  --dur-instant: 100ms;
+  --dur-fast: 140ms;
+  --dur-quick: 180ms;
+  --dur-base: 220ms;
+  --dur-slow: 300ms;
+  --dur-enter: var(--dur-base);
+  --dur-exit: var(--dur-fast);
 }
 
 /* ------------------------------------------------------------------ */
@@ -212,7 +221,7 @@
     font-feature-settings: "cv11", "ss03", "cv05";
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-    transition: background-color var(--dur-slow) var(--ease), color var(--dur-base) var(--ease);
+    transition: background-color var(--dur-slow) var(--ease-in-out), color var(--dur-base) var(--ease-in-out);
   }
 
   input,
@@ -310,53 +319,115 @@
 
 @keyframes row-settle { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .row-enter { opacity: 1; }
-.row-stagger { animation: row-settle var(--dur-base) var(--ease) both; animation-delay: var(--stagger-delay, 0ms); }
+.row-stagger { animation: row-settle var(--dur-base) var(--ease-out) both; animation-delay: min(var(--stagger-delay, 0ms), 200ms); }
 
 @keyframes overlay-rise { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
-.overlay-in { animation: overlay-rise var(--dur-base) var(--ease) both; transform-origin: center; }
+@keyframes overlay-fall { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(4px) scale(0.99); } }
+.overlay-in { animation: overlay-rise var(--dur-enter) var(--ease-out) both; transform-origin: center; }
+.overlay-out { animation: overlay-fall var(--dur-exit) var(--ease-in) both; transform-origin: center; }
 
-@keyframes menu-pop { from { opacity: 0; transform: scale(0.96) translateY(-2px); } to { opacity: 1; transform: none; } }
-.menu-pop { animation: menu-pop var(--dur-quick) var(--ease) both; transform-origin: top left; }
+@keyframes menu-pop { from { opacity: 0; transform: scale(0.97) translateY(-2px); } to { opacity: 1; transform: none; } }
+@keyframes menu-dismiss { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(0.98) translateY(-1px); } }
+.menu-pop { animation: menu-pop var(--dur-quick) var(--ease-out) both; transform-origin: top left; }
+.menu-pop-out { animation: menu-dismiss var(--dur-exit) var(--ease-in) both; transform-origin: top left; }
+.menu-pop-right { transform-origin: top right; }
+.menu-pop-center { transform-origin: top center; }
 
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-.fade-in { animation: fade-in var(--dur-base) var(--ease) both; }
+@keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+.fade-in { animation: fade-in var(--dur-base) var(--ease-out) both; }
+.fade-out { animation: fade-out var(--dur-exit) var(--ease-in) both; }
 
 @keyframes section-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-.section-enter { animation: section-enter var(--dur-base) var(--ease) both; }
+.section-enter { animation: section-enter var(--dur-base) var(--ease-out) both; }
 
 @keyframes progress-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
 .progress-track { height: 1px; width: 100%; overflow: hidden; background: transparent; }
-.progress-bar { height: 100%; width: 40%; background: var(--fg-muted); animation: progress-slide 1.1s var(--ease) infinite; }
+.progress-bar { height: 100%; width: 40%; background: var(--fg-muted); animation: progress-slide 1.1s var(--ease-in-out) infinite; }
+/* Determinate progress: scale, never width, so the bar stays off layout. */
+.progress-fill {
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  transition: transform var(--dur-base) var(--ease-out);
+}
 
 @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-.dot-pulse { animation: dot-pulse 1.6s ease-in-out infinite; }
+.dot-pulse { animation: dot-pulse 1.6s var(--ease-in-out) infinite; }
 
 @keyframes card-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-.card-in { animation: card-in var(--dur-slow) var(--ease) both; animation-delay: var(--stagger-delay, 0ms); }
+.card-in { animation: card-in var(--dur-base) var(--ease-out) both; animation-delay: min(var(--stagger-delay, 0ms), 200ms); }
 
 /* Query text settles as it is typed: a 1px lift, not a flash. */
 @keyframes rise-in { from { opacity: 0; transform: translateY(14px); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
-.rise-in { animation: rise-in var(--dur-slow) var(--ease) both; animation-delay: var(--stagger-delay, 0ms); }
+.rise-in { animation: rise-in var(--dur-slow) var(--ease-out) both; animation-delay: min(var(--stagger-delay, 0ms), 200ms); }
 
+@keyframes toast-in { from { opacity: 0; transform: translateY(6px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes toast-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(4px) scale(0.99); } }
+.toast-in { animation: toast-in var(--dur-base) var(--ease-out) both; }
+.toast-out { animation: toast-out var(--dur-exit) var(--ease-in) both; }
+
+/* Every plain Tailwind transition reads from the same timing system. */
 .transition-colors,
 .transition-opacity,
 .transition-transform,
-.transition-all { transition-timing-function: var(--ease); }
+.transition-shadow,
+.transition-all {
+  transition-timing-function: var(--ease-out);
+  transition-duration: var(--dur-fast);
+}
+
+/* A card is one surface. Hover lifts the surface, press settles it, and
+   the thumbnail carries the slower, quieter scale. */
+.card-surface {
+  transition: transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+.card-media { transition: transform var(--dur-slow) var(--ease-out); }
+.group:hover .card-surface {
+  transform: translateY(-3px);
+  box-shadow: var(--panel-edge), var(--shadow-float);
+}
+.group:active .card-surface {
+  transform: translateY(-1px) scale(0.995);
+  transition-duration: var(--dur-fast);
+}
+.group:hover .card-media { transform: scale(1.04); }
 
 .hover-reveal {
   opacity: 0;
   transform: translateY(6px);
-  transition: opacity 180ms var(--ease), transform 240ms var(--ease);
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-base) var(--ease-out);
 }
-.group:hover .hover-reveal { opacity: 1; transform: none; transition-delay: 260ms; }
+.group:hover .hover-reveal { opacity: 1; transform: none; transition-delay: 180ms; }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  /* Keep the fade that explains a state change; drop the travel. */
+  .overlay-in,
+  .menu-pop,
+  .section-enter,
+  .card-in,
+  .row-stagger,
+  .rise-in,
+  .toast-in {
+    animation-name: fade-in;
+    animation-duration: var(--dur-base);
+    animation-delay: 0ms !important;
   }
-  .hover-reveal, .group:hover .hover-reveal { transition: none; transform: none; }
+  .overlay-out,
+  .menu-pop-out,
+  .toast-out { animation-name: fade-out; animation-duration: var(--dur-exit); }
+  .card-surface,
+  .group:hover .card-surface,
+  .group:active .card-surface,
+  .card-media,
+  .group:hover .card-media { transform: none; }
+  .hover-reveal,
+  .group:hover .hover-reveal {
+    transform: none;
+    transition: opacity var(--dur-fast) var(--ease-out);
+    transition-delay: 0ms;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -377,8 +448,9 @@
     letter-spacing: -0.01em;
     white-space: nowrap;
     border: 0;
-    transition: background-color var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease),
-      box-shadow var(--dur-quick) var(--ease), transform 120ms var(--ease), opacity var(--dur-quick) var(--ease);
+    transition: background-color var(--dur-quick) var(--ease-out), color var(--dur-quick) var(--ease-out),
+      box-shadow var(--dur-quick) var(--ease-out), transform var(--dur-fast) var(--ease-out),
+      opacity var(--dur-quick) var(--ease-out);
   }
   .btn:active:not(:disabled) { transform: scale(0.97); }
   .btn:disabled { opacity: 0.4; cursor: default; }
@@ -418,7 +490,7 @@
     border-radius: var(--r-control);
     font-size: 13px;
     color: var(--fg);
-    transition: background-color 120ms var(--ease);
+    transition: background-color var(--dur-fast) var(--ease-out);
   }
   .menu-row:hover,
   .menu-row[data-active="true"] { background: var(--accent-soft); }
@@ -438,7 +510,7 @@
     color: var(--fg-muted);
     background: transparent;
     border: 0;
-    transition: background-color var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease), transform 120ms var(--ease);
+    transition: background-color var(--dur-quick) var(--ease-out), color var(--dur-quick) var(--ease-out), transform var(--dur-fast) var(--ease-out);
     cursor: default;
   }
   .pill:hover { color: var(--fg); }
@@ -473,7 +545,7 @@
     font-size: 13px;
     font-weight: 450;
     cursor: pointer;
-    transition: color var(--dur-quick) var(--ease), background-color var(--dur-quick) var(--ease);
+    transition: color var(--dur-quick) var(--ease-out), background-color var(--dur-quick) var(--ease-out);
   }
   .pill-select select:hover { color: var(--fg); background: var(--accent-soft); }
   .pill-select svg { position: absolute; right: 8px; pointer-events: none; color: var(--fg-subtle); }
@@ -489,7 +561,7 @@
     color: var(--fg);
     font-size: 13px;
     outline: none;
-    transition: box-shadow var(--dur-quick) var(--ease), background-color var(--dur-quick) var(--ease);
+    transition: box-shadow var(--dur-quick) var(--ease-out), background-color var(--dur-quick) var(--ease-out);
   }
   .field::placeholder { color: var(--fg-subtle); }
   .field:focus { box-shadow: inset 0 0 0 1px var(--border-strong), 0 0 0 4px var(--ink-soft); }
@@ -520,7 +592,7 @@
     font-weight: 500;
     color: var(--fg-muted);
     white-space: nowrap;
-    transition: color var(--dur-quick) var(--ease), background-color var(--dur-quick) var(--ease), box-shadow var(--dur-quick) var(--ease);
+    transition: color var(--dur-quick) var(--ease-out), background-color var(--dur-quick) var(--ease-out), box-shadow var(--dur-quick) var(--ease-out);
   }
   .seg:hover { color: var(--fg); }
   .seg[data-active="true"],

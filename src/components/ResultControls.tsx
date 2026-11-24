@@ -149,7 +149,7 @@ export function ResultControls({
             ref={listRef}
             tabIndex={-1}
             onKeyDown={onListKeyDown}
-            className="menu-pop elevated absolute right-0 z-[70] mt-1.5 w-[180px] overflow-hidden p-1"
+            className="menu-pop menu-pop-right elevated absolute right-0 z-[70] mt-1.5 w-[180px] overflow-hidden p-1"
           >
             {SORT_OPTIONS.map((option, index) => {
               const isSelected = option.value === sort;

@@ -154,8 +154,8 @@ export function ModelFilesCard() {
         <div className="space-y-2 border-t border-line px-4 py-3">
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-accent-soft">
             <div
-              className="h-full rounded-full bg-accent transition-[width] duration-300"
-              style={{ width: `${Math.max(4, pct)}%` }}
+              className="progress-fill rounded-full bg-accent"
+              style={{ transform: `scaleX(${Math.max(4, pct) / 100})` }}
             />
           </div>
           <div className="flex items-center justify-between gap-3 text-[11px]">

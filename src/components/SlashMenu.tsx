@@ -23,7 +23,7 @@ export function SlashMenu({
 }) {
   if (items.length === 0) return null;
   return (
-    <div className="elevated menu-pop relative z-20 mx-8 mb-2 mt-3 shrink-0 overflow-hidden p-1.5">
+    <div className="elevated menu-pop menu-pop-center relative z-20 mx-8 mb-2 mt-3 shrink-0 overflow-hidden p-1.5">
       {items.map((item, i) => {
         const Icon = item.icon;
         const active = i === activeIndex;

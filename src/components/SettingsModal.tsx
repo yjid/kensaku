@@ -40,6 +40,7 @@ import { StatsForNerds } from "./settings/stats";
 import { DoctorSection } from "./settings/doctor";
 import { ModelFilesCard } from "./settings/models";
 import { formatBytes, formatComma } from "../lib/format";
+import { usePresence } from "../lib/usePresence";
 import { openGitHubBugReport } from "../lib/githubIssue";
 import {
   checkForUpdates,
@@ -104,6 +105,7 @@ const EXCLUSION_PRESETS: Record<string, string[]> = {
 export function Settings({ onClose, initialSection, onConfigSaved }: SettingsProps) {
   const { t } = useTranslation("settings");
   const { t: te } = useTranslation("errors");
+  const { closing, close } = usePresence(onClose);
   const [section, setSection] = useState<SectionId>(
     (SECTIONS.find((s) => s.id === initialSection)?.id ?? "general") as SectionId,
   );
@@ -134,11 +136,11 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
         setDiscardOpen(true);
         return;
       }
-      onClose();
+      close();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, dirty]);
+  }, [close, dirty]);
 
   const handleSave = async (reindex: boolean) => {
     if (!config) return;
@@ -155,7 +157,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
       }
       onConfigSaved();
       if (reindex) {
-        onClose();
+        close();
       } else {
         setSaved(true);
         window.setTimeout(() => setSaved(false), 1600);
@@ -169,7 +171,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
   };
 
   return (
-    <div className="fade-in absolute inset-0 z-40 flex bg-bg">
+    <div className={`${closing ? "fade-out pointer-events-none" : "fade-in"} absolute inset-0 z-40 flex bg-bg`}>
       <nav data-tauri-drag-region className="relative z-10 flex w-[200px] shrink-0 flex-col overflow-y-auto px-3 pb-3 pt-5">
         <p data-tauri-drag-region className="t-title px-3 pb-4 text-fg">{t("title")}</p>
         <div className="flex flex-col gap-0.5">
@@ -182,7 +184,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
                 type="button"
                 onClick={() => setSection(s.id)}
                 aria-current={active ? "page" : undefined}
-                className={`relative flex h-8 w-full items-center gap-2.5 rounded-control px-2.5 text-[13px] transition-colors duration-150 ${
+                className={`relative flex h-8 w-full items-center gap-2.5 rounded-control px-2.5 text-[13px] transition-colors ${
                   active ? "control font-medium text-fg" : "text-muted hover:text-fg"
                 }`}
               >
@@ -198,7 +200,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
         <button
           type="button"
           title={t("close")}
-          onClick={onClose}
+          onClick={close}
           className="btn btn-ghost btn-icon absolute right-4 top-4 z-20 h-8 !rounded-full"
         >
           <X className="h-4 w-4" strokeWidth={1.75} />
@@ -240,7 +242,7 @@ export function Settings({ onClose, initialSection, onConfigSaved }: SettingsPro
             onKeep={() => setDiscardOpen(false)}
             onDiscard={() => {
               setDiscardOpen(false);
-              onClose();
+              close();
             }}
           />
         )}
@@ -484,7 +486,7 @@ function GeneralSection({
           <button
             type="button"
             onClick={() => setCapturing(true)}
-            className={`flex h-8 min-w-40 items-center justify-center rounded-control border px-3 font-mono text-[12px] transition-colors duration-150 ${
+            className={`flex h-8 min-w-40 items-center justify-center rounded-control border px-3 font-mono text-[12px] transition-colors ${
               capturing
                 ? "border-accent text-accent"
                 : "border-line bg-accent-soft text-fg hover:border-line-strong"
@@ -645,7 +647,7 @@ function FoldersSection({
             if (paths.length === 0 && input.trim()) paths.push(input.trim());
             addDropped(paths);
           }}
-          className="mx-4 my-2.5 flex h-16 items-center justify-center rounded-control border border-dashed border-line text-[11px] text-subtle transition-colors duration-150"
+          className="mx-4 my-2.5 flex h-16 items-center justify-center rounded-control border border-dashed border-line text-[11px] text-subtle transition-colors"
         >
           {t("folders.drop")}
         </div>
@@ -711,7 +713,7 @@ function ExclusionsSection({
                 key={p}
                 type="button"
                 onClick={() => setConfig((c) => (c ? { ...c, excluded_dirs: [...EXCLUSION_PRESETS[p]] } : c))}
-                className="flex h-7 items-center rounded-full border border-line px-3 text-[12px] text-muted transition-colors duration-150 hover:border-line-strong hover:text-fg"
+                className="flex h-7 items-center rounded-full border border-line px-3 text-[12px] text-muted transition-colors hover:border-line-strong hover:text-fg"
               >
                 {t(`exclusions.${key}`)}
               </button>
@@ -1078,8 +1080,8 @@ function AiSection({ config, setConfig }: { config: KensakuConfig; setConfig: Re
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-accent-soft">
             <div
-              className="h-full rounded-full bg-accent transition-[width] duration-500"
-              style={{ width: `${queueDepth > 0 ? Math.max(4, Math.min(100, queueDepth)) : 0}%` }}
+              className="progress-fill rounded-full bg-accent"
+              style={{ transform: `scaleX(${queueDepth > 0 ? Math.max(4, Math.min(100, queueDepth)) / 100 : 0})` }}
             />
           </div>
           <div className="flex items-center justify-between pt-1">
@@ -1833,10 +1835,10 @@ function AboutSection({
                       </span>
                       <span>{updateStatus.progress.percent}%</span>
                     </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-accent-soft">
                       <div
-                        className="h-full bg-accent transition-all duration-300"
-                        style={{ width: `${updateStatus.progress.percent}%` }}
+                        className="progress-fill bg-accent"
+                        style={{ transform: `scaleX(${Math.max(0, Math.min(100, updateStatus.progress.percent)) / 100})` }}
                       />
                     </div>
                   </div>
@@ -2063,7 +2065,7 @@ function ThemeSwatch({ value, active, onSelect }: { value: "light" | "dark"; act
     <button type="button" onClick={onSelect} aria-pressed={active} className="group flex flex-col gap-2.5 text-left outline-none">
       <span
         data-theme={value}
-        className={`relative block aspect-[16/10] w-full overflow-hidden rounded-panel bg-bg transition-[outline-color,transform] duration-200 group-hover:-translate-y-0.5 ${
+        className={`relative block aspect-[16/10] w-full overflow-hidden rounded-panel bg-bg transition-[outline-color,transform] duration-[var(--dur-base)] motion-safe:group-hover:-translate-y-0.5 ${
           active ? "outline-2 outline-offset-[3px] outline-ink" : "outline-0"
         }`}
         style={{ outlineStyle: active ? "solid" : "none", boxShadow: "inset 0 0 0 1px var(--border)" }}

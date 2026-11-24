@@ -137,8 +137,8 @@ export function IndexingBanner() {
             <div className="progress-bar" />
           ) : (
             <div
-              className="h-full rounded-full bg-fg transition-[width] duration-300"
-              style={{ width: `${percent}%` }}
+              className="progress-fill rounded-full bg-fg"
+              style={{ transform: `scaleX(${Math.max(0, Math.min(100, percent)) / 100})` }}
             />
           )}
         </div>

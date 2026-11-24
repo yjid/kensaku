@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { usePresence } from "../lib/usePresence";
 
 export interface ContextMenuItem {
   label: string;
@@ -22,29 +23,30 @@ export function ContextMenu({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const { closing, close } = usePresence(onClose);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
+      if (!ref.current?.contains(e.target as Node)) close();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        close();
       }
     };
-    const close = () => onClose();
+    const dismiss = () => close();
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
+    window.addEventListener("scroll", dismiss, true);
+    window.addEventListener("resize", dismiss);
     return () => {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", dismiss, true);
+      window.removeEventListener("resize", dismiss);
     };
-  }, [onClose]);
+  }, [close]);
 
   const width = 200;
   const height = items.length * 32 + 12;
@@ -56,7 +58,7 @@ export function ContextMenu({
       ref={ref}
       role="menu"
       style={{ left, top, width }}
-      className="menu-pop elevated fixed z-[70] overflow-hidden p-1"
+      className={`${closing ? "menu-pop-out pointer-events-none" : "menu-pop"} elevated fixed z-[70] overflow-hidden p-1`}
     >
       {items.map((item) => (
         <div key={item.label}>
@@ -65,7 +67,7 @@ export function ContextMenu({
             type="button"
             role="menuitem"
             onClick={() => {
-              onClose();
+              close();
               item.onSelect();
             }}
             className="menu-row w-full text-left"

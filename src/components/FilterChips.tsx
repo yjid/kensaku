@@ -34,7 +34,7 @@ export const FilterChips: React.FC<FilterChipsProps> = ({
             e.stopPropagation();
             onRemoveFilter(f);
           }}
-          className="group flex h-6 shrink-0 items-center gap-1 rounded-full bg-sunken pl-2.5 pr-1.5 text-[11px] font-mono text-muted transition-colors duration-150 hover:text-fg"
+          className="group flex h-6 shrink-0 items-center gap-1 rounded-full bg-sunken pl-2.5 pr-1.5 text-[11px] font-mono text-muted transition-colors hover:text-fg"
         >
           <span className={f.negated ? "line-through decoration-danger" : ""}>{f.raw}</span>
           <X className="h-3 w-3 opacity-50 transition-opacity group-hover:opacity-100" />
@@ -51,7 +51,7 @@ export const FilterChips: React.FC<FilterChipsProps> = ({
               e.stopPropagation();
               onApplyHint(h);
             }}
-            className="flex h-6 shrink-0 items-center gap-1.5 rounded-full border border-line px-2.5 text-[11px] text-muted transition-colors duration-150 hover:bg-sunken hover:text-fg"
+            className="flex h-6 shrink-0 items-center gap-1.5 rounded-full border border-line px-2.5 text-[11px] text-muted transition-colors hover:bg-sunken hover:text-fg"
           >
             {isDir && <Folder className="h-3 w-3 text-accent" />}
             <span className="font-medium">{label}</span>

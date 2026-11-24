@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { Copy, FolderOpen, LoaderCircle, X } from "lucide-react";
 import type { DuplicateGroup } from "../types";
+import { usePresence } from "../lib/usePresence";
 
 /* Duplicate review: exact-content groups, screenshot bursts, and
    near-duplicate images.
@@ -11,6 +12,7 @@ import type { DuplicateGroup } from "../types";
 
 export function DuplicatesModal({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation("results");
+  const { closing, close } = usePresence(onClose);
   const [groups, setGroups] = useState<DuplicateGroup[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -28,12 +30,12 @@ export function DuplicatesModal({ onClose }: { onClose: () => void }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        close();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [close]);
 
   const copy = async (path: string) => {
     try {
@@ -69,7 +71,7 @@ export function DuplicatesModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="absolute inset-0 z-50 flex flex-col bg-bg">
+    <div className={`${closing ? "fade-out pointer-events-none" : "fade-in"} absolute inset-0 z-50 flex flex-col bg-bg`}>
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-line px-5">
         <div>
           <h1 className="text-[15px] font-semibold tracking-tight text-fg">{t("duplicates.title")}</h1>
@@ -77,7 +79,7 @@ export function DuplicatesModal({ onClose }: { onClose: () => void }) {
         </div>
         <button
           type="button"
-          onClick={onClose}
+          onClick={close}
           className="flex h-8 w-8 items-center justify-center rounded-control text-muted transition-colors hover:bg-accent-soft hover:text-fg"
           title={t("duplicates.close")}
         >

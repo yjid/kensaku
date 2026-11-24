@@ -40,16 +40,16 @@ function RecentTile({
       title={item.path}
       data-index={index}
       aria-current={focused ? "true" : undefined}
-      style={{ ["--stagger-delay" as string]: `${Math.min(index, 11) * 32}ms` }}
+      style={{ ["--stagger-delay" as string]: `${Math.min(index, 8) * 24}ms` }}
       className="group card-in flex min-w-0 flex-col text-left outline-none"
     >
       <span
-        className={`surface relative block aspect-[16/10] w-full overflow-hidden transition-[transform,box-shadow] duration-[280ms] [transition-timing-function:var(--ease)] group-hover:-translate-y-[3px] group-hover:[box-shadow:var(--panel-edge),var(--shadow-float)] group-focus-visible:outline-2 group-focus-visible:outline-offset-[3px] group-focus-visible:outline-[color-mix(in_srgb,var(--ink)_45%,transparent)] ${
+        className={`card-surface surface relative block aspect-[16/10] w-full overflow-hidden group-focus-visible:outline-2 group-focus-visible:outline-offset-[3px] group-focus-visible:outline-[color-mix(in_srgb,var(--ink)_45%,transparent)] ${
           focused ? "outline-2 outline-offset-[3px] outline-[color-mix(in_srgb,var(--ink)_45%,transparent)]" : ""
         }`}
       >
         {eligible && src && !failed ? (
-          <img src={src} alt="" draggable={false} className="fade-in h-full w-full object-cover transition-transform duration-[520ms] [transition-timing-function:var(--ease)] group-hover:scale-[1.04]" />
+          <img src={src} alt="" draggable={false} className="fade-in card-media h-full w-full object-cover" />
         ) : (
           <TypeTile filename={name} isDir={item.is_dir} />
         )}

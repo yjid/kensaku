@@ -701,12 +701,26 @@ function App() {
   }, []);
 
   const [toast, setToast] = useState<string | null>(null);
+  const [toastLeaving, setToastLeaving] = useState(false);
   const toastTimer = useRef<number | undefined>(undefined);
+  const toastExitTimer = useRef<number | undefined>(undefined);
   const flash = useCallback((msg: string) => {
-    setToast(msg);
     window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 1600);
+    window.clearTimeout(toastExitTimer.current);
+    setToastLeaving(false);
+    setToast(msg);
+    toastTimer.current = window.setTimeout(() => {
+      setToastLeaving(true);
+      toastExitTimer.current = window.setTimeout(() => setToast(null), 140);
+    }, 1600);
   }, []);
+  useEffect(
+    () => () => {
+      window.clearTimeout(toastTimer.current);
+      window.clearTimeout(toastExitTimer.current);
+    },
+    [],
+  );
   const handleCopyPath = useCallback(
     (path: string) => {
       navigator.clipboard.writeText(path).then(
@@ -1107,7 +1121,7 @@ function App() {
         setDetails(navList[selectedIndex]);
       }
     },
-    [isSetupComplete, showSettings, showDuplicates, showHelp, details, menu, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, setResultView, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope, preview, displayResults, hasQuery],
+    [isSetupComplete, showSettings, showDuplicates, showHelp, details, menu, query, results, selectedIndex, commandOutput, handleRunCommand, handleOpenFile, handleOpenFolder, openSettings, view, setResultView, gridColumnCount, slashItems, slashIndex, scopePrefix, scopeItems, scopeIndex, applyScope, preview, displayResults, hasQuery, homeNavList],
   );
 
   // Window-level, so shortcuts keep working after a dialog closes and focus
@@ -1495,7 +1509,6 @@ function App() {
                           <ResultItem
                             result={res}
                             query={query}
-                            index={idx}
                             isSelected={isRowSelected(res.path, idx)}
                             view="grid"
                             onSelect={(mods) => pickRow(idx, mods)}
@@ -1557,7 +1570,7 @@ function App() {
 
               {toast && (
                 <div className="pointer-events-none absolute inset-x-0 bottom-12 z-[90] flex justify-center">
-                  <span className="elevated overlay-in !rounded-full px-4 py-2 text-[13px] font-medium text-fg">{toast}</span>
+                  <span className={`elevated ${toastLeaving ? "toast-out" : "toast-in"} !rounded-full px-4 py-2 text-[13px] font-medium text-fg`}>{toast}</span>
                 </div>
               )}
 
