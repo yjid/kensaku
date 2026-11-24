@@ -121,17 +121,51 @@ fn config_prefixed_bytes(prefix: &str, include_dirs: bool) -> u64 {
 
 #[cfg(target_os = "linux")]
 fn resident_set_bytes() -> u64 {
-    // /proc/self/statm: field 1 (index 1) is resident set size in pages.
-    const PAGE_SIZE: u64 = 4096;
+    // /proc/self/statm: field 1 (index 1) is resident set size in pages. The
+    // page size is not always 4 KiB (arm64 and some kernels use 16/64 KiB);
+    // ask the kernel instead of assuming.
     let Ok(statm) = std::fs::read_to_string("/proc/self/statm") else {
         return 0;
     };
+    rss_from_statm(&statm, page_size_bytes())
+}
+
+#[cfg(target_os = "linux")]
+fn page_size_bytes() -> u64 {
+    // SAFETY: `sysconf` has no preconditions and does not touch memory.
+    let size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    if size > 0 { size as u64 } else { 4096 }
+}
+
+#[cfg(target_os = "linux")]
+fn rss_from_statm(statm: &str, page_size: u64) -> u64 {
     statm
         .split_whitespace()
         .nth(1)
         .and_then(|pages| pages.parse::<u64>().ok())
-        .map(|pages| pages.saturating_mul(PAGE_SIZE))
+        .map(|pages| pages.saturating_mul(page_size))
         .unwrap_or(0)
+}
+
+/// Reads a `kB` field from `/proc/self/smaps_rollup`.
+///
+/// RSS counts shared library pages (WebKit, Mesa, LLVM) as if they belonged to
+/// this process. PSS apportions them across the processes that map them, and
+/// `Anonymous` is the heap that Kensaku itself owns; both are the honest
+/// numbers for a memory report.
+#[cfg(target_os = "linux")]
+fn smaps_rollup_bytes(field: &str) -> Option<u64> {
+    let text = std::fs::read_to_string("/proc/self/smaps_rollup").ok()?;
+    parse_smaps_rollup(&text, field)
+}
+
+#[cfg(target_os = "linux")]
+fn parse_smaps_rollup(text: &str, field: &str) -> Option<u64> {
+    text.lines()
+        .find(|line| line.starts_with(field))
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|kb| kb.parse::<u64>().ok())
+        .map(|kb| kb.saturating_mul(1024))
 }
 
 #[cfg(windows)]
@@ -417,6 +451,13 @@ pub fn stats_for(indexer: &crate::indexer::IndexerManager) -> Result<serde_json:
 
     let uptime_secs = PROCESS_START.get_or_init(Instant::now).elapsed().as_secs();
     let rss_bytes = resident_set_bytes();
+    #[cfg(target_os = "linux")]
+    let (pss_bytes, anonymous_bytes) = (
+        smaps_rollup_bytes("Pss:").unwrap_or(rss_bytes),
+        smaps_rollup_bytes("Anonymous:").unwrap_or(0),
+    );
+    #[cfg(not(target_os = "linux"))]
+    let (pss_bytes, anonymous_bytes) = (rss_bytes, 0u64);
     let watcher_ok = indexer.watcher_ok.load(Ordering::Relaxed);
     let model_id = indexer.config.read().semantic_model.clone();
 
@@ -456,6 +497,8 @@ pub fn stats_for(indexer: &crate::indexer::IndexerManager) -> Result<serde_json:
         "runtime": {
             "uptime_secs": uptime_secs,
             "rss_bytes": rss_bytes,
+            "pss_bytes": pss_bytes,
+            "anonymous_bytes": anonymous_bytes,
             "watcher_ok": watcher_ok,
             "semantic_ready": status.semantic_ready,
             "model_id": model_id,
@@ -1780,6 +1823,23 @@ pub async fn run_doctor(state: State<'_, AppState>) -> Result<crate::doctor::Doc
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn rss_uses_the_kernel_page_size() {
+        assert!(page_size_bytes() >= 4096);
+        assert_eq!(rss_from_statm("100 50 0 0 0 0 0", 65536), 50 * 65536);
+        assert_eq!(rss_from_statm("garbage", 65536), 0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn smaps_rollup_reports_pss_and_anonymous_in_bytes() {
+        let text = "Rss: 1000 kB\nPss:  800 kB\nAnonymous: 600 kB\n";
+        assert_eq!(parse_smaps_rollup(text, "Pss:"), Some(800 * 1024));
+        assert_eq!(parse_smaps_rollup(text, "Anonymous:"), Some(600 * 1024));
+        assert_eq!(parse_smaps_rollup(text, "Missing:"), None);
+    }
 
     fn temp_path(extension: &str) -> PathBuf {
         let nanos = SystemTime::now()

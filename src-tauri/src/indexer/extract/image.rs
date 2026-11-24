@@ -1,4 +1,4 @@
-use image::{DynamicImage, ImageReader, Limits};
+use image::{DynamicImage, ImageDecoder, ImageReader, Limits};
 use serde::Serialize;
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -783,11 +783,26 @@ pub fn image_dimensions(path: &Path) -> Option<(u32, u32)> {
 pub(crate) fn decode_for_recognition(
     path: &Path,
 ) -> Option<(DynamicImage, crate::util::budget::Permit)> {
-    let (width, height) = dimensions(path)?;
-    let permit = crate::util::budget::decode_budget()
-        .acquire(crate::util::budget::rgba_bytes(width, height));
+    let bytes = decode_reservation_bytes(path)?;
+    let permit = crate::util::budget::decode_budget().acquire(bytes);
     let image = decode_guarded(path)?;
     Some((image, permit))
+}
+
+/// Bytes the decoder will allocate for `path`, never less than an RGBA8 buffer.
+///
+/// `rgba_bytes` assumes 8-bit RGBA. PNG/TIFF can carry 16-bit or float pixels
+/// (6–16 bytes per pixel), so asking the decoder for its real buffer size keeps
+/// the budget from under-reserving exactly the images that are most expensive.
+pub(crate) fn decode_reservation_bytes(path: &Path) -> Option<u64> {
+    let (width, height) = dimensions(path)?;
+    let rgba = crate::util::budget::rgba_bytes(width, height);
+    let decoded = ImageReader::open(path)
+        .ok()
+        .and_then(|reader| reader.with_guessed_format().ok())
+        .and_then(|reader| reader.into_decoder().ok())
+        .map(|decoder| decoder.total_bytes());
+    Some(decoded.map_or(rgba, |bytes| rgba.max(bytes)))
 }
 
 pub(crate) fn decode_guarded(path: &Path) -> Option<DynamicImage> {
@@ -810,6 +825,9 @@ pub(crate) fn decode_guarded(path: &Path) -> Option<DynamicImage> {
 /// that fail to decode, or exceed the pixel budget, return `None` instead of
 /// panicking.
 pub fn phash64(path: &Path) -> Option<u64> {
+    // Background work: hashing must not multiply the OCR peak.
+    let bytes = decode_reservation_bytes(path)?;
+    let _permit = crate::util::budget::background_budget().acquire(bytes);
     hash_image(&decode_guarded(path)?)
 }
 
@@ -882,6 +900,9 @@ pub fn thumbnail(path: &Path, out_dir: &Path) -> Option<PathBuf> {
         return Some(target);
     }
 
+    // Background work: the grid, watcher and phash backfill all decode here.
+    let bytes = decode_reservation_bytes(path)?;
+    let _permit = crate::util::budget::background_budget().acquire(bytes);
     let image = decode_guarded(path)?;
     std::fs::create_dir_all(out_dir).ok()?;
 
@@ -1037,6 +1058,24 @@ mod tests {
         assert_eq!((image.width(), image.height()), (64, 48));
         assert_eq!(permit.bytes(), crate::util::budget::rgba_bytes(64, 48));
         drop(permit);
+    }
+
+    #[test]
+    fn recognition_reservation_covers_16_bit_pixels() {
+        let dir = TempDir::new("reserve-16");
+        let path = dir.join("wide.png");
+        let image = image::ImageBuffer::<image::Rgb<u16>, _>::from_fn(32, 16, |x, y| {
+            image::Rgb([(x * 100) as u16, (y * 100) as u16, 0])
+        });
+        image::DynamicImage::ImageRgb16(image)
+            .save_with_format(&path, ImageFormat::Png)
+            .expect("write 16-bit png");
+
+        let bytes = decode_reservation_bytes(&path).expect("reservation");
+        assert!(
+            bytes >= 32 * 16 * 6,
+            "16-bit RGB needs 6 bytes per pixel, got {bytes}"
+        );
     }
 
     #[test]

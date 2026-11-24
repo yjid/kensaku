@@ -781,6 +781,27 @@ fn extract_document_inner(
         };
     }
 
+    // Whole-document parsers load the file (or large chunks of it) before the
+    // text cap applies. Charge the reservation before parsing so extraction
+    // slots are not the only bound on concurrency.
+    const PARSE_RESERVE_CAP: u64 = 128 * 1024 * 1024;
+    let _parse_permit = matches!(
+        format,
+        DocumentFormat::Pdf
+            | DocumentFormat::Docx
+            | DocumentFormat::Pptx
+            | DocumentFormat::Xlsx
+            | DocumentFormat::Epub
+            | DocumentFormat::Odt
+            | DocumentFormat::Ods
+            | DocumentFormat::Odp
+            | DocumentFormat::Rtf
+            | DocumentFormat::Eml
+            | DocumentFormat::Msg
+            | DocumentFormat::Parquet
+    )
+    .then(|| crate::util::budget::parse_budget().acquire(file_size.min(PARSE_RESERVE_CAP)));
+
     match format {
         DocumentFormat::Pdf => {
             let res = pdf::extract_pdf(path, capped_bytes)?;

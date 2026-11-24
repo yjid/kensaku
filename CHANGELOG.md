@@ -26,6 +26,28 @@ versioning: [SemVer](https://semver.org/).
   pool. Previews now allow two concurrent decodes, independent of the OCR
   budget, so browsing during a crawl neither multiplies the peak nor stalls
   behind OCR.
+- **OCR engines are released when the crawl goes idle.** Two minutes after a
+  crawl ends (cancelled if another starts), the PP-OCR and Indra session pools
+  are dropped. In-flight readers keep their reference, and the next image
+  reloads the pack.
+- **16-bit and float images reserve their real decode size.** The decode budget
+  no longer assumes 4 bytes per pixel.
+- **Whole-document parsing has its own byte budget.** PDF, Office, email and
+  Parquet parsing can no longer be multiplied by the extraction worker count
+  (`KENSAKU_PARSE_BUDGET_MB`, 512 MiB by default).
+- **Thumbnails and perceptual hashes have a background decode budget.** They no
+  longer decode outside any bound. The two-slot preview gate stays separate so
+  browsing never waits on OCR.
+- **Deleted and renamed files drop their semantic and visual rows.** The crawl's
+  stale sweep and the watcher purge the in-memory stores and `visual_units`, not
+  just metadata.
+- **`KENSAKU_NO_DAEMON=1` no longer spawns a daemon anyway.** It means "do not
+  start one"; an already-running daemon is still used.
+- **Health reports PSS and anonymous memory** and uses the kernel page size
+  instead of assuming 4 KiB. Shared WebView/LLVM pages no longer look like
+  private Kensaku memory.
+- **Allocator overrides are honoured.** `GLIBC_TUNABLES` and empty `MALLOC_*`
+  values now take precedence over the built-in thresholds.
 
 ## [1.0.19] — 2026-11-24
 

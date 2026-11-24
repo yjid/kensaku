@@ -209,6 +209,9 @@ impl MetadataStore {
         self.generation.fetch_add(1, Ordering::SeqCst);
         self.dir_generation.fetch_add(1, Ordering::SeqCst);
         *self.cached_trie.write() = None;
+        // The materialized entry list is an `Arc` that queries may still hold,
+        // but the cache itself must not keep the old corpus alive after a reset.
+        *self.cached_entries.write() = None;
 
         if let Some(db) = self.db.as_ref()
             && let Err(e) = db.clear()
@@ -1092,6 +1095,24 @@ mod tests {
             char_bloom: 0,
             content_pending: false,
         }
+    }
+
+    #[test]
+    fn clear_drops_the_cached_entry_snapshot() {
+        let mut temp = TempStore::new("clear-cache");
+        let file = temp.dir.join("a.txt");
+        let store = temp.store();
+        store.add(entry(&file, false));
+        assert_eq!(store.entries_snapshot().len(), 1);
+        assert!(store.cached_entries.read().is_some());
+
+        store.clear();
+
+        assert!(
+            store.cached_entries.read().is_none(),
+            "clear must drop the cached Arc, not keep the old corpus alive"
+        );
+        assert!(store.entries_snapshot().is_empty());
     }
 
     #[test]

@@ -976,50 +976,63 @@ fn handle_path_remove(
     metadata: &Arc<RwLock<MetadataStore>>,
     content_index: &Arc<RwLock<Option<ContentIndex>>>,
 ) {
-    let was_dir = metadata
+    let removed = metadata
         .read()
         .get(path)
-        .map(|entry| entry.is_dir)
-        .unwrap_or(false);
+        .map(|entry| (entry.id, entry.is_dir));
+    let removed_id = removed.map(|(id, _)| id).unwrap_or(0);
+    let was_dir = removed.is_some_and(|(_, is_dir)| is_dir);
 
     metadata.write().remove(path);
     if let Some(c_index) = content_index.read().as_ref() {
         let _ = c_index.remove(path);
     }
 
-    if !was_dir {
-        return;
+    let mut ids = std::collections::HashSet::new();
+    if removed_id > 0 {
+        ids.insert(removed_id);
     }
 
-    let descendants: Vec<PathBuf> = {
-        let store = metadata.read();
-        (0..store.len())
-            .filter_map(|i| {
-                let e = store.materialize(i as u32);
-                if e.path != path && e.path.starts_with(path) {
-                    Some(e.path)
-                } else {
-                    None
+    if was_dir {
+        let descendants: Vec<(u64, PathBuf)> = {
+            let store = metadata.read();
+            (0..store.len())
+                .filter_map(|i| {
+                    let e = store.materialize(i as u32);
+                    if e.path != path && e.path.starts_with(path) {
+                        Some((e.id, e.path))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        };
+
+        if !descendants.is_empty() {
+            {
+                let mut store = metadata.write();
+                for (_, descendant) in &descendants {
+                    store.remove(descendant);
                 }
-            })
-            .collect()
-    };
+            }
 
-    if descendants.is_empty() {
-        return;
-    }
+            if let Some(c_index) = content_index.read().as_ref() {
+                for (_, descendant) in &descendants {
+                    let _ = c_index.remove(descendant);
+                }
+            }
 
-    {
-        let mut store = metadata.write();
-        for descendant in &descendants {
-            store.remove(descendant);
+            for (id, _) in descendants {
+                if id > 0 {
+                    ids.insert(id);
+                }
+            }
         }
     }
 
-    if let Some(c_index) = content_index.read().as_ref() {
-        for descendant in &descendants {
-            let _ = c_index.remove(descendant);
-        }
+    if !ids.is_empty() {
+        let db = metadata.read().db();
+        crate::indexer::purge_removed_nodes_registered(&ids, db.as_deref());
     }
 }
 
