@@ -1,4 +1,4 @@
-﻿<h1 align="center">Kensaku <span title="kensaku = search, in Japanese">æ¤œç´¢</span></h1>
+<h1 align="center">Kensaku <span title="kensaku = search, in Japanese">æ¤œç´¢</span></h1>
 
 <p align="center">
   <b>Find anything on your computer. Privately.</b><br/>
@@ -173,4 +173,3 @@ If Kensaku saves you time, [star the repository](https://github.com/yjid/kensaku
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
