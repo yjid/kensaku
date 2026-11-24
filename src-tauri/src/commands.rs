@@ -1223,6 +1223,7 @@ pub async fn complete_setup(
     shortcut: Option<String>,
     ocr_engine: Option<String>,
     app_mode: Option<String>,
+    auto_install_updates: Option<bool>,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<(), String> {
@@ -1251,6 +1252,9 @@ pub async fn complete_setup(
         && (mode == "launcher" || mode == "app")
     {
         config.app_mode = mode;
+    }
+    if let Some(auto_install) = auto_install_updates {
+        config.auto_install_updates = auto_install;
     }
     config.is_setup_complete = true;
     config.first_scan_done = false;

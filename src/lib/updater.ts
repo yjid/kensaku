@@ -22,6 +22,10 @@ let lastInfo: UpdateInfo | null = null;
  */
 let supported: boolean | null = null;
 
+/** The check currently in flight, shared by startup and manual checks so two
+ *  callers cannot close each other's pending `Update` resource. */
+let checking: Promise<UpdateInfo> | null = null;
+
 async function inAppUpdatesSupported(): Promise<boolean> {
   if (supported === null) {
     try {
@@ -57,7 +61,16 @@ function snapshot(): UpdateStatus {
 /**
  * Checks the configured updater endpoint for a signed release.
  */
-export async function checkForUpdates(): Promise<UpdateInfo> {
+export function checkForUpdates(): Promise<UpdateInfo> {
+  if (!checking) {
+    checking = runCheck().finally(() => {
+      checking = null;
+    });
+  }
+  return checking;
+}
+
+async function runCheck(): Promise<UpdateInfo> {
   const current = await getVersion();
   const canInstall = await inAppUpdatesSupported();
   if (pending) {
@@ -169,6 +182,26 @@ export async function installUpdateAndRestart(): Promise<void> {
   }
   await pending.install();
   await relaunch();
+}
+
+/**
+ * Opt-in path for "install updates automatically": check, download, let the
+ * caller announce the restart, wait briefly, then install and relaunch.
+ * Returns false when there is nothing to install or this copy updates through
+ * its package (MSI, portable, .deb/.rpm).
+ */
+export async function autoInstallUpdate(
+  onReadyToRestart?: () => void,
+): Promise<boolean> {
+  const info = await checkForUpdates();
+  if (!info.has_update || !info.in_app_supported) return false;
+  const downloaded = await downloadUpdate();
+  if (!downloaded.ready_to_install) return false;
+  onReadyToRestart?.();
+  // Give the user a moment to see the toast before the window disappears.
+  await new Promise((resolve) => setTimeout(resolve, 5000));
+  await installUpdateAndRestart();
+  return true;
 }
 
 /**

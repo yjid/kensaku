@@ -38,7 +38,7 @@ import { useMeasuredHeight } from "./lib/useMeasuredHeight";
 import { interpretationLabel } from "./lib/interpretation";
 import { inFilter } from "./lib/query";
 import { isNewerVersion } from "./lib/version";
-import { checkForUpdates } from "./lib/updater";
+import { checkForUpdates, autoInstallUpdate } from "./lib/updater";
 import { getVersion } from "@tauri-apps/api/app";
 import {
   Settings as SettingsIcon,
@@ -65,6 +65,10 @@ const PreviewDialog = lazy(() => import("./components/PreviewDialog").then((m) =
 
 const SNIPPET_LRU_LIMIT = 200;
 
+/* Opt-in automatic installs get one attempt per app run. A failed download
+   or install leaves the manual controls in Settings intact. */
+let autoInstallAttempted = false;
+
 /** Small insertion-order LRU for snippets: recent hits move to the end. */
 function putSnippet(
   cache: Map<string, string | null>,
@@ -84,6 +88,7 @@ function App() {
   const { t } = useTranslation("search");
   const { t: tc } = useTranslation("common");
   const { t: te } = useTranslation("errors");
+  const { t: ts } = useTranslation("settings");
   /* Apply the persisted/auto language once at the root. Settings has its own
      picker; this keeps startup and every later window in the same language. */
   useLanguage();
@@ -702,11 +707,30 @@ function App() {
 
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
-  const flash = useCallback((msg: string) => {
+  const flash = useCallback((msg: string, duration = 1600) => {
     setToast(msg);
     window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 1600);
+    toastTimer.current = window.setTimeout(() => setToast(null), duration);
   }, []);
+
+  /* Opt-in automatic installs. Run once per app run, independently of the
+     12-hour tag cache above, because installing needs the live Update object.
+     Skip while a crawl is active (the next launch can install) and during
+     first-run setup. */
+  useEffect(() => {
+    if (autoInstallAttempted) return;
+    if (isSetupComplete !== true) return;
+    if (!config || config.auto_update !== true || config.auto_install_updates !== true) return;
+    // Wait for the first status read: installing while the indexer starts
+    // would restart the app mid-crawl.
+    if (indexingStatus === null) return;
+    autoInstallAttempted = true;
+    if (indexingStatus.is_indexing) return;
+    autoInstallUpdate(() => flash(ts("about.autoInstallRestarting"), 5500)).catch((err) => {
+      console.warn("Automatic update install failed:", err);
+    });
+  }, [isSetupComplete, config, indexingStatus, flash, ts]);
+
   const handleCopyPath = useCallback(
     (path: string) => {
       navigator.clipboard.writeText(path).then(

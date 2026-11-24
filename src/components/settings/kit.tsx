@@ -77,10 +77,13 @@ export function Switch({
   checked,
   disabled,
   onChange,
+  ariaLabel,
 }: {
   checked: boolean;
   disabled?: boolean;
   onChange: (v: boolean) => void;
+  /** Visible label outside a `Field`; ignored when the label context exists. */
+  ariaLabel?: string;
 }) {
   const labelId = React.useContext(FieldLabelContext);
   return (
@@ -89,6 +92,7 @@ export function Switch({
       role="switch"
       aria-checked={checked}
       aria-labelledby={labelId}
+      aria-label={labelId ? undefined : ariaLabel}
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={`relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors duration-200 ${

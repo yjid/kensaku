@@ -3,6 +3,16 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Opt-in automatic update installs.** A new "Install updates automatically"
+  switch in Settings → About and on the last setup step downloads and installs
+  signed releases, then restarts Kensaku to finish. It is off by default,
+  skipped while a crawl is running, and limited to installs that support
+  in-app updates; MSI, portable, `.deb`/`.rpm` copies still update through
+  their package.
+
 ## [1.0.19] — 2026-11-24
 
 ### Added

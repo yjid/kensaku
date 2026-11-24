@@ -238,6 +238,10 @@ pub struct KensakuConfig {
     /// Enabled by default; users can opt out in settings.
     #[serde(default = "default_true")]
     pub auto_update: bool,
+    /// Download and install signed updates without asking, then restart.
+    /// Off by default: installing and restarting must stay an explicit opt-in.
+    #[serde(default)]
+    pub auto_install_updates: bool,
     /// Config schema version, used for one-time migrations.
     #[serde(default)]
     pub config_version: u32,
@@ -494,6 +498,7 @@ impl Default for KensakuConfig {
             show_thumbnails: true,
             results_view: default_results_view(),
             auto_update: true,
+            auto_install_updates: false,
             config_version: CURRENT_CONFIG_VERSION,
         }
     }
@@ -808,6 +813,20 @@ mod tests {
     }
 
     #[test]
+    fn auto_install_updates_default_and_roundtrip() {
+        let mut cfg = KensakuConfig::default();
+        assert!(!cfg.auto_install_updates);
+        cfg.auto_install_updates = true;
+        let json = serde_json::to_string(&cfg).unwrap();
+        let loaded = KensakuConfig::load_from_str(&json);
+        assert!(loaded.auto_install_updates);
+
+        let json_without_flag = json.replace("\"auto_install_updates\":true,", "");
+        let loaded_defaulted = KensakuConfig::load_from_str(&json_without_flag);
+        assert!(!loaded_defaulted.auto_install_updates);
+    }
+
+    #[test]
     fn closing_keeps_the_app_running_by_default() {
         // The default matters more than the setting: a corpus this large takes
         // seconds to load, and quitting on close paid that cost on every open.
@@ -838,6 +857,7 @@ mod tests {
         assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
         assert!(cfg.skip_hidden);
         assert!(cfg.auto_update);
+        assert!(!cfg.auto_install_updates);
         assert!(cfg.ocr_enabled);
         assert_eq!(cfg.theme, "dark");
     }

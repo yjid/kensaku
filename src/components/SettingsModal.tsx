@@ -1733,6 +1733,19 @@ function AboutSection({
           />
         </Field>
 
+        <Field
+          label={t("about.autoInstallSetting")}
+          description={t("about.autoInstallSettingDesc")}
+        >
+          <Switch
+            checked={config?.auto_install_updates ?? false}
+            disabled={config?.auto_update === false}
+            onChange={(v) =>
+              setConfig((c) => (c ? { ...c, auto_install_updates: v } : c))
+            }
+          />
+        </Field>
+
         <div className="flex items-center justify-between border-t border-line px-4 py-3">
           <div className="flex items-center gap-2">
             <button

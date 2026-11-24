@@ -93,6 +93,10 @@
     "wayland": "On Wayland, bind kensaku --toggle as a system shortcut if the key doesn't register.",
     "closingLauncher": "Esc or click outside to hide. Find it again in the tray or with your shortcut."
   },
+  "autoInstall": {
+    "label": "Install updates automatically",
+    "description": "Kensaku downloads and installs new signed releases, then restarts to finish. You can change this in Settings."
+  },
   "footer": {
     "folders_one": "{{count}} folder",
     "folders_other": "{{count}} folders",

@@ -209,6 +209,7 @@ export interface KensakuConfig {
   results_view?: "grid" | "list";
   /** Automatically check for updates on startup and in the background. */
   auto_update?: boolean;
+  auto_install_updates?: boolean;
 }
 
 /* ---------------- Local LLM ---------------- */

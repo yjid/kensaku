@@ -67,6 +67,7 @@ const config: Record<string, unknown> = {
   semantic_enabled: true, ocr_enabled: true, ocr_engine: "tesseract", theme: "dark",
   saved_searches: [{ name: "Invoices", query: "invoice type:pdf" }, { name: "This week's screenshots", query: "screenshot modified:7d" }],
   pins: [], show_thumbnails: true, results_view: "grid", crawl_mode: "balanced",
+  auto_update: true, auto_install_updates: false,
 };
 
 function search(query: string) {

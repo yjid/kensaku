@@ -28,6 +28,16 @@ The manifest itself is not signed, but every artifact it points to is. A forged
 manifest cannot produce a valid minisign signature, so the updater rejects the
 download.
 
+## Automatic installs (opt-in)
+
+Off by default. **Settings → About → Install updates automatically** (also
+offered on the last step of first-run setup) makes Kensaku download and install
+a new signed release as soon as it finds one, then restart to finish. The app
+waits briefly so the restart is not a surprise. Automatic installs are skipped
+while a crawl is running; the update stays available and is installed on the
+next launch. This option only applies where in-app updates are supported:
+MSI, portable, `.deb`, and `.rpm` installs still update through their package.
+
 ## First install vs updates
 
 - **Linux / macOS / Windows one-liner or AppImage/NSIS/macOS app:** the

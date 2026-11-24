@@ -7,6 +7,7 @@ import type { TFunction } from "i18next";
 import { Check, Plus, ArrowRight, ArrowLeft, LoaderCircle, Sun, Moon, Download, X, FolderOpen, Minus } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
 import { WindowModePicker } from "./WindowModePicker";
+import { Switch } from "./settings/kit";
 import type { IndexingStatus, KensakuConfig, OcrEngine, OcrStatus, ModelsStatus } from "../types";
 import { appendUniqueDirectories, validateDirectories } from "../lib/setupDirectories";
 
@@ -78,6 +79,8 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const [shortcut, setShortcut] = useState("Alt+Space");
   // New installs default to launcher mode: one shortcut away, always.
   const [appMode, setAppMode] = useState<"app" | "launcher">("launcher");
+  // Installing and restarting is an explicit opt-in, off by default.
+  const [autoInstallUpdates, setAutoInstallUpdates] = useState(false);
   /* Set once the user picks a mode, so the config lookup below cannot
      overwrite a click that races the invoke. */
   const appModeTouched = useRef(false);
@@ -381,6 +384,7 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
         // radios (e.g. status never loaded) instead of resetting to a name.
         ocrEngine: selectedOcrEngine ?? (ocrStatus ? pickEngine(ocrStatus) : "tesseract"),
         appMode,
+        autoInstallUpdates,
       });
       // The default text model downloads without asking. Failure is not fatal:
       // keyword search works without it, and Settings can retry.
@@ -823,6 +827,20 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
             <p className="px-1 text-[12px] leading-[18px] text-subtle">
               {appMode === "app" ? t("mode.appNote") : t("mode.launcherNote")}
             </p>
+          </div>
+
+          <div className="surface flex items-start justify-between gap-4 rounded-control px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-[13px] font-medium text-fg">{t("autoInstall.label")}</p>
+              <p className="mt-0.5 text-[12px] leading-[18px] text-muted">
+                {t("autoInstall.description")}
+              </p>
+            </div>
+            <Switch
+              checked={autoInstallUpdates}
+              onChange={setAutoInstallUpdates}
+              ariaLabel={t("autoInstall.label")}
+            />
           </div>
 
           {appMode === "launcher" && (

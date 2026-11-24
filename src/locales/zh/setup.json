@@ -93,6 +93,10 @@
     "wayland": "在 Wayland 下，如果快捷键无法注册，可将 kensaku --toggle 绑定为系统快捷键。",
     "closingLauncher": "按 Esc 或点击窗口外部可隐藏。通过快捷键或托盘再次打开。"
   },
+  "autoInstall": {
+    "label": "自动安装更新",
+    "description": "Kensaku 会自动下载并安装新的已签名版本，然后重启以完成安装。可在设置中更改。"
+  },
   "footer": {
     "folders_one": "{{count}} 个文件夹",
     "folders_other": "{{count}} 个文件夹",
