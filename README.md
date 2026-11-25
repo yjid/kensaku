@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <a href="https://upstar.dev/r/yjid/kensaku"><picture><source media="(prefers-color-scheme: dark)" srcset="https://upstar.dev/badge/yjid/kensaku/day/windows-dark.svg"><img alt="Upstar: #1 Riser Of The Day in Windows, October 29, 2026" src="https://upstar.dev/badge/yjid/kensaku/day/windows.svg" width="250" height="55"></picture></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/yjid/kensaku/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/yjid/kensaku?style=for-the-badge" /></a>
   <a href="https://github.com/yjid/kensaku/releases/latest"><img alt="Downloads" src="https://img.shields.io/github/downloads/yjid/kensaku/total?style=for-the-badge" /></a>
   <a href="https://github.com/yjid/kensaku/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/yjid/kensaku?style=for-the-badge" /></a>
