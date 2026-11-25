@@ -173,6 +173,12 @@ For developers, the quick loop is `bun install`, `make dev`, and `make test`. Th
 
 If Kensaku saves you time, a star helps other people find it.
 
+If Kensaku saves you time, a star helps other people find it.
+
+<p align="center">
+  <a href="https://github.com/yjid/kensaku/stargazers">⭐ Star Kensaku on GitHub</a>
+</p>
+
 ## Star history
 
 [![Star History Chart](https://api.star-history.com/svg?repos=yjid/kensaku&type=Date)](https://star-history.com/#yjid/kensaku&Date)
