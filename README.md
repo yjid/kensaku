@@ -134,7 +134,7 @@ Full reference: [docs/USAGE.md](docs/USAGE.md) · Language & format support: [do
 
 The fastest path is the one-line installer. It downloads the right release asset, verifies its SHA-256, and installs into your user account. No admin prompt and no release-page hunting.
 
-> The installer scripts ship with **1.0.19**. On 1.0.18 or older, use the manual bundles below.
+> The installer scripts ship with **1.0.20**. On 1.0.19 or older, use the manual bundles below.
 
 **Linux**
 
@@ -178,7 +178,7 @@ less install.sh && sh install.sh --dry-run
 | Linux | `kensaku_<version>_amd64.AppImage`, `.deb`, or `.rpm` |
 | Agent CLI | `kensaku-cli-{linux,macos,windows}-*` |
 
-Every release also ships `SHA256SUMS` so you can verify what you downloaded. The 1.0.19 Windows x64 downloads are a **14.9 MB** NSIS setup and a **20.9 MB** MSI; the installed app binary is about **39 MB**.
+Every release also ships `SHA256SUMS` so you can verify what you downloaded. The 1.0.20 Windows x64 downloads are a **14.9 MB** NSIS setup and a **20.9 MB** MSI; the installed app binary is about **39 MB**.
 
 Windows builds are Authenticode-signed through [SignPath Foundation](https://signpath.org/), so the publisher is named and SmartScreen reputation can build. macOS builds are not signed or notarised yet, so Gatekeeper blocks them the first time.
 
@@ -261,6 +261,19 @@ The two rows aren't a perfect match: Kensaku's search is fuzzy and runs inside a
 
 Indexing is a single pass: each file is read once and feeds both the name and text indexes. Work is queued in bounded batches, so memory stays flat on large folders.
 
+## What's new in 1.0.20
+
+- **Memory after image crawls.** OCR sessions no longer pin ONNX Runtime's
+  CPU arena, and glibc keeps multi-megabyte decode buffers outside its
+  per-thread arenas. This targets the retained peak behind the reported
+  ~1.2 GB idle footprint after an image-heavy crawl; restarting is no longer
+  the only way to get it back.
+- **The Linux daemon gets the same settings** as the GUI process, so the
+  process that actually crawls is the one that releases the memory.
+- **Less OCR work per page.** PP-OCR converts the page to RGB once instead of
+  once per detected text line, and an inference error no longer drops the
+  recognition session.
+
 ## What's new in 1.0.19
 
 - **One-line installers.** Linux/macOS: `curl .../install.sh | sh`; Windows: `irm .../install.ps1 | iex`. They read `latest.json`, verify `SHA256SUMS`, and install per-user without admin. Windows also verifies the Authenticode signature. See [Install](#install).
@@ -283,7 +296,7 @@ Full threat model: [SECURITY.md](SECURITY.md).
 
 ## Status
 
-**Shipping now (1.0.19)**
+**Shipping now (1.0.20)**
 
 - One-line installers for Linux, macOS, and Windows, with `--system`/`-Silent` options and manual bundles for offline installs
 - Desktop app for Windows, macOS, and Linux: light and dark themes, grid and list results, infinite scroll, thumbnails, hover details, right-click actions

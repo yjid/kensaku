@@ -301,6 +301,10 @@ fn maybe_apply_pending_reset() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before any worker thread can create an allocator arena: the arena cap
+    // only applies to arenas created afterwards.
+    crate::util::memory::configure_allocator();
+
     // Install the crash log hook before anything else so startup failures are
     // captured too. It only touches the config directory path; it never loads
     // or mutates the config.

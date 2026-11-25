@@ -448,6 +448,47 @@ pub fn reset_engine() {
 #[cfg(not(feature = "accurate-ocr"))]
 pub fn reset_engine() {}
 
+/// Generation counter that cancels a scheduled idle release when OCR work
+/// reappears (a new crawl starts).
+static IDLE_RELEASE_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+#[cfg(test)]
+static IDLE_RELEASES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Cancels a pending "drop the OCR engines when idle" timer.
+pub fn cancel_idle_release() {
+    IDLE_RELEASE_GENERATION.fetch_add(1, Ordering::SeqCst);
+}
+
+/// Drops the cached OCR engines.
+///
+/// In-flight readers keep their `Arc`, so this is safe while recognition is
+/// running. The self-test result is deliberately left cached: status checks
+/// stay cheap and do not reload the sessions. The next OCR call reloads the
+/// pack on demand.
+pub fn release_idle_engines() {
+    reset_engine();
+    crate::ocr_indra::reset_engine();
+    #[cfg(test)]
+    IDLE_RELEASES.fetch_add(1, Ordering::SeqCst);
+}
+
+/// Drops the cached engines after `delay`, unless OCR work starts first.
+///
+/// A crawl calls [`cancel_idle_release`] when it starts, so a burst of small
+/// incremental crawls does not reload the pack between each one.
+pub fn schedule_idle_release(delay: std::time::Duration) {
+    let generation = IDLE_RELEASE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    let _ = std::thread::Builder::new()
+        .name("kensaku-ocr-release".to_string())
+        .spawn(move || {
+            std::thread::sleep(delay);
+            if IDLE_RELEASE_GENERATION.load(Ordering::SeqCst) == generation {
+                release_idle_engines();
+            }
+        });
+}
+
 /// The shared engine, loaded on first use.
 ///
 /// The lock is held only while loading. Recognition runs outside it on a
@@ -808,5 +849,31 @@ mod tests {
             println!("  miss: {line}");
         }
         assert!(recall >= 0.95, "recall {recall:.3} below 0.95");
+    }
+
+    #[test]
+    fn idle_release_timer_fires_unless_cancelled() {
+        cancel_idle_release();
+        let before = IDLE_RELEASES.load(Ordering::SeqCst);
+        schedule_idle_release(std::time::Duration::from_millis(20));
+        let mut fired = false;
+        for _ in 0..30 {
+            if IDLE_RELEASES.load(Ordering::SeqCst) > before {
+                fired = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(fired, "scheduled release must fire");
+
+        let before = IDLE_RELEASES.load(Ordering::SeqCst);
+        schedule_idle_release(std::time::Duration::from_millis(20));
+        cancel_idle_release();
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        assert_eq!(
+            IDLE_RELEASES.load(Ordering::SeqCst),
+            before,
+            "cancelling must prevent the release"
+        );
     }
 }

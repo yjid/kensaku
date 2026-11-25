@@ -61,6 +61,80 @@ pub fn release_memory() {
 )))]
 pub fn release_memory() {}
 
+/// Tunes the process allocator for the crawl's large, short-lived buffers.
+///
+/// glibc keeps one arena per busy thread and only trims the top of each. A
+/// crawl decodes multi-megabyte images on several workers, and glibc raises
+/// its mmap threshold dynamically (up to 32 MiB) after it sees large frees.
+/// Those buffers then land in arenas; free chunks in the middle stay mapped
+/// for the life of the process even though `malloc_trim` runs after every
+/// file. That is the several hundred megabytes an idle Kensaku can report
+/// after an image-heavy first scan.
+///
+/// Pinning the mmap and trim thresholds keeps multi-megabyte buffers on
+/// mmap-backed allocations, which are returned on free. Capping the arena
+/// count stops every worker from growing its own 64 MiB heap. A matching
+/// `MALLOC_*` variable or `GLIBC_TUNABLES` entry still wins, so the process
+/// can be tuned without rebuilding.
+///
+/// Must run before worker threads allocate: `M_ARENA_MAX` only limits arenas
+/// created afterwards.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AllocatorPlan {
+    mmap_threshold: bool,
+    trim_threshold: bool,
+    arena_max: bool,
+}
+
+/// Which settings this process should apply, given its environment.
+///
+/// Pure so the precedence rules can be tested without mutating the process
+/// environment. Empty values count as unset, and `GLIBC_TUNABLES` (the modern
+/// interface) is honoured alongside the legacy `MALLOC_*` variables.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn allocator_plan(env: impl Fn(&str) -> Option<String>) -> AllocatorPlan {
+    let set = |name: &str| env(name).is_some_and(|value| !value.trim().is_empty());
+    let tunables = env("GLIBC_TUNABLES").unwrap_or_default();
+    let tunable = |key: &str| {
+        tunables.split(':').any(|entry| {
+            let entry = entry.trim();
+            entry == key || entry.starts_with(&format!("{key}="))
+        })
+    };
+    AllocatorPlan {
+        mmap_threshold: !set("MALLOC_MMAP_THRESHOLD_") && !tunable("glibc.malloc.mmap_threshold"),
+        trim_threshold: !set("MALLOC_TRIM_THRESHOLD_") && !tunable("glibc.malloc.trim_threshold"),
+        arena_max: !set("MALLOC_ARENA_MAX") && !tunable("glibc.malloc.arena_max"),
+    }
+}
+
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+pub fn configure_allocator() {
+    /// 1 MiB: ordinary text and index buffers stay on the fast path, while
+    /// decoded pixels and OCR tensors are mmap'd and unmapped on free.
+    const MIB: libc::c_int = 1024 * 1024;
+    let plan = allocator_plan(|name| {
+        std::env::var_os(name).map(|value| value.to_string_lossy().into_owned())
+    });
+    unsafe {
+        if plan.mmap_threshold {
+            libc::mallopt(libc::M_MMAP_THRESHOLD, MIB);
+        }
+        if plan.trim_threshold {
+            libc::mallopt(libc::M_TRIM_THRESHOLD, MIB);
+        }
+        if plan.arena_max {
+            // glibc defaults to 8 * cores. Eight heaps is enough for the
+            // crawler, search and Tantivy while bounding retained free space.
+            libc::mallopt(libc::M_ARENA_MAX, 8);
+        }
+    }
+}
+
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+pub fn configure_allocator() {}
+
 /// Terminates the WebKit/WebView helper processes that survive the destruction
 /// of the search window, so the hidden app keeps only the Rust side in memory.
 ///
@@ -190,6 +264,48 @@ mod tests {
     fn release_memory_is_callable() {
         super::release_memory();
         super::release_memory();
+    }
+
+    #[test]
+    fn configure_allocator_is_callable() {
+        // Idempotent: startup calls it once, tests may call it again after
+        // arenas already exist. It must never fail or panic.
+        super::configure_allocator();
+        super::configure_allocator();
+    }
+
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    #[test]
+    fn allocator_plan_honours_legacy_and_tunable_overrides() {
+        let defaults = super::allocator_plan(|_| None);
+        assert!(defaults.mmap_threshold && defaults.trim_threshold && defaults.arena_max);
+
+        let legacy = super::allocator_plan(|name| match name {
+            "MALLOC_MMAP_THRESHOLD_" => Some("33554432".into()),
+            "MALLOC_ARENA_MAX" => Some("2".into()),
+            _ => None,
+        });
+        assert!(!legacy.mmap_threshold);
+        assert!(legacy.trim_threshold);
+        assert!(!legacy.arena_max);
+
+        let tunables = super::allocator_plan(|name| match name {
+            "GLIBC_TUNABLES" => {
+                Some("glibc.malloc.mmap_threshold=131072:glibc.malloc.trim_threshold=65536".into())
+            }
+            _ => None,
+        });
+        assert!(!tunables.mmap_threshold);
+        assert!(!tunables.trim_threshold);
+        assert!(tunables.arena_max);
+
+        let empty = super::allocator_plan(|name| match name {
+            "MALLOC_MMAP_THRESHOLD_" | "MALLOC_TRIM_THRESHOLD_" | "MALLOC_ARENA_MAX" => {
+                Some("".into())
+            }
+            _ => None,
+        });
+        assert!(empty.mmap_threshold && empty.trim_threshold && empty.arena_max);
     }
 
     #[cfg(windows)]

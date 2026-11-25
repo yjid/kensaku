@@ -199,6 +199,14 @@ mod tests {
         assert!(!daemon_spawn_allowed_on("macos"));
         assert!(daemon_spawn_allowed_on("linux"));
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn no_daemon_env_is_honoured_and_empty_means_unset() {
+        assert!(!no_daemon_requested(None));
+        assert!(!no_daemon_requested(Some(std::ffi::OsStr::new(""))));
+        assert!(no_daemon_requested(Some(std::ffi::OsStr::new("1"))));
+    }
 }
 
 /// Whether the GUI may spawn its own helper daemon for `os`.
@@ -217,6 +225,15 @@ fn daemon_spawn_allowed() -> bool {
     daemon_spawn_allowed_on(std::env::consts::OS)
 }
 
+/// True when the environment explicitly asks the app not to start a daemon.
+///
+/// An empty value counts as unset: shells and desktop files often carry
+/// `VAR=` for a variable they mean to clear.
+#[cfg(unix)]
+fn no_daemon_requested(value: Option<&std::ffi::OsStr>) -> bool {
+    value.is_some_and(|v| !v.is_empty())
+}
+
 #[derive(Clone, Copy)]
 pub struct DaemonClient;
 
@@ -228,6 +245,13 @@ impl DaemonClient {
         // a daemon; we never spawn one.
         if request("ping", serde_json::json!({})).is_ok() {
             return true;
+        }
+        // `KENSAKU_NO_DAEMON` means "do not start one", not "ignore a running
+        // one": the existing daemon already owns the index. Before this check
+        // the GUI spawned a daemon anyway and then ran a second writable
+        // indexer in-process.
+        if no_daemon_requested(std::env::var_os("KENSAKU_NO_DAEMON").as_deref()) {
+            return false;
         }
         if !daemon_spawn_allowed() {
             return false;

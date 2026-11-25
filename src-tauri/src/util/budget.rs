@@ -25,6 +25,12 @@ use std::sync::{Condvar, Mutex, MutexGuard, OnceLock};
 /// parallelism, or on a small machine that wants less).
 pub const DEFAULT_DECODE_BUDGET_BYTES: u64 = 768 * 1024 * 1024;
 
+/// Default budget for whole-document parsing in flight: 512 MiB.
+pub const DEFAULT_PARSE_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
+
+/// Default budget for background image decodes (thumbnails, hashes): 192 MiB.
+pub const DEFAULT_BACKGROUND_BUDGET_BYTES: u64 = 192 * 1024 * 1024;
+
 /// Counting semaphore measured in bytes.
 pub struct DecodeBudget {
     total: u64,
@@ -112,15 +118,39 @@ impl Drop for Permit {
 /// The process-wide budget for decoded images.
 pub fn decode_budget() -> &'static DecodeBudget {
     static BUDGET: OnceLock<DecodeBudget> = OnceLock::new();
+    BUDGET.get_or_init(|| budget_from_env("KENSAKU_DECODE_BUDGET_MB", DEFAULT_DECODE_BUDGET_BYTES))
+}
+
+/// A separate budget for whole-document parsing (PDF, Office, email, Parquet).
+///
+/// The extraction slots bound concurrency by count; this bounds it by bytes.
+/// A worker can hold up to the configured file-size cap, so eight 100 MB PDFs
+/// would otherwise be in memory at once.
+pub fn parse_budget() -> &'static DecodeBudget {
+    static BUDGET: OnceLock<DecodeBudget> = OnceLock::new();
+    BUDGET.get_or_init(|| budget_from_env("KENSAKU_PARSE_BUDGET_MB", DEFAULT_PARSE_BUDGET_BYTES))
+}
+
+/// A small budget for background image decodes (thumbnails, perceptual hashes)
+/// so they cannot multiply the peak alongside OCR.
+pub fn background_budget() -> &'static DecodeBudget {
+    static BUDGET: OnceLock<DecodeBudget> = OnceLock::new();
     BUDGET.get_or_init(|| {
-        let bytes = std::env::var("KENSAKU_DECODE_BUDGET_MB")
-            .ok()
-            .and_then(|raw| raw.trim().parse::<u64>().ok())
-            .filter(|mb| *mb > 0)
-            .map(|mb| mb * 1024 * 1024)
-            .unwrap_or(DEFAULT_DECODE_BUDGET_BYTES);
-        DecodeBudget::new(bytes)
+        budget_from_env(
+            "KENSAKU_BACKGROUND_DECODE_BUDGET_MB",
+            DEFAULT_BACKGROUND_BUDGET_BYTES,
+        )
     })
+}
+
+fn budget_from_env(name: &str, default: u64) -> DecodeBudget {
+    let bytes = std::env::var(name)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .filter(|mb| *mb > 0)
+        .map(|mb| mb * 1024 * 1024)
+        .unwrap_or(default);
+    DecodeBudget::new(bytes)
 }
 
 /// Bytes an RGBA8 decode of `width` x `height` will occupy.
@@ -226,5 +256,14 @@ mod tests {
     fn rgba_bytes_is_four_per_pixel() {
         assert_eq!(rgba_bytes(10, 10), 400);
         assert_eq!(rgba_bytes(10_000, 10_000), 400_000_000);
+    }
+
+    #[test]
+    fn secondary_budgets_are_separate_and_positive() {
+        assert!(parse_budget().total() > 0);
+        assert!(background_budget().total() > 0);
+        assert!(!std::ptr::eq(parse_budget(), decode_budget()));
+        assert!(!std::ptr::eq(background_budget(), decode_budget()));
+        assert!(!std::ptr::eq(parse_budget(), background_budget()));
     }
 }

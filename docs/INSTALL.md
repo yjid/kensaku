@@ -6,7 +6,7 @@ The installer reads `latest.json`, downloads the right asset, verifies its
 SHA-256 against `SHA256SUMS`, and installs into your user account. No admin
 prompt is required by default.
 
-The installer scripts ship with **1.0.19**. On 1.0.18 or older, use the manual
+The installer scripts ship with **1.0.20**. On 1.0.19 or older, use the manual
 bundles in this page.
 
 ### Linux
@@ -53,7 +53,7 @@ powershell -ExecutionPolicy ByPass -c "irm https://github.com/yjid/kensaku/relea
 
 ```bash
 # Linux / macOS
-sh install.sh --version 1.0.19
+sh install.sh --version 1.0.20
 sh install.sh --system
 sh install.sh --prefix "$HOME/Apps"
 sh install.sh --dry-run
@@ -63,7 +63,7 @@ sh install.sh --allow-unsigned     # macOS only
 
 ```powershell
 # Windows
-.\install.ps1 -Version 1.0.19
+.\install.ps1 -Version 1.0.20
 .\install.ps1 -Silent
 .\install.ps1 -DryRun
 .\install.ps1 -VerifyOnly

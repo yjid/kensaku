@@ -1,6 +1,6 @@
 # Usage
 
-> This page documents **shipped behavior** in 1.0.19: plain-language intent, `/`
+> This page documents **shipped behavior** in 1.0.20: plain-language intent, `/`
 > commands, `@` scopes, facet counts, window modes, and settings. The visual
 > Beta only downloads a model pack; it is not part of search yet.
 

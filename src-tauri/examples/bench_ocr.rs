@@ -1,6 +1,20 @@
 //! Real-model OCR throughput through the bounded extraction pipeline.
 //! Set KENSAKU_OCR_PACK_DIR and ORT_DYLIB_PATH, then pass a directory of images.
 #[cfg(feature = "accurate-ocr")]
+fn rss_kb(field: &str) -> u64 {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|status| {
+            status
+                .lines()
+                .find(|line| line.starts_with(field))
+                .and_then(|line| line.split_whitespace().nth(1))
+                .and_then(|value| value.parse().ok())
+        })
+        .unwrap_or(0)
+}
+
+#[cfg(feature = "accurate-ocr")]
 fn main() {
     use kensaku_lib::{indexer::extract, ocr};
     use rayon::prelude::*;
@@ -25,6 +39,9 @@ fn main() {
         .collect();
     paths.sort();
     assert!(!paths.is_empty(), "no images in {}", root.display());
+    // Mirror the app's allocator settings; otherwise the benchmark measures
+    // glibc defaults instead of the shipped process.
+    kensaku_lib::util::memory::configure_allocator();
     ocr::set_engine(ocr::ACCURATE);
     extract::set_ocr_enabled(true);
     let start = Instant::now();
@@ -55,6 +72,20 @@ fn main() {
     println!(
         "Extraction: {elapsed:.3} s; {:.2} images/s",
         paths.len() as f64 / elapsed
+    );
+    println!(
+        "RSS: {:.1} MB after extraction, {:.1} MB peak",
+        rss_kb("VmRSS:") as f64 / 1024.0,
+        rss_kb("VmHWM:") as f64 / 1024.0
+    );
+    // The app keeps the engine cached between crawls. Drop it here so the idle
+    // footprint is visible: the difference against "after extraction" is what
+    // an image crawl leaves resident.
+    ocr::reset_engine();
+    kensaku_lib::util::memory::release_memory();
+    println!(
+        "RSS after releasing the OCR engine: {:.1} MB",
+        rss_kb("VmRSS:") as f64 / 1024.0
     );
     assert_eq!(complete, paths.len(), "every fixture must finish");
 }

@@ -79,9 +79,13 @@ entries), plus a path index and the ~7.3 MiB i8 static embedding table when the
 semantic pack is installed (the f32 switch is ~30 MB). The crawl is bounded:
 extracted text is written through a small queue instead of accumulating in
 memory, perceptual image hashing runs in a separate background pass that decodes
-one image at a time, and the Tantivy writer arena is 16 MB. On the development
-machine the indexer process peaked at roughly 72–73 MB for both text-only and
-mixed image/text corpora (before adding the embedding table). Total app memory
+one image at a time, and the Tantivy writer arena is 16 MB. A text-only corpus
+peaks in the tens of megabytes. Image-heavy corpora with the accurate OCR pack
+peak higher while their files are being read: decoded pixels are charged against
+a process-wide budget (`KENSAKU_DECODE_BUDGET_MB`, 768 MiB by default), so the
+peak tracks the largest images rather than the worker count. On Linux, large
+decode buffers are kept outside glibc's per-thread arenas and returned when
+freed, so an idle process keeps far less of the crawl's peak. Total app memory
 is dominated by the OS webview that hosts the desktop window.
 
 **Does it conflict with Spotlight / Everything / Recoll?**
@@ -124,7 +128,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md). Tests and clippy must pass.
 
 **Why is the app bigger than the early 18 MB plan?**
 The early plan assumed a much smaller dependency set and no bundled ONNX Runtime.
-The 1.0.19 Windows x64 downloads are a 14.9 MB NSIS setup and a 20.9 MB MSI;
+The 1.0.20 Windows x64 downloads are a 14.9 MB NSIS setup and a 20.9 MB MSI;
 the installed app binary is about 39 MB. The base search path uses the compact
 i8 static table rather than
 a neural graph at query time; ONNX is present for OCR, and the smart embedding

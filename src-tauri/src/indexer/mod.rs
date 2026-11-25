@@ -312,6 +312,17 @@ impl CrawlGateGuard {
 
 impl Drop for CrawlGateGuard {
     fn drop(&mut self) {
+        // This guard is declared before the crawl's path sets, extraction
+        // buffers and commit structures, so those locals have already been
+        // dropped by the time we get here. Return their pages before the
+        // process goes idle instead of waiting for the next allocation.
+        crate::util::memory::release_memory();
+        // Give OCR a two-minute idle window before dropping its session pools.
+        // A new crawl cancels the timer at its start. Tests skip the timer so a
+        // unit test does not leave a sleeping thread behind.
+        if !cfg!(test) {
+            crate::ocr::schedule_idle_release(std::time::Duration::from_secs(120));
+        }
         if !self.armed {
             return;
         }
@@ -331,6 +342,59 @@ impl Drop for CrawlGateGuard {
         IndexerManager::emit_status(&self.app_handle, &st);
         drop(st);
         crate::say!("[Kensaku Indexer] crawl aborted by a panic; status reset to idle");
+    }
+}
+
+/// Drops semantic and visual rows for nodes that just left the metadata store.
+///
+/// Deleting the metadata row only cascades the SQLite `units` table; the
+/// in-memory `UnitStore` and the `visual_units` table have no such link, so a
+/// rename/delete used to leave them resident for the life of the process.
+pub(crate) fn purge_removed_nodes(
+    ids: &std::collections::HashSet<u64>,
+    unit_store: &Arc<RwLock<crate::embed::units::UnitStore>>,
+    visual_store: &Arc<RwLock<crate::embed::visual::VisualStore>>,
+    db: Option<&crate::indexer::metadata_db::MetadataDb>,
+) {
+    if ids.is_empty() {
+        return;
+    }
+    if let Some(db) = db {
+        let ids_vec: Vec<u64> = ids.iter().copied().collect();
+        if let Err(error) = db.delete_visual_units_for_nodes(&ids_vec) {
+            eprintln!("[Kensaku] could not delete visual units: {error}");
+        }
+    }
+    unit_store.write().remove_units_for_nodes(ids);
+    let mut visual = visual_store.write();
+    for id in ids {
+        visual.remove_node(*id);
+    }
+}
+
+/// Process-wide handles for the watcher, which runs on its own thread and has
+/// no direct handle to the semantic stores.
+///
+/// One indexer owns an index per process (the GUI and the daemon are separate
+/// processes), so the last registration is the correct one. Tests that do not
+/// construct an indexer leave this empty and the purge is a no-op.
+type SharedUnitStore = Arc<RwLock<crate::embed::units::UnitStore>>;
+type SharedVisualStore = Arc<RwLock<crate::embed::visual::VisualStore>>;
+
+static PURGE_STORES: RwLock<Option<(SharedUnitStore, SharedVisualStore)>> = RwLock::new(None);
+
+pub(crate) fn register_purge_stores(unit_store: SharedUnitStore, visual_store: SharedVisualStore) {
+    *PURGE_STORES.write() = Some((unit_store, visual_store));
+}
+
+/// Purge hook for the watcher, which only has the metadata database handle.
+pub(crate) fn purge_removed_nodes_registered(
+    ids: &std::collections::HashSet<u64>,
+    db: Option<&crate::indexer::metadata_db::MetadataDb>,
+) {
+    let stores = PURGE_STORES.read().clone();
+    if let Some((unit_store, visual_store)) = stores {
+        purge_removed_nodes(ids, &unit_store, &visual_store, db);
     }
 }
 
@@ -385,6 +449,7 @@ impl IndexerManager {
             crate::embed::visual::VISUAL_DIM,
             crate::embed::visual::MOCK_VISUAL_MODEL_ID,
         )));
+        register_purge_stores(Arc::clone(&unit_store), Arc::clone(&visual_store));
         let query_in_flight = Arc::new(AtomicBool::new(false));
 
         // Semantic state (the ~30 MB embedding table and the persisted unit
@@ -505,6 +570,7 @@ impl IndexerManager {
             crate::embed::visual::VISUAL_DIM,
             crate::embed::visual::MOCK_VISUAL_MODEL_ID,
         )));
+        register_purge_stores(Arc::clone(&unit_store), Arc::clone(&visual_store));
         let query_in_flight = Arc::new(AtomicBool::new(false));
 
         let mut units_count = 0;
@@ -715,6 +781,10 @@ impl IndexerManager {
                 Arc::clone(&status),
                 Arc::clone(&app_handle),
             );
+
+            // A new crawl means OCR may be needed again: cancel any scheduled
+            // idle release before it drops the engine underneath this crawl.
+            crate::ocr::cancel_idle_release();
 
             // Apply OCR engine selection and record whether it re-queued
             // images: that is one of the reasons a crawl re-reads files, and
@@ -1450,7 +1520,7 @@ impl IndexerManager {
             // A cancelled crawl did not see every file, so "not seen" does not
             // mean "deleted": skip the sweep and let the next crawl decide.
             let crawl_cancelled = cancel_requested.load(Ordering::SeqCst);
-            let stale_paths: Vec<PathBuf> = if crawl_cancelled {
+            let stale: Vec<(u64, PathBuf)> = if crawl_cancelled {
                 Vec::new()
             } else {
                 let store = metadata.read();
@@ -1463,12 +1533,14 @@ impl IndexerManager {
                         {
                             return None;
                         }
-                        Some(e.path)
+                        Some((e.id, e.path))
                     })
                     .collect()
             };
 
-            if !stale_paths.is_empty() {
+            if !stale.is_empty() {
+                let stale_paths: Vec<PathBuf> =
+                    stale.iter().map(|(_, path)| path.clone()).collect();
                 // Drop content documents for the same paths directly. The old
                 // implementation scanned the entire content index on every
                 // crawl, which cost seconds on large corpora; the crawl already
@@ -1477,13 +1549,21 @@ impl IndexerManager {
                     let _ = c_index.remove_many(&stale_paths);
                 }
 
-                let mut store = metadata.write();
-                for path in &stale_paths {
-                    store.remove(path);
+                let mut removed = std::collections::HashSet::new();
+                {
+                    let mut store = metadata.write();
+                    for (id, path) in &stale {
+                        store.remove(path);
+                        if *id > 0 {
+                            removed.insert(*id);
+                        }
+                    }
                 }
+                let db = metadata.read().db();
+                purge_removed_nodes(&removed, &unit_store, &visual_store, db.as_deref());
                 crate::say!(
                     "[Kensaku Indexer] Removed {} stale metadata entries",
-                    stale_paths.len()
+                    stale.len()
                 );
             }
 
@@ -2631,6 +2711,50 @@ mod tests {
             char_bloom: 0,
             content_pending,
         }
+    }
+
+    #[test]
+    fn purge_removed_nodes_shrinks_units_and_visuals() {
+        use crate::embed::units::{Unit, UnitStore};
+        use crate::embed::visual::VisualStore;
+
+        let unit_store = Arc::new(RwLock::new(UnitStore::new(2)));
+        let visual_store = Arc::new(RwLock::new(VisualStore::new(2, 1)));
+        {
+            let mut units = unit_store.write();
+            units.add_unit(
+                Unit {
+                    id: 1,
+                    node_id: 10,
+                    byte_start: 0,
+                    byte_end: 1,
+                    model_id: 1,
+                },
+                &[1, 2],
+            );
+            units.add_unit(
+                Unit {
+                    id: 2,
+                    node_id: 20,
+                    byte_start: 0,
+                    byte_end: 1,
+                    model_id: 1,
+                },
+                &[3, 4],
+            );
+        }
+        visual_store.write().add_or_update(10, 1, &[1, 2]);
+        visual_store.write().add_or_update(20, 1, &[3, 4]);
+
+        let ids = std::collections::HashSet::from([10]);
+        purge_removed_nodes(&ids, &unit_store, &visual_store, None);
+
+        let units = unit_store.read();
+        assert_eq!(units.units.len(), 1);
+        assert_eq!(units.units[0].node_id, 20);
+        let visual = visual_store.read();
+        assert!(visual.get_vector(10).is_none());
+        assert!(visual.get_vector(20).is_some());
     }
 
     #[test]

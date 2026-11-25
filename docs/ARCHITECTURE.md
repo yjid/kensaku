@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: shipped `v1.0.19`. This documents the code in this repository, not a
+> Status: shipped `v1.0.20`. This documents the code in this repository, not a
 > future plan. Anything marked **not shipped** is called out explicitly.
 
 Kensaku is a local index with four retrieval tiers and three clients: the desktop

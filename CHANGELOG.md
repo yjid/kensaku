@@ -3,7 +3,7 @@
 All notable changes to Kensaku. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.0.20] — 2026-11-25
 
 ### Added
 - **Automatic updates are on by default.** Signed releases download and install
@@ -28,6 +28,50 @@ versioning: [SemVer](https://semver.org/).
 - **A crawl that starts during an update now defers the install until indexing
   finishes** instead of cancelling it. The app retries while the index is busy
   and installs as soon as it is idle.
+
+### Fixed
+- **PP-OCR sessions no longer pin ONNX Runtime's CPU arena.** The arena only
+  grows, and every detector and recognizer session kept its own, so the peak
+  from an image-heavy crawl outlived the crawl. Both now allocate through the
+  system allocator, matching the Indra OCR path.
+- **PP-OCR converts the page to RGB once, not once per text line.** Every
+  detected line used to copy the whole page, multiplying memory and CPU work
+  on text-heavy screenshots.
+- **A failed recognition returns its session to the pool.** An inference error
+  used to drop the session; enough errors drained the pool and left other
+  workers blocked forever.
+- **The allocator returns the crawl's large buffers.** On glibc, multi-megabyte
+  image decodes were landing in per-thread arenas that only trim their top
+  chunk, leaving hundreds of megabytes mapped after an image-heavy first scan.
+  The allocator now keeps large buffers on mmap-backed allocations, trims sooner,
+  and caps the arena count. Explicit `MALLOC_*` environment settings still win.
+- **Grid thumbnails have their own two-slot limit.** A grid of uncached images
+  could start up to 30 full-resolution decodes at once through the blocking
+  pool. Previews now allow two concurrent decodes, independent of the OCR
+  budget, so browsing during a crawl neither multiplies the peak nor stalls
+  behind OCR.
+- **OCR engines are released when the crawl goes idle.** Two minutes after a
+  crawl ends (cancelled if another starts), the PP-OCR and Indra session pools
+  are dropped. In-flight readers keep their reference, and the next image
+  reloads the pack.
+- **16-bit and float images reserve their real decode size.** The decode budget
+  no longer assumes 4 bytes per pixel.
+- **Whole-document parsing has its own byte budget.** PDF, Office, email and
+  Parquet parsing can no longer be multiplied by the extraction worker count
+  (`KENSAKU_PARSE_BUDGET_MB`, 512 MiB by default).
+- **Thumbnails and perceptual hashes have a background decode budget.** They no
+  longer decode outside any bound. The two-slot preview gate stays separate so
+  browsing never waits on OCR.
+- **Deleted and renamed files drop their semantic and visual rows.** The crawl's
+  stale sweep and the watcher purge the in-memory stores and `visual_units`, not
+  just metadata.
+- **`KENSAKU_NO_DAEMON=1` no longer spawns a daemon anyway.** It means "do not
+  start one"; an already-running daemon is still used.
+- **Health reports PSS and anonymous memory** and uses the kernel page size
+  instead of assuming 4 KiB. Shared WebView/LLVM pages no longer look like
+  private Kensaku memory.
+- **Allocator overrides are honoured.** `GLIBC_TUNABLES` and empty `MALLOC_*`
+  values now take precedence over the built-in thresholds.
 
 ## [1.0.19] — 2026-11-24
 
