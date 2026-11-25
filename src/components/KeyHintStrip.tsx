@@ -143,7 +143,10 @@ export const KeyHintStrip: React.FC<{
             className={`flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 transition-colors enabled:hover:bg-surface-2 disabled:cursor-default ${updateTone(update)}`}
           >
             {updateIcon(update)}
-            <span className="t-meta whitespace-nowrap" aria-live="polite">
+            <span
+              className="t-meta whitespace-nowrap"
+              aria-live={update.phase === "restarting" ? "off" : "polite"}
+            >
               {updateLabel(update, t)}
             </span>
             {update.phase === "downloading" &&
