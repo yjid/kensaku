@@ -10,6 +10,8 @@
 
 <p align="center">
   <a href="https://github.com/yjid/kensaku/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/yjid/kensaku?style=for-the-badge" /></a>
+  <a href="https://github.com/yjid/kensaku/releases/latest"><img alt="Downloads" src="https://img.shields.io/github/downloads/yjid/kensaku/total?style=for-the-badge" /></a>
+  <a href="https://github.com/yjid/kensaku/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/yjid/kensaku?style=for-the-badge" /></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-111111?style=for-the-badge" /></a>
   <a href="https://github.com/yjid/kensaku/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/yjid/kensaku/ci.yml?branch=master&style=for-the-badge" /></a>
 </p>
@@ -171,6 +173,6 @@ For developers, the quick loop is `bun install`, `make dev`, and `make test`. Th
 
 If Kensaku saves you time, a star helps other people find it.
 
-<p align="center">
-  <a href="https://github.com/yjid/kensaku/stargazers">⭐ Star Kensaku on GitHub</a>
-</p>
+## Star history
+
+[![Star History Chart](https://api.star-history.com/svg?repos=yjid/kensaku&type=Date)](https://star-history.com/#yjid/kensaku&Date)
