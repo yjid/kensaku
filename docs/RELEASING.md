@@ -133,15 +133,18 @@ The version must match the tag, and the platform keys must include
 `windows-x86_64`, `darwin-aarch64`, and `linux-x86_64` (plus the ARM64 variants
 when built). Each pointed-to asset and its `.sig` must be on the release.
 
-### Canary first: publish without `--latest`
+### Canary first: publish as a pre-release
 
-The updater reads `releases/latest/download/latest.json`, and "latest" ignores
-pre-releases. Publishing the draft **without** `--latest` makes it a pre-release,
-so no existing install can pick it up while you check it:
+The updater reads `releases/latest/download/latest.json`, and `/releases/latest`
+never returns a pre-release. Publishing the draft **as a pre-release** keeps it
+invisible to every installed copy while you check it:
 
 ```bash
-gh release edit vX.Y.Z --draft=false      # pre-release, not latest
+gh release edit vX.Y.Z --draft=false --prerelease
 ```
+
+Leaving out `--latest` is not enough: GitHub can still make a normal release the
+latest one, which puts it in `/releases/latest` immediately.
 
 Install that build from the pre-release page on two or three machines (one per
 OS you ship) and confirm:
@@ -155,7 +158,7 @@ OS you ship) and confirm:
 Promote only after that passes:
 
 ```bash
-gh release edit vX.Y.Z --latest
+gh release edit vX.Y.Z --prerelease=false --latest
 ```
 
 The failed-install guard in 1.0.20+ catches an install that silently did not
