@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { whatsNewKey } from "./whatsNew";
+// @vitest-environment jsdom
+import { beforeAll, describe, expect, it } from "vitest";
+import i18n from "../i18n";
+import { whatsNewItems, whatsNewKey } from "./whatsNew";
 import en from "../locales/en/whatsNew.json";
 import ru from "../locales/ru/whatsNew.json";
 import zh from "../locales/zh/whatsNew.json";
@@ -26,5 +28,26 @@ describe("bundled release notes", () => {
   it("keeps the same number of bullets in every language", () => {
     const counts = [en, ru, zh].map((data) => (data as Record<string, string[]>)["1_0_20"].length);
     expect(new Set(counts).size).toBe(1);
+  });
+});
+
+describe("whatsNewItems", () => {
+  beforeAll(async () => {
+    if (!i18n.isInitialized) {
+      await new Promise<void>((resolve) => {
+        i18n.on("initialized", () => resolve());
+      });
+    }
+  });
+
+  it("resolves the notes for the running version through i18n", () => {
+    // Proves the namespace is registered and the dotted version maps to a key
+    // that exists, which is the part a JSON-only test cannot see.
+    expect(whatsNewItems("1.0.20")).toHaveLength(5);
+  });
+
+  it("returns an empty list for a version without notes", () => {
+    expect(whatsNewItems("0.9.9")).toEqual([]);
+    expect(whatsNewItems("…")).toEqual([]);
   });
 });
