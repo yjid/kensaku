@@ -30,7 +30,8 @@ function updateStub() {
     date: "2026-11-25",
     download: vi.fn(async (onEvent: (event: unknown) => void) => {
       onEvent({ event: "Started", data: { contentLength: 10 } });
-      onEvent({ event: "Progress", data: { chunkLength: 10 } });
+      onEvent({ event: "Progress", data: { chunkLength: 4 } });
+      onEvent({ event: "Progress", data: { chunkLength: 6 } });
       onEvent({ event: "Finished" });
     }),
     install: vi.fn(async () => {}),
@@ -38,7 +39,22 @@ function updateStub() {
   };
 }
 
+/** Records the activity stream the status bar renders. */
+function recordActivity(
+  subscribe: (cb: (next: { phase: string; secondsLeft?: number; percent?: number } | null) => void) => () => void,
+) {
+  const seen: string[] = [];
+  const unsubscribe = subscribe((next) => {
+    if (!next) return;
+    if (next.phase === "restarting") seen.push(`restarting:${next.secondsLeft}`);
+    else if (next.phase === "downloading") seen.push(`downloading:${next.percent}`);
+    else seen.push(next.phase);
+  });
+  return { seen, unsubscribe };
+}
+
 beforeEach(() => {
+  vi.resetModules();
   vi.clearAllMocks();
   vi.useRealTimers();
   indexing = false;
@@ -59,7 +75,6 @@ describe("autoInstallUpdate", () => {
   it("re-checks the live crawl state immediately before installing", async () => {
     const update = updateStub();
     checkPlugin.mockResolvedValue(update);
-    vi.setSystemTime(new Date("2026-11-25T00:00:00Z"));
     vi.useFakeTimers();
 
     const { autoInstallUpdate } = await import("./updater");
@@ -78,6 +93,32 @@ describe("autoInstallUpdate", () => {
     expect(onDeferred).not.toHaveBeenCalled();
   });
 
+  it("publishes the download and restart countdown to the status bar", async () => {
+    const update = updateStub();
+    checkPlugin.mockResolvedValue(update);
+    vi.useFakeTimers();
+
+    const { autoInstallUpdate, subscribeUpdateActivity } = await import("./updater");
+    const { seen, unsubscribe } = recordActivity(subscribeUpdateActivity);
+    const result = autoInstallUpdate();
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await expect(result).resolves.toBe(true);
+    unsubscribe();
+
+    expect(seen).toContain("downloading:0");
+    expect(seen).toContain("downloading:40");
+    expect(seen).toContain("ready");
+    // Counts down in whole seconds, so the strip can say "Restarting in 4s".
+    expect(seen.filter((s) => s.startsWith("restarting:"))).toEqual([
+      "restarting:5",
+      "restarting:4",
+      "restarting:3",
+      "restarting:2",
+      "restarting:1",
+    ]);
+  });
+
   it("defers the install when a crawl starts during the countdown", async () => {
     const update = updateStub();
     checkPlugin.mockResolvedValue(update);
@@ -90,11 +131,37 @@ describe("autoInstallUpdate", () => {
     await vi.advanceTimersByTimeAsync(4999);
     indexing = true;
     await vi.advanceTimersByTimeAsync(1);
-    await expect(result).resolves.toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
 
+    // Deferred, not cancelled: still downloading-installed, just waiting.
     expect(onDeferred).toHaveBeenCalledOnce();
     expect(update.install).not.toHaveBeenCalled();
     expect(relaunch).not.toHaveBeenCalled();
+
+    // Indexing finishes, the retry installs on its own.
+    indexing = false;
+    await vi.advanceTimersByTimeAsync(20_000);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(result).resolves.toBe(true);
+    expect(update.install).toHaveBeenCalledOnce();
+    expect(relaunch).toHaveBeenCalledOnce();
+  });
+
+  it("gives up after the retry window and leaves the update ready", async () => {
+    const update = updateStub();
+    checkPlugin.mockResolvedValue(update);
+    vi.useFakeTimers();
+
+    const { autoInstallUpdate, IDLE_RETRY_LIMIT_MS, getUpdateActivity } = await import("./updater");
+    indexing = true;
+    const result = autoInstallUpdate();
+
+    await vi.advanceTimersByTimeAsync(IDLE_RETRY_LIMIT_MS + 1000);
+    await expect(result).resolves.toBe(false);
+
+    expect(update.install).not.toHaveBeenCalled();
+    // The download survives, so the strip can offer "Restart to update".
+    expect(getUpdateActivity()?.phase).toBe("ready");
   });
 
   it("defers when the crawl state cannot be read", async () => {
@@ -107,14 +174,30 @@ describe("autoInstallUpdate", () => {
     });
     vi.useFakeTimers();
 
-    const { autoInstallUpdate } = await import("./updater");
+    const { autoInstallUpdate, IDLE_RETRY_LIMIT_MS } = await import("./updater");
     const onDeferred = vi.fn();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const result = autoInstallUpdate(undefined, onDeferred);
-    await vi.advanceTimersByTimeAsync(5000);
 
+    await vi.advanceTimersByTimeAsync(IDLE_RETRY_LIMIT_MS + 1000);
     await expect(result).resolves.toBe(false);
-    expect(onDeferred).toHaveBeenCalledOnce();
+    expect(onDeferred).toHaveBeenCalled();
+    expect(update.install).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("marks a failed download instead of leaving a stale progress bar", async () => {
+    const update = updateStub();
+    update.download.mockRejectedValue(new Error("network down"));
+    checkPlugin.mockResolvedValue(update);
+    vi.useFakeTimers();
+
+    const { autoInstallUpdate, getUpdateActivity } = await import("./updater");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const result = autoInstallUpdate();
+
+    await expect(result).rejects.toThrow("network down");
+    expect(getUpdateActivity()?.phase).toBe("failed");
     expect(update.install).not.toHaveBeenCalled();
     warn.mockRestore();
   });

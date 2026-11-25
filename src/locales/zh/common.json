@@ -56,7 +56,19 @@
   },
   "update": {
     "available": "有可用更新：{{version}}",
-    "label": "更新"
+    "label": "更新",
+    "availableShort": "更新 {{version}}",
+    "downloading": "下载中 {{percent}}%",
+    "downloadingUnknown": "下载中…",
+    "downloadingTitle": "正在下载 Kensaku {{version}}",
+    "ready": "重启以更新",
+    "readyTitle": "更新已下载。点击安装并重启。",
+    "restarting": "{{seconds}} 秒后重启",
+    "restartingTitle": "Kensaku 将在 {{seconds}} 秒后重启以完成更新。",
+    "deferred": "更新等待索引完成",
+    "deferredTitle": "索引完成后会自动安装更新并重启 Kensaku。",
+    "failed": "更新失败",
+    "failedTitle": "无法下载更新。"
   },
   "stepper": {
     "decrease": "减少",

@@ -51,6 +51,60 @@ function emptyStatus(): UpdateStatus {
 
 let status: UpdateStatus = emptyStatus();
 
+/**
+ * What the status bar shows for the update flow. The updater is the only
+ * writer, so a startup auto-install, a manual check, and a manual download all
+ * feed the same state and the indicator cannot disagree with what is running.
+ */
+export interface UpdateActivity {
+  phase: "available" | "downloading" | "ready" | "restarting" | "deferred" | "failed";
+  version: string;
+  percent?: number;
+  secondsLeft?: number;
+  message?: string;
+}
+
+let activity: UpdateActivity | null = null;
+const activityListeners = new Set<(next: UpdateActivity | null) => void>();
+
+function setActivity(next: UpdateActivity | null): void {
+  activity = next;
+  for (const listener of activityListeners) {
+    try {
+      listener(next);
+    } catch (err) {
+      console.warn("Update activity listener failed:", err);
+    }
+  }
+}
+
+/** Last known activity, so a late subscriber renders immediately. */
+export function getUpdateActivity(): UpdateActivity | null {
+  return activity;
+}
+
+/** Subscribes to update activity. Fires once with the current value. */
+export function subscribeUpdateActivity(
+  listener: (next: UpdateActivity | null) => void,
+): () => void {
+  activityListeners.add(listener);
+  listener(activity);
+  return () => {
+    activityListeners.delete(listener);
+  };
+}
+
+/** How long the restart notice stays up before installing. */
+export const RESTART_COUNTDOWN_SECONDS = 5;
+/** How often a deferred install re-checks whether indexing finished. */
+export const IDLE_RETRY_INTERVAL_MS = 20_000;
+/** After this long, a deferred install waits for the next launch instead. */
+export const IDLE_RETRY_LIMIT_MS = 2 * 60 * 60 * 1000;
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function snapshot(): UpdateStatus {
   return {
     ...status,
@@ -135,6 +189,8 @@ export async function downloadUpdate(): Promise<UpdateStatus> {
     busy: true,
     progress: { phase: "downloading", downloaded: 0, total: 0, percent: 0 },
   };
+  const version = lastInfo?.latest_version ?? "";
+  setActivity({ phase: "downloading", version, percent: 0 });
 
   try {
     let downloaded = 0;
@@ -154,6 +210,11 @@ export async function downloadUpdate(): Promise<UpdateStatus> {
         total,
         percent: total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0,
       };
+      setActivity({
+        phase: status.progress.phase === "ready" ? "ready" : "downloading",
+        version,
+        percent: status.progress.percent,
+      });
     });
 
     status.busy = false;
@@ -162,6 +223,7 @@ export async function downloadUpdate(): Promise<UpdateStatus> {
   } catch (err) {
     status.busy = false;
     status.error = String(err);
+    setActivity({ phase: "failed", version, message: String(err) });
     throw err;
   }
 }
@@ -180,6 +242,7 @@ export async function installUpdateAndRestart(): Promise<void> {
   if (!(await inAppUpdatesSupported())) {
     throw new Error(i18n.t("settings:about.manualUpdateRequired"));
   }
+  setActivity(null);
   await pending.install();
   await relaunch();
 }
@@ -204,32 +267,72 @@ async function crawlIsActive(): Promise<boolean> {
 }
 
 /**
- * Opt-in path for "install updates automatically": check, download, let the
- * caller announce the restart, wait briefly, then install and relaunch.
- * Returns false when there is nothing to install, this copy updates through
- * its package (MSI, portable, .deb/.rpm), or a crawl started while waiting —
- * in the last case `onDeferred` lets the caller correct the restart notice.
+ * Waits for indexing to finish, re-reading the live crawl state on an interval.
+ * Returns false when the wait window expires; the caller then leaves the
+ * downloaded update in place for the next launch instead of installing over a
+ * running crawl.
+ */
+async function waitForIdle(): Promise<boolean> {
+  const deadline = Date.now() + IDLE_RETRY_LIMIT_MS;
+  while (Date.now() < deadline) {
+    await wait(IDLE_RETRY_INTERVAL_MS);
+    if (!(await crawlIsActive())) return true;
+  }
+  return false;
+}
+
+/**
+ * Automatic path for "install updates automatically": check, download, show a
+ * restart countdown, re-read the live crawl state, then install and relaunch.
+ *
+ * A crawl that starts before the install defers it rather than cancelling it:
+ * `onDeferred` lets the caller correct the restart notice, and the install
+ * retries until indexing is idle. If indexing outlasts the retry window the
+ * update stays downloaded and ready, so the status bar or Settings can install
+ * it later.
+ *
+ * Returns false when there is nothing to install, this copy updates through its
+ * own package (MSI, portable, .deb/.rpm), or indexing never idled in time.
  */
 export async function autoInstallUpdate(
   onReadyToRestart?: () => void,
   onDeferred?: () => void,
 ): Promise<boolean> {
   const info = await checkForUpdates();
-  if (!info.has_update || !info.in_app_supported) return false;
-  const downloaded = await downloadUpdate();
-  if (!downloaded.ready_to_install) return false;
-  onReadyToRestart?.();
-  // Give the user a moment to see the toast before the window disappears.
-  await new Promise((resolve) => setTimeout(resolve, 5000));
-  // Re-check immediately before installing: the startup status was taken
-  // before the download and the five-second countdown. Installing now would
-  // interrupt a crawl that began in between.
-  if (await crawlIsActive()) {
-    onDeferred?.();
+  if (!info.has_update || !info.in_app_supported) {
+    setActivity(null);
     return false;
   }
-  await installUpdateAndRestart();
-  return true;
+  const version = info.latest_version;
+
+  const downloaded = await downloadUpdate();
+  if (!downloaded.ready_to_install) return false;
+
+  for (;;) {
+    // The startup status is stale by now: the download can take minutes and a
+    // crawl may have begun. Never restart on top of one; wait it out instead.
+    if (await crawlIsActive()) {
+      setActivity({ phase: "deferred", version });
+      onDeferred?.();
+      if (!(await waitForIdle())) {
+        setActivity({ phase: "ready", version });
+        return false;
+      }
+    }
+
+    // Give the user a moment to see the notice before the window disappears.
+    onReadyToRestart?.();
+    for (let secondsLeft = RESTART_COUNTDOWN_SECONDS; secondsLeft > 0; secondsLeft--) {
+      setActivity({ phase: "restarting", version, secondsLeft });
+      await wait(1000);
+    }
+
+    // Re-check after the countdown: a crawl can start while it runs.
+    if (await crawlIsActive()) continue;
+
+    await installUpdateAndRestart();
+    return true;
+  }
 }
 
 /**

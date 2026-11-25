@@ -56,7 +56,19 @@
   },
   "update": {
     "available": "Update available: {{version}}",
-    "label": "Update"
+    "label": "Update",
+    "availableShort": "Update {{version}}",
+    "downloading": "Downloading {{percent}}%",
+    "downloadingUnknown": "Downloading…",
+    "downloadingTitle": "Downloading Kensaku {{version}}",
+    "ready": "Restart to update",
+    "readyTitle": "The update is downloaded. Click to install and restart.",
+    "restarting": "Restarting in {{seconds}}s",
+    "restartingTitle": "Kensaku restarts in {{seconds}} seconds to finish installing the update.",
+    "deferred": "Update waits for index",
+    "deferredTitle": "The update installs and Kensaku restarts automatically when indexing finishes.",
+    "failed": "Update failed",
+    "failedTitle": "The update could not be downloaded."
   },
   "stepper": {
     "decrease": "Decrease",

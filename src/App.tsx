@@ -38,7 +38,7 @@ import { useMeasuredHeight } from "./lib/useMeasuredHeight";
 import { interpretationLabel } from "./lib/interpretation";
 import { inFilter } from "./lib/query";
 import { isNewerVersion } from "./lib/version";
-import { checkForUpdates, autoInstallUpdate } from "./lib/updater";
+import { checkForUpdates, autoInstallUpdate, installUpdateAndRestart, subscribeUpdateActivity, type UpdateActivity } from "./lib/updater";
 import { getVersion } from "@tauri-apps/api/app";
 import {
   Settings as SettingsIcon,
@@ -127,6 +127,7 @@ function App() {
   const [indexingStatus, setIndexingStatus] = useState<IndexingStatus | null>(null);
   const [doctorReport, setDoctorReport] = useState<DoctorReport | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
+  const [updateActivity, setUpdateActivity] = useState<UpdateActivity | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<string | undefined>(undefined);
   const [showDuplicates, setShowDuplicates] = useState(false);
@@ -713,10 +714,13 @@ function App() {
     toastTimer.current = window.setTimeout(() => setToast(null), duration);
   }, []);
 
-  /* Opt-in automatic installs. Run once per app run, independently of the
+  /* The updater owns the update lifecycle; the status bar only renders it. */
+  useEffect(() => subscribeUpdateActivity(setUpdateActivity), []);
+
+  /* Automatic installs. Run once per app run, independently of the
      12-hour tag cache above, because installing needs the live Update object.
-     Skip while a crawl is active (the next launch can install) and during
-     first-run setup. */
+     Skip while a crawl is active (the retry loop inside the updater waits for
+     it) and during first-run setup. */
   useEffect(() => {
     if (autoInstallAttempted) return;
     if (isSetupComplete !== true) return;
@@ -1588,7 +1592,18 @@ function App() {
                 </div>
               )}
 
-              <KeyHintStrip status={indexingStatus} doctor={doctorReport} updateAvailable={updateAvailable} onDoctor={() => { setShowSettings(true); setSettingsSection("doctor"); }} onUpdate={() => { setShowSettings(true); setSettingsSection("about"); }} />
+              <KeyHintStrip status={indexingStatus} doctor={doctorReport} update={updateActivity ?? (updateAvailable ? { phase: "available", version: updateAvailable } : null)} onDoctor={() => { setShowSettings(true); setSettingsSection("doctor"); }} onUpdate={() => {
+                if (updateActivity?.phase === "ready") {
+                  installUpdateAndRestart().catch((err) => {
+                    console.warn("Update install failed:", err);
+                    setShowSettings(true);
+                    setSettingsSection("about");
+                  });
+                  return;
+                }
+                setShowSettings(true);
+                setSettingsSection("about");
+              }} />
             </>
           )}
         </>

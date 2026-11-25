@@ -64,7 +64,19 @@
   },
   "update": {
     "available": "Доступно обновление: {{version}}",
-    "label": "Обновить"
+    "label": "Обновить",
+    "availableShort": "Обновление {{version}}",
+    "downloading": "Загрузка {{percent}}%",
+    "downloadingUnknown": "Загрузка…",
+    "downloadingTitle": "Загрузка Kensaku {{version}}",
+    "ready": "Перезапустить",
+    "readyTitle": "Обновление загружено. Нажмите, чтобы установить и перезапустить.",
+    "restarting": "Перезапуск через {{seconds}} с",
+    "restartingTitle": "Kensaku перезапустится через {{seconds}} с, чтобы завершить установку.",
+    "deferred": "Обновление ждёт индексацию",
+    "deferredTitle": "Обновление установится и Kensaku перезапустится автоматически, когда индексация закончится.",
+    "failed": "Ошибка обновления",
+    "failedTitle": "Не удалось загрузить обновление."
   },
   "stepper": {
     "decrease": "Уменьшить",
