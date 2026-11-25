@@ -39,12 +39,23 @@ at startup, downloads it in the background with progress in the status bar, and
 shows a 5-second "Restarting in Ns" notice. It re-reads the live indexing status
 after the countdown, and only then installs the update and relaunches.
 
+Installing also waits until the window is hidden or another application has
+focus. Kensaku never restarts a window you are working in: while you are looking
+at it, the status bar offers **Restart to update** and the install happens later,
+unattended. Clicking it is consent and installs straight away, except during a
+crawl.
+
 A crawl that starts during the download or the countdown defers the install
 rather than cancelling it. The notice says the update is waiting for indexing,
 and the app retries every 20 seconds for up to 2 hours, installing as soon as
 indexing is idle. If indexing is still running after 2 hours, the update stays
 downloaded and ready; it installs on a later launch or when the user installs it
 from Settings.
+
+If an install does not take — the app comes back on the old version — the next
+launch stops the automatic path for that session and shows **Update failed** in
+the status bar instead of re-downloading and restarting in a loop. Settings →
+About still offers the manual download.
 
 Unattended installs are skipped for installs that must update through their own
 package: MSI, portable, `.deb`, and `.rpm` copies still show "Update available"

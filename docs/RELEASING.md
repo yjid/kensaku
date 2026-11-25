@@ -133,11 +133,34 @@ The version must match the tag, and the platform keys must include
 `windows-x86_64`, `darwin-aarch64`, and `linux-x86_64` (plus the ARM64 variants
 when built). Each pointed-to asset and its `.sig` must be on the release.
 
-Then publish the draft (or edit the notes first):
+### Canary first: publish without `--latest`
+
+The updater reads `releases/latest/download/latest.json`, and "latest" ignores
+pre-releases. Publishing the draft **without** `--latest` makes it a pre-release,
+so no existing install can pick it up while you check it:
 
 ```bash
-gh release edit vX.Y.Z --draft=false --latest
+gh release edit vX.Y.Z --draft=false      # pre-release, not latest
 ```
+
+Install that build from the pre-release page on two or three machines (one per
+OS you ship) and confirm:
+
+- the app starts and loads the existing index;
+- a crawl finishes and idle memory settles;
+- Settings → About shows the version and the What's New card;
+- with automatic updates on, the next launch shows the update indicator and
+  restarts only when the window is hidden or unfocused.
+
+Promote only after that passes:
+
+```bash
+gh release edit vX.Y.Z --latest
+```
+
+The failed-install guard in 1.0.20+ catches an install that silently did not
+take, but it cannot catch a build that crashes before any app code runs. That is
+what this step is for.
 
 If the workflow could not create the draft, the manual fallback is:
 

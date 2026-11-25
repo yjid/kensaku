@@ -11,8 +11,18 @@ versioning: [SemVer](https://semver.org/).
   automatically" switch can be turned off on the last setup step or later in
   Settings → About; updates install when the app is idle. MSI, portable and
   `.deb`/`.rpm` copies still update through their package.
+- **An update never restarts a window you are working in.** The automatic
+  install waits until the window is hidden or another application has focus.
+  While you are looking at Kensaku, the status bar offers "Restart to update"
+  instead.
 - **Live update indicator in the status bar.** It shows the download percentage
   and progress, the restart countdown, and a waiting-for-indexing state.
+- **A failed install stops instead of looping.** If the app comes back on the
+  old version after an attempt, the next launch disables the automatic path for
+  that session and shows "Update failed" rather than downloading and restarting
+  again.
+- **What's new in Settings → About.** The release notes for the running version,
+  bundled with the app, so an automatic restart has an explanation.
 
 ### Changed
 - **A crawl that starts during an update now defers the install until indexing
