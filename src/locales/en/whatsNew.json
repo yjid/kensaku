@@ -1,0 +1,9 @@
+{
+  "1_0_20": [
+    "Automatic updates install themselves. Kensaku downloads signed releases in the background and applies them when the window is hidden or another app has focus, so a restart never interrupts what you are doing.",
+    "The status bar now shows the whole update: the download percentage, the restart countdown, and a waiting-for-indexing state.",
+    "Memory after a large crawl falls back to a small floor instead of holding the crawl's peak. The allocator returns big image buffers, and OCR engines are released two minutes after a crawl ends.",
+    "Grid thumbnails decode two at a time, so browsing during a crawl no longer multiplies memory use.",
+    "Deleted and renamed files now drop their semantic and visual entries, not just their metadata."
+  ]
+}

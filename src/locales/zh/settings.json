@@ -212,6 +212,7 @@
   "about": {
     "resetPending": "有一个待处理的重置，将在下次启动时完成。",
     "version": "版本",
+    "whatsNew": "{{version}} 新功能",
     "autoUpdate": "默认启用自动检查更新。",
     "checkUpdates": "检查更新",
     "opening": "正在打开…",

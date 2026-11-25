@@ -11,6 +11,7 @@ import enHelp from "../locales/en/help.json";
 import enSettings from "../locales/en/settings.json";
 import enSetup from "../locales/en/setup.json";
 import enErrors from "../locales/en/errors.json";
+import enWhatsNew from "../locales/en/whatsNew.json";
 
 import zhCommon from "../locales/zh/common.json";
 import zhSearch from "../locales/zh/search.json";
@@ -21,6 +22,7 @@ import zhHelp from "../locales/zh/help.json";
 import zhSettings from "../locales/zh/settings.json";
 import zhSetup from "../locales/zh/setup.json";
 import zhErrors from "../locales/zh/errors.json";
+import zhWhatsNew from "../locales/zh/whatsNew.json";
 
 import ruCommon from "../locales/ru/common.json";
 import ruSearch from "../locales/ru/search.json";
@@ -31,6 +33,7 @@ import ruHelp from "../locales/ru/help.json";
 import ruSettings from "../locales/ru/settings.json";
 import ruSetup from "../locales/ru/setup.json";
 import ruErrors from "../locales/ru/errors.json";
+import ruWhatsNew from "../locales/ru/whatsNew.json";
 
 export const SUPPORTED_LANGUAGES = {
   en: "English",
@@ -51,6 +54,7 @@ const resources = {
     settings: enSettings,
     setup: enSetup,
     errors: enErrors,
+    whatsNew: enWhatsNew,
   },
   zh: {
     common: zhCommon,
@@ -62,6 +66,7 @@ const resources = {
     settings: zhSettings,
     setup: zhSetup,
     errors: zhErrors,
+    whatsNew: zhWhatsNew,
   },
   ru: {
     common: ruCommon,
@@ -73,6 +78,7 @@ const resources = {
     settings: ruSettings,
     setup: ruSetup,
     errors: ruErrors,
+    whatsNew: ruWhatsNew,
   },
 };
 

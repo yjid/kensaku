@@ -8,6 +8,7 @@ import help from "../locales/en/help.json";
 import settings from "../locales/en/settings.json";
 import setup from "../locales/en/setup.json";
 import errors from "../locales/en/errors.json";
+import whatsNew from "../locales/en/whatsNew.json";
 
 declare module "i18next" {
   interface CustomTypeOptions {
@@ -22,6 +23,7 @@ declare module "i18next" {
       settings: typeof settings;
       setup: typeof setup;
       errors: typeof errors;
+      whatsNew: typeof whatsNew;
     };
   }
 }
