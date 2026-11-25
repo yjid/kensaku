@@ -38,7 +38,8 @@ import { useMeasuredHeight } from "./lib/useMeasuredHeight";
 import { interpretationLabel } from "./lib/interpretation";
 import { inFilter } from "./lib/query";
 import { isNewerVersion } from "./lib/version";
-import { checkForUpdates, autoInstallUpdate, installUpdateAndRestart, subscribeUpdateActivity, type UpdateActivity } from "./lib/updater";
+import { checkForUpdates, autoInstallUpdate, installReadyUpdate, setPresenceProvider, subscribeUpdateActivity, type UpdateActivity } from "./lib/updater";
+import { classifyBoot, clearAttempt, readAttempt } from "./lib/updateGuard";
 import { getVersion } from "@tauri-apps/api/app";
 import {
   Settings as SettingsIcon,
@@ -128,6 +129,7 @@ function App() {
   const [doctorReport, setDoctorReport] = useState<DoctorReport | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [updateActivity, setUpdateActivity] = useState<UpdateActivity | null>(null);
+  const [updateBlocked, setUpdateBlocked] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<string | undefined>(undefined);
   const [showDuplicates, setShowDuplicates] = useState(false);
@@ -717,11 +719,36 @@ function App() {
   /* The updater owns the update lifecycle; the status bar only renders it. */
   useEffect(() => subscribeUpdateActivity(setUpdateActivity), []);
 
+  /* Automatic installs wait for the window to be hidden or unfocused, so the
+     updater needs to know whether anyone is looking at this webview. Launcher
+     mode hides the window; app mode can be visible but behind another app. */
+  useEffect(() => {
+    setPresenceProvider(() => document.visibilityState === "visible" && document.hasFocus());
+    return () => setPresenceProvider(null);
+  }, []);
+
+  /* An install attempt that came back on a different version did not take.
+     Disable the automatic path for this session instead of re-downloading and
+     restarting in a loop, and surface it in the status bar. */
+  useEffect(() => {
+    getVersion()
+      .then((current) => {
+        const outcome = classifyBoot(readAttempt(localStorage), current);
+        if (outcome === "failed") {
+          setUpdateBlocked(true);
+          return;
+        }
+        if (outcome === "landed" || outcome === "stale") clearAttempt(localStorage);
+      })
+      .catch(() => {});
+  }, []);
+
   /* Automatic installs. Run once per app run, independently of the
      12-hour tag cache above, because installing needs the live Update object.
      Skip while a crawl is active (the retry loop inside the updater waits for
-     it) and during first-run setup. */
+     it), during first-run setup, and after a failed attempt. */
   useEffect(() => {
+    if (updateBlocked) return;
     if (autoInstallAttempted) return;
     if (isSetupComplete !== true) return;
     if (!config || config.auto_update !== true || config.auto_install_updates !== true) return;
@@ -736,7 +763,7 @@ function App() {
     ).catch((err) => {
       console.warn("Automatic update install failed:", err);
     });
-  }, [isSetupComplete, config, indexingStatus, flash, ts]);
+  }, [isSetupComplete, config, indexingStatus, flash, ts, updateBlocked]);
 
   const handleCopyPath = useCallback(
     (path: string) => {
@@ -1592,9 +1619,12 @@ function App() {
                 </div>
               )}
 
-              <KeyHintStrip status={indexingStatus} doctor={doctorReport} update={updateActivity ?? (updateAvailable ? { phase: "available", version: updateAvailable } : null)} onDoctor={() => { setShowSettings(true); setSettingsSection("doctor"); }} onUpdate={() => {
+              <KeyHintStrip status={indexingStatus} doctor={doctorReport} update={updateActivity ?? (updateBlocked ? { phase: "failed", version: "" } : updateAvailable ? { phase: "available", version: updateAvailable } : null)} onDoctor={() => { setShowSettings(true); setSettingsSection("doctor"); }} onUpdate={() => {
                 if (updateActivity?.phase === "ready") {
-                  installUpdateAndRestart().catch((err) => {
+                  installReadyUpdate(
+                    () => flash(ts("about.autoInstallRestarting"), 5500),
+                    () => flash(ts("about.autoInstallDeferred"), 5500),
+                  ).catch((err) => {
                     console.warn("Update install failed:", err);
                     setShowSettings(true);
                     setSettingsSection("about");

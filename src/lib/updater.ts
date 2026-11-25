@@ -3,6 +3,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import i18n from "../i18n";
+import { recordAttempt } from "./updateGuard";
 import type { IndexingStatus, UpdateInfo, UpdateStatus } from "../types";
 
 /**
@@ -103,6 +104,30 @@ export const IDLE_RETRY_LIMIT_MS = 2 * 60 * 60 * 1000;
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Whether the user can see the window and is working in it. Restarting a
+ * focused window is the one thing every mature updater avoids, so the
+ * automatic path waits for the window to be hidden or unfocused. An explicit
+ * click is consent and skips this.
+ */
+type PresenceProvider = () => boolean;
+let presenceProvider: PresenceProvider | null = null;
+
+export function setPresenceProvider(provider: PresenceProvider | null): void {
+  presenceProvider = provider;
+}
+
+export function isUserPresent(): boolean {
+  // No provider (tests, headless) means nobody is watching. A provider that
+  // throws is unknown, which counts as watching: never restart on a guess.
+  if (!presenceProvider) return false;
+  try {
+    return presenceProvider();
+  } catch {
+    return true;
+  }
 }
 
 function snapshot(): UpdateStatus {
@@ -242,6 +267,11 @@ export async function installUpdateAndRestart(): Promise<void> {
   if (!(await inAppUpdatesSupported())) {
     throw new Error(i18n.t("settings:about.manualUpdateRequired"));
   }
+  // Record the target before the install so a launch that comes back on the old
+  // version can tell the install failed instead of retrying it forever.
+  if (typeof localStorage !== "undefined") {
+    recordAttempt(localStorage, lastInfo?.latest_version ?? "");
+  }
   setActivity(null);
   await pending.install();
   await relaunch();
@@ -267,32 +297,83 @@ async function crawlIsActive(): Promise<boolean> {
 }
 
 /**
- * Waits for indexing to finish, re-reading the live crawl state on an interval.
- * Returns false when the wait window expires; the caller then leaves the
- * downloaded update in place for the next launch instead of installing over a
- * running crawl.
+ * Polls a condition on the retry interval until the deadline. Returns false when
+ * the window expires, leaving the downloaded update `ready` for a click or the
+ * next launch.
  */
-async function waitForIdle(): Promise<boolean> {
-  const deadline = Date.now() + IDLE_RETRY_LIMIT_MS;
+async function waitUntil(
+  done: () => Promise<boolean> | boolean,
+  deadline: number,
+): Promise<boolean> {
   while (Date.now() < deadline) {
     await wait(IDLE_RETRY_INTERVAL_MS);
-    if (!(await crawlIsActive())) return true;
+    if (await done()) return true;
   }
   return false;
 }
 
 /**
- * Automatic path for "install updates automatically": check, download, show a
- * restart countdown, re-read the live crawl state, then install and relaunch.
+ * Waits for indexing to end and, on the automatic path, for the window to be
+ * hidden or unfocused, then counts down, re-checks, and installs.
  *
  * A crawl that starts before the install defers it rather than cancelling it:
- * `onDeferred` lets the caller correct the restart notice, and the install
- * retries until indexing is idle. If indexing outlasts the retry window the
- * update stays downloaded and ready, so the status bar or Settings can install
+ * `onDeferred` lets the caller correct the restart notice and the install
+ * retries until the machine is safe to restart. If the window expires the
+ * update stays downloaded and ready, so the indicator or Settings can install
  * it later.
+ */
+async function finishInstall(
+  version: string,
+  opts: {
+    requirePresence: boolean;
+    onReady?: () => void;
+    onDeferred?: () => void;
+  },
+): Promise<boolean> {
+  const deadline = Date.now() + IDLE_RETRY_LIMIT_MS;
+  for (;;) {
+    // Never install on top of a crawl; wait it out instead of cancelling.
+    if (await crawlIsActive()) {
+      setActivity({ phase: "deferred", version });
+      opts.onDeferred?.();
+      if (!(await waitUntil(async () => !(await crawlIsActive()), deadline))) {
+        setActivity({ phase: "ready", version });
+        return false;
+      }
+      continue;
+    }
+
+    // A focused window means the user is here. Installing later, invisibly, is
+    // better than restarting under their cursor.
+    if (opts.requirePresence && isUserPresent()) {
+      setActivity({ phase: "ready", version });
+      if (!(await waitUntil(() => !isUserPresent(), deadline))) return false;
+      continue;
+    }
+
+    opts.onReady?.();
+    for (let secondsLeft = RESTART_COUNTDOWN_SECONDS; secondsLeft > 0; secondsLeft--) {
+      setActivity({ phase: "restarting", version, secondsLeft });
+      await wait(1000);
+    }
+
+    // Re-check both after the countdown: a crawl can start, or the user can
+    // come back, while it runs.
+    if (await crawlIsActive()) continue;
+    if (opts.requirePresence && isUserPresent()) continue;
+
+    await installUpdateAndRestart();
+    return true;
+  }
+}
+
+/**
+ * Automatic path for "install updates automatically": check, download, then
+ * install once indexing is idle and the window cannot be seen.
  *
  * Returns false when there is nothing to install, this copy updates through its
- * own package (MSI, portable, .deb/.rpm), or indexing never idled in time.
+ * own package (MSI, portable, .deb/.rpm), or the update never became safe to
+ * install within the retry window.
  */
 export async function autoInstallUpdate(
   onReadyToRestart?: () => void,
@@ -308,31 +389,29 @@ export async function autoInstallUpdate(
   const downloaded = await downloadUpdate();
   if (!downloaded.ready_to_install) return false;
 
-  for (;;) {
-    // The startup status is stale by now: the download can take minutes and a
-    // crawl may have begun. Never restart on top of one; wait it out instead.
-    if (await crawlIsActive()) {
-      setActivity({ phase: "deferred", version });
-      onDeferred?.();
-      if (!(await waitForIdle())) {
-        setActivity({ phase: "ready", version });
-        return false;
-      }
-    }
+  return finishInstall(version, {
+    requirePresence: true,
+    onReady: onReadyToRestart,
+    onDeferred,
+  });
+}
 
-    // Give the user a moment to see the notice before the window disappears.
-    onReadyToRestart?.();
-    for (let secondsLeft = RESTART_COUNTDOWN_SECONDS; secondsLeft > 0; secondsLeft--) {
-      setActivity({ phase: "restarting", version, secondsLeft });
-      await wait(1000);
-    }
-
-    // Re-check after the countdown: a crawl can start while it runs.
-    if (await crawlIsActive()) continue;
-
-    await installUpdateAndRestart();
-    return true;
-  }
+/**
+ * Installs a downloaded update on the user's explicit request. Consent replaces
+ * the "window is invisible" gate, but a running crawl still defers: killing an
+ * index is not what "restart now" means.
+ */
+export async function installReadyUpdate(
+  onReadyToRestart?: () => void,
+  onDeferred?: () => void,
+): Promise<boolean> {
+  if (!pending) throw new Error("No downloaded update to install.");
+  const version = lastInfo?.latest_version ?? activity?.version ?? "";
+  return finishInstall(version, {
+    requirePresence: false,
+    onReady: onReadyToRestart,
+    onDeferred,
+  });
 }
 
 /**

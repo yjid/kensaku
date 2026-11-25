@@ -1,4 +1,6 @@
+// @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { UPDATE_ATTEMPT_KEY } from "./updateGuard";
 
 const invoke = vi.fn();
 const getVersion = vi.fn();
@@ -57,6 +59,7 @@ beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   vi.useRealTimers();
+  localStorage.clear();
   indexing = false;
   statusCallAt = -1;
   getVersion.mockResolvedValue("1.0.19");
@@ -117,6 +120,86 @@ describe("autoInstallUpdate", () => {
       "restarting:2",
       "restarting:1",
     ]);
+  });
+
+  it("waits for the window to be hidden before installing on its own", async () => {
+    const update = updateStub();
+    checkPlugin.mockResolvedValue(update);
+    vi.useFakeTimers();
+
+    const { autoInstallUpdate, setPresenceProvider, getUpdateActivity } = await import("./updater");
+    let present = true;
+    setPresenceProvider(() => present);
+
+    const result = autoInstallUpdate();
+    await vi.advanceTimersByTimeAsync(5000);
+
+    // Download finished, but the user is looking at the window: stay ready.
+    expect(update.install).not.toHaveBeenCalled();
+    expect(getUpdateActivity()?.phase).toBe("ready");
+
+    // They switch to another app, and the retry installs without a click.
+    present = false;
+    await vi.advanceTimersByTimeAsync(20_000);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(result).resolves.toBe(true);
+    expect(update.install).toHaveBeenCalledOnce();
+    expect(relaunch).toHaveBeenCalledOnce();
+  });
+
+  it("installs on an explicit click even while the window is focused", async () => {
+    const update = updateStub();
+    checkPlugin.mockResolvedValue(update);
+    vi.useFakeTimers();
+
+    const { checkForUpdates, downloadUpdate, installReadyUpdate, setPresenceProvider } =
+      await import("./updater");
+    setPresenceProvider(() => true);
+    await checkForUpdates();
+    await downloadUpdate();
+
+    const result = installReadyUpdate();
+    await vi.advanceTimersByTimeAsync(5000);
+    await expect(result).resolves.toBe(true);
+    expect(update.install).toHaveBeenCalledOnce();
+  });
+
+  it("defers an explicit click while a crawl is running", async () => {
+    const update = updateStub();
+    checkPlugin.mockResolvedValue(update);
+    vi.useFakeTimers();
+
+    const { checkForUpdates, downloadUpdate, installReadyUpdate, setPresenceProvider } =
+      await import("./updater");
+    setPresenceProvider(() => true);
+    await checkForUpdates();
+    await downloadUpdate();
+
+    indexing = true;
+    const onDeferred = vi.fn();
+    const result = installReadyUpdate(undefined, onDeferred);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(onDeferred).toHaveBeenCalledOnce();
+    expect(update.install).not.toHaveBeenCalled();
+
+    indexing = false;
+    await vi.advanceTimersByTimeAsync(20_000);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(result).resolves.toBe(true);
+    expect(update.install).toHaveBeenCalledOnce();
+  });
+
+  it("records the target version before installing, so a failed install is detectable", async () => {
+    const update = updateStub();
+    checkPlugin.mockResolvedValue(update);
+    vi.useFakeTimers();
+
+    const { autoInstallUpdate } = await import("./updater");
+    const result = autoInstallUpdate();
+    await vi.advanceTimersByTimeAsync(5000);
+    await expect(result).resolves.toBe(true);
+
+    expect(localStorage.getItem(UPDATE_ATTEMPT_KEY)).toContain("1.0.20");
   });
 
   it("defers the install when a crawl starts during the countdown", async () => {
