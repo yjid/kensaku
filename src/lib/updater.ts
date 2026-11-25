@@ -3,7 +3,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import i18n from "../i18n";
-import type { UpdateInfo, UpdateStatus } from "../types";
+import type { IndexingStatus, UpdateInfo, UpdateStatus } from "../types";
 
 /**
  * The update returned by the last check. The Tauri updater keeps the update
@@ -185,13 +185,34 @@ export async function installUpdateAndRestart(): Promise<void> {
 }
 
 /**
+ * Reads the live crawl state from the backend. The status used to decide
+ * whether to *start* an automatic install is stale by the time the download
+ * and the restart countdown finish; a crawl can begin in that window. An
+ * unreadable status counts as active, so we never restart on top of an
+ * unknown state.
+ */
+async function crawlIsActive(): Promise<boolean> {
+  try {
+    const status = await invoke<Pick<IndexingStatus, "is_indexing">>(
+      "get_indexing_status",
+    );
+    return status.is_indexing === true;
+  } catch (err) {
+    console.warn("Could not read indexing status before update install:", err);
+    return true;
+  }
+}
+
+/**
  * Opt-in path for "install updates automatically": check, download, let the
  * caller announce the restart, wait briefly, then install and relaunch.
- * Returns false when there is nothing to install or this copy updates through
- * its package (MSI, portable, .deb/.rpm).
+ * Returns false when there is nothing to install, this copy updates through
+ * its package (MSI, portable, .deb/.rpm), or a crawl started while waiting —
+ * in the last case `onDeferred` lets the caller correct the restart notice.
  */
 export async function autoInstallUpdate(
   onReadyToRestart?: () => void,
+  onDeferred?: () => void,
 ): Promise<boolean> {
   const info = await checkForUpdates();
   if (!info.has_update || !info.in_app_supported) return false;
@@ -200,6 +221,13 @@ export async function autoInstallUpdate(
   onReadyToRestart?.();
   // Give the user a moment to see the toast before the window disappears.
   await new Promise((resolve) => setTimeout(resolve, 5000));
+  // Re-check immediately before installing: the startup status was taken
+  // before the download and the five-second countdown. Installing now would
+  // interrupt a crawl that began in between.
+  if (await crawlIsActive()) {
+    onDeferred?.();
+    return false;
+  }
   await installUpdateAndRestart();
   return true;
 }

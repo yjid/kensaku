@@ -34,8 +34,10 @@ Off by default. **Settings → About → Install updates automatically** (also
 offered on the last step of first-run setup) makes Kensaku download and install
 a new signed release as soon as it finds one, then restart to finish. The app
 waits briefly so the restart is not a surprise. Automatic installs are skipped
-while a crawl is running; the update stays available and is installed on the
-next launch. This option only applies where in-app updates are supported:
+while a crawl is running; the live crawl state is re-checked immediately before
+the install, after the countdown, so a crawl that starts during that window is
+not interrupted. The update stays available and is installed on the next
+launch. This option only applies where in-app updates are supported:
 MSI, portable, `.deb`, and `.rpm` installs still update through their package.
 
 ## First install vs updates

@@ -726,7 +726,10 @@ function App() {
     if (indexingStatus === null) return;
     autoInstallAttempted = true;
     if (indexingStatus.is_indexing) return;
-    autoInstallUpdate(() => flash(ts("about.autoInstallRestarting"), 5500)).catch((err) => {
+    autoInstallUpdate(
+      () => flash(ts("about.autoInstallRestarting"), 5500),
+      () => flash(ts("about.autoInstallDeferred"), 5500),
+    ).catch((err) => {
       console.warn("Automatic update install failed:", err);
     });
   }, [isSetupComplete, config, indexingStatus, flash, ts]);

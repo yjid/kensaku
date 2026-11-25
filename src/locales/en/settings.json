@@ -264,6 +264,7 @@
     "autoInstallSetting": "Install updates automatically",
     "autoInstallSettingDesc": "Downloads and installs signed releases in the background, then restarts Kensaku to finish. Off by default.",
     "autoInstallRestarting": "Update downloaded. Kensaku will restart in a few seconds to finish installing.",
+    "autoInstallDeferred": "Update downloaded, but Kensaku is indexing now. It will install on the next launch.",
     "checking": "Checking for updates…",
     "upToDate": "Kensaku is up to date",
     "updateAvailable": "Version {{version}} is available",

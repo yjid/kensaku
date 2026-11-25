@@ -13,6 +13,11 @@ versioning: [SemVer](https://semver.org/).
   in-app updates; MSI, portable, `.deb`/`.rpm` copies still update through
   their package.
 
+### Fixed
+- **Automatic installs no longer interrupt a crawl that starts during the
+  restart countdown.** The crawl state is re-read immediately before the
+  install; a new crawl defers the update to the next launch and says so.
+
 ## [1.0.19] — 2026-11-24
 
 ### Added
