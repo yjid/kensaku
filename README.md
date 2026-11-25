@@ -21,6 +21,10 @@
 </p>
 
 <p align="center">
+  <b><a href="https://yjid.github.io/kensaku/">Download Kensaku</a></b> for Windows, macOS, or Linux.
+</p>
+
+<p align="center">
   <img src="assets/hero.png" width="100%" alt="Kensaku, find anything on your computer" />
 </p>
 

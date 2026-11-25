@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kensaku · Search inside your files</title>
+  <meta name="description" content="Kensaku is a free, open-source desktop app that finds words inside your documents, code, and screenshots. Everything stays on your computer.">
+  <meta name="theme-color" content="#0b0b0d">
+  <meta property="og:title" content="Kensaku · Search inside your files">
+  <meta property="og:description" content="Find words inside documents, code, and screenshots. Free, open source, and local.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://yjid.github.io/kensaku/assets/social-preview.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="./assets/icon.png" type="image/png">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./downloads.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="top">
+    <a class="brand" href="./"><img src="./assets/icon.png" width="28" height="28" alt="">Kensaku</a>
+    <nav aria-label="Main">
+      <a href="https://github.com/yjid/kensaku/tree/master/docs">Docs</a>
+      <a href="https://github.com/yjid/kensaku">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero">
+      <p class="eyebrow">Free and open source</p>
+      <h1>Search inside<br>your files.</h1>
+      <p class="lede">Kensaku finds words in your documents, code, and screenshots. It runs on your computer, and nothing leaves it.</p>
+
+      <div class="cta">
+        <a class="btn btn-primary" data-primary href="#download">Download Kensaku</a>
+        <a class="btn btn-ghost" href="#download">All platforms</a>
+      </div>
+      <p class="meta"><span data-release-status>Latest release</span> · MIT license</p>
+
+      <figure class="shot">
+        <img src="./assets/search-dashboard.webp" width="1400" height="934" alt="Kensaku start screen with the search bar ready and the message: Your files are ready.">
+      </figure>
+    </section>
+
+    <section class="download" id="download" aria-labelledby="download-title">
+      <h2 id="download-title">Download</h2>
+      <p class="sub">Pick your system. Checksums are in <a data-asset="SHA256SUMS" href="https://github.com/yjid/kensaku/releases/download/v1.0.20/SHA256SUMS">SHA256SUMS</a>.</p>
+
+      <div class="grid">
+        <article class="card" data-platform="windows">
+          <div class="card-head"><h3>Windows</h3><span class="tag" hidden>Your system</span></div>
+          <div class="links">
+            <a class="btn btn-primary" data-asset="kensaku_{version}_x64-setup.exe" href="https://github.com/yjid/kensaku/releases/download/v1.0.20/kensaku_1.0.20_x64-setup.exe">x64 installer</a>
+            <a class="btn btn-ghost" data-asset="kensaku_{version}_arm64-setup.exe" href="https://github.com/yjid/kensaku/releases/download/v1.0.20/kensaku_1.0.20_arm64-setup.exe">ARM64</a>
+          </div>
+          <ol class="notes">
+            <li>Signed installer. It installs for your account, no admin needed.</li>
+            <li>If Windows shows a warning, choose <strong>More info</strong>, then <strong>Run anyway</strong>.</li>
+          </ol>
+        </article>
+
+        <article class="card" data-platform="macos">
+          <div class="card-head"><h3>macOS</h3><span class="tag" hidden>Your system</span></div>
+          <div class="links">
+            <a class="btn btn-primary" data-asset="kensaku_{version}_universal.dmg" href="https://github.com/yjid/kensaku/releases/download/v1.0.20/kensaku_1.0.20_universal.dmg">Universal DMG</a>
+          </div>
+          <ol class="notes">
+            <li>Works on Apple silicon and Intel. Open the DMG and drag Kensaku into Applications.</li>
+            <li>Not notarized yet. If macOS blocks it, go to <strong>System Settings → Privacy &amp; Security</strong> and click <strong>Open Anyway</strong>.</li>
+          </ol>
+        </article>
+
+        <article class="card" data-platform="linux">
+          <div class="card-head"><h3>Linux</h3><span class="tag" hidden>Your system</span></div>
+          <div class="links">
+            <a class="btn btn-primary" data-asset="kensaku_{version}_amd64.AppImage" href="https://github.com/yjid/kensaku/releases/download/v1.0.20/kensaku_1.0.20_amd64.AppImage">AppImage</a>
+            <a class="btn btn-ghost" data-asset="kensaku_{version}_amd64.deb" href="https://github.com/yjid/kensaku/releases/download/v1.0.20/kensaku_1.0.20_amd64.deb">.deb</a>
+            <a class="btn btn-ghost" data-asset="kensaku-{version}-1.x86_64.rpm" href="https://github.com/yjid/kensaku/releases/download/v1.0.20/kensaku-1.0.20-1.x86_64.rpm">.rpm</a>
+          </div>
+          <ol class="notes">
+            <li>AppImage: run <code>chmod +x</code> on the file, then open it.</li>
+            <li>Prefer a package manager? Use the .deb or .rpm.</li>
+          </ol>
+        </article>
+      </div>
+
+      <div class="terminal">
+        <details>
+          <summary>Install from the terminal</summary>
+          <p>macOS and Linux</p>
+          <pre><code>curl -fsSL https://github.com/yjid/kensaku/releases/latest/download/install.sh | sh</code></pre>
+          <p>Windows PowerShell</p>
+          <pre><code>powershell -ExecutionPolicy ByPass -c "irm https://github.com/yjid/kensaku/releases/latest/download/install.ps1 | iex"</code></pre>
+          <p><a href="https://github.com/yjid/kensaku/blob/master/docs/INSTALL.md">Full install guide</a></p>
+        </details>
+      </div>
+
+      <p class="all"><a data-all-releases href="https://github.com/yjid/kensaku/releases/latest">All downloads and older versions</a></p>
+    </section>
+
+    <section class="start" aria-labelledby="start-title">
+      <h2 id="start-title">Three steps</h2>
+      <ol class="steps">
+        <li><span>1</span><h3>Download</h3><p>Choose the file for your system above.</p></li>
+        <li><span>2</span><h3>Install and open</h3><p>Run the installer, then open Kensaku.</p></li>
+        <li><span>3</span><h3>Pick folders</h3><p>Choose what to index. Then type and search.</p></li>
+      </ol>
+    </section>
+
+    <section class="features" aria-labelledby="features-title">
+      <h2 id="features-title">What it finds</h2>
+      <ul class="list">
+        <li><strong>Words inside files.</strong> PDF, Word, Markdown, code, and logs.</li>
+        <li><strong>Text in screenshots.</strong> OCR reads words in images.</li>
+        <li><strong>Files by meaning.</strong> Find a file when you remember the idea, not the wording.</li>
+        <li><strong>Local and private.</strong> The index and your queries stay on your device.</li>
+        <li><strong>AI agents.</strong> Connect an MCP client to search the same index.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p>Kensaku is free and open source. <a href="https://github.com/yjid">Made by yjid</a>.</p>
+    <nav aria-label="Help and project">
+      <a href="https://github.com/yjid/kensaku/blob/master/docs/FAQ.md">FAQ</a>
+      <a href="https://github.com/yjid/kensaku/blob/master/docs/TROUBLESHOOTING.md">Troubleshooting</a>
+      <a href="https://github.com/yjid/kensaku/blob/master/docs/PRIVACY.md">Privacy</a>
+      <a href="https://github.com/yjid/kensaku/blob/master/SECURITY.md">Security</a>
+      <a href="https://github.com/yjid/kensaku/blob/master/LICENSE">License</a>
+    </nav>
+  </footer>
+</body>
+</html>
