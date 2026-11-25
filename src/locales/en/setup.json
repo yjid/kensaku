@@ -95,7 +95,7 @@
   },
   "autoInstall": {
     "label": "Install updates automatically",
-    "description": "Kensaku downloads and installs new signed releases, then restarts to finish. You can change this in Settings."
+    "description": "Kensaku downloads and installs new signed releases on its own, then restarts when it is idle. Turn it off here or later in Settings."
   },
   "footer": {
     "folders_one": "{{count}} folder",

@@ -1738,7 +1738,7 @@ function AboutSection({
           description={t("about.autoInstallSettingDesc")}
         >
           <Switch
-            checked={config?.auto_install_updates ?? false}
+            checked={config?.auto_install_updates ?? true}
             disabled={config?.auto_update === false}
             onChange={(v) =>
               setConfig((c) => (c ? { ...c, auto_install_updates: v } : c))

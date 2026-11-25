@@ -238,9 +238,10 @@ pub struct KensakuConfig {
     /// Enabled by default; users can opt out in settings.
     #[serde(default = "default_true")]
     pub auto_update: bool,
-    /// Download and install signed updates without asking, then restart.
-    /// Off by default: installing and restarting must stay an explicit opt-in.
-    #[serde(default)]
+    /// Download and install signed updates without asking, then restart once
+    /// the app is idle. On by default: the setup step and Settings carry the
+    /// opt-out. Installs that must use their own package are skipped.
+    #[serde(default = "default_true")]
     pub auto_install_updates: bool,
     /// Config schema version, used for one-time migrations.
     #[serde(default)]
@@ -498,7 +499,7 @@ impl Default for KensakuConfig {
             show_thumbnails: true,
             results_view: default_results_view(),
             auto_update: true,
-            auto_install_updates: false,
+            auto_install_updates: true,
             config_version: CURRENT_CONFIG_VERSION,
         }
     }
@@ -813,17 +814,30 @@ mod tests {
     }
 
     #[test]
-    fn auto_install_updates_default_and_roundtrip() {
+    fn auto_install_updates_defaults_on_and_roundtrips() {
+        // On by default: the point of automatic updates is not asking. The
+        // switch in setup and Settings is the opt-out, and it must survive a
+        // restart once the user turns it off.
         let mut cfg = KensakuConfig::default();
-        assert!(!cfg.auto_install_updates);
-        cfg.auto_install_updates = true;
+        assert!(
+            cfg.auto_install_updates,
+            "automatic updates must default on"
+        );
+        cfg.auto_install_updates = false;
         let json = serde_json::to_string(&cfg).unwrap();
         let loaded = KensakuConfig::load_from_str(&json);
-        assert!(loaded.auto_install_updates);
+        assert!(
+            !loaded.auto_install_updates,
+            "an explicit opt-out must persist"
+        );
 
-        let json_without_flag = json.replace("\"auto_install_updates\":true,", "");
+        let json_without_flag = json.replace("\"auto_install_updates\":false,", "");
+        assert!(!json_without_flag.contains("auto_install_updates"));
         let loaded_defaulted = KensakuConfig::load_from_str(&json_without_flag);
-        assert!(!loaded_defaulted.auto_install_updates);
+        assert!(
+            loaded_defaulted.auto_install_updates,
+            "a config written before this field existed must get the new default"
+        );
     }
 
     #[test]
@@ -857,7 +871,7 @@ mod tests {
         assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
         assert!(cfg.skip_hidden);
         assert!(cfg.auto_update);
-        assert!(!cfg.auto_install_updates);
+        assert!(cfg.auto_install_updates);
         assert!(cfg.ocr_enabled);
         assert_eq!(cfg.theme, "dark");
     }

@@ -262,7 +262,7 @@
     "autoUpdateSetting": "自动检查更新",
     "autoUpdateSettingDesc": "在后台定期检查新版本与功能优化。",
     "autoInstallSetting": "自动安装更新",
-    "autoInstallSettingDesc": "在后台下载并安装已签名的版本，然后重启 Kensaku 以完成安装。默认关闭。",
+    "autoInstallSettingDesc": "在后台下载并安装已签名版本，并在空闲时重启 Kensaku。索引期间会跳过；可随时关闭。",
     "autoInstallRestarting": "更新已下载。Kensaku 将在几秒后重启以完成安装。",
     "autoInstallDeferred": "更新已下载，但 Kensaku 正在索引。下次启动时将完成安装。",
     "checking": "正在检查更新…",

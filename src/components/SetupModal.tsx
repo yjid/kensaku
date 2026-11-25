@@ -79,8 +79,8 @@ export function SetupModal({ onSetupCompleted }: { onSetupCompleted: () => void 
   const [shortcut, setShortcut] = useState("Alt+Space");
   // New installs default to launcher mode: one shortcut away, always.
   const [appMode, setAppMode] = useState<"app" | "launcher">("launcher");
-  // Installing and restarting is an explicit opt-in, off by default.
-  const [autoInstallUpdates, setAutoInstallUpdates] = useState(false);
+  // On by default: this step and Settings are where users opt out.
+  const [autoInstallUpdates, setAutoInstallUpdates] = useState(true);
   /* Set once the user picks a mode, so the config lookup below cannot
      overwrite a click that races the invoke. */
   const appModeTouched = useRef(false);
