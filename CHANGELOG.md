@@ -6,17 +6,18 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- **Opt-in automatic update installs.** A new "Install updates automatically"
-  switch in Settings → About and on the last setup step downloads and installs
-  signed releases, then restarts Kensaku to finish. It is off by default,
-  skipped while a crawl is running, and limited to installs that support
-  in-app updates; MSI, portable, `.deb`/`.rpm` copies still update through
-  their package.
+- **Automatic updates are on by default.** Signed releases download and install
+  on their own, then Kensaku restarts to finish. The "Install updates
+  automatically" switch can be turned off on the last setup step or later in
+  Settings → About; updates install when the app is idle. MSI, portable and
+  `.deb`/`.rpm` copies still update through their package.
+- **Live update indicator in the status bar.** It shows the download percentage
+  and progress, the restart countdown, and a waiting-for-indexing state.
 
-### Fixed
-- **Automatic installs no longer interrupt a crawl that starts during the
-  restart countdown.** The crawl state is re-read immediately before the
-  install; a new crawl defers the update to the next launch and says so.
+### Changed
+- **A crawl that starts during an update now defers the install until indexing
+  finishes** instead of cancelling it. The app retries while the index is busy
+  and installs as soon as it is idle.
 
 ## [1.0.19] — 2026-11-24
 
