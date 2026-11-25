@@ -4,6 +4,7 @@ import type { UpdateActivity } from "../lib/updater";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { formatComma } from "../lib/format";
+import { updateLabel, updateTitle, type Translate } from "../lib/update-labels";
 import { AlertTriangle, ArrowUpCircle, Clock3, Download, RefreshCw, Stethoscope } from "lucide-react";
 
 /* Status line. Index health on the left, the few keys worth knowing on the
@@ -44,43 +45,8 @@ function statusText(
 }
 
 /* Compact labels: the strip is 11px tall and shares the row with the index
-   status, so every update state has to fit in a few words. */
-function updateLabel(update: UpdateActivity, t: TFunction<"common">): string {
-  switch (update.phase) {
-    case "available":
-      return t("update.availableShort", { version: update.version });
-    case "downloading":
-      return update.percent
-        ? t("update.downloading", { percent: update.percent })
-        : t("update.downloadingUnknown");
-    case "ready":
-      return t("update.ready");
-    case "restarting":
-      return t("update.restarting", { seconds: update.secondsLeft ?? 0 });
-    case "deferred":
-      return t("update.deferred");
-    case "failed":
-      return t("update.failed");
-  }
-}
-
-function updateTitle(update: UpdateActivity, t: TFunction<"common">): string {
-  switch (update.phase) {
-    case "available":
-      return t("update.available", { version: update.version });
-    case "downloading":
-      return t("update.downloadingTitle", { version: update.version });
-    case "ready":
-      return t("update.readyTitle");
-    case "restarting":
-      return t("update.restartingTitle", { seconds: update.secondsLeft ?? 0 });
-    case "deferred":
-      return t("update.deferredTitle");
-    case "failed":
-      return update.message ? t("update.failedTitle") + ": " + update.message : t("update.failedTitle");
-  }
-}
-
+   status, so every update state has to fit in a few words. The mapping lives in
+   lib/update-labels.ts so it can be tested without mounting React. */
 function updateIcon(update: UpdateActivity) {
   switch (update.phase) {
     case "downloading":
@@ -110,6 +76,7 @@ export const KeyHintStrip: React.FC<{
   onUpdate?: () => void;
 }> = ({ status, doctor, update, onDoctor, onUpdate }) => {
   const { t } = useTranslation("common");
+  const tUpdate = t as unknown as Translate;
   const issues = doctor ? doctor.summary.warn + doctor.summary.fail : 0;
   const { text, busy } = statusText(status, t);
   const percent = update?.percent ?? 0;
@@ -138,8 +105,8 @@ export const KeyHintStrip: React.FC<{
             type="button"
             onClick={onUpdate}
             disabled={update.phase === "restarting"}
-            title={updateTitle(update, t)}
-            aria-label={updateTitle(update, t)}
+            title={updateTitle(update, tUpdate)}
+            aria-label={updateTitle(update, tUpdate)}
             className={`flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 transition-colors enabled:hover:bg-surface-2 disabled:cursor-default ${updateTone(update)}`}
           >
             {updateIcon(update)}
@@ -147,7 +114,7 @@ export const KeyHintStrip: React.FC<{
               className="t-meta whitespace-nowrap"
               aria-live={update.phase === "restarting" ? "off" : "polite"}
             >
-              {updateLabel(update, t)}
+              {updateLabel(update, tUpdate)}
             </span>
             {update.phase === "downloading" &&
               (percent > 0 ? (
